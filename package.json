@@ -1,0 +1,50 @@
+{
+  "name": "sense-ai-dapp",
+  "private": true,
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "author": "Tradable Pty Ltd",
+  "homepage": "https://tradable.app/",
+  "description": "The dApp and Telegram Mini App interface for the SenseAI tokenized AI agent.",
+  "keywords": [
+    "tradable",
+    "senseai",
+    "ai",
+    "dapp",
+    "web3",
+    "telegram",
+    "mini app",
+    "thirdweb",
+    "react"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 3002",
+    "build": "vite build",
+    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.87.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.542.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^3.3.1",
+    "tailwindcss-animate": "^1.0.7",
+    "thirdweb": "^5.105.41"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.33.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^9.33.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^16.3.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "vite": "^7.1.2"
+  }
+}
