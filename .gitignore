@@ -1,3 +1,18 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Build Artifacts
+dist
+dist-ssr
+
+# Environment Variables
+# Ignore all .env files to keep secrets out of the repository.
+.env
+.env.*
+!.env.example
+
 # Logs
 logs
 *.log
@@ -7,10 +22,12 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# Test Reports
+coverage
+.nyc_output
+
+# Editor & System Files
+# =================================
 
 # Editor directories and files
 .vscode/*
@@ -22,6 +39,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local files
+*.local
 
 # macos
 ._*
