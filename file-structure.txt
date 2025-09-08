@@ -1,0 +1,58 @@
+.
+├── .env
+├── .env.example
+├── .eslintrc.json
+├── .gitignore
+├── .prettierignore
+├── .prettierrc.json
+├── components.json
+├── file-structure.txt
+├── index.html
+├── jsconfig.json
+├── LICENSE
+├── package-lock.json
+├── package.json
+├── postcss.config.cjs
+├── public
+│   └── vite.svg
+├── README.md
+├── src
+│   ├── assets
+│   │   └── react.svg
+│   ├── client.js
+│   ├── components
+│   │   ├── ErrorBoundary.jsx
+│   │   ├── magicui
+│   │   │   └── rainbow-button.jsx
+│   │   └── ui
+│   ├── favicon.svg
+│   ├── features
+│   │   ├── auth
+│   │   │   └── Unauthenticated.jsx
+│   │   ├── chat
+│   │   │   ├── Chat.jsx
+│   │   │   └── components
+│   │   │       └── MessageBubble.jsx
+│   │   ├── history
+│   │   │   └── History.jsx
+│   │   └── market
+│   │       └── MarketPulse.jsx
+│   ├── hooks
+│   ├── index.css
+│   ├── layouts
+│   │   ├── components
+│   │   │   ├── BottomNav.jsx
+│   │   │   └── Header.jsx
+│   │   └── MainLayout.jsx
+│   ├── lib
+│   │   └── utils.js
+│   ├── main.jsx
+│   ├── pages
+│   │   └── App.jsx
+│   ├── senseai-logo.svg
+│   ├── senseai-text-logo-white-purple.svg
+│   └── thirdweb.svg
+├── tailwind.config.js
+└── vite.config.js
+
+18 directories, 38 files

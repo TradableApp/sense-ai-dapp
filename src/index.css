@@ -4,7 +4,7 @@
 
 @layer base {
 	:root {
-		--background: 225 94% 10%;
+		--background: 225 94% 97%;
 		--foreground: 222.2 84% 4.9%;
 		--card: 0 0% 100%;
 		--card-foreground: 222.2 84% 4.9%;
@@ -76,4 +76,11 @@
 		@apply bg-background text-foreground;
 		font-family: 'Inter', sans-serif;
 	}
+}
+
+.splash-screen-background {
+	height: 100vh;
+	width: 100%;
+	background: linear-gradient(135deg, #010b3a, #010b3a);
+	text-align: center;
 }
