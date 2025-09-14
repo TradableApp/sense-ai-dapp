@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 
 import { useNavigate } from 'react-router-dom';
 
-function Reroute() {
+export default function Reroute() {
 	const navigate = useNavigate();
 
 	useEffect(() => {
@@ -12,5 +12,3 @@ function Reroute() {
 
 	return null; // Renders nothing, just navigates.
 }
-
-export default Reroute;

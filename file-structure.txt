@@ -17,32 +17,73 @@
 │   └── vite.svg
 ├── README.md
 ├── src
+│   ├── app
+│   │   └── dashboard
+│   │       └── page.jsx
 │   ├── assets
+│   │   ├── animation
+│   │   │   ├── rocket-splash-300kb.webm
+│   │   │   └── rocket-splash-blue-background.mp4
 │   │   └── react.svg
 │   ├── client.js
 │   ├── components
+│   │   ├── ai
+│   │   │   ├── code-block.jsx
+│   │   │   ├── conversation.jsx
+│   │   │   ├── loader.jsx
+│   │   │   ├── message.jsx
+│   │   │   ├── prompt-input.jsx
+│   │   │   ├── reasoning.jsx
+│   │   │   ├── response.jsx
+│   │   │   └── source.jsx
 │   │   ├── ErrorBoundary.jsx
 │   │   ├── magicui
+│   │   │   ├── dock.jsx
 │   │   │   └── rainbow-button.jsx
+│   │   ├── SplashScreen.jsx
 │   │   └── ui
+│   │       ├── avatar.jsx
+│   │       ├── breadcrumb.jsx
+│   │       ├── button.jsx
+│   │       ├── card.jsx
+│   │       ├── collapsible.jsx
+│   │       ├── dropdown-menu.jsx
+│   │       ├── input.jsx
+│   │       ├── scroll-area.jsx
+│   │       ├── select.jsx
+│   │       ├── separator.jsx
+│   │       ├── sheet.jsx
+│   │       ├── sidebar.jsx
+│   │       ├── skeleton.jsx
+│   │       ├── textarea.jsx
+│   │       └── tooltip.jsx
+│   ├── config
+│   │   └── thirdweb.js
 │   ├── favicon.svg
 │   ├── features
 │   │   ├── auth
-│   │   │   └── Unauthenticated.jsx
+│   │   │   ├── Auth.jsx
+│   │   │   └── ProtectedRoute.jsx
 │   │   ├── chat
-│   │   │   ├── Chat.jsx
-│   │   │   └── components
-│   │   │       └── MessageBubble.jsx
+│   │   │   └── Chat.jsx
+│   │   ├── error
+│   │   │   ├── Error404.jsx
+│   │   │   └── Reroute.jsx
 │   │   ├── history
 │   │   │   └── History.jsx
 │   │   └── market
 │   │       └── MarketPulse.jsx
 │   ├── hooks
+│   │   └── useMobile.js
 │   ├── index.css
 │   ├── layouts
 │   │   ├── components
-│   │   │   ├── BottomNav.jsx
-│   │   │   └── Header.jsx
+│   │   │   ├── AppSidebar.jsx
+│   │   │   ├── MobileNav.jsx
+│   │   │   └── nav
+│   │   │       ├── NavMain.jsx
+│   │   │       ├── NavSecondary.jsx
+│   │   │       └── NavUser.jsx
 │   │   └── MainLayout.jsx
 │   ├── lib
 │   │   └── utils.js
@@ -50,9 +91,10 @@
 │   ├── pages
 │   │   └── App.jsx
 │   ├── senseai-logo.svg
+│   ├── senseai-text-logo-black-purple.svg
 │   ├── senseai-text-logo-white-purple.svg
 │   └── thirdweb.svg
 ├── tailwind.config.js
 └── vite.config.js
 
-18 directories, 38 files
+24 directories, 74 files
