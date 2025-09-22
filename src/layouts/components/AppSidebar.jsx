@@ -10,50 +10,19 @@ import {
 	SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import NavMain from '@/layouts/components/nav/NavMain';
-import NavSecondary from '@/layouts/components/nav/NavSecondary'; // We will create this
+import NavSecondary from '@/layouts/components/nav/NavSecondary';
 import NavUser from '@/layouts/components/nav/NavUser';
 import senseaiLogo from '@/senseai-logo.svg';
 
-// 1. Add mock data for the recent history items.
-const recentHistory = [
-	{ id: '1', title: 'SenseAI dApp UI/UX Review', url: '#' },
-	{ id: '2', title: 'Bitcoin On-Chain Analysis', url: '#' },
-	{ id: '3', title: 'Ethereum EIP-7702 Impact', url: '#' },
-	{ id: '4', title: 'Market Sentiment Check', url: '#' },
-	{ id: '5', title: 'Tokenomics Review', url: '#' },
-];
-
 const navData = {
 	main: [
-		{
-			title: 'Market',
-			url: '/',
-			icon: BarChart2,
-		},
-		{
-			title: 'Chat',
-			url: '/chat',
-			icon: MessageCircle,
-		},
-		{
-			title: 'History',
-			url: '/history',
-			icon: History,
-			// 2. Add the recent history data as children to the History nav item.
-			children: recentHistory,
-		},
+		{ title: 'Market', url: '/', icon: BarChart2 },
+		{ title: 'Chat', url: '/chat', icon: MessageCircle },
+		{ title: 'History', url: '/history', icon: History, hasChildren: true },
 	],
 	secondary: [
-		{
-			title: 'Support',
-			url: '#', // Replace with your support link
-			icon: LifeBuoy,
-		},
-		{
-			title: 'Feedback',
-			url: '#', // Replace with your feedback link
-			icon: Send,
-		},
+		{ title: 'Support', url: '#', icon: LifeBuoy },
+		{ title: 'Feedback', url: '#', icon: Send },
 	],
 };
 

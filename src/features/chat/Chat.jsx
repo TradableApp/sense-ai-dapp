@@ -1,10 +1,13 @@
-import { useCallback, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import cuid from 'cuid';
-import { RotateCcwIcon, Send } from 'lucide-react'; // Import Send icon
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { MicIcon, MicOffIcon, RotateCcwIcon } from 'lucide-react';
+import { useForm } from 'react-hook-form';
+import { useDispatch, useSelector } from 'react-redux';
+import { z } from 'zod';
 
-// AI Components from our project structure
-import userAvatarPlaceholder from '@/assets/react.svg'; // Placeholder for user
+import userAvatarPlaceholder from '@/assets/react.svg';
 import {
 	Conversation,
 	ConversationContent,
@@ -14,6 +17,7 @@ import Loader from '@/components/ai/loader';
 import { Message, MessageAvatar, MessageContent } from '@/components/ai/message';
 import {
 	PromptInput,
+	PromptInputButton,
 	PromptInputSubmit,
 	PromptInputTextarea,
 	PromptInputToolbar,
@@ -21,161 +25,196 @@ import {
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ai/reasoning';
 import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai/source';
 import { Button } from '@/components/ui/button';
+// --- FIX: Changed import to a default import ---
+import useSpeechRecognition from '@/hooks/useSpeechRecognition';
+import {
+	addMessageToConversation,
+	createNewConversation,
+	fetchMessagesForConversation,
+} from '@/lib/mockApi';
 import senseaiLogo from '@/senseai-logo.svg';
+import { clearActiveConversation, setActiveConversationId } from '@/store/chatSlice';
 
-// --- Configuration for Streaming ---
-// Set to true for word-by-word streaming, false for character-by-character.
 const STREAM_BY_WORD = true;
 
-const sampleResponses = [
-	{
-		content:
-			'The current sentiment for Bitcoin is cautiously optimistic. We are seeing positive momentum in several key on-chain metrics and increased social media volume.',
-		reasoning:
-			'To determine sentiment, I analyzed the Fear & Greed Index, recent whale transaction volumes from Glassnode, and the linguistic tone of the top 50 crypto influencers on X (formerly Twitter). The data points towards accumulation.',
-		sources: [
-			{
-				title: 'Alternative.me: Fear & Greed Index',
-				url: 'https://alternative.me/crypto/fear-and-greed-index/',
-			},
-			{ title: 'Glassnode: On-Chain Metrics', url: 'https://glassnode.com' },
-		],
-	},
-	{
-		content:
-			"An upcoming significant event for Ethereum is the EIP-7702 proposal, which aims to improve account abstraction. This could reduce transaction costs for users and is scheduled for the next major network upgrade, 'Pectra'.",
-		reasoning:
-			'This information is sourced from the official Ethereum Improvement Proposal repository and recent developer consensus call notes. The community sentiment around this proposal is largely positive.',
-		sources: [{ title: 'EIP-7702 Proposal Details', url: 'https://eip7702.com' }],
-	},
-];
-
-const INITIAL_MESSAGE = {
-	id: cuid(),
-	// 3. Customize the initial greeting
-	content:
-		'Hello! I am SenseAI. Ask me about crypto market sentiment, upcoming fundamental events, or on-chain data analysis.',
-	role: 'assistant',
-	timestamp: new Date(),
-	sources: [
-		{ title: 'Learn about SenseAI', url: '#' },
-		{ title: 'View Market Pulse', url: '/' },
-	],
-};
+const promptSchema = z.object({
+	prompt: z
+		.string()
+		.trim()
+		.min(1, { message: 'Message cannot be empty.' })
+		.max(5000, { message: 'Message must be 5000 characters or less.' }),
+});
 
 export default function Chat() {
-	const [messages, setMessages] = useState([INITIAL_MESSAGE]);
-	const [inputValue, setInputValue] = useState('');
-	const [isTyping, setIsTyping] = useState(false);
+	const dispatch = useDispatch();
+	const queryClient = useQueryClient();
+	const activeConversationId = useSelector(state => state.chat.activeConversationId);
+	const [animatedContents, setAnimatedContents] = useState({});
+	const activeTimersRef = useRef({});
+	const prevMessagesRef = useRef([]);
 
-	const simulateTyping = useCallback((messageId, content, reasoning, sources) => {
-		if (STREAM_BY_WORD) {
-			// Word-by-word streaming
-			const words = content.split(' ');
-			let currentWordIndex = 0;
-			const typeInterval = setInterval(() => {
-				setMessages(prev =>
-					prev.map(msg => {
-						if (msg.id === messageId) {
-							const currentContent = words.slice(0, currentWordIndex).join(' ');
-							const isFinished = currentWordIndex >= words.length;
-							return {
-								...msg,
-								content: currentContent,
-								isStreaming: !isFinished,
-								reasoning: isFinished ? reasoning : undefined,
-								sources: isFinished ? sources : undefined,
-							};
-						}
-						return msg;
-					}),
-				);
+	const {
+		register,
+		handleSubmit,
+		reset,
+		setValue,
+		watch,
+		formState: { errors, isSubmitting, isValid },
+	} = useForm({
+		resolver: zodResolver(promptSchema),
+		mode: 'onChange',
+		defaultValues: { prompt: '' },
+	});
 
-				currentWordIndex += 1;
+	const { isListening, transcript, startListening, stopListening, isSupported } =
+		useSpeechRecognition();
+	const currentPrompt = watch('prompt');
 
-				if (currentWordIndex > words.length) {
-					clearInterval(typeInterval);
-					setIsTyping(false);
-				}
-			}, 120); // Slower interval for words
-			return () => clearInterval(typeInterval);
+	useEffect(() => {
+		if (transcript) {
+			setValue('prompt', transcript, { shouldValidate: true });
 		}
+	}, [transcript, setValue]);
 
-		// Character-by-character streaming (original logic)
-		let currentIndex = 0;
-		const typeInterval = setInterval(() => {
-			setMessages(prev =>
-				prev.map(msg => {
-					if (msg.id === messageId) {
-						const currentContent = content.slice(0, currentIndex);
-						const isFinished = currentIndex >= content.length;
-						return {
-							...msg,
-							content: currentContent,
-							isStreaming: !isFinished,
-							reasoning: isFinished ? reasoning : undefined,
-							sources: isFinished ? sources : undefined,
-						};
-					}
-					return msg;
-				}),
-			);
-			currentIndex += Math.random() > 0.1 ? 1 : 0; // Simulate organic typing
+	const { data: messages, isLoading } = useQuery({
+		queryKey: ['messages', activeConversationId],
+		queryFn: () => fetchMessagesForConversation(activeConversationId),
+		enabled: !!activeConversationId,
+		refetchInterval: 1000,
+	});
+	console.log('messages', messages);
 
-			if (currentIndex >= content.length) {
-				clearInterval(typeInterval);
-				setIsTyping(false);
-			}
-		}, 50);
-		return () => clearInterval(typeInterval);
-	}, []);
-
-	const handleSubmit = useCallback(
-		event => {
-			event.preventDefault();
-			if (!inputValue.trim() || isTyping) return;
-
-			const userMessage = {
-				id: cuid(),
-				content: inputValue.trim(),
-				role: 'user',
-				timestamp: new Date(),
-			};
-			setMessages(prev => [...prev, userMessage]);
-			setInputValue('');
-			setIsTyping(true);
-
-			setTimeout(() => {
-				const responseData = sampleResponses[Math.floor(Math.random() * sampleResponses.length)];
-				const assistantMessageId = cuid();
-				const assistantMessage = {
-					id: assistantMessageId,
-					content: '',
-					role: 'assistant',
-					timestamp: new Date(),
-					isStreaming: true,
-				};
-				setMessages(prev => [...prev, assistantMessage]);
-				simulateTyping(
-					assistantMessageId,
-					responseData.content,
-					responseData.reasoning,
-					responseData.sources,
-				);
-			}, 800);
+	useEffect(
+		() => () => {
+			Object.values(activeTimersRef.current).forEach(clearInterval);
 		},
-		[inputValue, isTyping, simulateTyping],
+		[],
 	);
 
-	const handleReset = useCallback(() => {
-		setMessages([INITIAL_MESSAGE]);
-		setInputValue('');
-		setIsTyping(false);
-	}, []);
+	const handleMutationSuccess = newConversation => {
+		queryClient.invalidateQueries({ queryKey: ['conversations'] });
+		if (newConversation) {
+			dispatch(setActiveConversationId(newConversation.id));
+		}
+		queryClient.invalidateQueries({ queryKey: ['messages', activeConversationId] });
+	};
+
+	const newConversationMutation = useMutation({
+		mutationFn: createNewConversation,
+		onSuccess: handleMutationSuccess,
+	});
+
+	const addMessageMutation = useMutation({
+		mutationFn: variables =>
+			addMessageToConversation(variables.conversationId, variables.parentId, variables.content),
+		onSuccess: () => handleMutationSuccess(null),
+	});
+
+	const simulateTyping = message => {
+		const targetContent = message.content;
+		const streamFn = STREAM_BY_WORD
+			? (content, i) =>
+					content
+						.split(' ')
+						.slice(0, i + 1)
+						.join(' ')
+			: (content, i) => content.slice(0, i + 1);
+		const interval = STREAM_BY_WORD ? 120 : 50;
+		let index = 0;
+
+		setAnimatedContents(prev => ({ ...prev, [message.id]: '' }));
+
+		if (activeTimersRef.current[message.id]) {
+			clearInterval(activeTimersRef.current[message.id]);
+		}
+
+		const timer = setInterval(() => {
+			const currentContent = streamFn(targetContent, index);
+			index += 1;
+			setAnimatedContents(prev => ({ ...prev, [message.id]: currentContent }));
+
+			if (currentContent.length >= targetContent.length) {
+				clearInterval(timer);
+				delete activeTimersRef.current[message.id];
+			}
+		}, interval);
+
+		activeTimersRef.current[message.id] = timer;
+	};
+
+	useEffect(() => {
+		const lastMessage = messages?.at(-1);
+		const prevLastMessage = prevMessagesRef.current?.at(-1);
+
+		if (
+			lastMessage?.role === 'assistant' &&
+			lastMessage.content &&
+			!prevLastMessage?.content &&
+			lastMessage.id === prevLastMessage?.id
+		) {
+			simulateTyping(lastMessage);
+		}
+
+		prevMessagesRef.current = messages;
+	}, [messages]);
+
+	const onSubmit = data => {
+		const lastMessage = messages?.at(-1);
+		if (lastMessage?.role === 'assistant') {
+			setAnimatedContents(prev => ({ ...prev, [lastMessage.id]: lastMessage.content }));
+		}
+		stopListening();
+
+		const parentId = messages?.at(-1)?.id || null;
+		if (activeConversationId) {
+			addMessageMutation.mutate({
+				conversationId: activeConversationId,
+				parentId,
+				content: data.prompt,
+			});
+		} else {
+			newConversationMutation.mutate(data.prompt);
+		}
+		reset();
+	};
+
+	const handleReset = () => {
+		dispatch(clearActiveConversation());
+		setAnimatedContents({});
+		Object.values(activeTimersRef.current).forEach(clearInterval);
+		activeTimersRef.current = {};
+		prevMessagesRef.current = [];
+		stopListening();
+	};
+
+	const handleVoiceClick = () => {
+		if (isListening) {
+			stopListening();
+		} else {
+			setValue('prompt', currentPrompt, { shouldValidate: true });
+			startListening();
+		}
+	};
+
+	const isProcessing =
+		isSubmitting || addMessageMutation.isPending || newConversationMutation.isPending;
+
+	const messagesToDisplay = messages || [];
+	const lastMessage = messagesToDisplay.at(-1);
+	const isAiThinking = lastMessage?.role === 'assistant' && !lastMessage.content;
+
+	const hasValidationError = !!errors.prompt;
+	const isAiWorking = isProcessing || isAiThinking;
+
+	const submitStatus = (() => {
+		if (hasValidationError) return 'error';
+		if (isAiThinking) return 'streaming';
+		if (isProcessing) return 'submitted';
+		return 'ready';
+	})();
 
 	return (
 		<div className="flex h-full w-full flex-col overflow-hidden rounded-xl border bg-primary-foreground shadow-sm">
-			{/* Header */}
 			<div className="flex items-center justify-between border-b bg-muted/50 px-4 py-3">
 				<div className="flex items-center gap-3">
 					<div className="flex items-center gap-2">
@@ -188,73 +227,105 @@ export default function Chat() {
 					<span className="ml-1">Reset Chat</span>
 				</Button>
 			</div>
-
-			{/* Conversation Area */}
 			<Conversation className="flex-1">
 				<ConversationContent className="space-y-4">
-					{messages.map(message => (
-						<div key={message.id} className="space-y-3">
-							<Message from={message.role} className="items-start">
-								<MessageContent>
-									{message.isStreaming && message.content === '' ? (
-										<div className="flex items-center gap-2">
-											<Loader size={14} />
-											<span className="text-muted-foreground text-sm">Thinking...</span>
-										</div>
-									) : (
-										message.content
-									)}
-								</MessageContent>
-								<MessageAvatar
-									src={message.role === 'user' ? userAvatarPlaceholder : senseaiLogo}
-									name={message.role === 'user' ? 'You' : 'SenseAI'}
-								/>
-							</Message>
-							{message.reasoning && (
-								<div className="ml-10">
-									<Reasoning isStreaming={message.isStreaming} defaultOpen={false}>
-										<ReasoningTrigger />
-										<ReasoningContent>{message.reasoning}</ReasoningContent>
-									</Reasoning>
-								</div>
-							)}
-							{message.sources && message.sources.length > 0 && (
-								<div className="ml-10">
-									<Sources>
-										<SourcesTrigger count={message.sources.length} />
-										<SourcesContent>
-											{message.sources.map((source, index) => (
-												<Source key={index} href={source.url} title={source.title} />
-											))}
-										</SourcesContent>
-									</Sources>
-								</div>
-							)}
+					{isLoading && !messagesToDisplay.length && (
+						<div className="flex items-center justify-center h-full">
+							<Loader />
 						</div>
-					))}
+					)}
+					{!activeConversationId && !isLoading && !isProcessing && (
+						<div className="flex h-full flex-col items-center justify-center text-center p-4">
+							<img src={senseaiLogo} alt="SenseAI" className="size-24 mb-4" />
+							<h2 className="text-xl font-semibold">Start a new conversation</h2>
+							<p className="text-muted-foreground max-w-sm mx-auto">
+								Type a message below to begin.
+							</p>
+						</div>
+					)}
+					{messagesToDisplay.map(message => {
+						const isAssistant = message.role === 'assistant';
+						const isThinking = isAssistant && !message.content;
+						const animatedContent = animatedContents[message.id];
+						const isTyping =
+							isAssistant &&
+							animatedContent != null &&
+							animatedContent.length < (message.content?.length ?? 0);
+
+						return (
+							<div key={message.id} className="space-y-3">
+								<Message from={message.role} className="items-start">
+									<MessageContent>
+										{isThinking ? (
+											<div className="flex items-center gap-2">
+												<Loader size={14} />
+												<span className="text-muted-foreground text-sm">Thinking...</span>
+											</div>
+										) : (
+											<>
+												{animatedContent ?? message.content}
+												{isTyping && <span className="animate-pulse">▍</span>}
+											</>
+										)}
+									</MessageContent>
+									<MessageAvatar
+										src={message.role === 'user' ? userAvatarPlaceholder : senseaiLogo}
+										name={message.role === 'user' ? 'You' : 'SenseAI'}
+									/>
+								</Message>
+								{message.reasoning && message.reasoning.length > 0 && (
+									<div className="ml-10">
+										<Reasoning isStreaming={isThinking} defaultOpen={false}>
+											<ReasoningTrigger />
+											<ReasoningContent>{message.reasoning}</ReasoningContent>
+										</Reasoning>
+									</div>
+								)}
+								{message.sources && message.sources.length > 0 && (
+									<div className="ml-10">
+										<Sources>
+											<SourcesTrigger count={message.sources.length} />
+											<SourcesContent>
+												{message.sources.map(source => (
+													<Source
+														key={`${source.url}${source.title}`}
+														href={source.url}
+														title={source.title}
+													/>
+												))}
+											</SourcesContent>
+										</Sources>
+									</div>
+								)}
+							</div>
+						);
+					})}
 				</ConversationContent>
 				<ConversationScrollButton />
 			</Conversation>
-
-			{/* Input Area */}
 			<div className="border-t p-4">
-				<PromptInput onSubmit={handleSubmit}>
+				<PromptInput onSubmit={handleSubmit(onSubmit)} errors={errors}>
 					<PromptInputTextarea
-						value={inputValue}
-						onChange={e => setInputValue(e.target.value)}
-						// 5. Customize placeholder text
 						placeholder="Ask about market sentiment, on-chain data..."
-						disabled={isTyping}
+						disabled={isAiWorking || isListening}
+						{...register('prompt')}
 					/>
 					<PromptInputToolbar>
-						{/* 6. Simplified toolbar - submit button only */}
-						<PromptInputSubmit
-							disabled={!inputValue.trim() || isTyping}
-							status={isTyping ? 'streaming' : 'ready'}
-						>
-							<Send />
-						</PromptInputSubmit>
+						{isSupported && (
+							<PromptInputButton
+								onClick={handleVoiceClick}
+								disabled={isAiWorking}
+								className={isListening ? 'text-destructive' : ''}
+							>
+								{isListening ? <MicOffIcon size={16} /> : <MicIcon size={16} />}
+								<span>{isListening ? 'Stop' : 'Voice'}</span>
+							</PromptInputButton>
+						)}
+						<PromptInputSubmit disabled={!isValid || isAiWorking} status={submitStatus} />
 					</PromptInputToolbar>
+					{hasValidationError && (
+						<p className="text-xs text-destructive p-2">{errors.prompt.message}</p>
+					)}
 				</PromptInput>
 			</div>
 		</div>

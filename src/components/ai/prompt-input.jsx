@@ -1,6 +1,6 @@
 'use client';
 
-import { Children } from 'react';
+import { Children, forwardRef } from 'react';
 
 import { Loader2Icon, SendIcon, SquareIcon, XIcon } from 'lucide-react';
 
@@ -15,11 +15,17 @@ import {
 import Textarea from '@/components/ui/textarea';
 import cn from '@/lib/utils';
 
-export function PromptInput({ className, ...props }) {
+// The 'errors' prop is now accepted to control the styling
+export function PromptInput({ errors, className, ...props }) {
+	// Only show the error state for messages other than the "empty" validation.
+	const hasVisibleError = !!errors?.prompt && errors.prompt.message !== 'Message cannot be empty.';
+
 	return (
 		<form
 			className={cn(
 				'w-full divide-y overflow-hidden rounded-xl border bg-card shadow-sm',
+				// If there's a visible prompt error, apply the destructive border color
+				hasVisibleError && 'border-destructive',
 				className,
 			)}
 			{...props}
@@ -27,47 +33,51 @@ export function PromptInput({ className, ...props }) {
 	);
 }
 
-export function PromptInputTextarea({
-	onChange,
-	className,
-	placeholder = 'What would you like to know?',
-	minHeight = 48,
-	maxHeight = 164,
-	...props
-}) {
-	const handleKeyDown = e => {
-		if (e.key === 'Enter') {
-			if (e.shiftKey) {
-				// Allow newline
-				return;
+export const PromptInputTextarea = forwardRef(
+	(
+		{
+			onChange,
+			className,
+			placeholder = 'What would you like to know?',
+			minHeight = 48,
+			maxHeight = 164,
+			...props
+		},
+		ref,
+	) => {
+		const handleKeyDown = e => {
+			if (e.key === 'Enter') {
+				if (e.shiftKey) {
+					return;
+				}
+				e.preventDefault();
+				const { form } = e.currentTarget;
+				if (form) {
+					form.requestSubmit();
+				}
 			}
-			// Submit on Enter (without Shift)
-			e.preventDefault();
-			const { form } = e.currentTarget;
-			if (form) {
-				form.requestSubmit();
-			}
-		}
-	};
-
-	return (
-		<Textarea
-			className={cn(
-				'w-full resize-none rounded-none border-none p-3 shadow-none outline-none ring-0',
-				'field-sizing-content max-h-[6lh] bg-transparent dark:bg-transparent',
-				'focus-visible:ring-0',
-				className,
-			)}
-			name="message"
-			onChange={e => {
-				onChange?.(e);
-			}}
-			onKeyDown={handleKeyDown}
-			placeholder={placeholder}
-			{...props}
-		/>
-	);
-}
+		};
+		return (
+			<Textarea
+				ref={ref}
+				className={cn(
+					'w-full resize-none rounded-none border-none p-3 shadow-none outline-none ring-0',
+					'field-sizing-content max-h-[6lh] bg-transparent dark:bg-transparent',
+					'focus-visible:ring-0',
+					className,
+				)}
+				name="message"
+				onChange={e => {
+					onChange?.(e);
+				}}
+				onKeyDown={handleKeyDown}
+				placeholder={placeholder}
+				{...props}
+			/>
+		);
+	},
+);
+PromptInputTextarea.displayName = 'PromptInputTextarea';
 
 export function PromptInputToolbar({ className, ...props }) {
 	return <div className={cn('flex items-center justify-between p-1', className)} {...props} />;
@@ -132,7 +142,6 @@ export function PromptInputSubmit({
 export function PromptInputModelSelect(props) {
 	return <Select {...props} />;
 }
-
 export function PromptInputModelSelectTrigger({ className, ...props }) {
 	return (
 		<SelectTrigger
@@ -145,15 +154,12 @@ export function PromptInputModelSelectTrigger({ className, ...props }) {
 		/>
 	);
 }
-
 export function PromptInputModelSelectContent({ className, ...props }) {
 	return <SelectContent className={cn(className)} {...props} />;
 }
-
 export function PromptInputModelSelectItem({ className, ...props }) {
 	return <SelectItem className={cn(className)} {...props} />;
 }
-
 export function PromptInputModelSelectValue({ className, ...props }) {
 	return <SelectValue className={cn(className)} {...props} />;
 }

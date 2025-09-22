@@ -46,6 +46,7 @@
 │   │       ├── breadcrumb.jsx
 │   │       ├── button.jsx
 │   │       ├── card.jsx
+│   │       ├── checkbox.jsx
 │   │       ├── collapsible.jsx
 │   │       ├── dropdown-menu.jsx
 │   │       ├── input.jsx
@@ -55,6 +56,7 @@
 │   │       ├── sheet.jsx
 │   │       ├── sidebar.jsx
 │   │       ├── skeleton.jsx
+│   │       ├── table.jsx
 │   │       ├── textarea.jsx
 │   │       └── tooltip.jsx
 │   ├── config
@@ -97,4 +99,4 @@
 ├── tailwind.config.js
 └── vite.config.js
 
-24 directories, 74 files
+24 directories, 76 files
