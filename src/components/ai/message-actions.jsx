@@ -6,12 +6,12 @@ import {
 	ChevronLeftIcon,
 	ChevronRightIcon,
 	CopyIcon,
-	GitFork,
 	Mic,
 	MoreHorizontal,
 	RotateCcwIcon,
 	Share,
 	Sparkles,
+	Split,
 	ThumbsDown,
 	ThumbsUp,
 } from 'lucide-react';
@@ -24,6 +24,7 @@ import {
 	DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { copyMarkdownToClipboard } from '@/lib/utils';
 
 function ActionButton({ label, icon, onClick }) {
 	const Icon = icon;
@@ -50,11 +51,9 @@ function ActionButton({ label, icon, onClick }) {
 
 function DropdownAction({ label, icon, children, align }) {
 	const Icon = icon;
-	// --- FIX: Removed the unused isDropdownOpen state ---
 	const [isTooltipOpen, setIsTooltipOpen] = useState(false);
 
 	const handleDropdownOpenChange = open => {
-		// When the dropdown opens, we must force the tooltip to close.
 		if (open) {
 			setIsTooltipOpen(false);
 		}
@@ -81,13 +80,18 @@ function DropdownAction({ label, icon, children, align }) {
 	);
 }
 
-export default function MessageActions({ message, versionInfo, onRegenerate, onNavigate }) {
+export default function MessageActions({
+	message,
+	versionInfo,
+	onRegenerate,
+	onNavigate,
+	onBranch,
+}) {
 	const [isCopied, setIsCopied] = useState(false);
 	const [rating, setRating] = useState(null);
 
 	const handleCopy = async () => {
 		if (!message?.content) return;
-		const { copyMarkdownToClipboard } = await import('@/lib/utils');
 		const success = await copyMarkdownToClipboard(message.content);
 		if (success) {
 			setIsCopied(true);
@@ -219,8 +223,8 @@ export default function MessageActions({ message, versionInfo, onRegenerate, onN
 			</DropdownAction>
 
 			<DropdownAction label="More actions" icon={MoreHorizontal} align="end">
-				<DropdownMenuItem>
-					<GitFork className="mr-2 size-4 rotate-180" />
+				<DropdownMenuItem onClick={onBranch}>
+					<Split className="mr-2 size-4 rotate-90" />
 					Branch in new chat
 				</DropdownMenuItem>
 				<DropdownMenuItem>

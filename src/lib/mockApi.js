@@ -54,7 +54,6 @@ export const fetchConversations = async () => {
 	const conversations = liveConversations
 		.filter(c => !c.isDeleted)
 		.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-	// --- FIX: Return a deep copy of the array to ensure TanStack Query detects changes ---
 	return JSON.parse(JSON.stringify(conversations));
 };
 
@@ -155,6 +154,43 @@ export const regenerateAssistantResponse = async (
 	}
 	simulateOracleProcess(aiPlaceholder.id, conversationId, finalQuery);
 	return aiPlaceholder;
+};
+
+export const branchConversation = async (originalConversationId, branchPointMessageId) => {
+	await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
+
+	const originalConversation = liveConversations.find(c => c.id === originalConversationId);
+	if (!originalConversation) throw new Error('Original conversation not found');
+
+	const allOriginalMessages = liveMessages.filter(m => m.conversationId === originalConversationId);
+	const messageMap = new Map(allOriginalMessages.map(m => [m.id, m]));
+	const historyToBranch = [];
+	let currentId = branchPointMessageId;
+	while (currentId && messageMap.has(currentId)) {
+		historyToBranch.unshift(messageMap.get(currentId));
+		currentId = messageMap.get(currentId).parentId;
+	}
+
+	const now = Date.now();
+	const newConversation = {
+		id: `conv_${now}`,
+		ownerAddress: '0x123...',
+		title: `Branch · ${originalConversation.title.replace('Branch · ', '')}`,
+		isDeleted: false,
+		branchedFromConversationId: originalConversationId,
+		branchedAtMessageId: branchPointMessageId,
+	};
+	liveConversations.push(newConversation);
+
+	const newMessages = historyToBranch.map(msg => ({
+		...JSON.parse(JSON.stringify(msg)),
+		conversationId: newConversation.id,
+	}));
+	liveMessages.push(...newMessages);
+
+	updateConversationMeta(newConversation.id);
+
+	return newConversation;
 };
 
 export const createNewConversation = async firstMessageContent => {

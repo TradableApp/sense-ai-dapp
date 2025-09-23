@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MicIcon, RotateCcwIcon } from 'lucide-react';
+import { MicIcon, RotateCcwIcon, Split } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import ReactMarkdown from 'react-markdown';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { z } from 'zod';
@@ -32,8 +33,10 @@ import UserMessageActions from '@/components/ai/user-message-actions';
 import { Button } from '@/components/ui/button';
 import {
 	addMessageToConversation,
+	branchConversation,
 	createNewConversation,
 	editUserMessage,
+	fetchConversations,
 	fetchMessagesForConversation,
 	regenerateAssistantResponse,
 } from '@/lib/mockApi';
@@ -46,6 +49,30 @@ function MarkdownParagraph({ children }) {
 }
 const markdownComponents = { p: MarkdownParagraph };
 
+function BranchInfo({ originalConversationId, onNavigate }) {
+	const { data: conversations } = useQuery({
+		queryKey: ['conversations'],
+		queryFn: fetchConversations,
+	});
+	const originalConversation = conversations?.find(c => c.id === originalConversationId);
+
+	if (!originalConversation) return null;
+
+	return (
+		<div className="flex items-center justify-center p-2 text-sm">
+			<button
+				type="button"
+				onClick={() => onNavigate(originalConversationId)}
+				className="flex items-center gap-2 text-muted-foreground hover:text-foreground"
+			>
+				<Split className="size-4 rotate-90" />
+				See original conversation{' '}
+				<span className="font-semibold text-primary">{originalConversation.title}</span>
+			</button>
+		</div>
+	);
+}
+
 const STREAM_BY_WORD = true;
 const promptSchema = z.object({
 	prompt: z.string().trim().min(1, { message: 'Message cannot be empty.' }).max(5000),
@@ -54,6 +81,7 @@ const promptSchema = z.object({
 export default function Chat() {
 	const dispatch = useDispatch();
 	const queryClient = useQueryClient();
+	const navigate = useNavigate();
 	const activeConversationId = useSelector(state => state.chat.activeConversationId);
 	const [animatedContents, setAnimatedContents] = useState({});
 	const activeTimersRef = useRef({});
@@ -80,6 +108,12 @@ export default function Chat() {
 		enabled: !!activeConversationId,
 		refetchInterval: 1000,
 	});
+
+	const { data: conversations } = useQuery({
+		queryKey: ['conversations'],
+		queryFn: fetchConversations,
+	});
+	const currentConversation = conversations?.find(c => c.id === activeConversationId);
 
 	const { messagesToDisplay, versionInfo } = useMemo(() => {
 		if (!allMessages || allMessages.length === 0) {
@@ -119,7 +153,7 @@ export default function Chat() {
 		return { messagesToDisplay: displayPath, versionInfo: versions };
 	}, [allMessages, activeMessageId]);
 
-	// --- FIX: This new useEffect resets local state when the conversation changes ---
+	// --- FIX: This crucial useEffect is restored ---
 	useEffect(() => {
 		// When the active conversation ID from Redux changes, reset the local state
 		// to ensure we don't carry over the state from the previous conversation.
@@ -184,6 +218,18 @@ export default function Chat() {
 		},
 	});
 
+	const branchConversationMutation = useMutation({
+		mutationFn: variables =>
+			branchConversation(variables.originalConversationId, variables.branchPointMessageId),
+		onSuccess: newConversation => {
+			if (newConversation) {
+				queryClient.invalidateQueries({ queryKey: ['conversations'] });
+				dispatch(setActiveConversationId(newConversation.id));
+				navigate('/chat');
+			}
+		},
+	});
+
 	const handleRegenerate = (aiMessageToRegenerate, mode = 'default') => {
 		const userPrompt = allMessages.find(m => m.id === aiMessageToRegenerate.parentId);
 		if (userPrompt) {
@@ -229,6 +275,13 @@ export default function Chat() {
 			}
 		}
 		setActiveMessageId(latestMessageInBranch.id);
+	};
+
+	const handleBranch = messageToBranchFrom => {
+		branchConversationMutation.mutate({
+			originalConversationId: activeConversationId,
+			branchPointMessageId: messageToBranchFrom.id,
+		});
 	};
 
 	const simulateTyping = message => {
@@ -305,7 +358,8 @@ export default function Chat() {
 		addMessageMutation.isPending ||
 		newConversationMutation.isPending ||
 		regenerateMutation.isPending ||
-		editUserMessageMutation.isPending;
+		editUserMessageMutation.isPending ||
+		branchConversationMutation.isPending;
 
 	const lastMessage = messagesToDisplay.at(-1);
 	const isAiThinking = lastMessage?.role === 'assistant' && !lastMessage.content;
@@ -405,8 +459,18 @@ export default function Chat() {
 												versionInfo={versionInfo[message.id]}
 												onRegenerate={mode => handleRegenerate(message, mode)}
 												onNavigate={handleNavigate}
+												onBranch={() => handleBranch(message)}
 											/>
 										</>
+									)}
+									{message.id === currentConversation?.branchedAtMessageId && (
+										<BranchInfo
+											originalConversationId={currentConversation.branchedFromConversationId}
+											onNavigate={originalId => {
+												dispatch(setActiveConversationId(originalId));
+												navigate('/chat');
+											}}
+										/>
 									)}
 								</div>
 							);
@@ -437,6 +501,15 @@ export default function Chat() {
 										onNavigate={handleNavigate}
 									/>
 								</div>
+								{message.id === currentConversation?.branchedAtMessageId && (
+									<BranchInfo
+										originalConversationId={currentConversation.branchedFromConversationId}
+										onNavigate={originalId => {
+											dispatch(setActiveConversationId(originalId));
+											navigate('/chat');
+										}}
+									/>
+								)}
 							</div>
 						);
 					})}
