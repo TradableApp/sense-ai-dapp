@@ -6,7 +6,7 @@ import { ArrowDownIcon } from 'lucide-react';
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom';
 
 import { Button } from '@/components/ui/button';
-import cn from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 export function Conversation({ className, ...props }) {
 	return (

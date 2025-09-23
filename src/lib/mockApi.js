@@ -1,25 +1,18 @@
 /* eslint-disable no-promise-executor-return */
 import { mockAiResponseTemplates, mockReasoningPool, mockSourcesPool } from './mockData';
 
-// This is our live, in-memory "database". It starts empty.
 const liveConversations = [];
 const liveMessages = [];
-
 const MOCK_DELAY = 300;
-// Delay for individual reasoning steps.
 const MOCK_REASONING_STEP_DELAY = 900;
 
-// --- Helper to dynamically update conversation metadata ---
 const updateConversationMeta = conversationId => {
 	const conversation = liveConversations.find(c => c.id === conversationId);
 	if (!conversation) return;
-
 	const lastMessage = liveMessages
 		.filter(m => m.conversationId === conversationId)
 		.sort((a, b) => b.timestamp - a.timestamp)[0];
-
 	if (lastMessage) {
-		// Use the user's prompt for the preview until the AI finishes.
 		const preview =
 			lastMessage.role === 'assistant' && !lastMessage.content
 				? liveMessages.find(m => m.id === lastMessage.parentId)?.content
@@ -29,39 +22,33 @@ const updateConversationMeta = conversationId => {
 	}
 };
 
-/**
- * Simulates the Oracle's process: thinking, then writing.
- * This function runs in the background and mutates the message object in the live store.
- * @param {string} aiMessageId - The ID of the message to populate.
- * @param {string} conversationId - The ID of the conversation.
- * @param {string} userQuery - The original user query for context.
- */
 const simulateOracleProcess = async (aiMessageId, conversationId, userQuery) => {
+	const thinkingStartTime = Date.now();
 	const reasoningSteps = mockReasoningPool[Math.floor(Math.random() * mockReasoningPool.length)];
 
-	// 1. Simulate "Thinking" by revealing one thought at a time.
-	for (const step of reasoningSteps) {
+	// --- FIX: Replaced for...of loop with a promise-based reduce chain ---
+	await reasoningSteps.reduce(async (promise, step) => {
+		await promise;
 		await new Promise(resolve => setTimeout(resolve, MOCK_REASONING_STEP_DELAY));
 		const messageIndex = liveMessages.findIndex(m => m.id === aiMessageId);
 		if (messageIndex !== -1) {
 			liveMessages[messageIndex].reasoning.push(step);
 		}
-	}
+	}, Promise.resolve());
 
-	// 2. Simulate "Writing" the final answer after thinking is complete.
 	await new Promise(resolve => setTimeout(resolve, MOCK_REASONING_STEP_DELAY));
 	const messageIndex = liveMessages.findIndex(m => m.id === aiMessageId);
 	if (messageIndex !== -1) {
 		const template =
 			mockAiResponseTemplates[Math.floor(Math.random() * mockAiResponseTemplates.length)];
+		const durationInSeconds = Math.round((Date.now() - thinkingStartTime) / 1000);
 		liveMessages[messageIndex].content = template.replace('{query}', userQuery.substring(0, 20));
 		liveMessages[messageIndex].sources =
 			mockSourcesPool[Math.floor(Math.random() * mockSourcesPool.length)];
+		liveMessages[messageIndex].reasoningDuration = durationInSeconds;
 		updateConversationMeta(conversationId);
 	}
 };
-
-// --- READ OPERATIONS ---
 
 export const fetchConversations = async () => {
 	await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
@@ -76,21 +63,12 @@ export const fetchMessagesForConversation = async conversationId => {
 	const messages = liveMessages
 		.filter(m => m.conversationId === conversationId)
 		.sort((a, b) => a.timestamp - b.timestamp);
-
-	// --- FIX ---
-	// Return a deep copy of the messages to ensure TanStack Query's change
-	// detection is triggered correctly. Without this, the component will not
-	// re-render as the underlying object references would not change.
 	return JSON.parse(JSON.stringify(messages));
 };
-
-// --- WRITE OPERATIONS (MUTATIONS) ---
 
 export const addMessageToConversation = async (conversationId, parentId, messageContent) => {
 	await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
 	const now = Date.now();
-
-	// 1. Immediately add the user's message to the store.
 	const userMessage = {
 		id: `msg_${now}`,
 		conversationId,
@@ -102,25 +80,79 @@ export const addMessageToConversation = async (conversationId, parentId, message
 		timestamp: now,
 	};
 	liveMessages.push(userMessage);
-
-	// 2. Immediately add the AI's placeholder response.
 	const aiPlaceholder = {
 		id: `msg_${now + 1}`,
 		conversationId,
 		parentId: userMessage.id,
 		role: 'assistant',
-		content: null, // Content is null until the Oracle "writes" it.
-		reasoning: [], // Reasoning starts empty and will be populated.
-		sources: null, // Sources are null until the Oracle "writes" them.
+		content: null,
+		reasoning: [],
+		sources: null,
 		timestamp: now + 1,
 	};
 	liveMessages.push(aiPlaceholder);
 	updateConversationMeta(conversationId);
-
-	// 3. Start the Oracle simulation in the background (do not await).
 	simulateOracleProcess(aiPlaceholder.id, conversationId, messageContent);
+	return aiPlaceholder;
+};
 
-	// 4. Return the placeholder immediately so the UI can show the "Thinking" state.
+export const editUserMessage = async (conversationId, parentId, newContent) => {
+	await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
+	const now = Date.now();
+	const editedUserMessage = {
+		id: `msg_${now}`,
+		conversationId,
+		parentId,
+		role: 'user',
+		content: newContent,
+		reasoning: null,
+		sources: null,
+		timestamp: now,
+	};
+	liveMessages.push(editedUserMessage);
+	const aiPlaceholder = {
+		id: `msg_${now + 1}`,
+		conversationId,
+		parentId: editedUserMessage.id,
+		role: 'assistant',
+		content: null,
+		reasoning: [],
+		sources: null,
+		timestamp: now + 1,
+	};
+	liveMessages.push(aiPlaceholder);
+	updateConversationMeta(conversationId);
+	simulateOracleProcess(aiPlaceholder.id, conversationId, newContent);
+	return editedUserMessage;
+};
+
+export const regenerateAssistantResponse = async (
+	conversationId,
+	parentId,
+	originalUserQuery,
+	regenerationMode = 'default',
+) => {
+	await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
+	const now = Date.now();
+	const aiPlaceholder = {
+		id: `msg_${now + 1}`,
+		conversationId,
+		parentId,
+		role: 'assistant',
+		content: null,
+		reasoning: [],
+		sources: null,
+		timestamp: now + 1,
+	};
+	liveMessages.push(aiPlaceholder);
+	updateConversationMeta(conversationId);
+	let finalQuery = originalUserQuery;
+	if (regenerationMode === 'detailed') {
+		finalQuery = `Provide a more detailed analysis for: ${originalUserQuery}`;
+	} else if (regenerationMode === 'concise') {
+		finalQuery = `Provide a more concise summary for: ${originalUserQuery}`;
+	}
+	simulateOracleProcess(aiPlaceholder.id, conversationId, finalQuery);
 	return aiPlaceholder;
 };
 
@@ -129,15 +161,11 @@ export const createNewConversation = async firstMessageContent => {
 	const now = Date.now();
 	const newConversation = {
 		id: `conv_${now}`,
-		ownerAddress: '0x123...', // This would be dynamic in a real app
+		ownerAddress: '0x123...',
 		title: firstMessageContent.substring(0, 40) + (firstMessageContent.length > 40 ? '...' : ''),
 		isDeleted: false,
-		// lastMessagePreview and updatedAt will be set by addMessageToConversation
 	};
 	liveConversations.push(newConversation);
-
-	// This now correctly calls the function, which will quickly add the user message
-	// and AI placeholder, then start the background process.
 	await addMessageToConversation(newConversation.id, null, firstMessageContent);
 	return newConversation;
 };

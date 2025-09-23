@@ -2,7 +2,7 @@
 
 import { Children, forwardRef } from 'react';
 
-import { Loader2Icon, SendIcon, SquareIcon, XIcon } from 'lucide-react';
+import { Loader2Icon, SendHorizontalIcon, SendIcon, SquareIcon, XIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -13,7 +13,7 @@ import {
 	SelectValue,
 } from '@/components/ui/select';
 import Textarea from '@/components/ui/textarea';
-import cn from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 // The 'errors' prop is now accepted to control the styling
 export function PromptInput({ errors, className, ...props }) {
@@ -123,6 +123,8 @@ export function PromptInputSubmit({
 		Icon = <Loader2Icon className="size-4 animate-spin" />;
 	} else if (status === 'streaming') {
 		Icon = <SquareIcon className="size-4" />;
+	} else if (status === 'editting') {
+		Icon = <SendHorizontalIcon className="size-4" />;
 	} else if (status === 'error') {
 		Icon = <XIcon className="size-4" />;
 	}

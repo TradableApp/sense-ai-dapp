@@ -108,3 +108,11 @@
 	background: linear-gradient(135deg, #010b3a, #010b3a);
 	text-align: center;
 }
+
+.prose.text-primary-foreground-important,
+.prose.text-primary-foreground-important
+	:where(strong):not(:where([class~='not-prose'], [class~='not-prose'] *)),
+.prose.text-primary-foreground-important
+	:where(a):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+	color: hsl(var(--primary-foreground)) !important;
+}

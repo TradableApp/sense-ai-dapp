@@ -14,7 +14,7 @@ import {
 	SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { fetchConversations } from '@/lib/mockApi';
-import cn from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { setActiveConversationId } from '@/store/chatSlice';
 
 export default function NavMain({ items }) {

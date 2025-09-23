@@ -13,7 +13,7 @@ import { client, wallets } from '@/config/thirdweb';
 import useMobile from '@/hooks/useMobile';
 import AppSidebar from '@/layouts/components/AppSidebar';
 import MobileNav from '@/layouts/components/MobileNav';
-import cn from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 function usePageTitle() {
 	const location = useLocation();

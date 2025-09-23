@@ -1,61 +1,233 @@
-'use client';
+import { useState } from 'react';
 
-import { ArrowLeftIcon, ArrowRightIcon, RefreshCcwIcon } from 'lucide-react';
+import {
+	BookText,
+	CheckIcon,
+	ChevronLeftIcon,
+	ChevronRightIcon,
+	CopyIcon,
+	GitFork,
+	Mic,
+	MoreHorizontal,
+	RotateCcwIcon,
+	Share,
+	Sparkles,
+	ThumbsDown,
+	ThumbsUp,
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import cn from '@/lib/utils';
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
-export function MessageActions({
-	className,
-	isAssistant,
-	isAiThinking,
-	branch,
-	onRegenerate,
-	onBranchChange,
-	...props
-}) {
-	// Do not show actions for user messages or while the AI is thinking for the very first time.
-	if (!isAssistant || (isAiThinking && !branch)) {
-		return null;
-	}
-
-	const showRegenerate = !isAiThinking;
-	const showPager = branch && branch.count > 1;
-
+function ActionButton({ label, icon, onClick }) {
+	const Icon = icon;
 	return (
-		<div className={cn('not-prose ml-10 mt-2 flex items-center gap-2', className)} {...props}>
-			{showRegenerate && (
-				<Button variant="ghost" size="icon" className="size-7" onClick={onRegenerate}>
-					<RefreshCcwIcon className="size-3.5" />
-					<span className="sr-only">Regenerate response</span>
-				</Button>
-			)}
-
-			{showPager && (
-				<div className="flex items-center gap-2 text-xs text-muted-foreground">
+		<TooltipProvider>
+			<Tooltip delayDuration={100}>
+				<TooltipTrigger asChild>
 					<Button
 						variant="ghost"
 						size="icon"
-						className="size-7"
-						disabled={branch.index === 0}
-						onClick={() => onBranchChange(branch.index - 1)}
+						className="size-7 text-muted-foreground"
+						onClick={onClick || (() => {})}
 					>
-						<ArrowLeftIcon className="size-3.5" />
+						<Icon className="size-4" />
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent>
+					<p>{label}</p>
+				</TooltipContent>
+			</Tooltip>
+		</TooltipProvider>
+	);
+}
+
+function DropdownAction({ label, icon, children, align }) {
+	const Icon = icon;
+	// --- FIX: Removed the unused isDropdownOpen state ---
+	const [isTooltipOpen, setIsTooltipOpen] = useState(false);
+
+	const handleDropdownOpenChange = open => {
+		// When the dropdown opens, we must force the tooltip to close.
+		if (open) {
+			setIsTooltipOpen(false);
+		}
+	};
+
+	return (
+		<DropdownMenu onOpenChange={handleDropdownOpenChange}>
+			<TooltipProvider>
+				<Tooltip open={isTooltipOpen} onOpenChange={setIsTooltipOpen} delayDuration={100}>
+					<TooltipTrigger asChild>
+						<DropdownMenuTrigger asChild>
+							<Button variant="ghost" size="icon" className="size-7 text-muted-foreground">
+								<Icon className="size-4" />
+							</Button>
+						</DropdownMenuTrigger>
+					</TooltipTrigger>
+					<TooltipContent>
+						<p>{label}</p>
+					</TooltipContent>
+				</Tooltip>
+			</TooltipProvider>
+			<DropdownMenuContent align={align}>{children}</DropdownMenuContent>
+		</DropdownMenu>
+	);
+}
+
+export default function MessageActions({ message, versionInfo, onRegenerate, onNavigate }) {
+	const [isCopied, setIsCopied] = useState(false);
+	const [rating, setRating] = useState(null);
+
+	const handleCopy = async () => {
+		if (!message?.content) return;
+		const { copyMarkdownToClipboard } = await import('@/lib/utils');
+		const success = await copyMarkdownToClipboard(message.content);
+		if (success) {
+			setIsCopied(true);
+			setTimeout(() => setIsCopied(false), 2000);
+		}
+	};
+
+	const handleRate = newRating => {
+		setRating(prevRating => (prevRating === newRating ? null : newRating));
+	};
+
+	const showPagination = versionInfo && versionInfo.siblings.length > 1;
+
+	return (
+		<div className="-mt-3 ml-10 flex items-center gap-2">
+			{showPagination && (
+				<div className="flex items-center gap-1 text-xs text-muted-foreground">
+					<Button
+						variant="ghost"
+						size="icon"
+						className="size-5"
+						onClick={() => onNavigate(versionInfo.siblings[versionInfo.currentIndex - 1])}
+						disabled={versionInfo.currentIndex === 0}
+					>
+						<ChevronLeftIcon className="size-3" />
 					</Button>
 					<span>
-						{branch.index + 1} / {branch.count}
+						{versionInfo.currentIndex + 1} / {versionInfo.siblings.length}
 					</span>
 					<Button
 						variant="ghost"
 						size="icon"
-						className="size-7"
-						disabled={branch.index === branch.count - 1}
-						onClick={() => onBranchChange(branch.index + 1)}
+						className="size-5"
+						onClick={() => onNavigate(versionInfo.siblings[versionInfo.currentIndex + 1])}
+						disabled={versionInfo.currentIndex === versionInfo.siblings.length - 1}
 					>
-						<ArrowRightIcon className="size-3.5" />
+						<ChevronRightIcon className="size-3" />
 					</Button>
 				</div>
 			)}
+
+			<TooltipProvider>
+				<Tooltip delayDuration={100}>
+					<TooltipTrigger asChild>
+						<Button
+							variant="ghost"
+							size="icon"
+							className="size-7 text-muted-foreground"
+							onClick={handleCopy}
+						>
+							{isCopied ? (
+								<CheckIcon className="size-4 text-green-500" />
+							) : (
+								<CopyIcon className="size-4" />
+							)}
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>
+						<p>{isCopied ? 'Copied!' : 'Copy'}</p>
+					</TooltipContent>
+				</Tooltip>
+			</TooltipProvider>
+
+			{rating !== 'bad' && (
+				<TooltipProvider>
+					<Tooltip delayDuration={100}>
+						<TooltipTrigger asChild>
+							<Button
+								variant="ghost"
+								size="icon"
+								className="size-7 text-muted-foreground"
+								onClick={() => handleRate('good')}
+							>
+								<ThumbsUp
+									className="size-4"
+									style={{
+										color: rating === 'good' ? '#9939F1' : 'inherit',
+									}}
+								/>
+							</Button>
+						</TooltipTrigger>
+						<TooltipContent>
+							<p>Good response</p>
+						</TooltipContent>
+					</Tooltip>
+				</TooltipProvider>
+			)}
+
+			{rating !== 'good' && (
+				<TooltipProvider>
+					<Tooltip delayDuration={100}>
+						<TooltipTrigger asChild>
+							<Button
+								variant="ghost"
+								size="icon"
+								className="size-7 text-muted-foreground"
+								onClick={() => handleRate('bad')}
+							>
+								<ThumbsDown
+									className="size-4"
+									style={{
+										color: rating === 'bad' ? '#9939F1' : 'inherit',
+									}}
+								/>
+							</Button>
+						</TooltipTrigger>
+						<TooltipContent>
+							<p>Bad response</p>
+						</TooltipContent>
+					</Tooltip>
+				</TooltipProvider>
+			)}
+
+			<ActionButton label="Share" icon={Share} />
+
+			<DropdownAction label="Try again" icon={RotateCcwIcon} align="start">
+				<DropdownMenuItem onClick={() => onRegenerate('default')}>
+					<RotateCcwIcon className="mr-2 size-4" />
+					Try again
+				</DropdownMenuItem>
+				<DropdownMenuItem onClick={() => onRegenerate('detailed')}>
+					<BookText className="mr-2 size-4" />
+					Add details
+				</DropdownMenuItem>
+				<DropdownMenuItem onClick={() => onRegenerate('concise')}>
+					<Sparkles className="mr-2 size-4" />
+					More concise
+				</DropdownMenuItem>
+			</DropdownAction>
+
+			<DropdownAction label="More actions" icon={MoreHorizontal} align="end">
+				<DropdownMenuItem>
+					<GitFork className="mr-2 size-4 rotate-180" />
+					Branch in new chat
+				</DropdownMenuItem>
+				<DropdownMenuItem>
+					<Mic className="mr-2 size-4" />
+					Read aloud
+				</DropdownMenuItem>
+			</DropdownAction>
 		</div>
 	);
 }

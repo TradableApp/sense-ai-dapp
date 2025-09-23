@@ -5,8 +5,9 @@ import { createContext, memo, useContext, useEffect, useMemo, useRef, useState }
 import { useControllableState } from '@radix-ui/react-use-controllable-state';
 import { BrainIcon, ChevronDownIcon } from 'lucide-react';
 
+import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai/source';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import cn from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 const ReasoningContext = createContext(null);
 
@@ -19,7 +20,7 @@ const useReasoning = () => {
 };
 
 const AUTO_CLOSE_DELAY = 1000;
-const TYPING_INTERVAL = 30; // ms per character for reasoning description
+const TYPING_INTERVAL = 30;
 
 export const Reasoning = memo(
 	({
@@ -28,7 +29,8 @@ export const Reasoning = memo(
 		open,
 		defaultOpen = false,
 		onOpenChange,
-		duration: durationProp,
+		reasoningDuration,
+		reasoningSteps, // --- FIX: Accept reasoningSteps as a prop ---
 		children,
 		...props
 	}) => {
@@ -37,32 +39,13 @@ export const Reasoning = memo(
 			defaultProp: defaultOpen,
 			onChange: onOpenChange,
 		});
-		const [duration, setDuration] = useControllableState({
-			prop: durationProp,
-			defaultProp: 0,
-		});
 
 		const [hasAutoClosed, setHasAutoClosed] = useState(false);
-		const [startTime, setStartTime] = useState(null);
-		// --- FIX: Ref to ensure we only auto-open once per streaming session ---
 		const hasAutoOpenedRef = useRef(false);
 
-		// Track duration when streaming starts and ends
 		useEffect(() => {
-			if (isStreaming) {
-				if (startTime === null) {
-					setStartTime(Date.now());
-				}
-			} else if (startTime !== null) {
-				setDuration(Math.round((Date.now() - startTime) / 1000));
-				setStartTime(null);
-			}
-		}, [isStreaming, startTime, setDuration]);
-
-		// Auto-open/close logic
-		useEffect(() => {
-			// --- FIX: Only auto-open once when streaming begins. After that, the user has control. ---
-			if (isStreaming && !isOpen && !hasAutoOpenedRef.current) {
+			// --- FIX: Only auto-open if streaming AND there are thoughts to display ---
+			if (isStreaming && reasoningSteps?.length > 0 && !isOpen && !hasAutoOpenedRef.current) {
 				setIsOpen(true);
 				hasAutoOpenedRef.current = true;
 			} else if (!isStreaming && isOpen && !defaultOpen && !hasAutoClosed) {
@@ -72,29 +55,26 @@ export const Reasoning = memo(
 				}, AUTO_CLOSE_DELAY);
 				return () => clearTimeout(timer);
 			}
-
-			// When streaming stops, reset the lock so the next stream can auto-open again.
 			if (!isStreaming) {
 				hasAutoOpenedRef.current = false;
 			}
 			return undefined;
-		}, [isStreaming, isOpen, defaultOpen, setIsOpen, hasAutoClosed]);
+		}, [isStreaming, isOpen, defaultOpen, setIsOpen, hasAutoClosed, reasoningSteps]);
 
 		const handleOpenChange = newOpen => {
 			setIsOpen(newOpen);
-			// If the user interacts manually, prevent it from auto-closing at the end.
 			setHasAutoClosed(true);
 		};
 
 		const contextValue = useMemo(
-			() => ({ isStreaming, isOpen, setIsOpen, duration }),
-			[isStreaming, isOpen, setIsOpen, duration],
+			() => ({ isStreaming, isOpen, setIsOpen, reasoningDuration }),
+			[isStreaming, isOpen, setIsOpen, reasoningDuration],
 		);
 
 		return (
 			<ReasoningContext.Provider value={contextValue}>
 				<Collapsible
-					className={cn('not-prose mb-4', className)}
+					className={cn('not-prose', className)}
 					onOpenChange={handleOpenChange}
 					open={isOpen}
 					{...props}
@@ -106,62 +86,46 @@ export const Reasoning = memo(
 	},
 );
 
-export const ReasoningTrigger = memo(({ className, title = 'Reasoning', children, ...props }) => {
-	const { isStreaming, isOpen, duration } = useReasoning();
+export const ReasoningTrigger = memo(({ className, ...props }) => {
+	const { isStreaming, isOpen, reasoningDuration } = useReasoning();
 	return (
 		<CollapsibleTrigger
 			className={cn('flex items-center gap-2 text-muted-foreground text-sm', className)}
 			{...props}
 		>
-			{children ?? (
-				<>
-					<BrainIcon className="size-4" />
-					{isStreaming || duration === 0 ? (
-						<p>Thinking...</p>
-					) : (
-						<p>Thought for {duration} seconds</p>
-					)}
-					<ChevronDownIcon
-						className={cn(
-							'size-4 text-muted-foreground transition-transform',
-							isOpen ? 'rotate-180' : 'rotate-0',
-						)}
-					/>
-				</>
+			<BrainIcon className="size-4" />
+			{isStreaming ? (
+				<p>Thinking...</p>
+			) : reasoningDuration > 0 ? (
+				<p>Thought for {reasoningDuration} seconds</p>
+			) : (
+				<p>Reasoning</p>
 			)}
+			<ChevronDownIcon
+				className={cn('size-4 transition-transform', isOpen ? 'rotate-180' : 'rotate-0')}
+			/>
 		</CollapsibleTrigger>
 	);
 });
 
-export const ReasoningContent = memo(({ className, children: reasoningSteps, ...props }) => {
+export const ReasoningContent = memo(({ className, reasoningSteps, sources, ...props }) => {
 	const { isStreaming } = useReasoning();
 	const [animatedDescriptions, setAnimatedDescriptions] = useState({});
 	const typingTimerRef = useRef(null);
 	const prevReasoningRef = useRef([]);
 
-	useEffect(
-		() =>
-			// General cleanup for the timer when the component unmounts
-			() =>
-				clearInterval(typingTimerRef.current),
-		[],
-	);
+	useEffect(() => () => clearInterval(typingTimerRef.current), []);
 
-	// --- FIX: This useEffect now robustly handles the animation for all steps ---
 	useEffect(() => {
 		const prevSteps = prevReasoningRef.current || [];
 		const currentSteps = reasoningSteps || [];
-
 		const simulateReasoningTyping = step => {
 			const targetDescription = step.description || '';
 			if (!targetDescription) return;
-
 			setAnimatedDescriptions(prev => ({ ...prev, [step.title]: '' }));
-
-			// Defer the interval creation to prevent a race condition with React's state updates.
 			const timerId = setTimeout(() => {
 				let index = 0;
-				clearInterval(typingTimerRef.current); // Clear any lingering timer.
+				clearInterval(typingTimerRef.current);
 				typingTimerRef.current = setInterval(() => {
 					index += 1;
 					const currentDescription = targetDescription.slice(0, index);
@@ -173,13 +137,9 @@ export const ReasoningContent = memo(({ className, children: reasoningSteps, ...
 			}, 0);
 			return () => clearTimeout(timerId);
 		};
-
-		// A new step has been added.
 		if (currentSteps.length > prevSteps.length) {
-			const newStep = currentSteps[currentSteps.length - 1];
+			const newStep = currentSteps.at(-1);
 			const previousStep = prevSteps.at(-1);
-
-			// Instantly complete the previous step's animation.
 			if (previousStep) {
 				setAnimatedDescriptions(prev => ({
 					...prev,
@@ -188,8 +148,6 @@ export const ReasoningContent = memo(({ className, children: reasoningSteps, ...
 			}
 			simulateReasoningTyping(newStep);
 		}
-
-		// Streaming has just ended.
 		if (!isStreaming && prevReasoningRef.current?.length > 0) {
 			clearInterval(typingTimerRef.current);
 			const lastStep = prevReasoningRef.current.at(-1);
@@ -200,7 +158,6 @@ export const ReasoningContent = memo(({ className, children: reasoningSteps, ...
 				}));
 			}
 		}
-
 		prevReasoningRef.current = currentSteps;
 	}, [reasoningSteps, isStreaming]);
 
@@ -214,14 +171,13 @@ export const ReasoningContent = memo(({ className, children: reasoningSteps, ...
 			{...props}
 		>
 			<div className="space-y-4 rounded-md border bg-muted/50 p-4">
-				{Array.isArray(reasoningSteps) ? (
+				{Array.isArray(reasoningSteps) &&
 					reasoningSteps.map((step, index) => {
 						const isLastStep = index === reasoningSteps.length - 1;
 						const animatedText = animatedDescriptions[step.title];
 						const targetDescription = step.description || '';
 						const isTyping =
 							isStreaming && isLastStep && (animatedText?.length ?? 0) < targetDescription.length;
-
 						return (
 							<div key={step.title}>
 								<h4 className="font-semibold text-foreground mb-1">{step.title}</h4>
@@ -231,9 +187,20 @@ export const ReasoningContent = memo(({ className, children: reasoningSteps, ...
 								</p>
 							</div>
 						);
-					})
-				) : (
-					<p className="text-muted-foreground">{reasoningSteps}</p>
+					})}
+				{sources && sources.length > 0 && (
+					<Sources>
+						<SourcesTrigger count={sources.length} />
+						<SourcesContent>
+							{sources.map(source => (
+								<Source
+									key={`${source.url}${source.title}`}
+									href={source.url}
+									title={source.title}
+								/>
+							))}
+						</SourcesContent>
+					</Sources>
 				)}
 			</div>
 		</CollapsibleContent>

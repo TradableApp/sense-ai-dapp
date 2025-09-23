@@ -164,8 +164,6 @@ export default function History() {
 											</Button>
 										</DropdownMenuTrigger>
 										<DropdownMenuContent align="end">
-											<DropdownMenuLabel>Actions</DropdownMenuLabel>
-											<DropdownMenuSeparator />
 											<DropdownMenuItem onClick={e => handleRename(e, item)}>
 												<FilePenLine className="mr-2 size-4" />
 												Rename
