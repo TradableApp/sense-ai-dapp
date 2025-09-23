@@ -26,6 +26,8 @@ export default function NavMain({ items }) {
 	const { data: recentConversations } = useQuery({
 		queryKey: ['conversations'],
 		queryFn: fetchConversations,
+		// --- FIX: Add refetchInterval to keep the sidebar history up-to-date ---
+		refetchInterval: 5000,
 		select: allConversations => allConversations.slice(0, 5),
 	});
 
@@ -48,7 +50,7 @@ export default function NavMain({ items }) {
 						>
 							<>
 								<SidebarMenuItem className="!p-0">
-									<div className="group flex w-full items-center pr-2">
+									<div className="group flex w-full items-center">
 										<SidebarMenuButton
 											asChild
 											tooltip={item.title}

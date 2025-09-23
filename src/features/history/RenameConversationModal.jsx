@@ -45,8 +45,10 @@ export default function RenameConversationModal() {
 	});
 
 	useEffect(() => {
+		// --- FIX: Add a guard clause to ensure conversationToRename exists ---
 		if (conversationToRename) {
 			reset({ title: conversationToRename.title });
+			// The timeout gives the dialog time to complete its animation before focusing.
 			setTimeout(() => setFocus('title'), 100);
 		}
 	}, [conversationToRename, reset, setFocus]);

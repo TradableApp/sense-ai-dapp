@@ -26,7 +26,6 @@ const simulateOracleProcess = async (aiMessageId, conversationId, userQuery) => 
 	const thinkingStartTime = Date.now();
 	const reasoningSteps = mockReasoningPool[Math.floor(Math.random() * mockReasoningPool.length)];
 
-	// --- FIX: Replaced for...of loop with a promise-based reduce chain ---
 	await reasoningSteps.reduce(async (promise, step) => {
 		await promise;
 		await new Promise(resolve => setTimeout(resolve, MOCK_REASONING_STEP_DELAY));
@@ -52,9 +51,11 @@ const simulateOracleProcess = async (aiMessageId, conversationId, userQuery) => 
 
 export const fetchConversations = async () => {
 	await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
-	return liveConversations
+	const conversations = liveConversations
 		.filter(c => !c.isDeleted)
 		.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+	// --- FIX: Return a deep copy of the array to ensure TanStack Query detects changes ---
+	return JSON.parse(JSON.stringify(conversations));
 };
 
 export const fetchMessagesForConversation = async conversationId => {

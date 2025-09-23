@@ -41,6 +41,11 @@ import { cn } from '@/lib/utils';
 import senseaiLogo from '@/senseai-logo.svg';
 import { clearActiveConversation, setActiveConversationId } from '@/store/chatSlice';
 
+function MarkdownParagraph({ children }) {
+	return <p className="inline">{children}</p>;
+}
+const markdownComponents = { p: MarkdownParagraph };
+
 const STREAM_BY_WORD = true;
 const promptSchema = z.object({
 	prompt: z.string().trim().min(1, { message: 'Message cannot be empty.' }).max(5000),
@@ -113,6 +118,16 @@ export default function Chat() {
 		}
 		return { messagesToDisplay: displayPath, versionInfo: versions };
 	}, [allMessages, activeMessageId]);
+
+	// --- FIX: This new useEffect resets local state when the conversation changes ---
+	useEffect(() => {
+		// When the active conversation ID from Redux changes, reset the local state
+		// to ensure we don't carry over the state from the previous conversation.
+		setActiveMessageId(null);
+		setEditingMessageId(null);
+		prevMessageCountRef.current = 0;
+		prevMessagesRef.current = [];
+	}, [activeConversationId]);
 
 	useEffect(() => {
 		if (allMessages && allMessages.length > prevMessageCountRef.current) {
@@ -375,7 +390,10 @@ export default function Chat() {
 											<Message from={message.role} className="items-start">
 												<MessageContent>
 													<div className="prose prose-sm dark:prose-invert max-w-none">
-														<ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+														<ReactMarkdown
+															remarkPlugins={[remarkGfm, remarkBreaks]}
+															components={markdownComponents}
+														>
 															{(animatedContent ?? message.content) + (isTyping ? '▍' : '')}
 														</ReactMarkdown>
 													</div>
@@ -401,7 +419,7 @@ export default function Chat() {
 										<div
 											className={cn(
 												'prose prose-sm dark:prose-invert max-w-none',
-												'text-primary-foreground-important',
+												'text-primary-foreground',
 											)}
 										>
 											<ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>

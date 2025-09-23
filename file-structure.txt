@@ -30,12 +30,15 @@
 │   │   ├── ai
 │   │   │   ├── code-block.jsx
 │   │   │   ├── conversation.jsx
+│   │   │   ├── edit-prompt-input.jsx
 │   │   │   ├── loader.jsx
+│   │   │   ├── message-actions.jsx
 │   │   │   ├── message.jsx
 │   │   │   ├── prompt-input.jsx
 │   │   │   ├── reasoning.jsx
 │   │   │   ├── response.jsx
-│   │   │   └── source.jsx
+│   │   │   ├── source.jsx
+│   │   │   └── user-message-actions.jsx
 │   │   ├── ErrorBoundary.jsx
 │   │   ├── magicui
 │   │   │   ├── dock.jsx
@@ -48,7 +51,9 @@
 │   │       ├── card.jsx
 │   │       ├── checkbox.jsx
 │   │       ├── collapsible.jsx
+│   │       ├── dialog.jsx
 │   │       ├── dropdown-menu.jsx
+│   │       ├── empty-state.jsx
 │   │       ├── input.jsx
 │   │       ├── scroll-area.jsx
 │   │       ├── select.jsx
@@ -72,7 +77,8 @@
 │   │   │   ├── Error404.jsx
 │   │   │   └── Reroute.jsx
 │   │   ├── history
-│   │   │   └── History.jsx
+│   │   │   ├── History.jsx
+│   │   │   └── RenameConversationModal.jsx
 │   │   └── market
 │   │       └── MarketPulse.jsx
 │   ├── hooks
@@ -88,6 +94,8 @@
 │   │   │       └── NavUser.jsx
 │   │   └── MainLayout.jsx
 │   ├── lib
+│   │   ├── mockApi.js
+│   │   ├── mockData.js
 │   │   └── utils.js
 │   ├── main.jsx
 │   ├── pages
@@ -95,8 +103,11 @@
 │   ├── senseai-logo.svg
 │   ├── senseai-text-logo-black-purple.svg
 │   ├── senseai-text-logo-white-purple.svg
+│   ├── store
+│   │   ├── chatSlice.js
+│   │   └── store.js
 │   └── thirdweb.svg
 ├── tailwind.config.js
 └── vite.config.js
 
-24 directories, 76 files
+25 directories, 86 files

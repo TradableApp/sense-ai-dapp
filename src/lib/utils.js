@@ -9,6 +9,21 @@ export function cn(...inputs) {
 	return twMerge(clsx(inputs));
 }
 
+export function markdownToPlainText(markdown) {
+	if (!markdown) return '';
+	let result = '';
+	remark()
+		.use(strip)
+		.process(markdown, (err, file) => {
+			if (err) {
+				console.error('Error processing markdown:', err);
+				return;
+			}
+			result = String(file);
+		});
+	return result.trim();
+}
+
 // Function to copy markdown as both rich text and plain text ---
 export async function copyMarkdownToClipboard(markdown) {
 	try {
