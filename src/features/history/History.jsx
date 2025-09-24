@@ -152,62 +152,64 @@ export default function History() {
 						{isError && <div className="p-4 text-destructive">Error loading conversations.</div>}
 						{showEmptyState && <EmptyState />}
 						{hasConversations &&
-							conversations.map(item => (
-								<button
-									type="button"
-									key={item.id}
-									className="w-full text-left flex items-center gap-3 border-b p-4 text-sm last:border-b-0 cursor-pointer hover:bg-muted/50"
-									onClick={() => handleSelectConversation(item.id)}
-								>
-									<MessageSquare className="size-5 flex-shrink-0 text-muted-foreground" />
-									<div className="flex-1 min-w-0">
-										<p className="font-medium truncate">{item.title}</p>
-										<p className="mt-1 hidden truncate text-muted-foreground md:block">
-											{markdownToPlainText(item.lastMessagePreview)}
-										</p>
-										<div className="md:hidden">
-											<p className="mt-1 truncate text-xs text-muted-foreground">
+							conversations.map(item => {
+								const displayDate = item.lastMessageCreatedAt || item.createdAt;
+								return (
+									<button
+										type="button"
+										key={item.id}
+										className="w-full text-left flex items-center gap-3 border-b p-4 text-sm last:border-b-0 cursor-pointer hover:bg-muted/50"
+										onClick={() => handleSelectConversation(item.id)}
+									>
+										<MessageSquare className="size-5 flex-shrink-0 text-muted-foreground" />
+										<div className="flex-1 min-w-0">
+											<p className="font-medium truncate">{item.title}</p>
+											<p className="mt-1 hidden truncate text-muted-foreground md:block">
 												{markdownToPlainText(item.lastMessagePreview)}
 											</p>
-											<p className="mt-1 text-xs text-muted-foreground">
-												{new Date(item.updatedAt).toLocaleTimeString()}
-											</p>
+											<div className="md:hidden">
+												<p className="mt-1 truncate text-xs text-muted-foreground">
+													{markdownToPlainText(item.lastMessagePreview)}
+												</p>
+												<p className="mt-1 text-xs text-muted-foreground">
+													{new Date(displayDate).toLocaleTimeString()}
+												</p>
+											</div>
 										</div>
-									</div>
-									<div className="hidden w-32 flex-shrink-0 text-right text-muted-foreground md:block">
-										{new Date(item.updatedAt).toLocaleDateString()}
-									</div>
-									<div className="flex-shrink-0">
-										<DropdownMenu>
-											<DropdownMenuTrigger asChild>
-												<Button
-													aria-haspopup="true"
-													size="icon"
-													variant="ghost"
-													onClick={e => e.stopPropagation()}
-												>
-													<MoreHorizontal className="size-4" />
-													<span className="sr-only">Toggle menu</span>
-												</Button>
-											</DropdownMenuTrigger>
-											{/* --- FIX: Stop click propagation on the content area --- */}
-											<DropdownMenuContent align="end" onClick={e => e.stopPropagation()}>
-												<DropdownMenuItem onClick={e => handleRename(e, item)}>
-													<FilePenLine className="mr-2 size-4" />
-													Rename
-												</DropdownMenuItem>
-												<DropdownMenuItem
-													className="text-destructive"
-													onClick={e => handleDelete(e, item.id)}
-												>
-													<Trash2 className="mr-2 size-4" />
-													Delete
-												</DropdownMenuItem>
-											</DropdownMenuContent>
-										</DropdownMenu>
-									</div>
-								</button>
-							))}
+										<div className="hidden w-32 flex-shrink-0 text-right text-muted-foreground md:block">
+											{new Date(displayDate).toLocaleDateString()}
+										</div>
+										<div className="flex-shrink-0">
+											<DropdownMenu>
+												<DropdownMenuTrigger asChild>
+													<Button
+														aria-haspopup="true"
+														size="icon"
+														variant="ghost"
+														onClick={e => e.stopPropagation()}
+													>
+														<MoreHorizontal className="size-4" />
+														<span className="sr-only">Toggle menu</span>
+													</Button>
+												</DropdownMenuTrigger>
+												<DropdownMenuContent align="end" onClick={e => e.stopPropagation()}>
+													<DropdownMenuItem onClick={e => handleRename(e, item)}>
+														<FilePenLine className="mr-2 size-4" />
+														Rename
+													</DropdownMenuItem>
+													<DropdownMenuItem
+														className="text-destructive"
+														onClick={e => handleDelete(e, item.id)}
+													>
+														<Trash2 className="mr-2 size-4" />
+														Delete
+													</DropdownMenuItem>
+												</DropdownMenuContent>
+											</DropdownMenu>
+										</div>
+									</button>
+								);
+							})}
 					</div>
 				</div>
 			</div>
@@ -215,7 +217,6 @@ export default function History() {
 				<AlertDialogContent>
 					<AlertDialogHeader>
 						<AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-						{/* --- FIX: Updated text to reference decentralised storage --- */}
 						<AlertDialogDescription>
 							This action cannot be undone. This will permanently delete this conversation and
 							remove its data from decentralised storage.

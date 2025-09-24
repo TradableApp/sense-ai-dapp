@@ -109,10 +109,16 @@
 	text-align: center;
 }
 
-.prose.text-primary-foreground-important,
-.prose.text-primary-foreground-important
-	:where(strong):not(:where([class~='not-prose'], [class~='not-prose'] *)),
-.prose.text-primary-foreground-important
-	:where(a):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
-	color: hsl(var(--primary-foreground)) !important;
+.prose.inherit-color,
+.prose.inherit-color :where(*):not(:where([class~='not-prose'], [class~='not-prose'] *)),
+.prose.inherit-color :where(*):not(:where([class~='not-prose'], [class~='not-prose'] *))::marker {
+	color: inherit;
+}
+
+.prose.inherit-color :where(a):not(:where([class~='not-prose'], [class~='not-prose'] *)):link {
+	color: #0000ee;
+}
+
+.prose.inherit-color :where(a):not(:where([class~='not-prose'], [class~='not-prose'] *)):visited {
+	color: #551a8b;
 }

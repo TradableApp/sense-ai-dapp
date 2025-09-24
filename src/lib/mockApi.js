@@ -9,16 +9,18 @@ const MOCK_REASONING_STEP_DELAY = 900;
 const updateConversationMeta = conversationId => {
 	const conversation = liveConversations.find(c => c.id === conversationId);
 	if (!conversation) return;
+
 	const lastMessage = liveMessages
 		.filter(m => m.conversationId === conversationId)
-		.sort((a, b) => b.timestamp - a.timestamp)[0];
+		.sort((a, b) => b.createdAt - a.createdAt)[0];
+
 	if (lastMessage) {
 		const preview =
 			lastMessage.role === 'assistant' && !lastMessage.content
 				? liveMessages.find(m => m.id === lastMessage.parentId)?.content
 				: lastMessage.content;
 		conversation.lastMessagePreview = preview;
-		conversation.updatedAt = lastMessage.timestamp;
+		conversation.lastMessageCreatedAt = lastMessage.createdAt;
 	}
 };
 
@@ -53,7 +55,7 @@ export const fetchConversations = async () => {
 	await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
 	const conversations = liveConversations
 		.filter(c => !c.isDeleted)
-		.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+		.sort((a, b) => (b.lastMessageCreatedAt || 0) - (a.lastMessageCreatedAt || 0));
 	return JSON.parse(JSON.stringify(conversations));
 };
 
@@ -62,7 +64,7 @@ export const fetchMessagesForConversation = async conversationId => {
 	if (!conversationId) return [];
 	const messages = liveMessages
 		.filter(m => m.conversationId === conversationId)
-		.sort((a, b) => a.timestamp - b.timestamp);
+		.sort((a, b) => a.createdAt - b.createdAt);
 	return JSON.parse(JSON.stringify(messages));
 };
 
@@ -77,7 +79,8 @@ export const addMessageToConversation = async (conversationId, parentId, message
 		content: messageContent,
 		reasoning: null,
 		sources: null,
-		timestamp: now,
+		createdAt: now,
+		reasoningDuration: null,
 	};
 	liveMessages.push(userMessage);
 	const aiPlaceholder = {
@@ -88,7 +91,8 @@ export const addMessageToConversation = async (conversationId, parentId, message
 		content: null,
 		reasoning: [],
 		sources: null,
-		timestamp: now + 1,
+		createdAt: now + 1,
+		reasoningDuration: null,
 	};
 	liveMessages.push(aiPlaceholder);
 	updateConversationMeta(conversationId);
@@ -107,7 +111,8 @@ export const editUserMessage = async (conversationId, parentId, newContent) => {
 		content: newContent,
 		reasoning: null,
 		sources: null,
-		timestamp: now,
+		createdAt: now,
+		reasoningDuration: null,
 	};
 	liveMessages.push(editedUserMessage);
 	const aiPlaceholder = {
@@ -118,7 +123,8 @@ export const editUserMessage = async (conversationId, parentId, newContent) => {
 		content: null,
 		reasoning: [],
 		sources: null,
-		timestamp: now + 1,
+		createdAt: now + 1,
+		reasoningDuration: null,
 	};
 	liveMessages.push(aiPlaceholder);
 	updateConversationMeta(conversationId);
@@ -142,7 +148,8 @@ export const regenerateAssistantResponse = async (
 		content: null,
 		reasoning: [],
 		sources: null,
-		timestamp: now + 1,
+		createdAt: now + 1,
+		reasoningDuration: null,
 	};
 	liveMessages.push(aiPlaceholder);
 	updateConversationMeta(conversationId);
@@ -175,8 +182,13 @@ export const branchConversation = async (originalConversationId, branchPointMess
 	const newConversation = {
 		id: `conv_${now}`,
 		ownerAddress: '0x123...',
+		// --- FIX: A branched conversation inherits the original's creation date ---
+		createdAt: originalConversation.createdAt,
 		title: `Branch · ${originalConversation.title.replace('Branch · ', '')}`,
 		isDeleted: false,
+		// --- FIX: The metadata update time is now, at the moment of branching ---
+		lastUpdatedAt: now,
+		lastMessageCreatedAt: 0,
 		branchedFromConversationId: originalConversationId,
 		branchedAtMessageId: branchPointMessageId,
 	};
@@ -199,8 +211,11 @@ export const createNewConversation = async firstMessageContent => {
 	const newConversation = {
 		id: `conv_${now}`,
 		ownerAddress: '0x123...',
+		createdAt: now,
 		title: firstMessageContent.substring(0, 40) + (firstMessageContent.length > 40 ? '...' : ''),
 		isDeleted: false,
+		lastUpdatedAt: now,
+		lastMessageCreatedAt: now,
 	};
 	liveConversations.push(newConversation);
 	await addMessageToConversation(newConversation.id, null, firstMessageContent);
@@ -212,6 +227,7 @@ export const renameConversation = async ({ id, newTitle }) => {
 	const conversation = liveConversations.find(c => c.id === id);
 	if (conversation) {
 		conversation.title = newTitle;
+		conversation.lastUpdatedAt = Date.now();
 	}
 	return conversation;
 };
@@ -221,6 +237,7 @@ export const deleteConversation = async conversationId => {
 	const conversation = liveConversations.find(c => c.id === conversationId);
 	if (conversation) {
 		conversation.isDeleted = true;
+		conversation.lastUpdatedAt = Date.now();
 	}
 	return conversationId;
 };

@@ -40,7 +40,6 @@ import {
 	fetchMessagesForConversation,
 	regenerateAssistantResponse,
 } from '@/lib/mockApi';
-import { cn } from '@/lib/utils';
 import senseaiLogo from '@/senseai-logo.svg';
 import { clearActiveConversation, setActiveConversationId } from '@/store/chatSlice';
 
@@ -153,7 +152,6 @@ export default function Chat() {
 		return { messagesToDisplay: displayPath, versionInfo: versions };
 	}, [allMessages, activeMessageId]);
 
-	// --- FIX: This crucial useEffect is restored ---
 	useEffect(() => {
 		// When the active conversation ID from Redux changes, reset the local state
 		// to ensure we don't carry over the state from the previous conversation.
@@ -443,7 +441,7 @@ export default function Chat() {
 										<>
 											<Message from={message.role} className="items-start">
 												<MessageContent>
-													<div className="prose prose-sm dark:prose-invert max-w-none">
+													<div className="prose inherit-color prose-sm dark:prose-invert max-w-none">
 														<ReactMarkdown
 															remarkPlugins={[remarkGfm, remarkBreaks]}
 															components={markdownComponents}
@@ -463,6 +461,7 @@ export default function Chat() {
 											/>
 										</>
 									)}
+
 									{message.id === currentConversation?.branchedAtMessageId && (
 										<BranchInfo
 											originalConversationId={currentConversation.branchedFromConversationId}
@@ -480,12 +479,7 @@ export default function Chat() {
 							<div key={message.id} className="group space-y-1">
 								<Message from={message.role} className="items-start">
 									<MessageContent>
-										<div
-											className={cn(
-												'prose prose-sm dark:prose-invert max-w-none',
-												'text-primary-foreground',
-											)}
-										>
+										<div className="prose inherit-color prose-sm dark:prose-invert max-w-none">
 											<ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
 												{message.content}
 											</ReactMarkdown>
@@ -501,6 +495,7 @@ export default function Chat() {
 										onNavigate={handleNavigate}
 									/>
 								</div>
+
 								{message.id === currentConversation?.branchedAtMessageId && (
 									<BranchInfo
 										originalConversationId={currentConversation.branchedFromConversationId}
@@ -516,6 +511,7 @@ export default function Chat() {
 				</ConversationContent>
 				<ConversationScrollButton />
 			</Conversation>
+
 			<div className="border-t p-4">
 				<PromptInput onSubmit={handleSubmit(onSubmit)} errors={errors}>
 					<PromptInputTextarea

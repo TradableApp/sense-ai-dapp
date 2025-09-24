@@ -1,7 +1,7 @@
 import { Navigate } from 'react-router-dom';
 import { ConnectButton, useActiveAccount } from 'thirdweb/react';
 
-import RainbowButton from '@/components/magicui/rainbow-button';
+import RainbowLabel from '@/components/magicui/rainbow-label';
 import { client, wallets } from '@/config/thirdweb';
 import senseaiLogo from '@/senseai-logo.svg';
 import senseaiTextLogoBlack from '@/senseai-text-logo-black-purple.svg';
@@ -45,7 +45,7 @@ export default function Auth() {
 					url: 'https://tradable.app',
 				}}
 				connectButton={{
-					label: <RainbowButton>Connect Wallet</RainbowButton>,
+					label: <RainbowLabel>Connect Wallet</RainbowLabel>,
 					style: { padding: 0, height: 'fit-content', background: 'none' },
 				}}
 			/>
