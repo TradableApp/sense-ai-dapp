@@ -321,7 +321,7 @@ export default function Chat() {
 				variables.onReasoningStep,
 				variables.onFinalAnswer,
 			),
-		onSuccess: ({ updatedConversation }) => {
+		onSuccess: ({ updatedConversation, finalUserMessage, finalAiMessage }, variables) => {
 			setEditingMessageId(null);
 			const queryKey = ['conversations', sessionKey, ownerAddress];
 			console.log(`[Chat.jsx] Edit successful for conv ${updatedConversation.id}.`);
@@ -330,9 +330,12 @@ export default function Chat() {
 					.map(conv => (conv.id === updatedConversation.id ? updatedConversation : conv))
 					.sort((a, b) => (b.lastMessageCreatedAt || 0) - (a.lastMessageCreatedAt || 0)),
 			);
-			queryClient.invalidateQueries({
-				queryKey: ['messages', activeConversationId, sessionKey, ownerAddress],
-			});
+			const aiMessagePlaceholder = {
+				...finalAiMessage,
+				correlationId: variables.aiCorrelationId,
+				reasoning: [],
+			};
+			dispatch(appendLiveMessages([finalUserMessage, aiMessagePlaceholder]));
 		},
 		onError: handleMutationError,
 	});
@@ -590,7 +593,7 @@ export default function Chat() {
 							const isTyping =
 								animatedContent != null && animatedContent.length < (message.content?.length ?? 0);
 							return (
-								<div key={message.id} className="space-y-3">
+								<div key={message.id || message.correlationId} className="space-y-3">
 									<div className="ml-10">
 										<Reasoning
 											isStreaming={isThinking}

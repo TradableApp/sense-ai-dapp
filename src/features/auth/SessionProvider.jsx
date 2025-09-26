@@ -60,7 +60,8 @@ export default function SessionProvider({ children }) {
 					});
 				}
 
-				const derivedKey = await deriveKeyFromEntropy(entropy);
+				// --- CHANGE: Pass the ownerAddress as the salt to the derivation function ---
+				const derivedKey = await deriveKeyFromEntropy(entropy, account.address);
 				setSessionKey(derivedKey);
 				setStatus('ready');
 			} catch (error) {

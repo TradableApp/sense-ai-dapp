@@ -1,25 +1,36 @@
 /**
- * Derives a secure AES-GCM CryptoKey from a high-entropy string (e.g., a signature or auth token).
- * This key is non-exportable and should only exist in memory for the session.
- * @param {string} entropy - The high-entropy string to use as the source for the key.
+ * Derives a secure, non-extractable AES-GCM CryptoKey from a high-entropy string
+ * using the user's address as a salt for domain separation.
+ * This key should only exist in memory for the session.
+ * @param {string} entropy - The high-entropy string (e.g., a signature or auth token).
+ * @param {string} ownerAddress - The user's wallet address, used to generate a deterministic salt.
  * @returns {Promise<CryptoKey>} A 256-bit AES-GCM key for encryption and decryption.
  */
-export async function deriveKeyFromEntropy(entropy) {
+export async function deriveKeyFromEntropy(entropy, ownerAddress) {
 	if (!entropy) {
 		throw new Error('Entropy string cannot be empty.');
 	}
-	// Use the entropy string as the "salt" or input key material (IKM).
+	if (!ownerAddress) {
+		throw new Error('Owner address must be provided to generate a key salt.');
+	}
+
+	// Use the entropy string as the input key material (IKM).
 	const entropyBuffer = new TextEncoder().encode(entropy);
 	const importedKey = await window.crypto.subtle.importKey('raw', entropyBuffer, 'HKDF', false, [
 		'deriveKey',
 	]);
 
-	// Derive a 256-bit AES-GCM key.
+	// --- ENHANCEMENT: Use a deterministic salt and application-specific info ---
+	// The salt ensures keys are unique per user, even if two users had the same password (not applicable here, but good practice).
+	// The info provides "domain separation," ensuring this key is only for this specific application purpose.
+	const salt = new TextEncoder().encode(ownerAddress);
+	const info = new TextEncoder().encode('SenseAI dApp v1 AES-GCM Key');
+
 	const derivedKey = await window.crypto.subtle.deriveKey(
-		{ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(), info: new Uint8Array() },
+		{ name: 'HKDF', hash: 'SHA-256', salt, info },
 		importedKey,
 		{ name: 'AES-GCM', length: 256 },
-		true, // Key is extractable if needed, but we won't be doing that.
+		false, // --- ENHANCEMENT: Key is non-extractable for maximum security ---
 		['encrypt', 'decrypt'],
 	);
 
