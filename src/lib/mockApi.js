@@ -1,243 +1,66 @@
 /* eslint-disable no-promise-executor-return */
 import { mockAiResponseTemplates, mockReasoningPool, mockSourcesPool } from './mockData';
 
-const liveConversations = [];
-const liveMessages = [];
-const MOCK_DELAY = 300;
 const MOCK_REASONING_STEP_DELAY = 900;
+const MOCK_FAILURE_RATE = 0.1; // 10% chance of a simulated AI error
 
-const updateConversationMeta = conversationId => {
-	const conversation = liveConversations.find(c => c.id === conversationId);
-	if (!conversation) return;
-
-	const lastMessage = liveMessages
-		.filter(m => m.conversationId === conversationId)
-		.sort((a, b) => b.createdAt - a.createdAt)[0];
-
-	if (lastMessage) {
-		const preview =
-			lastMessage.role === 'assistant' && !lastMessage.content
-				? liveMessages.find(m => m.id === lastMessage.parentId)?.content
-				: lastMessage.content;
-		conversation.lastMessagePreview = preview;
-		conversation.lastMessageCreatedAt = lastMessage.createdAt;
-	}
-};
-
-const simulateOracleProcess = async (aiMessageId, conversationId, userQuery) => {
+/**
+ * Simulates the TEE/Oracle AI process, including potential failures.
+ * @param {string} userQuery - The content of the user's message.
+ * @param {string} aiCorrelationId - The unique ID for this specific AI response.
+ * @param {function} onReasoningStep - Callback to stream a reasoning step.
+ * @param {function} onFinalAnswer - Callback to deliver the final answer object.
+ * @param {string} [regenerationMode] - Optional mode to alter the response (e.g., 'concise').
+ */
+const simulateOracleProcess = async (
+	userQuery,
+	aiCorrelationId,
+	onReasoningStep,
+	onFinalAnswer,
+	regenerationMode,
+) => {
+	console.log(
+		`%c[mockApi] Starting AI simulation for query: "${userQuery}" (aiCorrelationId: ${aiCorrelationId}, mode: ${regenerationMode})`,
+		'color: purple',
+	);
 	const thinkingStartTime = Date.now();
 	const reasoningSteps = mockReasoningPool[Math.floor(Math.random() * mockReasoningPool.length)];
 
-	await reasoningSteps.reduce(async (promise, step) => {
-		await promise;
+	for (const step of reasoningSteps) {
 		await new Promise(resolve => setTimeout(resolve, MOCK_REASONING_STEP_DELAY));
-		const messageIndex = liveMessages.findIndex(m => m.id === aiMessageId);
-		if (messageIndex !== -1) {
-			liveMessages[messageIndex].reasoning.push(step);
+		onReasoningStep(aiCorrelationId, step);
+
+		if (Math.random() < MOCK_FAILURE_RATE) {
+			console.error(`%c[mockApi] Simulated AI failure for ${aiCorrelationId}.`, 'color: red');
+			const finalDuration = Math.round((Date.now() - thinkingStartTime) / 1000);
+			onFinalAnswer(aiCorrelationId, {
+				content:
+					'**Error:** The AI model encountered an unexpected issue. Please try regenerating the response.',
+				sources: [],
+				reasoningDuration: finalDuration,
+			});
+			return;
 		}
-	}, Promise.resolve());
+	}
 
 	await new Promise(resolve => setTimeout(resolve, MOCK_REASONING_STEP_DELAY));
-	const messageIndex = liveMessages.findIndex(m => m.id === aiMessageId);
-	if (messageIndex !== -1) {
-		const template =
-			mockAiResponseTemplates[Math.floor(Math.random() * mockAiResponseTemplates.length)];
-		const durationInSeconds = Math.round((Date.now() - thinkingStartTime) / 1000);
-		liveMessages[messageIndex].content = template.replace('{query}', userQuery.substring(0, 20));
-		liveMessages[messageIndex].sources =
-			mockSourcesPool[Math.floor(Math.random() * mockSourcesPool.length)];
-		liveMessages[messageIndex].reasoningDuration = durationInSeconds;
-		updateConversationMeta(conversationId);
-	}
-};
+	const template =
+		mockAiResponseTemplates[Math.floor(Math.random() * mockAiResponseTemplates.length)];
+	const baseContent = template.replace('{query}', userQuery.substring(0, 20));
+	const finalContent = regenerationMode
+		? `**${regenerationMode.charAt(0).toUpperCase() + regenerationMode.slice(1)}:** ${baseContent}`
+		: baseContent;
 
-export const fetchConversations = async () => {
-	await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
-	const conversations = liveConversations
-		.filter(c => !c.isDeleted)
-		.sort((a, b) => (b.lastMessageCreatedAt || 0) - (a.lastMessageCreatedAt || 0));
-	return JSON.parse(JSON.stringify(conversations));
-};
+	const finalSources = mockSourcesPool[Math.floor(Math.random() * mockSourcesPool.length)];
+	const finalDuration = Math.round((Date.now() - thinkingStartTime) / 1000);
 
-export const fetchMessagesForConversation = async conversationId => {
-	await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
-	if (!conversationId) return [];
-	const messages = liveMessages
-		.filter(m => m.conversationId === conversationId)
-		.sort((a, b) => a.createdAt - b.createdAt);
-	return JSON.parse(JSON.stringify(messages));
-};
-
-export const addMessageToConversation = async (conversationId, parentId, messageContent) => {
-	await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
-	const now = Date.now();
-	const userMessage = {
-		id: `msg_${now}`,
-		conversationId,
-		parentId,
-		role: 'user',
-		content: messageContent,
-		reasoning: null,
-		sources: null,
-		createdAt: now,
-		reasoningDuration: null,
+	const finalAnswer = {
+		content: finalContent,
+		sources: finalSources,
+		reasoningDuration: finalDuration,
 	};
-	liveMessages.push(userMessage);
-	const aiPlaceholder = {
-		id: `msg_${now + 1}`,
-		conversationId,
-		parentId: userMessage.id,
-		role: 'assistant',
-		content: null,
-		reasoning: [],
-		sources: null,
-		createdAt: now + 1,
-		reasoningDuration: null,
-	};
-	liveMessages.push(aiPlaceholder);
-	updateConversationMeta(conversationId);
-	simulateOracleProcess(aiPlaceholder.id, conversationId, messageContent);
-	return aiPlaceholder;
+	console.log('%c[mockApi] Streaming final answer.', 'color: purple', finalAnswer);
+	onFinalAnswer(aiCorrelationId, finalAnswer);
 };
 
-export const editUserMessage = async (conversationId, parentId, newContent) => {
-	await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
-	const now = Date.now();
-	const editedUserMessage = {
-		id: `msg_${now}`,
-		conversationId,
-		parentId,
-		role: 'user',
-		content: newContent,
-		reasoning: null,
-		sources: null,
-		createdAt: now,
-		reasoningDuration: null,
-	};
-	liveMessages.push(editedUserMessage);
-	const aiPlaceholder = {
-		id: `msg_${now + 1}`,
-		conversationId,
-		parentId: editedUserMessage.id,
-		role: 'assistant',
-		content: null,
-		reasoning: [],
-		sources: null,
-		createdAt: now + 1,
-		reasoningDuration: null,
-	};
-	liveMessages.push(aiPlaceholder);
-	updateConversationMeta(conversationId);
-	simulateOracleProcess(aiPlaceholder.id, conversationId, newContent);
-	return editedUserMessage;
-};
-
-export const regenerateAssistantResponse = async (
-	conversationId,
-	parentId,
-	originalUserQuery,
-	regenerationMode = 'default',
-) => {
-	await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
-	const now = Date.now();
-	const aiPlaceholder = {
-		id: `msg_${now + 1}`,
-		conversationId,
-		parentId,
-		role: 'assistant',
-		content: null,
-		reasoning: [],
-		sources: null,
-		createdAt: now + 1,
-		reasoningDuration: null,
-	};
-	liveMessages.push(aiPlaceholder);
-	updateConversationMeta(conversationId);
-	let finalQuery = originalUserQuery;
-	if (regenerationMode === 'detailed') {
-		finalQuery = `Provide a more detailed analysis for: ${originalUserQuery}`;
-	} else if (regenerationMode === 'concise') {
-		finalQuery = `Provide a more concise summary for: ${originalUserQuery}`;
-	}
-	simulateOracleProcess(aiPlaceholder.id, conversationId, finalQuery);
-	return aiPlaceholder;
-};
-
-export const branchConversation = async (originalConversationId, branchPointMessageId) => {
-	await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
-
-	const originalConversation = liveConversations.find(c => c.id === originalConversationId);
-	if (!originalConversation) throw new Error('Original conversation not found');
-
-	const allOriginalMessages = liveMessages.filter(m => m.conversationId === originalConversationId);
-	const messageMap = new Map(allOriginalMessages.map(m => [m.id, m]));
-	const historyToBranch = [];
-	let currentId = branchPointMessageId;
-	while (currentId && messageMap.has(currentId)) {
-		historyToBranch.unshift(messageMap.get(currentId));
-		currentId = messageMap.get(currentId).parentId;
-	}
-
-	const now = Date.now();
-	const newConversation = {
-		id: `conv_${now}`,
-		ownerAddress: '0x123...',
-		// --- FIX: A branched conversation inherits the original's creation date ---
-		createdAt: originalConversation.createdAt,
-		title: `Branch · ${originalConversation.title.replace('Branch · ', '')}`,
-		isDeleted: false,
-		// --- FIX: The metadata update time is now, at the moment of branching ---
-		lastUpdatedAt: now,
-		lastMessageCreatedAt: 0,
-		branchedFromConversationId: originalConversationId,
-		branchedAtMessageId: branchPointMessageId,
-	};
-	liveConversations.push(newConversation);
-
-	const newMessages = historyToBranch.map(msg => ({
-		...JSON.parse(JSON.stringify(msg)),
-		conversationId: newConversation.id,
-	}));
-	liveMessages.push(...newMessages);
-
-	updateConversationMeta(newConversation.id);
-
-	return newConversation;
-};
-
-export const createNewConversation = async firstMessageContent => {
-	await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
-	const now = Date.now();
-	const newConversation = {
-		id: `conv_${now}`,
-		ownerAddress: '0x123...',
-		createdAt: now,
-		title: firstMessageContent.substring(0, 40) + (firstMessageContent.length > 40 ? '...' : ''),
-		isDeleted: false,
-		lastUpdatedAt: now,
-		lastMessageCreatedAt: now,
-	};
-	liveConversations.push(newConversation);
-	await addMessageToConversation(newConversation.id, null, firstMessageContent);
-	return newConversation;
-};
-
-export const renameConversation = async ({ id, newTitle }) => {
-	await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
-	const conversation = liveConversations.find(c => c.id === id);
-	if (conversation) {
-		conversation.title = newTitle;
-		conversation.lastUpdatedAt = Date.now();
-	}
-	return conversation;
-};
-
-export const deleteConversation = async conversationId => {
-	await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
-	const conversation = liveConversations.find(c => c.id === conversationId);
-	if (conversation) {
-		conversation.isDeleted = true;
-		conversation.lastUpdatedAt = Date.now();
-	}
-	return conversationId;
-};
+export default simulateOracleProcess;

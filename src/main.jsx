@@ -8,11 +8,11 @@ import { ThirdwebProvider } from 'thirdweb/react';
 
 import App from '@/pages/App';
 
+import SessionProvider from './features/auth/SessionProvider';
 import store from './store/store';
 
 import './index.css';
 
-// Create a client for TanStack Query
 const queryClient = new QueryClient();
 
 createRoot(document.getElementById('root')).render(
@@ -21,7 +21,9 @@ createRoot(document.getElementById('root')).render(
 			<ThirdwebProvider>
 				<Provider store={store}>
 					<QueryClientProvider client={queryClient}>
-						<App />
+						<SessionProvider>
+							<App />
+						</SessionProvider>
 					</QueryClientProvider>
 				</Provider>
 			</ThirdwebProvider>

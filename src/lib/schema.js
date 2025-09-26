@@ -12,6 +12,8 @@
  * @property {string} id - The unique conversation ID (e.g., "conv_1678886400000").
  * @property {string} ownerAddress - The wallet address of the owner.
  * @property {number} createdAt - The Unix timestamp (milliseconds) of creation.
+ * @property {string} [branchedFromConversationId] - The ID of the conversation this was branched from.
+ * @property {string} [branchedAtMessageId] - The ID of the message where the branch occurred.
  */
 
 /**
@@ -23,8 +25,6 @@
  * @property {number} lastUpdatedAt - The Unix timestamp of when the metadata (title, isDeleted) was last changed.
  * @property {number} [lastMessageCreatedAt] - The Unix timestamp of the latest message in the conversation. Used for sorting and syncing.
  * @property {string} [lastMessagePreview] - A plain text snippet of the last message for UI previews.
- * @property {string} [branchedFromConversationId] - The ID of the conversation this was branched from.
- * @property {string} [branchedAtMessageId] - The ID of the message where the branch occurred.
  */
 
 /**

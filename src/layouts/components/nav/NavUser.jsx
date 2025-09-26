@@ -10,6 +10,10 @@ export default function NavUser() {
 				<ConnectButton
 					client={client}
 					wallets={wallets}
+					appMetadata={{
+						name: 'SenseAI App',
+						url: 'https://tradable.app',
+					}}
 					theme="dark"
 					connectButton={{
 						className: '!w-full',

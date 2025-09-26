@@ -17,9 +17,6 @@
 │   └── vite.svg
 ├── README.md
 ├── src
-│   ├── app
-│   │   └── dashboard
-│   │       └── page.jsx
 │   ├── assets
 │   │   ├── animation
 │   │   │   ├── rocket-splash-300kb.webm
@@ -42,9 +39,11 @@
 │   │   ├── ErrorBoundary.jsx
 │   │   ├── magicui
 │   │   │   ├── dock.jsx
-│   │   │   └── rainbow-button.jsx
+│   │   │   ├── rainbow-button.jsx
+│   │   │   └── rainbow-label.jsx
 │   │   ├── SplashScreen.jsx
 │   │   └── ui
+│   │       ├── alert-dialog.jsx
 │   │       ├── avatar.jsx
 │   │       ├── breadcrumb.jsx
 │   │       ├── button.jsx
@@ -70,7 +69,9 @@
 │   ├── features
 │   │   ├── auth
 │   │   │   ├── Auth.jsx
-│   │   │   └── ProtectedRoute.jsx
+│   │   │   ├── ProtectedRoute.jsx
+│   │   │   ├── SessionProvider.jsx
+│   │   │   └── SignatureScreen.jsx
 │   │   ├── chat
 │   │   │   └── Chat.jsx
 │   │   ├── error
@@ -82,6 +83,7 @@
 │   │   └── market
 │   │       └── MarketPulse.jsx
 │   ├── hooks
+│   │   ├── useConversations.js
 │   │   └── useMobile.js
 │   ├── index.css
 │   ├── layouts
@@ -94,8 +96,17 @@
 │   │   │       └── NavUser.jsx
 │   │   └── MainLayout.jsx
 │   ├── lib
+│   │   ├── crypto.js
+│   │   ├── dataService.js
+│   │   ├── db.js
+│   │   ├── graph
+│   │   │   ├── queries.js
+│   │   │   └── schema.graphql
 │   │   ├── mockApi.js
 │   │   ├── mockData.js
+│   │   ├── schema.js
+│   │   ├── searchService.js
+│   │   ├── syncService.js
 │   │   └── utils.js
 │   ├── main.jsx
 │   ├── pages
@@ -110,4 +121,4 @@
 ├── tailwind.config.js
 └── vite.config.js
 
-25 directories, 86 files
+24 directories, 98 files

@@ -1,6 +1,6 @@
+// src/layouts/components/nav/NavMain.jsx
 import { useState } from 'react';
 
-import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useDispatch } from 'react-redux';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -13,7 +13,7 @@ import {
 	SidebarMenuButton,
 	SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { fetchConversations } from '@/lib/mockApi';
+import useConversations from '@/hooks/useConversations';
 import { cn } from '@/lib/utils';
 import { setActiveConversationId } from '@/store/chatSlice';
 
@@ -23,13 +23,11 @@ export default function NavMain({ items }) {
 	const dispatch = useDispatch();
 	const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
-	const { data: recentConversations } = useQuery({
-		queryKey: ['conversations'],
-		queryFn: fetchConversations,
-		// --- FIX: Add refetchInterval to keep the sidebar history up-to-date ---
-		refetchInterval: 5000,
-		select: allConversations => allConversations.slice(0, 5),
-	});
+	// Consume data from the centralized hook. No fetching logic here.
+	const { data: allConversations } = useConversations();
+
+	// The select logic is now performed here, not in the query.
+	const recentConversations = allConversations?.slice(0, 5);
 
 	const handleSelectConversation = conversationId => {
 		dispatch(setActiveConversationId(conversationId));

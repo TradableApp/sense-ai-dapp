@@ -1,3 +1,4 @@
+// src/layouts/MainLayout.jsx
 import { Outlet, useLocation } from 'react-router-dom';
 import { ConnectButton } from 'thirdweb/react';
 
@@ -10,6 +11,7 @@ import {
 import Separator from '@/components/ui/separator';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { client, wallets } from '@/config/thirdweb';
+import useConversations from '@/hooks/useConversations';
 import useMobile from '@/hooks/useMobile';
 import AppSidebar from '@/layouts/components/AppSidebar';
 import MobileNav from '@/layouts/components/MobileNav';
@@ -26,6 +28,10 @@ function usePageTitle() {
 export default function MainLayout() {
 	const pageTitle = usePageTitle();
 	const isMobile = useMobile();
+
+	// Centralized data fetching and polling for all conversation data.
+	// This ensures polling works on mobile and avoids duplicate fetches.
+	useConversations();
 
 	return (
 		// This parent div now controls the screen height for both layouts
@@ -63,7 +69,15 @@ export default function MainLayout() {
 							{/* The Connect Button is only rendered in the header on mobile */}
 							{isMobile && (
 								<div className="ml-auto">
-									<ConnectButton client={client} wallets={wallets} theme="dark" />
+									<ConnectButton
+										client={client}
+										wallets={wallets}
+										appMetadata={{
+											name: 'SenseAI App',
+											url: 'https://tradable.app',
+										}}
+										theme="dark"
+									/>
 								</div>
 							)}
 						</div>

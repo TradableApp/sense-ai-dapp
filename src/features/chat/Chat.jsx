@@ -31,17 +31,25 @@ import {
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ai/reasoning';
 import UserMessageActions from '@/components/ai/user-message-actions';
 import { Button } from '@/components/ui/button';
+import { useSession } from '@/features/auth/SessionProvider';
+import useConversations from '@/hooks/useConversations';
 import {
 	addMessageToConversation,
 	branchConversation,
 	createNewConversation,
 	editUserMessage,
-	fetchConversations,
-	fetchMessagesForConversation,
+	getMessagesForConversation,
 	regenerateAssistantResponse,
-} from '@/lib/mockApi';
+} from '@/lib/dataService';
 import senseaiLogo from '@/senseai-logo.svg';
-import { clearActiveConversation, setActiveConversationId } from '@/store/chatSlice';
+import {
+	addReasoningStepByCorrelationId,
+	appendLiveMessages,
+	clearActiveConversation,
+	setActiveConversationId,
+	setActiveConversationMessages,
+	updateMessageContentByCorrelationId,
+} from '@/store/chatSlice';
 
 function MarkdownParagraph({ children }) {
 	return <p className="inline">{children}</p>;
@@ -49,10 +57,7 @@ function MarkdownParagraph({ children }) {
 const markdownComponents = { p: MarkdownParagraph };
 
 function BranchInfo({ originalConversationId, onNavigate }) {
-	const { data: conversations } = useQuery({
-		queryKey: ['conversations'],
-		queryFn: fetchConversations,
-	});
+	const { data: conversations } = useConversations();
 	const originalConversation = conversations?.find(c => c.id === originalConversationId);
 
 	if (!originalConversation) return null;
@@ -81,11 +86,18 @@ export default function Chat() {
 	const dispatch = useDispatch();
 	const queryClient = useQueryClient();
 	const navigate = useNavigate();
-	const activeConversationId = useSelector(state => state.chat.activeConversationId);
+	const { sessionKey, ownerAddress } = useSession();
+	const { activeConversationId, activeConversationMessages } = useSelector(state => state.chat);
+
+	console.log(
+		'[Chat.jsx] Component Render. State:',
+		`\n  - activeConversationId: ${activeConversationId}`,
+		`\n  - activeConversationMessages count: ${activeConversationMessages.length}`,
+	);
+
 	const [animatedContents, setAnimatedContents] = useState({});
 	const activeTimersRef = useRef({});
 	const prevMessagesRef = useRef([]);
-
 	const [activeMessageId, setActiveMessageId] = useState(null);
 	const [editingMessageId, setEditingMessageId] = useState(null);
 	const prevMessageCountRef = useRef(0);
@@ -101,29 +113,48 @@ export default function Chat() {
 		defaultValues: { prompt: '' },
 	});
 
-	const { data: allMessages, isLoading } = useQuery({
-		queryKey: ['messages', activeConversationId],
-		queryFn: () => fetchMessagesForConversation(activeConversationId),
-		enabled: !!activeConversationId,
-		refetchInterval: 1000,
-	});
-
-	const { data: conversations } = useQuery({
-		queryKey: ['conversations'],
-		queryFn: fetchConversations,
-	});
+	const { data: conversations } = useConversations();
 	const currentConversation = conversations?.find(c => c.id === activeConversationId);
 
+	const { data: queryData, isLoading } = useQuery({
+		queryKey: ['messages', activeConversationId, sessionKey, ownerAddress],
+		queryFn: () => {
+			console.log(
+				`%c[useQuery messages] queryFn TRIGGERED for conversation: ${activeConversationId}`,
+				'color: blue; font-weight: bold;',
+			);
+			return getMessagesForConversation(sessionKey, ownerAddress, activeConversationId);
+		},
+		onSuccess: messages => {
+			console.log(
+				`%c[useQuery messages] onSuccess FIRED. Fetched ${
+					messages?.length || 0
+				} messages. Populating Redux.`,
+				'color: green; font-weight: bold;',
+			);
+			if (messages) {
+				dispatch(setActiveConversationMessages(messages));
+			}
+		},
+		enabled: !!activeConversationId && !!sessionKey && !!ownerAddress,
+	});
+
+	console.log(
+		'[useQuery messages] Status:',
+		`\n  - isLoading: ${isLoading}`,
+		`\n  - queryData count: ${queryData?.length || 0}`,
+	);
+
 	const { messagesToDisplay, versionInfo } = useMemo(() => {
-		if (!allMessages || allMessages.length === 0) {
-			return { messagesToDisplay: [], versionInfo: {} };
-		}
+		const allMessages = activeConversationMessages;
+		console.log(
+			`[useMemo messagesToDisplay] Calculating... using ${allMessages.length} messages from Redux.`,
+		);
+		if (!allMessages || allMessages.length === 0) return { messagesToDisplay: [], versionInfo: {} };
 		const messageMap = new Map(allMessages.map(m => [m.id, m]));
 		const parentToChildrenMap = allMessages.reduce((acc, msg) => {
 			const parentKey = String(msg.parentId);
-			if (!acc[parentKey]) {
-				acc[parentKey] = [];
-			}
+			if (!acc[parentKey]) acc[parentKey] = [];
 			acc[parentKey].push(msg);
 			return acc;
 		}, {});
@@ -131,12 +162,9 @@ export default function Chat() {
 		Object.keys(parentToChildrenMap).forEach(parentId => {
 			const children = parentToChildrenMap[parentId];
 			if (children.length > 1) {
-				const siblings = children.sort((a, b) => a.timestamp - b.timestamp);
+				const siblings = children.sort((a, b) => a.createdAt - b.createdAt);
 				siblings.forEach((msg, index) => {
-					versions[msg.id] = {
-						siblings: siblings.map(s => s.id),
-						currentIndex: index,
-					};
+					versions[msg.id] = { siblings: siblings.map(s => s.id), currentIndex: index };
 				});
 			}
 		});
@@ -148,13 +176,23 @@ export default function Chat() {
 				displayPath.unshift(message);
 				currentId = message.parentId;
 			}
+		} else if (allMessages.length > 0) {
+			const latestMessage = allMessages.at(-1);
+			let currentId = latestMessage.id;
+			while (currentId && messageMap.has(currentId)) {
+				const message = messageMap.get(currentId);
+				displayPath.unshift(message);
+				currentId = message.parentId;
+			}
 		}
+		console.log(
+			`[useMemo messagesToDisplay] Calculation complete. Returning ${displayPath.length} messages to render.`,
+		);
 		return { messagesToDisplay: displayPath, versionInfo: versions };
-	}, [allMessages, activeMessageId]);
+	}, [activeConversationMessages, activeMessageId]);
 
 	useEffect(() => {
-		// When the active conversation ID from Redux changes, reset the local state
-		// to ensure we don't carry over the state from the previous conversation.
+		console.log('[useEffect] activeConversationId changed. Resetting local state.');
 		setActiveMessageId(null);
 		setEditingMessageId(null);
 		prevMessageCountRef.current = 0;
@@ -162,66 +200,154 @@ export default function Chat() {
 	}, [activeConversationId]);
 
 	useEffect(() => {
-		if (allMessages && allMessages.length > prevMessageCountRef.current) {
-			setActiveMessageId(allMessages.at(-1).id);
-		} else if (!activeMessageId && allMessages?.length) {
-			setActiveMessageId(allMessages.at(-1).id);
+		if (
+			activeConversationMessages &&
+			activeConversationMessages.length > prevMessageCountRef.current
+		) {
+			console.log('[useEffect] New messages detected. Setting activeMessageId.');
+			setActiveMessageId(activeConversationMessages.at(-1).id);
+		} else if (!activeMessageId && activeConversationMessages?.length) {
+			console.log('[useEffect] No active message. Setting to last message in list.');
+			setActiveMessageId(activeConversationMessages.at(-1).id);
 		}
-		prevMessageCountRef.current = allMessages?.length || 0;
-	}, [activeMessageId, allMessages]);
+		prevMessageCountRef.current = activeConversationMessages?.length || 0;
+	}, [activeMessageId, activeConversationMessages]);
 
-	useEffect(
-		() => () => {
-			Object.values(activeTimersRef.current).forEach(clearInterval);
-		},
-		[],
-	);
+	useEffect(() => () => Object.values(activeTimersRef.current).forEach(clearInterval), []);
 
-	const handleMutationSuccess = newConversation => {
-		queryClient.invalidateQueries({ queryKey: ['conversations'] });
-		if (newConversation) {
-			dispatch(setActiveConversationId(newConversation.id));
-		}
-		queryClient.invalidateQueries({ queryKey: ['messages', activeConversationId] });
+	const handleMutationError = error => {
+		console.error('On-chain transaction simulation failed:', error);
 	};
 
 	const newConversationMutation = useMutation({
-		mutationFn: createNewConversation,
-		onSuccess: handleMutationSuccess,
+		mutationFn: variables =>
+			createNewConversation(
+				sessionKey,
+				ownerAddress,
+				variables.content,
+				variables.aiCorrelationId,
+				variables.onReasoningStep,
+				variables.onFinalAnswer,
+			),
+		onSuccess: ({ newConversation, finalUserMessage, finalAiMessage }, variables) => {
+			const queryKey = ['conversations', sessionKey, ownerAddress];
+			console.log(`[Chat.jsx] New conversation created: ${newConversation.id}.`);
+			queryClient.setQueryData(queryKey, (oldData = []) =>
+				[newConversation, ...oldData].sort(
+					(a, b) => (b.lastMessageCreatedAt || 0) - (a.lastMessageCreatedAt || 0),
+				),
+			);
+			dispatch(setActiveConversationId(newConversation.id));
+			const aiMessagePlaceholder = {
+				...finalAiMessage,
+				correlationId: variables.aiCorrelationId,
+				reasoning: [],
+			};
+			dispatch(setActiveConversationMessages([finalUserMessage, aiMessagePlaceholder]));
+		},
+		onError: handleMutationError,
 	});
 
 	const addMessageMutation = useMutation({
 		mutationFn: variables =>
-			addMessageToConversation(variables.conversationId, variables.parentId, variables.content),
-		onSuccess: () => handleMutationSuccess(null),
+			addMessageToConversation(
+				sessionKey,
+				ownerAddress,
+				variables.conversationId,
+				variables.parentId,
+				variables.content,
+				variables.aiCorrelationId,
+				variables.onReasoningStep,
+				variables.onFinalAnswer,
+			),
+		onSuccess: ({ updatedConversation, finalUserMessage, finalAiMessage }, variables) => {
+			const queryKey = ['conversations', sessionKey, ownerAddress];
+			console.log(`[Chat.jsx] Conversation ${updatedConversation.id} updated.`);
+			queryClient.setQueryData(queryKey, (oldData = []) =>
+				oldData
+					.map(conv => (conv.id === updatedConversation.id ? updatedConversation : conv))
+					.sort((a, b) => (b.lastMessageCreatedAt || 0) - (a.lastMessageCreatedAt || 0)),
+			);
+			const aiMessagePlaceholder = {
+				...finalAiMessage,
+				correlationId: variables.aiCorrelationId,
+				reasoning: [],
+			};
+			dispatch(appendLiveMessages([finalUserMessage, aiMessagePlaceholder]));
+		},
+		onError: handleMutationError,
 	});
 
 	const regenerateMutation = useMutation({
 		mutationFn: variables =>
 			regenerateAssistantResponse(
+				sessionKey,
+				ownerAddress,
 				variables.conversationId,
 				variables.parentId,
 				variables.originalUserQuery,
 				variables.regenerationMode,
+				variables.aiCorrelationId,
+				variables.onReasoningStep,
+				variables.onFinalAnswer,
 			),
-		onSuccess: () => handleMutationSuccess(null),
+		onSuccess: ({ updatedConversation, finalAiMessage }, variables) => {
+			const queryKey = ['conversations', sessionKey, ownerAddress];
+			console.log(`[Chat.jsx] Regeneration successful for conv ${updatedConversation.id}.`);
+			queryClient.setQueryData(queryKey, (oldData = []) =>
+				oldData
+					.map(conv => (conv.id === updatedConversation.id ? updatedConversation : conv))
+					.sort((a, b) => (b.lastMessageCreatedAt || 0) - (a.lastMessageCreatedAt || 0)),
+			);
+			const aiMessagePlaceholder = {
+				...finalAiMessage,
+				correlationId: variables.aiCorrelationId,
+				reasoning: [],
+			};
+			dispatch(appendLiveMessages([aiMessagePlaceholder]));
+		},
+		onError: handleMutationError,
 	});
 
 	const editUserMessageMutation = useMutation({
 		mutationFn: variables =>
-			editUserMessage(variables.conversationId, variables.parentId, variables.newContent),
-		onSuccess: () => {
+			editUserMessage(
+				sessionKey,
+				ownerAddress,
+				variables.conversationId,
+				variables.parentId,
+				variables.newContent,
+				variables.aiCorrelationId,
+				variables.onReasoningStep,
+				variables.onFinalAnswer,
+			),
+		onSuccess: ({ updatedConversation }) => {
 			setEditingMessageId(null);
-			handleMutationSuccess(null);
+			const queryKey = ['conversations', sessionKey, ownerAddress];
+			console.log(`[Chat.jsx] Edit successful for conv ${updatedConversation.id}.`);
+			queryClient.setQueryData(queryKey, (oldData = []) =>
+				oldData
+					.map(conv => (conv.id === updatedConversation.id ? updatedConversation : conv))
+					.sort((a, b) => (b.lastMessageCreatedAt || 0) - (a.lastMessageCreatedAt || 0)),
+			);
+			queryClient.invalidateQueries({
+				queryKey: ['messages', activeConversationId, sessionKey, ownerAddress],
+			});
 		},
+		onError: handleMutationError,
 	});
 
 	const branchConversationMutation = useMutation({
 		mutationFn: variables =>
-			branchConversation(variables.originalConversationId, variables.branchPointMessageId),
+			branchConversation(
+				sessionKey,
+				ownerAddress,
+				variables.originalConversationId,
+				variables.branchPointMessageId,
+			),
 		onSuccess: newConversation => {
 			if (newConversation) {
-				queryClient.invalidateQueries({ queryKey: ['conversations'] });
+				queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
 				dispatch(setActiveConversationId(newConversation.id));
 				navigate('/chat');
 			}
@@ -229,29 +355,51 @@ export default function Chat() {
 	});
 
 	const handleRegenerate = (aiMessageToRegenerate, mode = 'default') => {
-		const userPrompt = allMessages.find(m => m.id === aiMessageToRegenerate.parentId);
+		const userPrompt = activeConversationMessages.find(
+			m => m.id === aiMessageToRegenerate.parentId,
+		);
 		if (userPrompt) {
+			const aiCorrelationId = Date.now().toString();
+			console.log(
+				`[Chat.jsx] Regenerating response for user message "${userPrompt.id}" with new aiCorrelationId "${aiCorrelationId}"`,
+			);
 			regenerateMutation.mutate({
 				conversationId: activeConversationId,
 				parentId: userPrompt.id,
 				originalUserQuery: userPrompt.content,
 				regenerationMode: mode,
+				aiCorrelationId,
+				onReasoningStep: (correlationId, reasoningStep) => {
+					dispatch(addReasoningStepByCorrelationId({ correlationId, reasoningStep }));
+				},
+				onFinalAnswer: (correlationId, finalAnswer) => {
+					dispatch(updateMessageContentByCorrelationId({ correlationId, ...finalAnswer }));
+				},
 			});
 		}
 	};
 
 	const handleSaveEdit = data => {
-		const originalMessage = allMessages.find(m => m.id === editingMessageId);
+		const originalMessage = activeConversationMessages.find(m => m.id === editingMessageId);
 		if (originalMessage) {
+			const aiCorrelationId = Date.now().toString();
 			editUserMessageMutation.mutate({
 				conversationId: activeConversationId,
 				parentId: originalMessage.parentId,
 				newContent: data.content,
+				aiCorrelationId,
+				onReasoningStep: (correlationId, reasoningStep) => {
+					dispatch(addReasoningStepByCorrelationId({ correlationId, reasoningStep }));
+				},
+				onFinalAnswer: (correlationId, finalAnswer) => {
+					dispatch(updateMessageContentByCorrelationId({ correlationId, ...finalAnswer }));
+				},
 			});
 		}
 	};
 
 	const handleNavigate = targetBranchRootId => {
+		const allMessages = activeConversationMessages;
 		if (!allMessages) return;
 		const messageMap = new Map(allMessages.map(m => [m.id, m]));
 		const parentToChildrenMap = allMessages.reduce((acc, msg) => {
@@ -264,7 +412,7 @@ export default function Chat() {
 		const queue = [latestMessageInBranch];
 		while (queue.length > 0) {
 			const [currentNode] = queue.splice(0, 1);
-			if (currentNode.timestamp > latestMessageInBranch.timestamp) {
+			if (currentNode.createdAt > latestMessageInBranch.createdAt) {
 				latestMessageInBranch = currentNode;
 			}
 			const children = parentToChildrenMap[String(currentNode.id)];
@@ -314,8 +462,9 @@ export default function Chat() {
 		if (
 			lastMessage?.role === 'assistant' &&
 			lastMessage.content &&
-			!prevLastMessage?.content &&
-			lastMessage.id === prevLastMessage?.id
+			prevLastMessage &&
+			lastMessage.id === prevLastMessage.id &&
+			!prevLastMessage.content
 		) {
 			simulateTyping(lastMessage);
 		}
@@ -324,19 +473,33 @@ export default function Chat() {
 	}, [messagesToDisplay]);
 
 	const onSubmit = data => {
-		const lastMessage = messagesToDisplay?.at(-1);
-		if (lastMessage?.role === 'assistant') {
-			setAnimatedContents(prev => ({ ...prev, [lastMessage.id]: lastMessage.content }));
-		}
+		console.log('[Chat.jsx] onSubmit called.');
 		const parentId = messagesToDisplay?.at(-1)?.id || null;
+		const aiCorrelationId = Date.now().toString();
+
+		const onReasoningStep = (correlationId, reasoningStep) => {
+			dispatch(addReasoningStepByCorrelationId({ correlationId, reasoningStep }));
+		};
+		const onFinalAnswer = (correlationId, finalAnswer) => {
+			dispatch(updateMessageContentByCorrelationId({ correlationId, ...finalAnswer }));
+		};
+
 		if (activeConversationId) {
 			addMessageMutation.mutate({
 				conversationId: activeConversationId,
 				parentId,
 				content: data.prompt,
+				aiCorrelationId,
+				onReasoningStep,
+				onFinalAnswer,
 			});
 		} else {
-			newConversationMutation.mutate(data.prompt);
+			newConversationMutation.mutate({
+				content: data.prompt,
+				aiCorrelationId,
+				onReasoningStep,
+				onFinalAnswer,
+			});
 		}
 		reset();
 	};
@@ -362,7 +525,7 @@ export default function Chat() {
 	const lastMessage = messagesToDisplay.at(-1);
 	const isAiThinking = lastMessage?.role === 'assistant' && !lastMessage.content;
 	const hasValidationError = !!errors.prompt;
-	const isAiWorking = isProcessing || isAiThinking;
+	const isAiWorking = isProcessing || isAiThinking || !sessionKey;
 
 	const submitStatus = (() => {
 		if (hasValidationError) return 'error';
@@ -387,7 +550,7 @@ export default function Chat() {
 			</div>
 			<Conversation className="flex-1">
 				<ConversationContent className="space-y-4">
-					{isLoading && !messagesToDisplay.length && (
+					{isLoading && !messagesToDisplay.length && !isProcessing && (
 						<div className="flex items-center justify-center h-full">
 							<Loader />
 						</div>
@@ -399,6 +562,11 @@ export default function Chat() {
 							<p className="text-muted-foreground max-w-sm mx-auto">
 								Type a message below to begin.
 							</p>
+						</div>
+					)}
+					{isProcessing && !activeConversationId && (
+						<div className="flex items-center justify-center h-full">
+							<Loader />
 						</div>
 					)}
 					{messagesToDisplay.map(message => {
@@ -446,7 +614,7 @@ export default function Chat() {
 															remarkPlugins={[remarkGfm, remarkBreaks]}
 															components={markdownComponents}
 														>
-															{(animatedContent ?? message.content) + (isTyping ? '▍' : '')}
+															{isTyping ? `${animatedContent}▍` : message.content}
 														</ReactMarkdown>
 													</div>
 												</MessageContent>

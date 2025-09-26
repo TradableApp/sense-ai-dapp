@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+// src/features/history/History.jsx
+import { useEffect, useMemo, useState } from 'react';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
 	FilePenLine,
 	Loader2Icon,
@@ -33,7 +34,10 @@ import {
 import EmptyState from '@/components/ui/empty-state';
 import Input from '@/components/ui/input';
 import Skeleton from '@/components/ui/skeleton';
-import { deleteConversation, fetchConversations } from '@/lib/mockApi';
+import { useSession } from '@/features/auth/SessionProvider';
+import useConversations from '@/hooks/useConversations';
+import { deleteConversation } from '@/lib/dataService';
+import { initializeSearch, search, teardownSearch } from '@/lib/searchService';
 import { markdownToPlainText } from '@/lib/utils';
 import {
 	clearActiveConversation,
@@ -47,32 +51,46 @@ export default function History() {
 	const navigate = useNavigate();
 	const dispatch = useDispatch();
 	const queryClient = useQueryClient();
+	const { sessionKey, ownerAddress } = useSession();
 
+	const [searchQuery, setSearchQuery] = useState('');
+	const [filteredConversationIds, setFilteredConversationIds] = useState(null);
 	const [isAlertOpen, setIsAlertOpen] = useState(false);
 	const [conversationToDelete, setConversationToDelete] = useState(null);
 
 	const activeConversationId = useSelector(state => state.chat.activeConversationId);
 	const skeletonKeys = useMemo(() => Array.from({ length: 3 }, () => `skel-${Math.random()}`), []);
 
-	const {
-		data: conversations,
-		isLoading,
-		isError,
-	} = useQuery({
-		queryKey: ['conversations'],
-		queryFn: fetchConversations,
-		refetchInterval: 5000,
-	});
+	// Consume data from the centralized hook. No fetching logic here.
+	const { data: conversations, isLoading, isError } = useConversations();
+
+	useEffect(() => {
+		if (sessionKey && ownerAddress) {
+			initializeSearch(sessionKey, ownerAddress);
+		}
+		return () => {
+			teardownSearch();
+		};
+	}, [sessionKey, ownerAddress]);
 
 	const deleteMutation = useMutation({
-		mutationFn: deleteConversation,
+		mutationFn: variables =>
+			deleteConversation(variables.sessionKey, variables.ownerAddress, variables.conversationId),
 		onSuccess: deletedConversationId => {
-			queryClient.invalidateQueries({ queryKey: ['conversations'] });
+			console.log(
+				`%c[History.jsx] deleteMutation onSuccess for conv "${deletedConversationId}". Invalidating queries.`,
+				'color: green',
+			);
+			// Invalidate the centralized query
+			queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
 			if (activeConversationId === deletedConversationId) {
 				dispatch(clearActiveConversation());
 			}
 			setIsAlertOpen(false);
 			setConversationToDelete(null);
+		},
+		onError: error => {
+			console.error('[History.jsx] deleteMutation onError:', error);
 		},
 	});
 
@@ -89,7 +107,12 @@ export default function History() {
 
 	const confirmDelete = () => {
 		if (conversationToDelete) {
-			deleteMutation.mutate(conversationToDelete);
+			console.log(`[History.jsx] confirmDelete: Calling deleteMutation.mutate with state:`, {
+				sessionKey,
+				ownerAddress,
+				conversationId: conversationToDelete,
+			});
+			deleteMutation.mutate({ sessionKey, ownerAddress, conversationId: conversationToDelete });
 		}
 	};
 
@@ -98,8 +121,36 @@ export default function History() {
 		dispatch(openRenameModal({ id: conversation.id, title: conversation.title }));
 	};
 
+	const handleSearchChange = e => {
+		const query = e.target.value;
+		setSearchQuery(query);
+
+		if (query.trim() === '') {
+			setFilteredConversationIds(null);
+		} else {
+			const results = search(query);
+			setFilteredConversationIds(results);
+		}
+	};
+
+	const displayedConversations = useMemo(() => {
+		if (!conversations) return [];
+		if (filteredConversationIds === null) {
+			return conversations;
+		}
+		const filteredSet = new Set(filteredConversationIds);
+		return conversations.filter(c => filteredSet.has(c.id));
+	}, [conversations, filteredConversationIds]);
+
 	const hasConversations = !isLoading && conversations && conversations.length > 0;
 	const showEmptyState = !isLoading && (!conversations || conversations.length === 0);
+	const showNoResults =
+		!isLoading &&
+		searchQuery.trim() !== '' &&
+		filteredConversationIds &&
+		filteredConversationIds.length === 0;
+
+	const isSessionReady = !!sessionKey && !!ownerAddress;
 
 	return (
 		<>
@@ -118,6 +169,8 @@ export default function History() {
 							type="search"
 							placeholder="Search history..."
 							className="w-full rounded-lg bg-background pl-8"
+							value={searchQuery}
+							onChange={handleSearchChange}
 						/>
 					</div>
 					<Button
@@ -151,15 +204,25 @@ export default function History() {
 							))}
 						{isError && <div className="p-4 text-destructive">Error loading conversations.</div>}
 						{showEmptyState && <EmptyState />}
+						{showNoResults && (
+							<div className="p-4 text-center text-muted-foreground">No results found.</div>
+						)}
 						{hasConversations &&
-							conversations.map(item => {
+							!showNoResults &&
+							displayedConversations.map(item => {
 								const displayDate = item.lastMessageCreatedAt || item.createdAt;
 								return (
-									<button
-										type="button"
+									<div
 										key={item.id}
-										className="w-full text-left flex items-center gap-3 border-b p-4 text-sm last:border-b-0 cursor-pointer hover:bg-muted/50"
+										role="button"
+										tabIndex={0}
+										className="w-full text-left flex items-center gap-3 border-b p-4 text-sm last:border-b-0 cursor-pointer hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 										onClick={() => handleSelectConversation(item.id)}
+										onKeyDown={e => {
+											if (e.key === 'Enter' || e.key === ' ') {
+												handleSelectConversation(item.id);
+											}
+										}}
 									>
 										<MessageSquare className="size-5 flex-shrink-0 text-muted-foreground" />
 										<div className="flex-1 min-w-0">
@@ -182,11 +245,13 @@ export default function History() {
 										<div className="flex-shrink-0">
 											<DropdownMenu>
 												<DropdownMenuTrigger asChild>
+													{/* --- FIX: Disable the entire dropdown trigger if the session isn't ready --- */}
 													<Button
 														aria-haspopup="true"
 														size="icon"
 														variant="ghost"
 														onClick={e => e.stopPropagation()}
+														disabled={!isSessionReady}
 													>
 														<MoreHorizontal className="size-4" />
 														<span className="sr-only">Toggle menu</span>
@@ -207,7 +272,7 @@ export default function History() {
 												</DropdownMenuContent>
 											</DropdownMenu>
 										</div>
-									</button>
+									</div>
 								);
 							})}
 					</div>
@@ -232,7 +297,8 @@ export default function History() {
 						<AlertDialogAction
 							className="bg-destructive hover:bg-destructive/90"
 							onClick={confirmDelete}
-							disabled={deleteMutation.isPending}
+							// --- FIX: Also disable the confirm button if the session isn't ready ---
+							disabled={deleteMutation.isPending || !isSessionReady}
 						>
 							{deleteMutation.isPending && <Loader2Icon className="mr-2 size-4 animate-spin" />}
 							Continue

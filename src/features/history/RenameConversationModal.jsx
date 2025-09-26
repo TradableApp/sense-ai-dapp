@@ -17,7 +17,8 @@ import {
 	DialogTitle,
 } from '@/components/ui/dialog';
 import Input from '@/components/ui/input';
-import { renameConversation } from '@/lib/mockApi';
+import { useSession } from '@/features/auth/SessionProvider';
+import { renameConversation } from '@/lib/dataService';
 import { closeRenameModal } from '@/store/chatSlice';
 
 const renameSchema = z.object({
@@ -31,6 +32,7 @@ const renameSchema = z.object({
 export default function RenameConversationModal() {
 	const dispatch = useDispatch();
 	const queryClient = useQueryClient();
+	const { sessionKey, ownerAddress } = useSession();
 	const { isRenameModalOpen, conversationToRename } = useSelector(state => state.chat);
 
 	const {
@@ -45,25 +47,46 @@ export default function RenameConversationModal() {
 	});
 
 	useEffect(() => {
-		// --- FIX: Add a guard clause to ensure conversationToRename exists ---
 		if (conversationToRename) {
 			reset({ title: conversationToRename.title });
-			// The timeout gives the dialog time to complete its animation before focusing.
 			setTimeout(() => setFocus('title'), 100);
 		}
 	}, [conversationToRename, reset, setFocus]);
 
 	const renameMutation = useMutation({
-		mutationFn: renameConversation,
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ['conversations'] });
+		mutationFn: variables =>
+			renameConversation(variables.sessionKey, variables.ownerAddress, {
+				id: variables.id,
+				newTitle: variables.newTitle,
+			}),
+		onSuccess: updatedConv => {
+			// --- FIX: Add a guard clause to ensure updatedConv is not undefined ---
+			if (!updatedConv) {
+				console.error(
+					'[RenameModal] onSuccess called, but updatedConv is undefined. This should not happen.',
+				);
+				return;
+			}
+			console.log(
+				`%c[RenameModal] renameMutation onSuccess for conv "${updatedConv.id}". Invalidating queries.`,
+				'color: green',
+			);
+			queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
 			dispatch(closeRenameModal());
+		},
+		onError: error => {
+			console.error('[RenameModal] renameMutation onError:', error.message);
 		},
 	});
 
 	const onSubmit = data => {
 		if (!conversationToRename) return;
-		renameMutation.mutate({ id: conversationToRename.id, newTitle: data.title });
+		renameMutation.mutate({
+			sessionKey,
+			ownerAddress,
+			id: conversationToRename.id,
+			newTitle: data.title,
+		});
 	};
 
 	const handleOpenChange = isOpen => {
@@ -73,6 +96,7 @@ export default function RenameConversationModal() {
 		}
 	};
 
+	const isSessionReady = !!sessionKey && !!ownerAddress;
 	const isProcessing = isSubmitting || renameMutation.isPending;
 
 	return (
@@ -84,7 +108,11 @@ export default function RenameConversationModal() {
 				</DialogHeader>
 
 				<form onSubmit={handleSubmit(onSubmit)} className="space-y-2">
-					<Input placeholder="Conversation title" disabled={isProcessing} {...register('title')} />
+					<Input
+						placeholder="Conversation title"
+						disabled={isProcessing || !isSessionReady}
+						{...register('title')}
+					/>
 
 					{errors.title && <p className="text-sm text-destructive">{errors.title.message}</p>}
 
@@ -102,7 +130,7 @@ export default function RenameConversationModal() {
 							Cancel
 						</Button>
 
-						<Button type="submit" disabled={isProcessing}>
+						<Button type="submit" disabled={isProcessing || !isSessionReady}>
 							{isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
 							{isProcessing ? 'Renaming...' : 'Rename'}
 						</Button>
