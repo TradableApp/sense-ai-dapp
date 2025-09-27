@@ -110,29 +110,34 @@ export default function Chat() {
 	const { data: conversations } = useConversations();
 	const currentConversation = conversations?.find(c => c.id === activeConversationId);
 
-	const { isLoading } = useQuery({
+	const { data: messagesFromQuery, isLoading } = useQuery({
 		queryKey: ['messages', activeConversationId, sessionKey, ownerAddress],
 		queryFn: () => {
-			console.log(
-				`%c[Chat.jsx-LOG] useQuery.queryFn is TRIGGERED for conversation: ${activeConversationId}. Calling getMessagesForConversation.`,
-				'color: blue; font-weight: bold;',
-			);
+			if (!activeConversationId) return [];
 			return getMessagesForConversation(sessionKey, ownerAddress, activeConversationId);
-		},
-		onSuccess: messages => {
-			console.log(
-				`%c[Chat.jsx-LOG] useQuery.onSuccess FIRED. Received ${
-					messages?.length || 0
-				} messages from queryFn. Dispatching to Redux.`,
-				'color: blue; font-weight: bold;',
-				messages,
-			);
-			if (messages) {
-				dispatch(setActiveConversationMessages(messages));
-			}
 		},
 		enabled: !!activeConversationId && !!sessionKey && !!ownerAddress,
 	});
+
+	// This effect now correctly populates the messages when the conversation is first loaded or changed.
+	useEffect(() => {
+		// Only update from React Query if the conversation ID has actually changed.
+		// This prevents overwriting the live-streaming state.
+		const isNewConversation =
+			activeConversationMessages.length === 0 ||
+			activeConversationMessages[0]?.conversationId !== activeConversationId;
+
+		if (messagesFromQuery && isNewConversation) {
+			dispatch(setActiveConversationMessages(messagesFromQuery));
+		}
+	}, [messagesFromQuery, activeConversationId, activeConversationMessages, dispatch]);
+
+	// This effect remains crucial for clearing messages when navigating away or resetting.
+	useEffect(() => {
+		if (!activeConversationId) {
+			dispatch(setActiveConversationMessages([]));
+		}
+	}, [activeConversationId, dispatch]);
 
 	const { messagesToDisplay, versionInfo } = useMemo(() => {
 		const allMessages = activeConversationMessages;
@@ -212,6 +217,7 @@ export default function Chat() {
 			),
 		onSuccess: ({ newConversation, finalUserMessage, finalAiMessage }) => {
 			dispatch(setActiveConversationId(newConversation.id));
+			// This is now the definitive action that starts the conversation in the UI
 			dispatch(setActiveConversationMessages([finalUserMessage, finalAiMessage]));
 		},
 		onError: handleMutationError,
@@ -231,6 +237,7 @@ export default function Chat() {
 				variables.queryClient,
 			),
 		onSuccess: ({ finalUserMessage, finalAiMessage }) => {
+			// appendLiveMessages is perfect for adding to the current, live conversation
 			dispatch(appendLiveMessages([finalUserMessage, finalAiMessage]));
 		},
 		onError: handleMutationError,

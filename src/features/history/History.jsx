@@ -181,7 +181,7 @@ export default function History() {
 					<Button
 						asChild
 						className="items-center gap-1"
-						onClick={() => dispatch(setActiveConversationId(null))}
+						onClick={() => dispatch(clearActiveConversation())}
 					>
 						<Link to="/chat">
 							<PlusCircle className="size-3.5" />

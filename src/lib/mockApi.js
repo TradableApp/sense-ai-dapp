@@ -26,24 +26,26 @@ const simulateOracleProcess = async (
 	const thinkingStartTime = Date.now();
 	const reasoningSteps = mockReasoningPool[Math.floor(Math.random() * mockReasoningPool.length)];
 
-	await Promise.all(
-		reasoningSteps.map(async step => {
-			await new Promise(resolve => setTimeout(resolve, MOCK_REASONING_STEP_DELAY));
-			onReasoningStep(aiCorrelationId, step);
+	for (let i = 0; i < reasoningSteps.length; i += 1) {
+		const step = reasoningSteps[i];
 
-			if (Math.random() < MOCK_FAILURE_RATE) {
-				console.error(`%c[mockApi] Simulated AI failure for ${aiCorrelationId}.`, 'color: red');
-				const finalDuration = Math.round((Date.now() - thinkingStartTime) / 1000);
-				onFinalAnswer(aiCorrelationId, {
-					content:
-						'**Error:** The AI model encountered an unexpected issue. Please try regenerating the response.',
-					sources: [],
-					reasoningDuration: finalDuration,
-				});
-				throw new Error('Simulated AI failure');
-			}
-		}),
-	);
+		// eslint-disable-next-line no-await-in-loop
+		await new Promise(resolve => setTimeout(resolve, MOCK_REASONING_STEP_DELAY));
+		onReasoningStep(aiCorrelationId, step);
+		console.log('%c[mockApi] Streaming reasoning step.', 'color: purple', step);
+
+		if (Math.random() < MOCK_FAILURE_RATE) {
+			console.error(`%c[mockApi] Simulated AI failure for ${aiCorrelationId}.`, 'color: red');
+			const finalDuration = Math.round((Date.now() - thinkingStartTime) / 1000);
+			onFinalAnswer(aiCorrelationId, {
+				content:
+					'**Error:** The AI model encountered an unexpected issue. Please try regenerating the response.',
+				sources: [],
+				reasoningDuration: finalDuration,
+			});
+			throw new Error('Simulated AI failure');
+		}
+	}
 
 	await new Promise(resolve => setTimeout(resolve, MOCK_REASONING_STEP_DELAY));
 	const template =
