@@ -10,6 +10,43 @@ import {
 
 const MESSAGE_CACHE_LIMIT = 5;
 
+const updateAndEncryptConversation = async (sessionKey, ownerAddress, conversationId, messages) => {
+	const convRecord = await db.conversations.get([ownerAddress, conversationId]);
+	if (!convRecord) return null;
+
+	const decryptedConv = await decryptData(sessionKey, convRecord.encryptedData);
+	const lastMessage = messages.sort((a, b) => b.createdAt - a.createdAt)[0];
+
+	if (lastMessage) {
+		decryptedConv.lastMessageCreatedAt = lastMessage.createdAt;
+		const isAiThinking = lastMessage.role === 'assistant' && !lastMessage.content;
+		if (isAiThinking) {
+			const parentMessage = messages.find(m => m.id === lastMessage.parentId);
+			decryptedConv.lastMessagePreview = parentMessage?.content || '';
+		} else {
+			decryptedConv.lastMessagePreview = lastMessage.content || '';
+		}
+	}
+
+	const encryptedConv = await encryptData(sessionKey, decryptedConv);
+	await db.conversations.put({ ownerAddress, id: conversationId, encryptedData: encryptedConv });
+	console.log(
+		`[dataService] Updated conversation metadata in IndexedDB for "${conversationId}". Preview: "${decryptedConv.lastMessagePreview.substring(
+			0,
+			30,
+		)}..."`,
+	);
+
+	const lastUserMessage = messages
+		.filter(m => m.role === 'user')
+		.sort((a, b) => b.createdAt - a.createdAt)[0];
+	if (lastUserMessage) {
+		addDeltaToLiveIndex(lastUserMessage, decryptedConv);
+	}
+
+	return decryptedConv;
+};
+
 const maintainMessageCache = async ownerAddress => {
 	const cacheCount = await db.messageCache.where({ ownerAddress }).count();
 	if (cacheCount > MESSAGE_CACHE_LIMIT) {
@@ -25,7 +62,6 @@ const maintainMessageCache = async ownerAddress => {
 
 export const fetchAndCacheConversations = async (sessionKey, ownerAddress) => {
 	if (!sessionKey || !ownerAddress) return [];
-	console.log('[dataService] Fetching conversations from IndexedDB.');
 	const finalRecords = await db.conversations.where({ ownerAddress }).toArray();
 	const decrypted = await Promise.all(
 		finalRecords.map(c => decryptData(sessionKey, c.encryptedData)),
@@ -37,14 +73,100 @@ export const fetchAndCacheConversations = async (sessionKey, ownerAddress) => {
 
 export const getMessagesForConversation = async (sessionKey, ownerAddress, conversationId) => {
 	if (!sessionKey || !ownerAddress || !conversationId) return [];
+
 	const cachedRecord = await db.messageCache.get([ownerAddress, conversationId]);
+
 	if (cachedRecord) {
-		console.log(`[dataService] Cache HIT for messages in conversation "${conversationId}".`);
+		console.log(
+			`%c[dataService-LOG] Cache HIT for messages in conversation "${conversationId}".`,
+			'color: green',
+		);
 		await db.messageCache.update([ownerAddress, conversationId], { lastAccessedAt: Date.now() });
-		return decryptData(sessionKey, cachedRecord.encryptedData);
+		const decryptedData = await decryptData(sessionKey, cachedRecord.encryptedData);
+		console.log(
+			`%c[dataService-LOG] Returning ${decryptedData.length} decrypted messages from cache.`,
+			'color: green',
+			decryptedData,
+		);
+		return decryptedData;
 	}
-	console.log(`[dataService] Cache MISS for messages in conversation "${conversationId}".`);
+
+	console.log(
+		`%c[dataService-LOG] Cache MISS for messages in conversation "${conversationId}". Returning empty array.`,
+		'color: red',
+	);
 	return [];
+};
+
+const createMessageWorkflow = async (
+	sessionKey,
+	ownerAddress,
+	conversationId,
+	existingMessages,
+	userMessage,
+	aiMessage,
+	queryForOracle,
+	aiCorrelationId,
+	onReasoningStep,
+	onFinalAnswer,
+	regenerationMode,
+	queryClient,
+) => {
+	const newMessages = userMessage
+		? [...existingMessages, userMessage, aiMessage]
+		: [...existingMessages, aiMessage];
+
+	const encryptedMessages = await encryptData(sessionKey, newMessages);
+	await db.messageCache.put({
+		ownerAddress,
+		conversationId,
+		encryptedData: encryptedMessages,
+		lastAccessedAt: Date.now(),
+	});
+
+	await updateAndEncryptConversation(sessionKey, ownerAddress, conversationId, newMessages);
+	await maintainMessageCache(ownerAddress);
+
+	const onFinalAnswerForDb = async (correlationId, finalAnswer) => {
+		onFinalAnswer(correlationId, finalAnswer);
+
+		const currentMessages = await getMessagesForConversation(
+			sessionKey,
+			ownerAddress,
+			conversationId,
+		);
+
+		const finalMessages = currentMessages.map(m => {
+			if (m.id === aiMessage.id) {
+				return { ...m, ...finalAnswer };
+			}
+			return m;
+		});
+
+		const finalEncrypted = await encryptData(sessionKey, finalMessages);
+		await db.messageCache.put({
+			ownerAddress,
+			conversationId,
+			encryptedData: finalEncrypted,
+			lastAccessedAt: Date.now(),
+		});
+
+		await updateAndEncryptConversation(sessionKey, ownerAddress, conversationId, finalMessages);
+
+		console.log(
+			'%c[dataService] Final answer stored. Invalidating conversations query to refresh UI.',
+			'color: green; font-weight: bold;',
+		);
+		queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
+	};
+
+	simulateOracleProcess(
+		queryForOracle,
+		aiCorrelationId,
+		onReasoningStep,
+		onFinalAnswerForDb,
+		regenerationMode,
+	);
 };
 
 export const addMessageToConversation = async (
@@ -56,8 +178,8 @@ export const addMessageToConversation = async (
 	aiCorrelationId,
 	onReasoningStep,
 	onFinalAnswer,
+	queryClient,
 ) => {
-	console.log(`[dataService] Adding new message to conversation "${conversationId}".`);
 	const now = Date.now();
 	const finalUserMessage = {
 		id: `msg_${now}`,
@@ -82,34 +204,26 @@ export const addMessageToConversation = async (
 		ownerAddress,
 		conversationId,
 	);
-	const newMessages = [...existingMessages, finalUserMessage, finalAiMessage];
-	const encryptedMessages = await encryptData(sessionKey, newMessages);
-	await db.messageCache.put({
+
+	await createMessageWorkflow(
+		sessionKey,
 		ownerAddress,
 		conversationId,
-		encryptedData: encryptedMessages,
-		lastAccessedAt: Date.now(),
-	});
-	console.log(
-		`[dataService] Wrote ${newMessages.length} messages to cache for "${conversationId}".`,
+		existingMessages,
+		finalUserMessage,
+		finalAiMessage,
+		messageContent,
+		aiCorrelationId,
+		onReasoningStep,
+		onFinalAnswer,
+		null,
+		queryClient,
 	);
-	await maintainMessageCache(ownerAddress);
 
-	let updatedConversation;
-	const convRecord = await db.conversations.get([ownerAddress, conversationId]);
-	if (convRecord) {
-		const decryptedConv = await decryptData(sessionKey, convRecord.encryptedData);
-		decryptedConv.lastMessageCreatedAt = finalAiMessage.createdAt;
-		decryptedConv.lastMessagePreview = finalUserMessage.content;
-		const encryptedConv = await encryptData(sessionKey, decryptedConv);
-		await db.conversations.put({ ownerAddress, id: conversationId, encryptedData: encryptedConv });
-		console.log(`[dataService] Updated conversation metadata for "${conversationId}".`);
-		addDeltaToLiveIndex(finalUserMessage, decryptedConv);
-		updatedConversation = decryptedConv;
-	}
-
-	simulateOracleProcess(finalUserMessage.content, aiCorrelationId, onReasoningStep, onFinalAnswer);
-	return { finalUserMessage, finalAiMessage, updatedConversation };
+	return {
+		finalUserMessage,
+		finalAiMessage: { ...finalAiMessage, correlationId: aiCorrelationId },
+	};
 };
 
 export const createNewConversation = async (
@@ -119,6 +233,7 @@ export const createNewConversation = async (
 	aiCorrelationId,
 	onReasoningStep,
 	onFinalAnswer,
+	queryClient,
 ) => {
 	console.log('[dataService] Creating new conversation.');
 	const now = Date.now();
@@ -149,6 +264,7 @@ export const createNewConversation = async (
 		aiCorrelationId,
 		onReasoningStep,
 		onFinalAnswer,
+		queryClient,
 	);
 	return { newConversation, finalUserMessage, finalAiMessage };
 };
@@ -247,6 +363,7 @@ export const editUserMessage = (
 	aiCorrelationId,
 	onReasoningStep,
 	onFinalAnswer,
+	queryClient,
 ) =>
 	addMessageToConversation(
 		sessionKey,
@@ -257,6 +374,7 @@ export const editUserMessage = (
 		aiCorrelationId,
 		onReasoningStep,
 		onFinalAnswer,
+		queryClient,
 	);
 
 export const regenerateAssistantResponse = async (
@@ -269,6 +387,7 @@ export const regenerateAssistantResponse = async (
 	aiCorrelationId,
 	onReasoningStep,
 	onFinalAnswer,
+	queryClient,
 ) => {
 	console.log(`[dataService] Regenerating response for parent message "${parentId}".`);
 	const now = Date.now();
@@ -287,32 +406,23 @@ export const regenerateAssistantResponse = async (
 		ownerAddress,
 		conversationId,
 	);
-	const newMessages = [...existingMessages, finalAiMessage];
-	const encryptedMessages = await encryptData(sessionKey, newMessages);
-	await db.messageCache.put({
+
+	await createMessageWorkflow(
+		sessionKey,
 		ownerAddress,
 		conversationId,
-		encryptedData: encryptedMessages,
-		lastAccessedAt: Date.now(),
-	});
-	await maintainMessageCache(ownerAddress);
-
-	let updatedConversation;
-	const convRecord = await db.conversations.get([ownerAddress, conversationId]);
-	if (convRecord) {
-		const decryptedConv = await decryptData(sessionKey, convRecord.encryptedData);
-		decryptedConv.lastMessageCreatedAt = finalAiMessage.createdAt;
-		const encryptedConv = await encryptData(sessionKey, decryptedConv);
-		await db.conversations.put({ ownerAddress, id: conversationId, encryptedData: encryptedConv });
-		updatedConversation = decryptedConv;
-	}
-
-	simulateOracleProcess(
+		existingMessages,
+		null,
+		finalAiMessage,
 		originalUserQuery,
 		aiCorrelationId,
 		onReasoningStep,
 		onFinalAnswer,
 		regenerationMode,
+		queryClient,
 	);
-	return { finalAiMessage, updatedConversation };
+
+	return {
+		finalAiMessage: { ...finalAiMessage, correlationId: aiCorrelationId },
+	};
 };

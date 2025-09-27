@@ -95,6 +95,11 @@ export default function History() {
 	});
 
 	const handleSelectConversation = conversationId => {
+		// --- LOG FOR ISSUE #2 ---
+		console.log(
+			`%c[History.jsx-LOG] handleSelectConversation clicked for ID: ${conversationId}. Dispatching setActiveConversationId.`,
+			'color: orange; font-weight: bold;',
+		);
 		dispatch(setActiveConversationId(conversationId));
 		navigate('/chat');
 	};

@@ -15,13 +15,26 @@ export const chatSlice = createSlice({
 		// --- FIX: Only set the ID. Do NOT clear messages here. ---
 		// The Chat component's useQuery is responsible for fetching and setting the new messages.
 		setActiveConversationId: (state, action) => {
+			// --- LOG FOR ISSUE #2 ---
+			console.log(
+				`%c[chatSlice.js-LOG] Reducer: setActiveConversationId. Payload: ${action.payload}`,
+				'color: purple; font-weight: bold;',
+			);
 			state.activeConversationId = action.payload;
 		},
 		clearActiveConversation: state => {
+			console.log(
+				`%c[chatSlice.js-LOG] Reducer: clearActiveConversation.`,
+				'color: purple; font-weight: bold;',
+			);
 			state.activeConversationId = null;
 			state.activeConversationMessages = [];
 		},
 		setActiveConversationMessages: (state, action) => {
+			console.log(
+				`%c[chatSlice.js-LOG] Reducer: setActiveConversationMessages. Payload: ${action.payload}`,
+				'color: purple; font-weight: bold;',
+			);
 			state.activeConversationMessages = action.payload;
 		},
 		appendLiveMessages: (state, action) => {

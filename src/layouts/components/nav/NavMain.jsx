@@ -30,6 +30,11 @@ export default function NavMain({ items }) {
 	const recentConversations = allConversations?.slice(0, 5);
 
 	const handleSelectConversation = conversationId => {
+		// --- LOG FOR ISSUE #2 ---
+		console.log(
+			`%c[NavMain.jsx-LOG] handleSelectConversation clicked for ID: ${conversationId}. Dispatching setActiveConversationId.`,
+			'color: orange; font-weight: bold;',
+		);
 		dispatch(setActiveConversationId(conversationId));
 		navigate('/chat');
 	};
