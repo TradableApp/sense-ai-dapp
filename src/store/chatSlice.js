@@ -12,27 +12,40 @@ export const chatSlice = createSlice({
 	name: 'chat',
 	initialState,
 	reducers: {
-		// --- FIX: Only set the ID. Do NOT clear messages here. ---
-		// The Chat component's useQuery is responsible for fetching and setting the new messages.
+		// --- FIX: Make this an atomic state update ---
+		// When we set a new conversation ID, we must immediately clear the messages
+		// from the previous one. This prevents stale state and simplifies logic in the component.
 		setActiveConversationId: (state, action) => {
-			// --- LOG FOR ISSUE #2 ---
+			const newId = action.payload;
+			// --- DEBUG LOG ---
 			console.log(
-				`%c[chatSlice.js-LOG] Reducer: setActiveConversationId. Payload: ${action.payload}`,
+				`%c[chatSlice.js-LOG] Reducer: setActiveConversationId. Payload: ${newId}. Current active ID: ${state.activeConversationId}`,
 				'color: purple; font-weight: bold;',
 			);
-			state.activeConversationId = action.payload;
+			if (state.activeConversationId !== newId) {
+				state.activeConversationId = newId;
+				state.activeConversationMessages = [];
+				// --- DEBUG LOG ---
+				console.log(
+					`%c[chatSlice.js-LOG] State updated. New active ID: ${state.activeConversationId}, messages CLEARED.`,
+					'color: purple; font-weight: bold;',
+				);
+			}
 		},
 		clearActiveConversation: state => {
 			console.log(
 				`%c[chatSlice.js-LOG] Reducer: clearActiveConversation.`,
 				'color: purple; font-weight: bold;',
 			);
+
+			// ... (no change needed here, it's already correct)
 			state.activeConversationId = null;
 			state.activeConversationMessages = [];
 		},
 		setActiveConversationMessages: (state, action) => {
+			// --- DEBUG LOG ---
 			console.log(
-				`%c[chatSlice.js-LOG] Reducer: setActiveConversationMessages. Payload: ${action.payload}`,
+				`%c[chatSlice.js-LOG] Reducer: setActiveConversationMessages. Hydrating with ${action.payload.length} messages.`,
 				'color: purple; font-weight: bold;',
 			);
 			state.activeConversationMessages = action.payload;

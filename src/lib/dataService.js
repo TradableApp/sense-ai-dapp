@@ -50,9 +50,12 @@ const updateAndEncryptConversation = async (sessionKey, ownerAddress, conversati
 const maintainMessageCache = async ownerAddress => {
 	const cacheCount = await db.messageCache.where({ ownerAddress }).count();
 	if (cacheCount > MESSAGE_CACHE_LIMIT) {
+		// --- FIX: Removed the incorrect .orderBy() call. ---
+		// The compound index '[ownerAddress+lastAccessedAt]' in db.js ensures
+		// that the results from .where({ ownerAddress }) are already sorted
+		// by lastAccessedAt in ascending order.
 		const keysToDelete = await db.messageCache
 			.where({ ownerAddress })
-			.orderBy('lastAccessedAt')
 			.limit(cacheCount - MESSAGE_CACHE_LIMIT)
 			.keys();
 		await db.messageCache.bulkDelete(keysToDelete);
@@ -154,10 +157,13 @@ const createMessageWorkflow = async (
 		await updateAndEncryptConversation(sessionKey, ownerAddress, conversationId, finalMessages);
 
 		console.log(
-			'%c[dataService] Final answer stored. Invalidating conversations query to refresh UI.',
+			'%c[dataService] Final answer stored. Invalidating queries to refresh UI.',
 			'color: green; font-weight: bold;',
 		);
 		queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
+		queryClient.invalidateQueries({
+			queryKey: ['messages', conversationId, sessionKey, ownerAddress],
+		});
 	};
 
 	simulateOracleProcess(
@@ -220,6 +226,10 @@ export const addMessageToConversation = async (
 		queryClient,
 	);
 
+	queryClient.invalidateQueries({
+		queryKey: ['messages', conversationId, sessionKey, ownerAddress],
+	});
+
 	return {
 		finalUserMessage,
 		finalAiMessage: { ...finalAiMessage, correlationId: aiCorrelationId },
@@ -266,6 +276,9 @@ export const createNewConversation = async (
 		onFinalAnswer,
 		queryClient,
 	);
+	queryClient.invalidateQueries({
+		queryKey: ['messages', newConversation.id, sessionKey, ownerAddress],
+	});
 	return { newConversation, finalUserMessage, finalAiMessage };
 };
 
@@ -303,6 +316,7 @@ export const branchConversation = async (
 	ownerAddress,
 	originalConversationId,
 	branchPointMessageId,
+	queryClient,
 ) => {
 	console.log(
 		`[dataService] Branching conversation "${originalConversationId}" at message "${branchPointMessageId}".`,
@@ -351,6 +365,10 @@ export const branchConversation = async (
 	});
 	await maintainMessageCache(ownerAddress);
 	console.log(`[dataService] Created new branched conversation "${newConversation.id}".`);
+	queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
+	queryClient.invalidateQueries({
+		queryKey: ['messages', newConversation.id, sessionKey, ownerAddress],
+	});
 	return newConversation;
 };
 

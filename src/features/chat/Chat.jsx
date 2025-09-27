@@ -77,6 +77,39 @@ function BranchInfo({ originalConversationId, onNavigate }) {
 	);
 }
 
+/**
+ * Compares the latest message in two message arrays to determine if the
+ * query (from IndexedDB) is more up-to-date than the redux (in-memory) state.
+ * @param {Array} reduxMessages The array from `activeConversationMessages`.
+ * @param {Array} queryMessages The array from `messagesFromQuery`.
+ * @returns {boolean} True if the query data is ahead.
+ */
+function isQueryAhead(reduxMessages, queryMessages) {
+	if (!queryMessages || queryMessages.length === 0) {
+		return false;
+	}
+	if (reduxMessages.length === 0) {
+		return true;
+	}
+	const latestReduxMsg = reduxMessages.at(-1);
+	const latestQueryMsg = queryMessages.at(-1);
+
+	if (latestQueryMsg.id > latestReduxMsg.id) {
+		return true;
+	}
+	if (latestQueryMsg.id === latestReduxMsg.id) {
+		const queryReasoningLength = latestQueryMsg.reasoning?.length || 0;
+		const reduxReasoningLength = latestReduxMsg.reasoning?.length || 0;
+		if (queryReasoningLength > reduxReasoningLength) {
+			return true;
+		}
+		if (latestQueryMsg.content && !latestReduxMsg.content) {
+			return true;
+		}
+	}
+	return false;
+}
+
 const STREAM_BY_WORD = true;
 const promptSchema = z.object({
 	prompt: z.string().trim().min(1, { message: 'Message cannot be empty.' }).max(5000),
@@ -110,34 +143,36 @@ export default function Chat() {
 	const { data: conversations } = useConversations();
 	const currentConversation = conversations?.find(c => c.id === activeConversationId);
 
-	const { data: messagesFromQuery, isLoading } = useQuery({
+	const {
+		data: messagesFromQuery,
+		isLoading,
+		isSuccess,
+		isFetching,
+	} = useQuery({
 		queryKey: ['messages', activeConversationId, sessionKey, ownerAddress],
 		queryFn: () => {
 			if (!activeConversationId) return [];
 			return getMessagesForConversation(sessionKey, ownerAddress, activeConversationId);
 		},
 		enabled: !!activeConversationId && !!sessionKey && !!ownerAddress,
+		refetchOnWindowFocus: false,
+		refetchOnMount: true,
 	});
 
-	// This effect now correctly populates the messages when the conversation is first loaded or changed.
 	useEffect(() => {
-		// Only update from React Query if the conversation ID has actually changed.
-		// This prevents overwriting the live-streaming state.
-		const isNewConversation =
-			activeConversationMessages.length === 0 ||
-			activeConversationMessages[0]?.conversationId !== activeConversationId;
+		if (!isFetching && isSuccess && messagesFromQuery) {
+			// --- FIX: Use the new, more intelligent comparison function ---
+			const shouldHydrate = isQueryAhead(activeConversationMessages, messagesFromQuery);
 
-		if (messagesFromQuery && isNewConversation) {
-			dispatch(setActiveConversationMessages(messagesFromQuery));
+			if (shouldHydrate) {
+				console.log(
+					'%c[Chat.jsx-Hydrate] IndexedDB is ahead of Redux. Hydrating state.',
+					'color: green; font-weight: bold;',
+				);
+				dispatch(setActiveConversationMessages(messagesFromQuery));
+			}
 		}
-	}, [messagesFromQuery, activeConversationId, activeConversationMessages, dispatch]);
-
-	// This effect remains crucial for clearing messages when navigating away or resetting.
-	useEffect(() => {
-		if (!activeConversationId) {
-			dispatch(setActiveConversationMessages([]));
-		}
-	}, [activeConversationId, dispatch]);
+	}, [isFetching, isSuccess, messagesFromQuery, activeConversationMessages, dispatch]);
 
 	const { messagesToDisplay, versionInfo } = useMemo(() => {
 		const allMessages = activeConversationMessages;
@@ -217,7 +252,6 @@ export default function Chat() {
 			),
 		onSuccess: ({ newConversation, finalUserMessage, finalAiMessage }) => {
 			dispatch(setActiveConversationId(newConversation.id));
-			// This is now the definitive action that starts the conversation in the UI
 			dispatch(setActiveConversationMessages([finalUserMessage, finalAiMessage]));
 		},
 		onError: handleMutationError,
@@ -237,7 +271,6 @@ export default function Chat() {
 				variables.queryClient,
 			),
 		onSuccess: ({ finalUserMessage, finalAiMessage }) => {
-			// appendLiveMessages is perfect for adding to the current, live conversation
 			dispatch(appendLiveMessages([finalUserMessage, finalAiMessage]));
 		},
 		onError: handleMutationError,
@@ -290,10 +323,10 @@ export default function Chat() {
 				ownerAddress,
 				variables.originalConversationId,
 				variables.branchPointMessageId,
+				queryClient,
 			),
 		onSuccess: newConversation => {
 			if (newConversation) {
-				queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
 				dispatch(setActiveConversationId(newConversation.id));
 				navigate('/chat');
 			}

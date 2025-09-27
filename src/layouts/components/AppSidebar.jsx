@@ -1,5 +1,6 @@
 import { BarChart2, History, LifeBuoy, MessageCircle, Send } from 'lucide-react';
 
+import Separator from '@/components/ui/separator';
 import {
 	Sidebar,
 	SidebarContent,
@@ -28,8 +29,8 @@ const navData = {
 
 export default function AppSidebar(props) {
 	return (
-		<Sidebar variant="inset" {...props}>
-			<SidebarHeader>
+		<Sidebar variant="inset" className="flex flex-col h-screen" {...props}>
+			<SidebarHeader className="shrink-0">
 				<SidebarMenu>
 					<SidebarMenuItem>
 						<SidebarMenuButton size="lg" asChild>
@@ -46,11 +47,19 @@ export default function AppSidebar(props) {
 					</SidebarMenuItem>
 				</SidebarMenu>
 			</SidebarHeader>
+
+			{/* This content area grows and pushes the footer down */}
 			<SidebarContent>
 				<NavMain items={navData.main} />
-				<NavSecondary items={navData.secondary} className="mt-auto" />
+
+				{/* This div uses mt-auto to pin itself to the bottom of the flex container */}
+				<div className="mt-auto">
+					<Separator className="my-2" />
+					<NavSecondary items={navData.secondary} />
+				</div>
 			</SidebarContent>
-			<SidebarFooter>
+
+			<SidebarFooter className="shrink-0">
 				<NavUser />
 			</SidebarFooter>
 		</Sidebar>
