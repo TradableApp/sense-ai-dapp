@@ -12,6 +12,11 @@ export const chatSlice = createSlice({
 	name: 'chat',
 	initialState,
 	reducers: {
+		// --- NEW ACTION TO RESET THE STATE ---
+		// This reducer ignores any action payload and simply returns the slice
+		// to its pristine, initial state.
+		clearUserSession: () => initialState,
+
 		// --- FIX: Make this an atomic state update ---
 		// When we set a new conversation ID, we must immediately clear the messages
 		// from the previous one. This prevents stale state and simplifies logic in the component.
@@ -83,6 +88,7 @@ export const chatSlice = createSlice({
 });
 
 export const {
+	clearUserSession,
 	setActiveConversationId,
 	clearActiveConversation,
 	setActiveConversationMessages,
