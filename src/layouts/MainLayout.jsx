@@ -1,7 +1,7 @@
-// src/layouts/MainLayout.jsx
 import { Outlet, useLocation } from 'react-router-dom';
 import { ConnectButton } from 'thirdweb/react';
 
+import ModalManager from '@/components/ModalManager';
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -24,7 +24,6 @@ function usePageTitle() {
 	if (path === 'history') return 'History';
 	return 'Market Pulse';
 }
-
 export default function MainLayout() {
 	const pageTitle = usePageTitle();
 	const isMobile = useMobile();
@@ -90,6 +89,9 @@ export default function MainLayout() {
 				{/* The MobileNav (Dock) is only rendered on mobile screens */}
 				{isMobile && <MobileNav />}
 			</SidebarProvider>
+
+			{/* The ModalManager handles rendering any active modals. */}
+			<ModalManager />
 		</div>
 	);
 }

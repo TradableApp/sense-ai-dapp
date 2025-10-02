@@ -522,7 +522,7 @@ export default function Chat() {
 	})();
 
 	return (
-		<div className="flex h-full w-full flex-col overflow-hidden rounded-xl border bg-primary-foreground shadow-sm">
+		<div className="flex h-full w-full flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
 			<div className="flex items-center justify-between border-b bg-muted/50 px-4 py-3">
 				<div className="flex items-center gap-3">
 					<div className="flex items-center gap-2">

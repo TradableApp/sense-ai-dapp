@@ -19,10 +19,9 @@ export function MessageContent({ children, className, ...props }) {
 	return (
 		<div
 			className={cn(
-				// --- FIX: Removed flex properties to allow prose styles to take over text layout ---
-				'overflow-hidden rounded-lg px-4 py-3 text-foreground text-sm',
+				'overflow-hidden rounded-lg px-4 py-3 text-sm',
 				'group-[.is-user]:bg-primary group-[.is-user]:text-primary-foreground',
-				'group-[.is-assistant]:bg-secondary group-[.is-assistant]:text-foreground',
+				'group-[.is-assistant]:bg-secondary group-[.is-assistant]:text-secondary-foreground',
 				className,
 			)}
 			{...props}

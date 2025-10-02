@@ -6,6 +6,8 @@ import { Provider } from 'react-redux';
 import { BrowserRouter } from 'react-router-dom';
 import { ThirdwebProvider } from 'thirdweb/react';
 
+import { ThemeProvider } from '@/components/ThemeProvider';
+import Toaster from '@/components/ui/sonner';
 import App from '@/pages/App';
 
 import SessionProvider from './features/auth/SessionProvider';
@@ -21,9 +23,12 @@ createRoot(document.getElementById('root')).render(
 			<ThirdwebProvider>
 				<Provider store={store}>
 					<QueryClientProvider client={queryClient}>
-						<SessionProvider>
-							<App />
-						</SessionProvider>
+						<ThemeProvider defaultTheme="dark" storageKey="senseai-ui-theme">
+							<SessionProvider>
+								<App />
+								<Toaster position="bottom-right" closeButton />
+							</SessionProvider>
+						</ThemeProvider>
 					</QueryClientProvider>
 				</Provider>
 			</ThirdwebProvider>
