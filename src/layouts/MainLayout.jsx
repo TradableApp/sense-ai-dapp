@@ -1,7 +1,6 @@
 import { Outlet, useLocation } from 'react-router-dom';
 import { ConnectButton } from 'thirdweb/react';
 
-import ModalManager from '@/components/ModalManager';
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -89,9 +88,6 @@ export default function MainLayout() {
 				{/* The MobileNav (Dock) is only rendered on mobile screens */}
 				{isMobile && <MobileNav />}
 			</SidebarProvider>
-
-			{/* The ModalManager handles rendering any active modals. */}
-			<ModalManager />
 		</div>
 	);
 }

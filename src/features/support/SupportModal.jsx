@@ -2,10 +2,11 @@ import { useEffect } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Mail } from 'lucide-react';
 import { Controller, useForm } from 'react-hook-form';
 import { useDispatch, useSelector } from 'react-redux';
 import { toast } from 'sonner';
+import { getUserEmail } from 'thirdweb/wallets';
 import { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,7 @@ import {
 	SelectValue,
 } from '@/components/ui/select';
 import Textarea from '@/components/ui/textarea';
+import { client } from '@/config/thirdweb';
 import { useSession } from '@/features/auth/SessionProvider';
 import { sendSupportRequest } from '@/lib/contactService';
 import { closeModal } from '@/store/uiSlice';
@@ -44,6 +46,10 @@ const supportSchema = z.object({
 		.trim()
 		.min(20, { message: 'Request must be at least 20 characters.' })
 		.max(2000, { message: 'Request cannot exceed 2000 characters.' }),
+	email: z
+		.string()
+		.min(1, { message: 'Email address is required.' })
+		.email({ message: 'Please enter a valid email address.' }),
 });
 
 const supportTopics = [
@@ -56,7 +62,7 @@ const supportTopics = [
 
 export default function SupportModal() {
 	const dispatch = useDispatch();
-	const { ownerAddress } = useSession();
+	const { ownerAddress, activeWallet } = useSession();
 	const isOpen = useSelector(state => state.ui.currentModal.type === 'Support');
 
 	const {
@@ -68,12 +74,22 @@ export default function SupportModal() {
 	} = useForm({
 		resolver: zodResolver(supportSchema),
 		mode: 'onChange',
-		defaultValues: { topic: '', subject: '', request: '' },
+		defaultValues: { topic: '', subject: '', request: '', email: '' },
 	});
 
 	useEffect(() => {
+		const fetchAndSetEmail = async () => {
+			try {
+				const userEmail = await getUserEmail({ client });
+				reset({ topic: '', subject: '', request: '', email: userEmail || '' });
+			} catch (error) {
+				console.warn('[SupportModal] Could not fetch email for auto-population:', error);
+				reset({ topic: '', subject: '', request: '', email: '' });
+			}
+		};
+
 		if (isOpen) {
-			reset({ topic: '', subject: '', request: '' });
+			fetchAndSetEmail();
 		}
 	}, [isOpen, reset]);
 
@@ -94,7 +110,8 @@ export default function SupportModal() {
 	});
 
 	const onSubmit = data => {
-		supportMutation.mutate({ data, userAddress: ownerAddress });
+		const displayName = activeWallet?.getAccount()?.ens?.name; // Get ENS name if available
+		supportMutation.mutate({ data, userAddress: ownerAddress, displayName });
 	};
 
 	const isProcessing = isSubmitting || supportMutation.isPending;
@@ -149,6 +166,20 @@ export default function SupportModal() {
 							{...register('request')}
 						/>
 						{errors.request && <p className="text-sm text-destructive">{errors.request.message}</p>}
+					</div>
+
+					<div className="space-y-2">
+						<div className="relative">
+							<Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+							<Input
+								type="email"
+								placeholder="Your contact email"
+								className="pl-9"
+								disabled={isProcessing}
+								{...register('email')}
+							/>
+						</div>
+						{errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
 					</div>
 
 					<DialogFooter>

@@ -1,11 +1,17 @@
 import { useSelector } from 'react-redux';
 
 import FeedbackModal from '@/features/feedback/FeedbackModal';
+import DisclaimerModal from '@/features/legal/DisclaimerModal';
+import PrivacyModal from '@/features/legal/PrivacyModal';
+import TermsModal from '@/features/legal/TermsModal';
 import SupportModal from '@/features/support/SupportModal';
 
 export const modalLookup = {
 	Feedback: FeedbackModal,
 	Support: SupportModal,
+	Privacy: PrivacyModal,
+	Terms: TermsModal,
+	Disclaimer: DisclaimerModal,
 };
 
 const renderModal = modal => {
@@ -15,8 +21,6 @@ const renderModal = modal => {
 		console.warn(`Modal type "${modal.type}" not found in modalLookup.`);
 		return null;
 	}
-	// IMPROVEMENT: Use the modal type for the key, as our system only allows one of each type.
-	// This is more stable than using an array index.
 	return <ModalComponent key={modal.type} {...modal.props} />;
 };
 

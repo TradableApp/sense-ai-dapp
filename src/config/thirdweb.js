@@ -16,7 +16,7 @@ export const wallets = [
 	// 1. Embedded Wallet (Email, Socials, Passkeys, Phone) - The top priority for new users.
 	inAppWallet({
 		auth: {
-			options: ['email', 'google', 'apple', 'facebook', 'phone', 'passkey'],
+			options: ['email', 'google', 'apple', 'facebook', 'passkey'],
 		},
 	}),
 
