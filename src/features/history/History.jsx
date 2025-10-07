@@ -1,4 +1,3 @@
-// src/features/history/History.jsx
 import { useEffect, useMemo, useState } from 'react';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -52,7 +51,6 @@ export default function History() {
 	const dispatch = useDispatch();
 	const queryClient = useQueryClient();
 	const { sessionKey, ownerAddress } = useSession();
-
 	const [searchQuery, setSearchQuery] = useState('');
 	const [filteredConversationIds, setFilteredConversationIds] = useState(null);
 	const [isAlertOpen, setIsAlertOpen] = useState(false);
@@ -61,7 +59,6 @@ export default function History() {
 	const activeConversationId = useSelector(state => state.chat.activeConversationId);
 	const skeletonKeys = useMemo(() => Array.from({ length: 3 }, () => `skel-${Math.random()}`), []);
 
-	// Consume data from the centralized hook. No fetching logic here.
 	const { data: conversations, isLoading, isError } = useConversations();
 
 	useEffect(() => {
@@ -81,7 +78,6 @@ export default function History() {
 				`%c[History.jsx] deleteMutation onSuccess for conv "${deletedConversationId}". Invalidating queries.`,
 				'color: green',
 			);
-			// Invalidate the centralized query
 			queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
 			if (activeConversationId === deletedConversationId) {
 				dispatch(clearActiveConversation());
@@ -95,7 +91,6 @@ export default function History() {
 	});
 
 	const handleSelectConversation = conversationId => {
-		// --- LOG FOR ISSUE #2 ---
 		console.log(
 			`%c[History.jsx-LOG] handleSelectConversation clicked for ID: ${conversationId}. Dispatching setActiveConversationId.`,
 			'color: orange; font-weight: bold;',
@@ -112,11 +107,6 @@ export default function History() {
 
 	const confirmDelete = () => {
 		if (conversationToDelete) {
-			console.log(`[History.jsx] confirmDelete: Calling deleteMutation.mutate with state:`, {
-				sessionKey,
-				ownerAddress,
-				conversationId: conversationToDelete,
-			});
 			deleteMutation.mutate({ sessionKey, ownerAddress, conversationId: conversationToDelete });
 		}
 	};
@@ -229,28 +219,39 @@ export default function History() {
 											}
 										}}
 									>
-										<MessageSquare className="size-5 flex-shrink-0 text-muted-foreground" />
+										{/* Main content block that grows */}
 										<div className="flex-1 min-w-0">
-											<p className="font-medium truncate">{item.title}</p>
+											{/* Row 1: Icon and Title */}
+											<div className="flex items-center gap-3">
+												<MessageSquare className="size-5 flex-shrink-0 text-muted-foreground" />
+												<p className="font-medium truncate">{item.title}</p>
+											</div>
+
+											{/* FIX: The preview text now flows naturally below the Icon/Title block */}
+											{/* Desktop Preview */}
 											<p className="mt-1 hidden truncate text-muted-foreground md:block">
 												{markdownToPlainText(item.lastMessagePreview)}
 											</p>
-											<div className="md:hidden">
-												<p className="mt-1 truncate text-xs text-muted-foreground">
+											{/* Mobile Preview + Date */}
+											<div className="md:hidden mt-1">
+												<p className="truncate text-xs text-muted-foreground">
 													{markdownToPlainText(item.lastMessagePreview)}
 												</p>
 												<p className="mt-1 text-xs text-muted-foreground">
-													{new Date(displayDate).toLocaleTimeString()}
+													{new Date(displayDate).toLocaleDateString()}
 												</p>
 											</div>
 										</div>
+
+										{/* Desktop Date */}
 										<div className="hidden w-32 flex-shrink-0 text-right text-muted-foreground md:block">
 											{new Date(displayDate).toLocaleDateString()}
 										</div>
+
+										{/* Dropdown Menu */}
 										<div className="flex-shrink-0">
 											<DropdownMenu>
 												<DropdownMenuTrigger asChild>
-													{/* --- FIX: Disable the entire dropdown trigger if the session isn't ready --- */}
 													<Button
 														aria-haspopup="true"
 														size="icon"
@@ -302,7 +303,6 @@ export default function History() {
 						<AlertDialogAction
 							className="bg-destructive hover:bg-destructive/90"
 							onClick={confirmDelete}
-							// --- FIX: Also disable the confirm button if the session isn't ready ---
 							disabled={deleteMutation.isPending || !isSessionReady}
 						>
 							{deleteMutation.isPending && <Loader2Icon className="mr-2 size-4 animate-spin" />}
