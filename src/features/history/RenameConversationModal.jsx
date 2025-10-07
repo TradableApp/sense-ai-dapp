@@ -60,7 +60,6 @@ export default function RenameConversationModal() {
 				newTitle: variables.newTitle,
 			}),
 		onSuccess: updatedConv => {
-			// --- FIX: Add a guard clause to ensure updatedConv is not undefined ---
 			if (!updatedConv) {
 				console.error(
 					'[RenameModal] onSuccess called, but updatedConv is undefined. This should not happen.',
@@ -101,7 +100,7 @@ export default function RenameConversationModal() {
 
 	return (
 		<Dialog open={isRenameModalOpen} onOpenChange={handleOpenChange}>
-			<DialogContent>
+			<DialogContent className="w-full max-w-[calc(100vw-2rem)] rounded-xl sm:max-w-md">
 				<DialogHeader>
 					<DialogTitle>Rename Conversation</DialogTitle>
 					<DialogDescription>Enter a new name for this conversation.</DialogDescription>
@@ -115,12 +114,11 @@ export default function RenameConversationModal() {
 					/>
 
 					{errors.title && <p className="text-sm text-destructive">{errors.title.message}</p>}
-
 					{renameMutation.isError && (
 						<p className="text-sm text-destructive">Failed to rename. Please try again.</p>
 					)}
 
-					<DialogFooter className="pt-4">
+					<DialogFooter className="flex-col gap-2 pt-4 sm:flex-row sm:justify-end sm:gap-2">
 						<Button
 							type="button"
 							variant="outline"
@@ -129,7 +127,6 @@ export default function RenameConversationModal() {
 						>
 							Cancel
 						</Button>
-
 						<Button type="submit" disabled={isProcessing || !isSessionReady}>
 							{isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
 							{isProcessing ? 'Renaming...' : 'Rename'}

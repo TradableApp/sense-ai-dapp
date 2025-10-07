@@ -20,7 +20,7 @@ export default function PrivacyModal() {
 
 	return (
 		<Dialog open={isOpen} onOpenChange={() => dispatch(closeModal())}>
-			<DialogContent className="sm:max-w-2xl">
+			<DialogContent className="w-full max-w-[calc(100vw-2rem)] rounded-xl sm:max-w-2xl">
 				<DialogHeader>
 					<DialogTitle>Privacy Policy</DialogTitle>
 					<DialogDescription>Our commitment to your privacy.</DialogDescription>

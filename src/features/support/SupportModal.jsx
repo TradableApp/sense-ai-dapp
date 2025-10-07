@@ -94,7 +94,8 @@ export default function SupportModal() {
 	}, [isOpen, reset]);
 
 	const supportMutation = useMutation({
-		mutationFn: variables => sendSupportRequest(variables.data, variables.userAddress),
+		mutationFn: variables =>
+			sendSupportRequest(variables.data, variables.userAddress, variables.displayName),
 		onSuccess: () => {
 			toast.success('Request Submitted', {
 				description: 'Our team has received your request and will get back to you shortly.',
@@ -110,7 +111,7 @@ export default function SupportModal() {
 	});
 
 	const onSubmit = data => {
-		const displayName = activeWallet?.getAccount()?.ens?.name; // Get ENS name if available
+		const displayName = activeWallet?.getAccount()?.ens?.name;
 		supportMutation.mutate({ data, userAddress: ownerAddress, displayName });
 	};
 
@@ -118,7 +119,7 @@ export default function SupportModal() {
 
 	return (
 		<Dialog open={isOpen} onOpenChange={() => dispatch(closeModal())}>
-			<DialogContent>
+			<DialogContent className="w-full max-w-[calc(100vw-2rem)] rounded-xl sm:max-w-md">
 				<DialogHeader>
 					<DialogTitle>Submit a Support Request</DialogTitle>
 					<DialogDescription>
@@ -182,7 +183,7 @@ export default function SupportModal() {
 						{errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
 					</div>
 
-					<DialogFooter>
+					<DialogFooter className="flex-col gap-2 pt-2 sm:flex-row sm:justify-end sm:gap-2">
 						<Button
 							type="button"
 							variant="outline"

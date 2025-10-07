@@ -1,14 +1,16 @@
 import { httpsCallable } from 'firebase/functions';
 
 import { functions } from '@/config/firebase';
+import store from '@/store/store';
 
 /**
  * Sends feedback to the 'fireSendGridEmail' cloud function.
  * @returns {Promise<{success: boolean, message: string}>}
  */
 export async function sendFeedback(data, userAddress, displayName) {
+	const { device } = store.getState();
 	const payload = {
-		templateName: 'd-bd111474dbf34fdb8e2bff7b166f36e3', // Your feedback template ID
+		templateName: 'd-bd111474dbf34fdb8e2bff7b166f36e3',
 		subject: 'SenseAI has received feedback',
 		from_email: data.email,
 		from_name: displayName || userAddress,
@@ -17,8 +19,10 @@ export async function sendFeedback(data, userAddress, displayName) {
 		to_email: 'support@tradable.app',
 		to_name: 'Tradable Support',
 		unique_body: data.feedback.replace(/(?:\r\n|\r|\n)/g, '<br>'),
-		unique_id: userAddress, // Use wallet address as the unique ID
-		// You can add other fields like 'env' or 'project_id' if your function needs them
+		unique_id: userAddress,
+		env: import.meta.env.MODE,
+		project_id: import.meta.env.VITE_PROJECT_ID,
+		device: JSON.stringify(device, null, '	'),
 	};
 
 	try {
@@ -37,8 +41,9 @@ export async function sendFeedback(data, userAddress, displayName) {
  * @returns {Promise<{success: boolean, message: string}>}
  */
 export async function sendSupportRequest(data, userAddress, displayName) {
+	const { device } = store.getState();
 	const payload = {
-		templateName: 'd-9bd340d5ca244acc84e18f25a0c70584', // Your support request template ID
+		templateName: 'd-9bd340d5ca244acc84e18f25a0c70584',
 		subject: `SenseAI has received a support request: ${data.topic}`,
 		from_email: data.email,
 		from_name: displayName || userAddress,
@@ -48,8 +53,11 @@ export async function sendSupportRequest(data, userAddress, displayName) {
 		to_name: 'Tradable Support',
 		unique_title: data.subject,
 		unique_body: data.request.replace(/(?:\r\n|\r|\n)/g, '<br>'),
-		unique_id: userAddress, // Use wallet address as the unique ID
-		// You might want to add 'priority' or other fields here based on your function's logic
+		unique_id: userAddress,
+		priority: 'low priority',
+		env: import.meta.env.MODE,
+		project_id: import.meta.env.VITE_PROJECT_ID,
+		device: JSON.stringify(device, null, '	'),
 	};
 
 	try {

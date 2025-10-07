@@ -63,8 +63,8 @@ export default function UserConsent({ onConsentGiven }) {
 	};
 
 	return (
-		<div className="fixed bottom-0 left-0 right-0 z-50 p-4 sm:p-6 lg:p-8">
-			<Card className="max-w-2xl mx-auto animate-in fade-in-0 slide-in-from-bottom-5">
+		<div className="fixed bottom-4 inset-x-4 z-50 sm:left-4 sm:right-auto">
+			<Card className="w-full sm:max-w-sm animate-in fade-in-0 slide-in-from-bottom-5">
 				<CardHeader>
 					<CardTitle>Cookie Settings</CardTitle>
 					<CardDescription>
@@ -114,7 +114,7 @@ export default function UserConsent({ onConsentGiven }) {
 						</div>
 					)}
 
-					<div className="flex flex-col sm:flex-row gap-2">
+					<div className="flex flex-col gap-2">
 						<Button className="w-full" onClick={handleAcceptAll}>
 							Accept All
 						</Button>

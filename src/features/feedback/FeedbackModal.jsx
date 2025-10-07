@@ -103,7 +103,7 @@ export default function FeedbackModal() {
 
 	return (
 		<Dialog open={isOpen} onOpenChange={handleOpenChange}>
-			<DialogContent>
+			<DialogContent className="w-full max-w-[calc(100vw-2rem)] rounded-xl sm:max-w-md">
 				<DialogHeader>
 					<DialogTitle>Provide Feedback</DialogTitle>
 					<DialogDescription>
@@ -138,7 +138,7 @@ export default function FeedbackModal() {
 						{errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
 					</div>
 
-					<DialogFooter>
+					<DialogFooter className="flex-col gap-2 pt-2 sm:flex-row sm:justify-end sm:gap-2">
 						<Button
 							type="button"
 							variant="outline"

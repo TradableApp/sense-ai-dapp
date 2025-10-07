@@ -9,6 +9,11 @@ export function cn(...inputs) {
 	return twMerge(clsx(inputs));
 }
 
+export const wait = ms =>
+	new Promise(resolve => {
+		setTimeout(resolve, ms);
+	});
+
 export function markdownToPlainText(markdown) {
 	if (!markdown) return '';
 	let result = '';

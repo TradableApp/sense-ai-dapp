@@ -20,7 +20,7 @@ export default function DisclaimerModal() {
 
 	return (
 		<Dialog open={isOpen} onOpenChange={() => dispatch(closeModal())}>
-			<DialogContent className="sm:max-w-2xl">
+			<DialogContent className="w-full max-w-[calc(100vw-2rem)] rounded-xl sm:max-w-2xl">
 				<DialogHeader>
 					<DialogTitle>Disclaimer</DialogTitle>
 					<DialogDescription>Important information about your use of SenseAI.</DialogDescription>

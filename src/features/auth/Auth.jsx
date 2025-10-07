@@ -2,6 +2,7 @@ import { useDispatch } from 'react-redux';
 import { Navigate } from 'react-router-dom';
 import { ConnectButton, useActiveAccount } from 'thirdweb/react';
 
+import TradableLogo from '@/components/icons/TradableLogo';
 import XLogo from '@/components/icons/XLogo';
 import RainbowLabel from '@/components/magicui/rainbow-label';
 import { client, wallets } from '@/config/thirdweb';
@@ -68,14 +69,18 @@ export default function Auth() {
 			</div>
 
 			<footer className="w-full flex flex-col items-center gap-4 py-8">
-				<div className="flex items-center flex-wrap justify-center gap-x-6 gap-y-2">
-					<FooterLink label="Support" onClick={() => dispatch(openModal({ type: 'Support' }))} />
-					<FooterLink label="Terms" onClick={() => dispatch(openModal({ type: 'Terms' }))} />
-					<FooterLink label="Privacy" onClick={() => dispatch(openModal({ type: 'Privacy' }))} />
-					<FooterLink
-						label="Disclaimer"
-						onClick={() => dispatch(openModal({ type: 'Disclaimer' }))}
-					/>
+				{/* Row 1: Social and External Links */}
+				<div className="flex items-center gap-6">
+					<a
+						href="https://tradable.app"
+						target="_blank"
+						rel="noopener noreferrer"
+						className="text-muted-foreground transition-colors hover:text-foreground"
+						aria-label="Visit Tradable"
+					>
+						{/* We explicitly request the 'monochrome' variant for the footer */}
+						<TradableLogo variant="monochrome" className="size-5" />
+					</a>
 					<a
 						href="https://x.com/SenseAI_agent"
 						target="_blank"
@@ -86,6 +91,18 @@ export default function Auth() {
 						<XLogo className="size-4" />
 					</a>
 				</div>
+
+				{/* Row 2: Legal and Support Links */}
+				<div className="flex items-center flex-wrap justify-center gap-x-6 gap-y-2">
+					<FooterLink label="Support" onClick={() => dispatch(openModal({ type: 'Support' }))} />
+					<FooterLink label="Terms" onClick={() => dispatch(openModal({ type: 'Terms' }))} />
+					<FooterLink label="Privacy" onClick={() => dispatch(openModal({ type: 'Privacy' }))} />
+					<FooterLink
+						label="Disclaimer"
+						onClick={() => dispatch(openModal({ type: 'Disclaimer' }))}
+					/>
+				</div>
+
 				<p className="text-xs text-muted-foreground/50">
 					&copy; {new Date().getFullYear()} SenseAI. All Rights Reserved.
 				</p>
