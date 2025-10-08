@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { collection, query, where } from 'firebase/firestore';
 import { MicIcon, RotateCcwIcon, Split } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import ReactMarkdown from 'react-markdown';
@@ -31,8 +32,10 @@ import {
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ai/reasoning';
 import UserMessageActions from '@/components/ai/user-message-actions';
 import { Button } from '@/components/ui/button';
+import { db } from '@/config/firebase';
 import { useSession } from '@/features/auth/SessionProvider';
 import useConversations from '@/hooks/useConversations';
+import useFirestoreCollectionListener from '@/hooks/useFirestoreCollectionListener';
 import {
 	addMessageToConversation,
 	branchConversation,
@@ -128,6 +131,7 @@ export default function Chat() {
 	const [activeMessageId, setActiveMessageId] = useState(null);
 	const [editingMessageId, setEditingMessageId] = useState(null);
 	const prevMessageCountRef = useRef(0);
+	const [feedbackData, setFeedbackData] = useState({});
 
 	const {
 		register,
@@ -161,7 +165,6 @@ export default function Chat() {
 
 	useEffect(() => {
 		if (!isFetching && isSuccess && messagesFromQuery) {
-			// --- FIX: Use the new, more intelligent comparison function ---
 			const shouldHydrate = isQueryAhead(activeConversationMessages, messagesFromQuery);
 
 			if (shouldHydrate) {
@@ -454,6 +457,28 @@ export default function Chat() {
 		prevMessagesRef.current = messagesToDisplay;
 	}, [messagesToDisplay]);
 
+	useFirestoreCollectionListener({
+		queryFn:
+			ownerAddress &&
+			activeConversationId &&
+			(() =>
+				query(
+					collection(db, 'senseai_feedback'),
+					where('ownerAddress', '==', ownerAddress),
+					where('conversationId', '==', activeConversationId),
+				)),
+		queryDeps: [ownerAddress, activeConversationId],
+		dataFn: docs => {
+			const feedbackMap = {};
+			docs.forEach(doc => {
+				feedbackMap[doc.id] = doc.feedbackValue;
+			});
+			setFeedbackData(feedbackMap);
+		},
+		deps: [ownerAddress, activeConversationId],
+		loadingTag: 'SenseAIFeedbackListener',
+	});
+
 	const onSubmit = data => {
 		const parentId = messagesToDisplay?.at(-1)?.id || null;
 		const aiCorrelationId = Date.now().toString();
@@ -613,6 +638,7 @@ export default function Chat() {
 												onRegenerate={mode => handleRegenerate(message, mode)}
 												onNavigate={handleNavigate}
 												onBranch={() => handleBranch(message)}
+												initialFeedback={feedbackData[message.id] || null}
 											/>
 										</>
 									)}

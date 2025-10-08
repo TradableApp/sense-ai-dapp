@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
 	BookText,
@@ -24,6 +24,8 @@ import {
 	DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useSession } from '@/features/auth/SessionProvider';
+import sendAiFeedback from '@/lib/feedbackService';
 import { copyMarkdownToClipboard } from '@/lib/utils';
 
 function ActionButton({ label, icon, onClick }) {
@@ -86,9 +88,16 @@ export default function MessageActions({
 	onRegenerate,
 	onNavigate,
 	onBranch,
+	initialFeedback,
 }) {
+	const { ownerAddress } = useSession();
 	const [isCopied, setIsCopied] = useState(false);
-	const [rating, setRating] = useState(null);
+	const [feedback, setFeedback] = useState(null);
+	const [isSubmitting, setIsSubmitting] = useState(false);
+
+	useEffect(() => {
+		setFeedback(initialFeedback || null);
+	}, [initialFeedback]);
 
 	const handleCopy = async () => {
 		if (!message?.content) return;
@@ -99,10 +108,34 @@ export default function MessageActions({
 		}
 	};
 
-	const handleRate = newRating => {
-		setRating(prevRating => (prevRating === newRating ? null : newRating));
+	const handleFeedback = async newFeedbackValue => {
+		if (isSubmitting) return;
+
+		const previousFeedback = feedback;
+		const finalFeedback = previousFeedback === newFeedbackValue ? null : newFeedbackValue;
+
+		// Optimistic UI update
+		setFeedback(finalFeedback);
+		setIsSubmitting(true);
+
+		try {
+			await sendAiFeedback({
+				ownerAddress,
+				conversationId: message.conversationId,
+				messageId: message.id,
+				parentId: message.parentId,
+				feedbackValue: finalFeedback,
+			});
+			// On success, the optimistic state is now confirmed.
+		} catch (error) {
+			// On failure, revert the UI to its previous state.
+			setFeedback(previousFeedback);
+		} finally {
+			setIsSubmitting(false);
+		}
 	};
 
+	const canGiveFeedback = message.role === 'assistant' && message.content;
 	const showPagination = versionInfo && versionInfo.siblings.length > 1;
 
 	return (
@@ -155,7 +188,7 @@ export default function MessageActions({
 				</Tooltip>
 			</TooltipProvider>
 
-			{rating !== 'bad' && (
+			{feedback !== 'dislike' && (
 				<TooltipProvider>
 					<Tooltip delayDuration={100}>
 						<TooltipTrigger asChild>
@@ -163,12 +196,13 @@ export default function MessageActions({
 								variant="ghost"
 								size="icon"
 								className="size-7 text-muted-foreground"
-								onClick={() => handleRate('good')}
+								onClick={() => handleFeedback('like')}
+								disabled={!canGiveFeedback || isSubmitting}
 							>
 								<ThumbsUp
 									className="size-4"
 									style={{
-										color: rating === 'good' ? '#9939F1' : 'inherit',
+										color: feedback === 'like' ? '#9939F1' : 'inherit',
 									}}
 								/>
 							</Button>
@@ -180,7 +214,7 @@ export default function MessageActions({
 				</TooltipProvider>
 			)}
 
-			{rating !== 'good' && (
+			{feedback !== 'like' && (
 				<TooltipProvider>
 					<Tooltip delayDuration={100}>
 						<TooltipTrigger asChild>
@@ -188,12 +222,13 @@ export default function MessageActions({
 								variant="ghost"
 								size="icon"
 								className="size-7 text-muted-foreground"
-								onClick={() => handleRate('bad')}
+								onClick={() => handleFeedback('dislike')}
+								disabled={!canGiveFeedback || isSubmitting}
 							>
 								<ThumbsDown
 									className="size-4"
 									style={{
-										color: rating === 'bad' ? '#9939F1' : 'inherit',
+										color: feedback === 'dislike' ? '#9939F1' : 'inherit',
 									}}
 								/>
 							</Button>

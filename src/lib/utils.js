@@ -14,6 +14,8 @@ export const wait = ms =>
 		setTimeout(resolve, ms);
 	});
 
+export const isObject = variable => Object.prototype.toString.call(variable) === '[object Object]';
+
 export function markdownToPlainText(markdown) {
 	if (!markdown) return '';
 	let result = '';
