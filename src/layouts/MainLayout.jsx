@@ -32,7 +32,7 @@ function usePageTitle() {
 	const path = location.pathname.split('/')[1];
 	if (path === 'chat') return 'Chat';
 	if (path === 'history') return 'History';
-	return 'Market Pulse';
+	return 'Dashboard';
 }
 export default function MainLayout() {
 	const pageTitle = usePageTitle();

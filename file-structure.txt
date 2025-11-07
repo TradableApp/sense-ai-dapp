@@ -30,6 +30,7 @@
 │       ├── icon-72x72.png
 │       └── shortcut-icon-96x96.png
 ├── README.md
+├── sense-ai-dapp.code-workspace
 ├── src
 │   ├── assets
 │   │   ├── animation
@@ -175,4 +176,4 @@
 ├── tailwind.config.js
 └── vite.config.js
 
-31 directories, 145 files
+31 directories, 146 files

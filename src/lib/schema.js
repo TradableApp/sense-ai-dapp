@@ -34,17 +34,18 @@
  * @property {string} id - The unique message ID (e.g., "msg_1678886400001").
  * @property {string} conversationId - The ID of the parent conversation.
  * @property {string|null} parentId - The ID of the parent message, for threading.
+ * @property {string|null} parentCID - The storage CID of the parent message, for history reconstruction.
  * @property {number} createdAt - The Unix timestamp (milliseconds) of creation.
  * @property {'user' | 'assistant'} role - The role of the message author.
  * @property {string | null} content - The markdown content of the message. Null if the AI is still generating.
- * @property {ReasoningStep[]} reasoning - An array of reasoning steps taken by the AI.
- * @property {number | null} reasoningDuration - The duration in seconds for the AI to generate the response. Null for user messages.
- * @property {Source[]} [sources] - An array of sources cited by the AI.
+ * @property {ReasoningStep[]} [reasoning] - An array of reasoning steps taken by the AI. Only for 'assistant' role.
+ * @property {number | null} [reasoningDuration] - The duration in seconds for the AI to generate the response. Only for 'assistant' role.
+ * @property {Source[]} [sources] - An array of sources cited by the AI. Only for 'assistant' role.
  */
 
 /**
  * Represents a single step in the AI's thought process.
- * Stored as part of the MessageFile or individually on Arweave.
+ * Stored as part of the MessageFile.
  * @typedef {object} ReasoningStep
  * @property {string} title - The title of the reasoning step.
  * @property {string} description - The detailed thought or action taken.
@@ -58,12 +59,12 @@
  */
 
 /**
- * Represents a chunk of keywords for a single message.
- * Stored on Arweave and used to build the client-side search index.
+ * Represents a chunk of keywords for a single message, formatted for direct
+ * merging into the client-side search index.
  * @typedef {object} SearchIndexDeltaFile
- * @property {Object.<string, string>} - A map where the key is "conversationId-messageId" and the value is a string of keywords.
+ * @property {Object.<string, {cid: string, c: string}>} - A map where the key is the messageId and the value is an object containing the conversationId (cid) and keywords (c).
  * @example
- * { "conv_123-msg_456": "bitcoin market sentiment analysis keywords" }
+ * { "msg_456": { "cid": "conv_123", "c": "bitcoin market sentiment analysis keywords" } }
  */
 
 /**

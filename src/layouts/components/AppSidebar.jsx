@@ -17,7 +17,7 @@ import senseaiLogo from '@/senseai-logo.svg';
 
 const navData = {
 	main: [
-		{ title: 'Market', url: '/', icon: BarChart2 },
+		{ title: 'Dashboard', url: '/', icon: BarChart2 },
 		{ title: 'Chat', url: '/chat', icon: MessageCircle },
 		{ title: 'History', url: '/history', icon: History, hasChildren: true },
 	],

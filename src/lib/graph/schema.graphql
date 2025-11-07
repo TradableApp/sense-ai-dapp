@@ -17,10 +17,10 @@ type Conversation @entity(immutable: false) {
 	"A flag indicating if the conversation has been soft-deleted by the user"
 	isDeleted: Boolean!
 
-	"CID of the immutable ConversationFile on Arweave"
+	"CID of the immutable ConversationFile on decentralised storage"
 	conversationCID: String!
 
-	"CID of the LATEST ConversationMetadataFile on Arweave"
+	"CID of the LATEST ConversationMetadataFile on decentralised storage"
 	conversationMetadataCID: String!
 
 	"A derived list of all messages within this conversation"
@@ -40,7 +40,7 @@ type Message @entity(immutable: true) {
 	"The role of the message author: 'user' or 'assistant'"
 	role: String!
 
-	"CID of the MessageFile on Arweave"
+	"CID of the MessageFile on decentralised storage"
 	messageCID: String!
 
 	"A derived link to the search delta associated with this message"
@@ -54,6 +54,6 @@ type SearchIndexDelta @entity(immutable: true) {
 	"A link to the parent Message entity"
 	message: Message!
 
-	"CID of the SearchIndexDeltaFile on Arweave"
+	"CID of the SearchIndexDeltaFile on decentralised storage"
 	searchDeltaCID: String!
 }

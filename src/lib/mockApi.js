@@ -7,20 +7,20 @@ const MOCK_FAILURE_RATE = 0.1; // 10% chance of a simulated AI error
 /**
  * Simulates the TEE/Oracle AI process, including potential failures.
  * @param {string} userQuery - The content of the user's message.
- * @param {string} aiCorrelationId - The unique ID for this specific AI response.
+ * @param {string} answerMessageId - The unique ID for this specific AI response.
  * @param {function} onReasoningStep - Callback to stream a reasoning step.
  * @param {function} onFinalAnswer - Callback to deliver the final answer object.
  * @param {string} [regenerationMode] - Optional mode to alter the response (e.g., 'concise').
  */
 const simulateOracleProcess = async (
 	userQuery,
-	aiCorrelationId,
+	answerMessageId,
 	onReasoningStep,
 	onFinalAnswer,
 	regenerationMode,
 ) => {
 	console.log(
-		`%c[mockApi] Starting AI simulation for query: "${userQuery}" (aiCorrelationId: ${aiCorrelationId}, mode: ${regenerationMode})`,
+		`%c[mockApi] Starting AI simulation for query: "${userQuery}" (answerMessageId: ${answerMessageId}, mode: ${regenerationMode})`,
 		'color: purple',
 	);
 	const thinkingStartTime = Date.now();
@@ -31,13 +31,13 @@ const simulateOracleProcess = async (
 
 		// eslint-disable-next-line no-await-in-loop
 		await new Promise(resolve => setTimeout(resolve, MOCK_REASONING_STEP_DELAY));
-		onReasoningStep(aiCorrelationId, step);
+		onReasoningStep(answerMessageId, step);
 		console.log('%c[mockApi] Streaming reasoning step.', 'color: purple', step);
 
 		if (Math.random() < MOCK_FAILURE_RATE) {
-			console.error(`%c[mockApi] Simulated AI failure for ${aiCorrelationId}.`, 'color: red');
+			console.error(`%c[mockApi] Simulated AI failure for ${answerMessageId}.`, 'color: red');
 			const finalDuration = Math.round((Date.now() - thinkingStartTime) / 1000);
-			onFinalAnswer(aiCorrelationId, {
+			onFinalAnswer(answerMessageId, {
 				content:
 					'**Error:** The AI model encountered an unexpected issue. Please try regenerating the response.',
 				sources: [],
@@ -64,7 +64,7 @@ const simulateOracleProcess = async (
 		reasoningDuration: finalDuration,
 	};
 	console.log('%c[mockApi] Streaming final answer.', 'color: purple', finalAnswer);
-	onFinalAnswer(aiCorrelationId, finalAnswer);
+	onFinalAnswer(answerMessageId, finalAnswer);
 };
 
 export default simulateOracleProcess;

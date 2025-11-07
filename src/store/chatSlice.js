@@ -58,22 +58,26 @@ export const chatSlice = createSlice({
 		appendLiveMessages: (state, action) => {
 			state.activeConversationMessages.push(...action.payload);
 		},
-		addReasoningStepByCorrelationId: (state, action) => {
-			const { correlationId, reasoningStep } = action.payload;
-			const message = state.activeConversationMessages.find(m => m.correlationId === correlationId);
+		addReasoningStepById: (state, action) => {
+			const { answerMessageId, reasoningStep } = action.payload;
+			const message = state.activeConversationMessages.find(
+				m => m.answerMessageId === answerMessageId,
+			);
 			if (message) {
 				if (!message.reasoning) message.reasoning = [];
 				message.reasoning.push(reasoningStep);
 			}
 		},
-		updateMessageContentByCorrelationId: (state, action) => {
-			const { correlationId, content, sources, reasoningDuration } = action.payload;
-			const message = state.activeConversationMessages.find(m => m.correlationId === correlationId);
+		updateMessageContentById: (state, action) => {
+			const { answerMessageId, content, sources, reasoningDuration } = action.payload;
+			const message = state.activeConversationMessages.find(
+				m => m.answerMessageId === answerMessageId,
+			);
 			if (message) {
 				message.content = content;
 				message.sources = sources;
 				message.reasoningDuration = reasoningDuration;
-				delete message.correlationId;
+				delete message.answerMessageId;
 			}
 		},
 		openRenameModal: (state, action) => {
@@ -93,8 +97,8 @@ export const {
 	clearActiveConversation,
 	setActiveConversationMessages,
 	appendLiveMessages,
-	addReasoningStepByCorrelationId,
-	updateMessageContentByCorrelationId,
+	addReasoningStepById,
+	updateMessageContentById,
 	openRenameModal,
 	closeRenameModal,
 } = chatSlice.actions;

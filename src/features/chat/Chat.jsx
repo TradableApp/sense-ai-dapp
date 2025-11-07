@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import cuid from 'cuid';
 import { collection, query, where } from 'firebase/firestore';
 import { MicIcon, RotateCcwIcon, Split } from 'lucide-react';
 import { useForm } from 'react-hook-form';
@@ -46,12 +47,12 @@ import {
 } from '@/lib/dataService';
 import senseaiLogo from '@/senseai-logo.svg';
 import {
-	addReasoningStepByCorrelationId,
+	addReasoningStepById,
 	appendLiveMessages,
 	clearActiveConversation,
 	setActiveConversationId,
 	setActiveConversationMessages,
-	updateMessageContentByCorrelationId,
+	updateMessageContentById,
 } from '@/store/chatSlice';
 
 function MarkdownParagraph({ children }) {
@@ -248,7 +249,7 @@ export default function Chat() {
 				variables.sessionKey,
 				variables.ownerAddress,
 				variables.content,
-				variables.aiCorrelationId,
+				variables.answerMessageId,
 				variables.onReasoningStep,
 				variables.onFinalAnswer,
 				variables.queryClient,
@@ -268,7 +269,7 @@ export default function Chat() {
 				variables.conversationId,
 				variables.parentId,
 				variables.content,
-				variables.aiCorrelationId,
+				variables.answerMessageId,
 				variables.onReasoningStep,
 				variables.onFinalAnswer,
 				variables.queryClient,
@@ -288,7 +289,7 @@ export default function Chat() {
 				variables.parentId,
 				variables.originalUserQuery,
 				variables.regenerationMode,
-				variables.aiCorrelationId,
+				variables.answerMessageId,
 				variables.onReasoningStep,
 				variables.onFinalAnswer,
 				variables.queryClient,
@@ -307,7 +308,7 @@ export default function Chat() {
 				variables.conversationId,
 				variables.parentId,
 				variables.newContent,
-				variables.aiCorrelationId,
+				variables.answerMessageId,
 				variables.onReasoningStep,
 				variables.onFinalAnswer,
 				variables.queryClient,
@@ -340,23 +341,33 @@ export default function Chat() {
 		const userPrompt = activeConversationMessages.find(
 			m => m.id === aiMessageToRegenerate.parentId,
 		);
+
 		if (userPrompt) {
-			const aiCorrelationId = Date.now().toString();
+			// 1. Generate the unique ID for this optimistic UI update
+			const answerMessageId = cuid(); // Or any other unique ID generator
+
+			// 2. Optimistically create the placeholder message and add it to the Redux store
+			const placeholderAiMessage = {
+				id: answerMessageId, // Use the correlation ID as a temporary key
+				answerMessageId,
+				conversationId: activeConversationId,
+				parentId: userPrompt.id,
+				role: 'assistant',
+				content: null, // It's thinking
+				createdAt: Date.now(),
+				reasoning: [],
+			};
+			dispatch(appendLiveMessages([placeholderAiMessage]));
+
+			// 3. Call the mutation with all the necessary data
 			regenerateMutation.mutate({
 				sessionKey,
 				ownerAddress,
 				queryClient,
-				conversationId: activeConversationId,
-				parentId: userPrompt.id,
-				originalUserQuery: userPrompt.content,
-				regenerationMode: mode,
-				aiCorrelationId,
-				onReasoningStep: (correlationId, reasoningStep) => {
-					dispatch(addReasoningStepByCorrelationId({ correlationId, reasoningStep }));
-				},
-				onFinalAnswer: (correlationId, finalAnswer) => {
-					dispatch(updateMessageContentByCorrelationId({ correlationId, ...finalAnswer }));
-				},
+				originalPromptMessageId: userPrompt.id,
+				previousAnswerMessageId: aiMessageToRegenerate.id,
+				regenerationInstructions: mode,
+				answerMessageId, // Pass the ID to the data service
 			});
 		}
 	};
@@ -364,7 +375,7 @@ export default function Chat() {
 	const handleSaveEdit = data => {
 		const originalMessage = activeConversationMessages.find(m => m.id === editingMessageId);
 		if (originalMessage) {
-			const aiCorrelationId = Date.now().toString();
+			const answerMessageId = cuid();
 			editUserMessageMutation.mutate({
 				sessionKey,
 				ownerAddress,
@@ -372,12 +383,22 @@ export default function Chat() {
 				conversationId: activeConversationId,
 				parentId: originalMessage.parentId,
 				newContent: data.content,
-				aiCorrelationId,
-				onReasoningStep: (correlationId, reasoningStep) => {
-					dispatch(addReasoningStepByCorrelationId({ correlationId, reasoningStep }));
+				answerMessageId,
+				onReasoningStep: (reasoningMessageId, reasoningStep) => {
+					dispatch(
+						addReasoningStepById({
+							answerMessageId: reasoningMessageId,
+							reasoningStep,
+						}),
+					);
 				},
-				onFinalAnswer: (correlationId, finalAnswer) => {
-					dispatch(updateMessageContentByCorrelationId({ correlationId, ...finalAnswer }));
+				onFinalAnswer: (finalMessageId, finalAnswer) => {
+					dispatch(
+						updateMessageContentById({
+							answerMessageId: finalMessageId,
+							...finalAnswer,
+						}),
+					);
 				},
 			});
 		}
@@ -481,13 +502,18 @@ export default function Chat() {
 
 	const onSubmit = data => {
 		const parentId = messagesToDisplay?.at(-1)?.id || null;
-		const aiCorrelationId = Date.now().toString();
+		const answerMessageId = cuid();
 
-		const onReasoningStep = (correlationId, reasoningStep) => {
-			dispatch(addReasoningStepByCorrelationId({ correlationId, reasoningStep }));
+		const onReasoningStep = (reasoningMessageId, reasoningStep) => {
+			dispatch(addReasoningStepById({ answerMessageId: reasoningMessageId, reasoningStep }));
 		};
-		const onFinalAnswer = (correlationId, finalAnswer) => {
-			dispatch(updateMessageContentByCorrelationId({ correlationId, ...finalAnswer }));
+		const onFinalAnswer = (finalMessageId, finalAnswer) => {
+			dispatch(
+				updateMessageContentById({
+					answerMessageId: finalMessageId,
+					...finalAnswer,
+				}),
+			);
 		};
 
 		if (activeConversationId) {
@@ -498,7 +524,7 @@ export default function Chat() {
 				conversationId: activeConversationId,
 				parentId,
 				content: data.prompt,
-				aiCorrelationId,
+				answerMessageId,
 				onReasoningStep,
 				onFinalAnswer,
 			});
@@ -508,7 +534,7 @@ export default function Chat() {
 				ownerAddress,
 				queryClient,
 				content: data.prompt,
-				aiCorrelationId,
+				answerMessageId,
 				onReasoningStep,
 				onFinalAnswer,
 			});
@@ -602,7 +628,7 @@ export default function Chat() {
 							const isTyping =
 								animatedContent != null && animatedContent.length < (message.content?.length ?? 0);
 							return (
-								<div key={message.id || message.correlationId} className="space-y-3">
+								<div key={message.id || message.answerMessageId} className="space-y-3">
 									<div className="ml-10">
 										<Reasoning
 											isStreaming={isThinking}

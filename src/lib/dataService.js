@@ -109,7 +109,7 @@ const createMessageWorkflow = async (
 	userMessage,
 	aiMessage,
 	queryForOracle,
-	aiCorrelationId,
+	answerMessageId,
 	onReasoningStep,
 	onFinalAnswer,
 	regenerationMode,
@@ -130,8 +130,8 @@ const createMessageWorkflow = async (
 	await updateAndEncryptConversation(sessionKey, ownerAddress, conversationId, newMessages);
 	await maintainMessageCache(ownerAddress);
 
-	const onFinalAnswerForDb = async (correlationId, finalAnswer) => {
-		onFinalAnswer(correlationId, finalAnswer);
+	const onFinalAnswerForDb = async (finalMessageId, finalAnswer) => {
+		onFinalAnswer(finalMessageId, finalAnswer);
 
 		const currentMessages = await getMessagesForConversation(
 			sessionKey,
@@ -168,7 +168,7 @@ const createMessageWorkflow = async (
 
 	simulateOracleProcess(
 		queryForOracle,
-		aiCorrelationId,
+		answerMessageId,
 		onReasoningStep,
 		onFinalAnswerForDb,
 		regenerationMode,
@@ -181,7 +181,7 @@ export const addMessageToConversation = async (
 	conversationId,
 	parentId,
 	messageContent,
-	aiCorrelationId,
+	answerMessageId,
 	onReasoningStep,
 	onFinalAnswer,
 	queryClient,
@@ -219,7 +219,7 @@ export const addMessageToConversation = async (
 		finalUserMessage,
 		finalAiMessage,
 		messageContent,
-		aiCorrelationId,
+		answerMessageId,
 		onReasoningStep,
 		onFinalAnswer,
 		null,
@@ -232,7 +232,7 @@ export const addMessageToConversation = async (
 
 	return {
 		finalUserMessage,
-		finalAiMessage: { ...finalAiMessage, correlationId: aiCorrelationId },
+		finalAiMessage: { ...finalAiMessage, answerMessageId },
 	};
 };
 
@@ -240,7 +240,7 @@ export const createNewConversation = async (
 	sessionKey,
 	ownerAddress,
 	firstMessageContent,
-	aiCorrelationId,
+	answerMessageId,
 	onReasoningStep,
 	onFinalAnswer,
 	queryClient,
@@ -271,7 +271,7 @@ export const createNewConversation = async (
 		newConversation.id,
 		null,
 		firstMessageContent,
-		aiCorrelationId,
+		answerMessageId,
 		onReasoningStep,
 		onFinalAnswer,
 		queryClient,
@@ -378,7 +378,7 @@ export const editUserMessage = (
 	conversationId,
 	parentId,
 	newContent,
-	aiCorrelationId,
+	answerMessageId,
 	onReasoningStep,
 	onFinalAnswer,
 	queryClient,
@@ -389,7 +389,7 @@ export const editUserMessage = (
 		conversationId,
 		parentId,
 		newContent,
-		aiCorrelationId,
+		answerMessageId,
 		onReasoningStep,
 		onFinalAnswer,
 		queryClient,
@@ -402,7 +402,7 @@ export const regenerateAssistantResponse = async (
 	parentId,
 	originalUserQuery,
 	regenerationMode,
-	aiCorrelationId,
+	answerMessageId,
 	onReasoningStep,
 	onFinalAnswer,
 	queryClient,
@@ -433,7 +433,7 @@ export const regenerateAssistantResponse = async (
 		null,
 		finalAiMessage,
 		originalUserQuery,
-		aiCorrelationId,
+		answerMessageId,
 		onReasoningStep,
 		onFinalAnswer,
 		regenerationMode,
@@ -441,6 +441,6 @@ export const regenerateAssistantResponse = async (
 	);
 
 	return {
-		finalAiMessage: { ...finalAiMessage, correlationId: aiCorrelationId },
+		finalAiMessage: { ...finalAiMessage, answerMessageId },
 	};
 };

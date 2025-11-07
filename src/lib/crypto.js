@@ -30,7 +30,7 @@ export async function deriveKeyFromEntropy(entropy, ownerAddress) {
 		{ name: 'HKDF', hash: 'SHA-256', salt, info },
 		importedKey,
 		{ name: 'AES-GCM', length: 256 },
-		false, // --- ENHANCEMENT: Key is non-extractable for maximum security ---
+		true, // Extractable so that roflEncryptedKey can be generated
 		['encrypt', 'decrypt'],
 	);
 

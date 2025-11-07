@@ -13,16 +13,17 @@ let pollingIntervalId = null;
 let inMemoryRawIndex = { m: {}, c: {} };
 let isSyncing = false;
 
-const generateKeywords = (content = '') => {
+function generateKeywords(content = '') {
 	if (!content) return '';
 	const tokens = content
 		.toLowerCase()
 		.replace(/\n/g, ' ')
-		.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, '')
+		.replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ')
 		.replace(/\s{2,}/g, ' ')
 		.split(' ');
-	return removeStopwords(tokens, eng).join(' ');
-};
+	// Trim the final result to remove leading/trailing spaces
+	return removeStopwords(tokens, eng).join(' ').trim();
+}
 
 const getLastSyncedAt = async (sessionKey, ownerAddress) => {
 	const metadataRecord = await db.userMetadata.get(ownerAddress);

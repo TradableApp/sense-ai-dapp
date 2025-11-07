@@ -105,7 +105,7 @@ export default function NavMain({ items }) {
 							</CollapsibleContent>
 						</Collapsible>
 					) : (
-						// All other menu items (Market, Chat) do NOT grow.
+						// All other menu items (Dashboard, Chat) do NOT grow.
 						<SidebarMenuItem key={item.title} className="shrink-0">
 							<SidebarMenuButton
 								asChild

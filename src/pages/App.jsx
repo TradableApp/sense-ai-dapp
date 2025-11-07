@@ -19,7 +19,7 @@ import { loadState, saveState } from '@/lib/browserStorage';
 import { setAppError, setFirebaseReady, setThirdwebReady } from '@/store/appSlice';
 import { setDeviceInfo, setDeviceScreen } from '@/store/deviceSlice';
 
-const MarketPulse = lazy(() => import('@/features/market/MarketPulse'));
+const UsageDashboard = lazy(() => import('@/features/usage/UsageDashboard'));
 const Chat = lazy(() => import('@/features/chat/Chat'));
 const History = lazy(() => import('@/features/history/History'));
 const Error404 = lazy(() => import('@/features/error/Error404'));
@@ -138,7 +138,7 @@ export default function App() {
 					<Route path="/auth" element={<Auth />} />
 					<Route path="/error" element={<Error404 />} />
 					<Route element={<ProtectedRoute />}>
-						<Route path="/" element={<MarketPulse />} />
+						<Route path="/" element={<UsageDashboard />} />
 						<Route path="/chat" element={<Chat />} />
 						<Route path="/history" element={<History />} />
 					</Route>

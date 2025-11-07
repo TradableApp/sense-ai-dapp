@@ -6,7 +6,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Dock, DockIcon } from '@/components/magicui/dock';
 
 const navItems = [
-	{ title: 'Market', url: '/', icon: BarChart2 },
+	{ title: 'Dashboard', url: '/', icon: BarChart2 },
 	{ title: 'Chat', url: '/chat', icon: MessageCircle },
 	{ title: 'History', url: '/history', icon: History },
 ];
@@ -18,7 +18,7 @@ export default function MobileNav() {
 		const currentPath = location.pathname;
 		if (currentPath === '/chat') return 'Chat';
 		if (currentPath === '/history') return 'History';
-		return 'Market';
+		return 'Dashboard';
 	}, [location.pathname]);
 
 	return (
