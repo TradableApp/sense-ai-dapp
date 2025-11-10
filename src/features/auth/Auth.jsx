@@ -5,7 +5,7 @@ import { ConnectButton, useActiveAccount } from 'thirdweb/react';
 import TradableLogo from '@/components/icons/TradableLogo';
 import XLogo from '@/components/icons/XLogo';
 import RainbowLabel from '@/components/magicui/rainbow-label';
-import { client, wallets } from '@/config/thirdweb';
+import { client, localChain, wallets } from '@/config/thirdweb';
 import senseaiLogo from '@/senseai-logo.svg';
 import senseaiTextLogoBlack from '@/senseai-text-logo-black-purple.svg';
 import senseaiTextLogoWhite from '@/senseai-text-logo-white-purple.svg';
@@ -56,6 +56,7 @@ export default function Auth() {
 					<ConnectButton
 						client={client}
 						wallets={wallets}
+						chains={[localChain]}
 						appMetadata={{
 							name: 'SenseAI App',
 							url: 'https://tradable.app',

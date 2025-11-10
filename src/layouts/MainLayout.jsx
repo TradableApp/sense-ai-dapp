@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Separator from '@/components/ui/separator';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
-import { client, wallets } from '@/config/thirdweb';
+import { client, localChain, wallets } from '@/config/thirdweb';
 import useConversations from '@/hooks/useConversations';
 import useMobile from '@/hooks/useMobile';
 import AppSidebar from '@/layouts/components/AppSidebar';
@@ -75,6 +75,7 @@ export default function MainLayout() {
 									<ConnectButton
 										client={client}
 										wallets={wallets}
+										chains={[localChain]}
 										appMetadata={{
 											name: 'SenseAI App',
 											url: 'https://tradable.app',

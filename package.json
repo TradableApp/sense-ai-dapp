@@ -30,7 +30,8 @@
 		"lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
 		"lint:fix": "eslint . --ext js,jsx --fix",
 		"format": "prettier --write .",
-		"preview": "vite preview"
+		"preview": "vite preview",
+		"sync-contracts": "cp ../tokenized-ai-agent/artifacts/contracts/EVMAIAgent.sol/EVMAIAgent.json ./src/lib/abi/ && cp ../tokenized-ai-agent/artifacts/contracts/EVMAIAgentEscrow.sol/EVMAIAgentEscrow.json ./src/lib/abi/ && cp ../able-contracts/artifacts/contracts/AbleToken.sol/AbleToken.json ./src/lib/abi/"
 	},
 	"dependencies": {
 		"@hookform/resolvers": "^5.2.2",
@@ -56,6 +57,7 @@
 		"cuid": "^3.0.0",
 		"device-detector-js": "^3.0.3",
 		"dexie": "^4.2.0",
+		"ethers": "^6.15.0",
 		"firebase": "^12.3.0",
 		"fuse.js": "^7.1.0",
 		"graphql-request": "^7.2.0",

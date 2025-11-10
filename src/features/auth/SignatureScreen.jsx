@@ -4,7 +4,7 @@ import { ConnectButton } from 'thirdweb/react';
 import RainbowButton from '@/components/magicui/rainbow-button';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import Separator from '@/components/ui/separator';
-import { client, wallets } from '@/config/thirdweb';
+import { client, localChain, wallets } from '@/config/thirdweb';
 
 import { useSession } from './SessionProvider';
 
@@ -22,6 +22,7 @@ export default function SignatureScreen({ onRetry }) {
 					<ConnectButton
 						client={client}
 						wallets={wallets}
+						chains={[localChain]}
 						appMetadata={{
 							name: 'SenseAI App',
 							url: 'https://tradable.app',

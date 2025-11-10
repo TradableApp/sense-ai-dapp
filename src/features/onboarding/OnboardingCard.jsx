@@ -21,7 +21,7 @@ const features = [
 	},
 ];
 
-export default function OnboardingCard() {
+export default function OnboardingCard({ onGetStarted }) {
 	return (
 		<Card className="m-8 w-full max-w-md rounded-2xl border border-border/40 bg-gradient-to-b from-background via-background/95 to-muted p-4 shadow-lg sm:p-6">
 			<CardHeader className="space-y-2 text-center">
@@ -50,7 +50,7 @@ export default function OnboardingCard() {
 			</CardContent>
 
 			<CardFooter className="pt-4">
-				<Button className="group h-11 w-full text-base font-medium">
+				<Button className="group h-11 w-full text-base font-medium" onClick={onGetStarted}>
 					Get Started
 					<ArrowRight className="ml-1.5 h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
 				</Button>

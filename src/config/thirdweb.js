@@ -1,4 +1,4 @@
-import { createThirdwebClient } from 'thirdweb';
+import { createThirdwebClient, defineChain } from 'thirdweb';
 import { createWallet, inAppWallet, walletConnect } from 'thirdweb/wallets';
 
 const clientId = import.meta.env.VITE_THIRDWEB_CLIENT_ID;
@@ -9,6 +9,17 @@ if (!clientId) {
 
 export const client = createThirdwebClient({
 	clientId,
+});
+
+// Define your local Hardhat chain
+export const localChain = defineChain({
+	id: 31337,
+	rpc: 'http://127.0.0.1:8545',
+	nativeCurrency: {
+		name: 'Hardhat Localnet',
+		symbol: 'HardhatETH',
+		decimals: 18,
+	},
 });
 
 // This is our curated, production-ready list of wallet options.
