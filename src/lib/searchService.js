@@ -197,7 +197,6 @@ export const initializeSearch = async (sessionKey, ownerAddress) => {
 
 export const search = query => {
 	if (!fuseInstance || !query) return [];
-	// --- FIX: The user's search query MUST also be converted to keywords ---
 	// This ensures we are comparing keywords against keywords for accurate results.
 	const keywordQuery = generateKeywords(query);
 	const results = fuseInstance.search(keywordQuery);

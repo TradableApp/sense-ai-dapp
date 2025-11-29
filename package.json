@@ -25,12 +25,20 @@
 	],
 	"type": "module",
 	"scripts": {
-		"dev": "vite --port 3002",
-		"build": "vite build",
+		"// --- DEVELOPMENT ---": "",
+		"dev": "vite --mode localnet --port 3002",
+		"dev:localnet": "vite --mode localnet --port 3002",
+		"dev:testnet": "vite --mode testnet --port 3002",
+		"// --- PRODUCTION ---": "",
+		"build": "vite --mode mainnet",
+		"build:localnet": "vite build --mode localnet",
+		"build:testnet": "vite build --mode testnet",
+		"build:mainnet": "vite build --mode mainnet",
+		"preview": "vite preview",
+		"// --- UTILITIES ---": "",
 		"lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
 		"lint:fix": "eslint . --ext js,jsx --fix",
 		"format": "prettier --write .",
-		"preview": "vite preview",
 		"sync-contracts": "cp ../tokenized-ai-agent/artifacts/contracts/EVMAIAgent.sol/EVMAIAgent.json ./src/lib/abi/ && cp ../tokenized-ai-agent/artifacts/contracts/EVMAIAgentEscrow.sol/EVMAIAgentEscrow.json ./src/lib/abi/ && cp ../able-contracts/artifacts/contracts/AbleToken.sol/AbleToken.json ./src/lib/abi/"
 	},
 	"dependencies": {
@@ -55,8 +63,10 @@
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"cuid": "^3.0.0",
+		"date-fns": "^4.1.0",
 		"device-detector-js": "^3.0.3",
 		"dexie": "^4.2.0",
+		"eth-crypto": "^3.1.0",
 		"ethers": "^6.15.0",
 		"firebase": "^12.3.0",
 		"fuse.js": "^7.1.0",
@@ -87,6 +97,7 @@
 		"tailwindcss-animate": "^1.0.7",
 		"thirdweb": "^5.105.41",
 		"use-stick-to-bottom": "^1.1.1",
+		"vite-plugin-node-polyfills": "^0.24.0",
 		"zod": "^3.25.75"
 	},
 	"devDependencies": {

@@ -30,7 +30,7 @@ export const Reasoning = memo(
 		defaultOpen = false,
 		onOpenChange,
 		reasoningDuration,
-		reasoningSteps, // --- FIX: Accept reasoningSteps as a prop ---
+		reasoningSteps, // Accept reasoningSteps as a prop
 		children,
 		...props
 	}) => {
@@ -44,7 +44,7 @@ export const Reasoning = memo(
 		const hasAutoOpenedRef = useRef(false);
 
 		useEffect(() => {
-			// --- FIX: Only auto-open if streaming AND there are thoughts to display ---
+			// Only auto-open if streaming AND there are thoughts to display
 			if (isStreaming && reasoningSteps?.length > 0 && !isOpen && !hasAutoOpenedRef.current) {
 				setIsOpen(true);
 				hasAutoOpenedRef.current = true;
@@ -86,29 +86,39 @@ export const Reasoning = memo(
 	},
 );
 
-export const ReasoningTrigger = memo(({ className, ...props }) => {
-	const { isStreaming, isOpen, reasoningDuration } = useReasoning();
+export const ReasoningTrigger = memo(({ className, hidden, ...props }) => {
+	const { isStreaming, isOpen, reasoningDuration, reasoningSteps } = useReasoning();
 	return (
 		<CollapsibleTrigger
-			className={cn('flex items-center gap-2 text-muted-foreground text-sm', className)}
+			className={cn(
+				'flex items-center gap-2 text-muted-foreground text-sm',
+				hidden ? 'cursor-default' : 'cursor-pointer',
+				className,
+			)}
 			{...props}
 		>
-			<BrainIcon className="size-4" />
+			{(isStreaming || reasoningDuration > 0 || reasoningSteps?.length > 0) && (
+				<BrainIcon className="size-4" />
+			)}
+
 			{isStreaming ? (
 				<p>Thinking...</p>
 			) : reasoningDuration > 0 ? (
 				<p>Thought for {reasoningDuration} seconds</p>
-			) : (
+			) : reasoningSteps?.length > 0 ? (
 				<p>Reasoning</p>
+			) : null}
+
+			{!hidden && (
+				<ChevronDownIcon
+					className={cn('size-4 transition-transform', isOpen ? 'rotate-180' : 'rotate-0')}
+				/>
 			)}
-			<ChevronDownIcon
-				className={cn('size-4 transition-transform', isOpen ? 'rotate-180' : 'rotate-0')}
-			/>
 		</CollapsibleTrigger>
 	);
 });
 
-export const ReasoningContent = memo(({ className, reasoningSteps, sources, ...props }) => {
+export const ReasoningContent = memo(({ className, hidden, reasoningSteps, sources, ...props }) => {
 	const { isStreaming } = useReasoning();
 	const [animatedDescriptions, setAnimatedDescriptions] = useState({});
 	const typingTimerRef = useRef(null);
@@ -161,7 +171,7 @@ export const ReasoningContent = memo(({ className, reasoningSteps, sources, ...p
 		prevReasoningRef.current = currentSteps;
 	}, [reasoningSteps, isStreaming]);
 
-	return (
+	return hidden ? null : (
 		<CollapsibleContent
 			className={cn(
 				'mt-4 text-sm',

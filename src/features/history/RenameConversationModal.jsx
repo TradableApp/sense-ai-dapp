@@ -1,10 +1,8 @@
 import { useEffect } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { useDispatch, useSelector } from 'react-redux';
 import { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
@@ -17,9 +15,6 @@ import {
 	DialogTitle,
 } from '@/components/ui/dialog';
 import Input from '@/components/ui/input';
-import { useSession } from '@/features/auth/SessionProvider';
-import { renameConversation } from '@/lib/dataService';
-import { closeRenameModal } from '@/store/chatSlice';
 
 const renameSchema = z.object({
 	title: z
@@ -29,77 +24,39 @@ const renameSchema = z.object({
 		.max(100, { message: 'Title cannot be longer than 100 characters.' }),
 });
 
-export default function RenameConversationModal() {
-	const dispatch = useDispatch();
-	const queryClient = useQueryClient();
-	const { sessionKey, ownerAddress } = useSession();
-	const { isRenameModalOpen, conversationToRename } = useSelector(state => state.chat);
-
+export default function RenameConversationModal({
+	open,
+	onOpenChange,
+	onRenameSubmit,
+	isProcessing,
+	error,
+	conversationToRename,
+}) {
 	const {
 		register,
 		handleSubmit,
 		reset,
-		formState: { errors, isSubmitting },
+		formState: { errors, isValid },
 		setFocus,
 	} = useForm({
 		resolver: zodResolver(renameSchema),
+		mode: 'onChange',
 		defaultValues: { title: '' },
 	});
 
 	useEffect(() => {
-		if (conversationToRename) {
+		if (conversationToRename && open) {
 			reset({ title: conversationToRename.title });
 			setTimeout(() => setFocus('title'), 100);
 		}
-	}, [conversationToRename, reset, setFocus]);
-
-	const renameMutation = useMutation({
-		mutationFn: variables =>
-			renameConversation(variables.sessionKey, variables.ownerAddress, {
-				id: variables.id,
-				newTitle: variables.newTitle,
-			}),
-		onSuccess: updatedConv => {
-			if (!updatedConv) {
-				console.error(
-					'[RenameModal] onSuccess called, but updatedConv is undefined. This should not happen.',
-				);
-				return;
-			}
-			console.log(
-				`%c[RenameModal] renameMutation onSuccess for conv "${updatedConv.id}". Invalidating queries.`,
-				'color: green',
-			);
-			queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
-			dispatch(closeRenameModal());
-		},
-		onError: error => {
-			console.error('[RenameModal] renameMutation onError:', error.message);
-		},
-	});
+	}, [conversationToRename, open, reset, setFocus]);
 
 	const onSubmit = data => {
-		if (!conversationToRename) return;
-		renameMutation.mutate({
-			sessionKey,
-			ownerAddress,
-			id: conversationToRename.id,
-			newTitle: data.title,
-		});
+		onRenameSubmit(data.title);
 	};
-
-	const handleOpenChange = isOpen => {
-		if (!isOpen) {
-			renameMutation.reset();
-			dispatch(closeRenameModal());
-		}
-	};
-
-	const isSessionReady = !!sessionKey && !!ownerAddress;
-	const isProcessing = isSubmitting || renameMutation.isPending;
 
 	return (
-		<Dialog open={isRenameModalOpen} onOpenChange={handleOpenChange}>
+		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="w-full max-w-[calc(100vw-2rem)] rounded-xl sm:max-w-md">
 				<DialogHeader>
 					<DialogTitle>Rename Conversation</DialogTitle>
@@ -107,27 +64,21 @@ export default function RenameConversationModal() {
 				</DialogHeader>
 
 				<form onSubmit={handleSubmit(onSubmit)} className="space-y-2">
-					<Input
-						placeholder="Conversation title"
-						disabled={isProcessing || !isSessionReady}
-						{...register('title')}
-					/>
+					<Input placeholder="Conversation title" disabled={isProcessing} {...register('title')} />
 
 					{errors.title && <p className="text-sm text-destructive">{errors.title.message}</p>}
-					{renameMutation.isError && (
-						<p className="text-sm text-destructive">Failed to rename. Please try again.</p>
-					)}
+					{error && <p className="text-sm text-destructive">{error.message}</p>}
 
 					<DialogFooter className="flex-col gap-2 pt-4 sm:flex-row sm:justify-end sm:gap-2">
 						<Button
 							type="button"
 							variant="outline"
-							onClick={() => dispatch(closeRenameModal())}
+							onClick={() => onOpenChange(false)}
 							disabled={isProcessing}
 						>
 							Cancel
 						</Button>
-						<Button type="submit" disabled={isProcessing || !isSessionReady}>
+						<Button type="submit" disabled={isProcessing || !isValid}>
 							{isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
 							{isProcessing ? 'Renaming...' : 'Rename'}
 						</Button>

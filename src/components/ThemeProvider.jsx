@@ -28,7 +28,6 @@ export function ThemeProvider({
 		}
 	}, [theme]);
 
-	// --- FIX: ADD THIS NEW USEEFFECT HOOK ---
 	// This effect sets up a listener to specifically handle live changes
 	// to the operating system's theme when the user has selected "System".
 	useEffect(() => {

@@ -1,7 +1,7 @@
 /* eslint-disable import/prefer-default-export */
 import { decryptData, encryptData } from './crypto';
 import db from './db';
-import simulateOracleProcess from './mockApi';
+// import simulateOracleProcess from './mockApi';
 import {
 	addDeltaToLiveIndex,
 	removeConversationFromLiveIndex,
@@ -50,7 +50,6 @@ const updateAndEncryptConversation = async (sessionKey, ownerAddress, conversati
 const maintainMessageCache = async ownerAddress => {
 	const cacheCount = await db.messageCache.where({ ownerAddress }).count();
 	if (cacheCount > MESSAGE_CACHE_LIMIT) {
-		// --- FIX: Removed the incorrect .orderBy() call. ---
 		// The compound index '[ownerAddress+lastAccessedAt]' in db.js ensures
 		// that the results from .where({ ownerAddress }) are already sorted
 		// by lastAccessedAt in ascending order.
@@ -86,12 +85,15 @@ export const getMessagesForConversation = async (sessionKey, ownerAddress, conve
 		);
 		await db.messageCache.update([ownerAddress, conversationId], { lastAccessedAt: Date.now() });
 		const decryptedData = await decryptData(sessionKey, cachedRecord.encryptedData);
+
+		// Sort messages by timestamp immediately after decryption
+		const sortedMessages = decryptedData.sort((a, b) => a.createdAt - b.createdAt);
 		console.log(
-			`%c[dataService-LOG] Returning ${decryptedData.length} decrypted messages from cache.`,
+			`%c[dataService-LOG] Returning ${sortedMessages.length} decrypted and sorted messages from cache.`,
 			'color: green',
-			decryptedData,
+			sortedMessages,
 		);
-		return decryptedData;
+		return sortedMessages;
 	}
 
 	console.log(
@@ -108,12 +110,13 @@ const createMessageWorkflow = async (
 	existingMessages,
 	userMessage,
 	aiMessage,
-	queryForOracle,
-	answerMessageId,
-	onReasoningStep,
-	onFinalAnswer,
-	regenerationMode,
-	queryClient,
+	// These parameters are now dormant but preserved for the future websocket implementation.
+	// queryForOracle,
+	// answerMessageId,
+	// onReasoningStep,
+	// onFinalAnswer,
+	// regenerationMode,
+	// queryClient,
 ) => {
 	const newMessages = userMessage
 		? [...existingMessages, userMessage, aiMessage]
@@ -130,49 +133,50 @@ const createMessageWorkflow = async (
 	await updateAndEncryptConversation(sessionKey, ownerAddress, conversationId, newMessages);
 	await maintainMessageCache(ownerAddress);
 
-	const onFinalAnswerForDb = async (finalMessageId, finalAnswer) => {
-		onFinalAnswer(finalMessageId, finalAnswer);
+	// const onFinalAnswerForDb = async (finalMessageId, finalAnswer) => {
+	// 	onFinalAnswer(finalMessageId, finalAnswer);
 
-		const currentMessages = await getMessagesForConversation(
-			sessionKey,
-			ownerAddress,
-			conversationId,
-		);
+	// 	const currentMessages = await getMessagesForConversation(
+	// 		sessionKey,
+	// 		ownerAddress,
+	// 		conversationId,
+	// 	);
 
-		const finalMessages = currentMessages.map(m => {
-			if (m.id === aiMessage.id) {
-				return { ...m, ...finalAnswer };
-			}
-			return m;
-		});
+	// 	const finalMessages = currentMessages.map(m => {
+	// 		if (m.id === aiMessage.id) {
+	// 			return { ...m, ...finalAnswer };
+	// 		}
+	// 		return m;
+	// 	});
 
-		const finalEncrypted = await encryptData(sessionKey, finalMessages);
-		await db.messageCache.put({
-			ownerAddress,
-			conversationId,
-			encryptedData: finalEncrypted,
-			lastAccessedAt: Date.now(),
-		});
+	// 	const finalEncrypted = await encryptData(sessionKey, finalMessages);
+	// 	await db.messageCache.put({
+	// 		ownerAddress,
+	// 		conversationId,
+	// 		encryptedData: finalEncrypted,
+	// 		lastAccessedAt: Date.now(),
+	// 	});
 
-		await updateAndEncryptConversation(sessionKey, ownerAddress, conversationId, finalMessages);
+	// 	await updateAndEncryptConversation(sessionKey, ownerAddress, conversationId, finalMessages);
 
-		console.log(
-			'%c[dataService] Final answer stored. Invalidating queries to refresh UI.',
-			'color: green; font-weight: bold;',
-		);
-		queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
-		queryClient.invalidateQueries({
-			queryKey: ['messages', conversationId, sessionKey, ownerAddress],
-		});
-	};
+	// 	console.log(
+	// 		'%c[dataService] Final answer stored. Invalidating queries to refresh UI.',
+	// 		'color: green; font-weight: bold;',
+	// 	);
+	// 	queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
+	// 	queryClient.invalidateQueries({
+	// 		queryKey: ['messages', conversationId, sessionKey, ownerAddress],
+	// 	});
+	// };
 
-	simulateOracleProcess(
-		queryForOracle,
-		answerMessageId,
-		onReasoningStep,
-		onFinalAnswerForDb,
-		regenerationMode,
-	);
+	// The callbacks above will now be dormant, waiting for the future websocket.
+	// simulateOracleProcess(
+	// 	queryForOracle,
+	// 	answerMessageId,
+	// 	onReasoningStep,
+	// 	onFinalAnswerForDb,
+	// 	regenerationMode,
+	// );
 };
 
 export const addMessageToConversation = async (
@@ -181,14 +185,13 @@ export const addMessageToConversation = async (
 	conversationId,
 	parentId,
 	messageContent,
+	promptMessageId,
 	answerMessageId,
-	onReasoningStep,
-	onFinalAnswer,
 	queryClient,
 ) => {
 	const now = Date.now();
 	const finalUserMessage = {
-		id: `msg_${now}`,
+		id: promptMessageId,
 		conversationId,
 		parentId,
 		role: 'user',
@@ -196,7 +199,7 @@ export const addMessageToConversation = async (
 		createdAt: now,
 	};
 	const finalAiMessage = {
-		id: `msg_${now + 1}`,
+		id: answerMessageId,
 		conversationId,
 		parentId: finalUserMessage.id,
 		role: 'assistant',
@@ -220,35 +223,33 @@ export const addMessageToConversation = async (
 		finalAiMessage,
 		messageContent,
 		answerMessageId,
-		onReasoningStep,
-		onFinalAnswer,
-		null,
+		null, // onReasoningStep
+		null, // onFinalAnswer
+		null, // regenerationMode
 		queryClient,
 	);
 
+	queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
 	queryClient.invalidateQueries({
 		queryKey: ['messages', conversationId, sessionKey, ownerAddress],
 	});
 
-	return {
-		finalUserMessage,
-		finalAiMessage: { ...finalAiMessage, answerMessageId },
-	};
+	return { finalUserMessage, finalAiMessage };
 };
 
 export const createNewConversation = async (
 	sessionKey,
 	ownerAddress,
 	firstMessageContent,
+	conversationId,
+	promptMessageId,
 	answerMessageId,
-	onReasoningStep,
-	onFinalAnswer,
 	queryClient,
 ) => {
 	console.log('[dataService] Creating new conversation.');
 	const now = Date.now();
 	const newConversation = {
-		id: `conv_${now}`,
+		id: conversationId,
 		ownerAddress,
 		createdAt: now,
 		title: firstMessageContent.substring(0, 40) + (firstMessageContent.length > 40 ? '...' : ''),
@@ -268,21 +269,23 @@ export const createNewConversation = async (
 	const { finalUserMessage, finalAiMessage } = await addMessageToConversation(
 		sessionKey,
 		ownerAddress,
-		newConversation.id,
+		conversationId,
 		null,
 		firstMessageContent,
+		promptMessageId,
 		answerMessageId,
-		onReasoningStep,
-		onFinalAnswer,
 		queryClient,
 	);
-	queryClient.invalidateQueries({
-		queryKey: ['messages', newConversation.id, sessionKey, ownerAddress],
-	});
+
 	return { newConversation, finalUserMessage, finalAiMessage };
 };
 
-export const renameConversation = async (sessionKey, ownerAddress, { id, newTitle }) => {
+export const renameConversation = async (
+	sessionKey,
+	ownerAddress,
+	{ id, newTitle },
+	queryClient,
+) => {
 	console.log(`%c[dataService] Attempting to rename conv "${id}" to "${newTitle}"`, 'color: blue');
 	const record = await db.conversations.get([ownerAddress, id]);
 	if (!record) throw new Error(`Conversation with ID "${id}" not found.`);
@@ -293,10 +296,13 @@ export const renameConversation = async (sessionKey, ownerAddress, { id, newTitl
 	await db.conversations.put({ ownerAddress, id, encryptedData: encrypted });
 	updateTitleInLiveIndex(decrypted);
 	console.log(`[dataService] Successfully renamed conv "${id}".`);
+
+	queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
+
 	return decrypted;
 };
 
-export const deleteConversation = async (sessionKey, ownerAddress, conversationId) => {
+export const deleteConversation = async (sessionKey, ownerAddress, conversationId, queryClient) => {
 	console.log(`%c[dataService] Attempting to delete conv "${conversationId}"`, 'color: red');
 	const record = await db.conversations.get([ownerAddress, conversationId]);
 	if (!record) throw new Error(`Conversation with ID "${conversationId}" not found.`);
@@ -308,6 +314,9 @@ export const deleteConversation = async (sessionKey, ownerAddress, conversationI
 	await db.messageCache.delete([ownerAddress, conversationId]);
 	removeConversationFromLiveIndex(conversationId);
 	console.log(`[dataService] Successfully deleted conv "${conversationId}".`);
+
+	queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
+
 	return conversationId;
 };
 
@@ -316,6 +325,7 @@ export const branchConversation = async (
 	ownerAddress,
 	originalConversationId,
 	branchPointMessageId,
+	newConversationId,
 	queryClient,
 ) => {
 	console.log(
@@ -338,7 +348,7 @@ export const branchConversation = async (
 	}
 	const now = Date.now();
 	const newConversation = {
-		id: `conv_${now}`,
+		id: newConversationId,
 		ownerAddress,
 		createdAt: originalConversation.createdAt,
 		title: `Branch · ${originalConversation.title.replace('Branch · ', '')}`,
@@ -365,10 +375,12 @@ export const branchConversation = async (
 	});
 	await maintainMessageCache(ownerAddress);
 	console.log(`[dataService] Created new branched conversation "${newConversation.id}".`);
+
 	queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
 	queryClient.invalidateQueries({
 		queryKey: ['messages', newConversation.id, sessionKey, ownerAddress],
 	});
+
 	return newConversation;
 };
 
@@ -378,9 +390,8 @@ export const editUserMessage = (
 	conversationId,
 	parentId,
 	newContent,
+	promptMessageId,
 	answerMessageId,
-	onReasoningStep,
-	onFinalAnswer,
 	queryClient,
 ) =>
 	addMessageToConversation(
@@ -389,9 +400,8 @@ export const editUserMessage = (
 		conversationId,
 		parentId,
 		newContent,
+		promptMessageId,
 		answerMessageId,
-		onReasoningStep,
-		onFinalAnswer,
 		queryClient,
 	);
 
@@ -403,14 +413,12 @@ export const regenerateAssistantResponse = async (
 	originalUserQuery,
 	regenerationMode,
 	answerMessageId,
-	onReasoningStep,
-	onFinalAnswer,
 	queryClient,
 ) => {
 	console.log(`[dataService] Regenerating response for parent message "${parentId}".`);
 	const now = Date.now();
 	const finalAiMessage = {
-		id: `msg_${now}`,
+		id: answerMessageId, // Use the real on-chain ID
 		conversationId,
 		parentId,
 		role: 'assistant',
@@ -430,17 +438,70 @@ export const regenerateAssistantResponse = async (
 		ownerAddress,
 		conversationId,
 		existingMessages,
-		null,
+		null, // This is an AI-only message, no new user message
 		finalAiMessage,
 		originalUserQuery,
 		answerMessageId,
-		onReasoningStep,
-		onFinalAnswer,
+		null,
+		null,
 		regenerationMode,
 		queryClient,
 	);
 
-	return {
-		finalAiMessage: { ...finalAiMessage, answerMessageId },
-	};
+	queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
+	queryClient.invalidateQueries({
+		queryKey: ['messages', conversationId, sessionKey, ownerAddress],
+	});
+
+	return { finalAiMessage };
+};
+
+/**
+ * Removes a specific message from a conversation in the local cache.
+ * Used when cancelling a prompt to ensure the "Thinking" bubble doesn't persist on refresh.
+ */
+export const deleteMessageFromConversation = async (
+	sessionKey,
+	ownerAddress,
+	conversationId,
+	messageId,
+	queryClient,
+) => {
+	console.log(`[dataService] Deleting message ${messageId} from conversation ${conversationId}`);
+
+	const cachedRecord = await db.messageCache.get([ownerAddress, conversationId]);
+
+	if (!cachedRecord) {
+		return;
+	}
+
+	try {
+		// 1. Decrypt existing messages
+		const currentMessages = await decryptData(sessionKey, cachedRecord.encryptedData);
+
+		// 2. Filter out the target message
+		const newMessages = currentMessages.filter(m => m.id !== messageId);
+
+		// 3. Re-encrypt and save
+		const encryptedMessages = await encryptData(sessionKey, newMessages);
+
+		await db.messageCache.put({
+			ownerAddress,
+			conversationId,
+			encryptedData: encryptedMessages,
+			lastAccessedAt: Date.now(),
+		});
+
+		// 4. Update conversation metadata (preview) if we deleted the last message
+		// Note: This re-uses existing logic if available, or we can just invoke updateAndEncryptConversation
+		await updateAndEncryptConversation(sessionKey, ownerAddress, conversationId, newMessages);
+
+		queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
+		queryClient.invalidateQueries({
+			queryKey: ['messages', conversationId, sessionKey, ownerAddress],
+		});
+	} catch (error) {
+		console.error('[dataService] Failed to delete message:', error);
+		throw error;
+	}
 };

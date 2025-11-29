@@ -1,19 +1,20 @@
-import { gql } from 'graphql-request'; // Or your GraphQL client's equivalent
+import { gql } from 'graphql-request';
 
 /**
- * Fetches all conversations for a user that have been updated
- * since the last sync timestamp.
+ * @notice Fetches all conversations for a user that have been updated
+ *         since the last sync timestamp.
+ * @dev This is the primary query for the `syncService`. It retrieves a list of
+ *      conversations, ordered by the most recently active, along with all the
+ *      CIDs for their messages and search deltas. This provides all the "pointers"
+ *      needed to hydrate the full data from Arweave.
  *
- * It orders conversations by the timestamp of their last message, ensuring the
- * most recently active conversations appear first.
- *
- * Variables:
- * - $owner: The user's wallet address.
- * - $lastSync: The timestamp of the last successful sync (e.g., lastSyncedAt).
- * - $limit: The number of conversations to fetch (e.g., 250 for initial load).
- * - $offset: The number of conversations to skip (for pagination).
+ * @param {string} $owner - The user's wallet address (lowercase).
+ * @param {number} $lastSync - The Unix timestamp (milliseconds) of the last successful sync.
+ * @param {number} $limit - The maximum number of conversations to fetch.
+ * @param {number} $offset - The number of conversations to skip (for pagination).
  */
-const GET_USER_UPDATES_QUERY = gql`
+// eslint-disable-next-line import/prefer-default-export
+export const GET_USER_UPDATES_QUERY = gql`
 	query GetUserUpdates($owner: Bytes!, $lastSync: BigInt!, $limit: Int!, $offset: Int!) {
 		conversations(
 			where: { owner: $owner, lastMessageCreatedAt_gt: $lastSync, isDeleted: false }
@@ -29,6 +30,7 @@ const GET_USER_UPDATES_QUERY = gql`
 			messages(orderBy: createdAt, orderDirection: desc) {
 				id
 				messageCID
+				createdAt
 				searchDelta {
 					id
 					searchDeltaCID
@@ -38,4 +40,12 @@ const GET_USER_UPDATES_QUERY = gql`
 	}
 `;
 
-export default GET_USER_UPDATES_QUERY;
+export const GET_STUCK_PAYMENTS_QUERY = gql`
+	query GetStuckPayments($user: Bytes!) {
+		payments(where: { user: $user, status: "PENDING" }, orderBy: createdAt, orderDirection: desc) {
+			id
+			amount
+			createdAt
+		}
+	}
+`;

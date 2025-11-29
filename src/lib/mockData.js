@@ -68,7 +68,6 @@ export const mockSourcesPool = [
 	[],
 ];
 
-// --- FIX: Updated templates to include markdown examples ---
 export const mockAiResponseTemplates = [
 	// Simple Text Response
 	"Based on my analysis of '{query}', the current outlook is positive, with on-chain metrics showing strong support.",

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import {
 	FilePenLine,
-	Loader2Icon,
+	Loader2,
 	MessageSquare,
 	MoreHorizontal,
 	PlusCircle,
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 
 import {
 	AlertDialog,
@@ -33,13 +34,17 @@ import {
 import EmptyState from '@/components/ui/empty-state';
 import Input from '@/components/ui/input';
 import Skeleton from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSession } from '@/features/auth/SessionProvider';
+import useChatMutations from '@/hooks/useChatMutations';
 import useConversations from '@/hooks/useConversations';
-import { deleteConversation } from '@/lib/dataService';
+import useUsagePlan from '@/hooks/useUsagePlan';
+import { deleteConversation, renameConversation } from '@/lib/dataService';
 import { initializeSearch, search, teardownSearch } from '@/lib/searchService';
 import { markdownToPlainText } from '@/lib/utils';
 import {
 	clearActiveConversation,
+	closeRenameModal,
 	openRenameModal,
 	setActiveConversationId,
 } from '@/store/chatSlice';
@@ -51,70 +56,125 @@ export default function History() {
 	const dispatch = useDispatch();
 	const queryClient = useQueryClient();
 	const { sessionKey, ownerAddress } = useSession();
+	const { data: plan } = useUsagePlan();
+	const hasActivePlan = !!plan;
+
+	const { metadataUpdateMutation } = useChatMutations();
+	const { isRenameModalOpen, conversationToRename } = useSelector(state => state.chat);
+	const activeConversationId = useSelector(state => state.chat.activeConversationId);
+
 	const [searchQuery, setSearchQuery] = useState('');
 	const [filteredConversationIds, setFilteredConversationIds] = useState(null);
 	const [isAlertOpen, setIsAlertOpen] = useState(false);
 	const [conversationToDelete, setConversationToDelete] = useState(null);
 
-	const activeConversationId = useSelector(state => state.chat.activeConversationId);
 	const skeletonKeys = useMemo(() => Array.from({ length: 3 }, () => `skel-${Math.random()}`), []);
+	const isSessionReady = !!sessionKey && !!ownerAddress;
 
 	const { data: conversations, isLoading, isError } = useConversations();
 
 	useEffect(() => {
-		if (sessionKey && ownerAddress) {
+		if (isSessionReady) {
 			initializeSearch(sessionKey, ownerAddress);
 		}
 		return () => {
 			teardownSearch();
 		};
-	}, [sessionKey, ownerAddress]);
+	}, [sessionKey, ownerAddress, isSessionReady]);
 
-	const deleteMutation = useMutation({
-		mutationFn: variables =>
-			deleteConversation(variables.sessionKey, variables.ownerAddress, variables.conversationId),
-		onSuccess: deletedConversationId => {
-			console.log(
-				`%c[History.jsx] deleteMutation onSuccess for conv "${deletedConversationId}". Invalidating queries.`,
-				'color: green',
-			);
-			queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
-			if (activeConversationId === deletedConversationId) {
-				dispatch(clearActiveConversation());
-			}
-			setIsAlertOpen(false);
-			setConversationToDelete(null);
-		},
-		onError: error => {
-			console.error('[History.jsx] deleteMutation onError:', error);
-		},
-	});
+	const confirmDelete = () => {
+		if (!conversationToDelete) {
+			return;
+		}
 
-	const handleSelectConversation = conversationId => {
-		console.log(
-			`%c[History.jsx-LOG] handleSelectConversation clicked for ID: ${conversationId}. Dispatching setActiveConversationId.`,
-			'color: orange; font-weight: bold;',
+		const conversation = conversations.find(c => c.id === conversationToDelete);
+
+		if (!conversation) {
+			return;
+		}
+
+		metadataUpdateMutation.mutate(
+			{
+				conversationId: conversationToDelete,
+				isDeleted: true,
+				title: conversation.title,
+				sessionKey,
+			},
+			{
+				onSuccess: async () => {
+					await deleteConversation(sessionKey, ownerAddress, conversationToDelete, queryClient);
+
+					toast.success('Conversation deleted.');
+
+					if (activeConversationId === conversationToDelete) {
+						dispatch(clearActiveConversation());
+					}
+
+					setIsAlertOpen(false);
+					setConversationToDelete(null);
+				},
+				// onError: () => {},
+			},
 		);
-		dispatch(setActiveConversationId(conversationId));
-		navigate('/chat');
 	};
 
-	const handleDelete = (e, conversationId) => {
+	const handleRenameSubmit = newTitle => {
+		if (!conversationToRename) return;
+		metadataUpdateMutation.mutate(
+			{
+				conversationId: conversationToRename.id,
+				title: newTitle,
+				isDeleted: false,
+				sessionKey,
+			},
+			{
+				onSuccess: async () => {
+					await renameConversation(
+						sessionKey,
+						ownerAddress,
+						{ id: conversationToRename.id, newTitle },
+						queryClient,
+					);
+
+					dispatch(closeRenameModal());
+				},
+				// Let the modal itself display the error passed via props
+				// onError: () => {},
+			},
+		);
+	};
+
+	const handleRenameClick = (e, conversation) => {
 		e.stopPropagation();
+
+		dispatch(openRenameModal({ id: conversation.id, title: conversation.title }));
+	};
+
+	const handleDeleteClick = (e, conversationId) => {
+		e.stopPropagation();
+
 		setConversationToDelete(conversationId);
 		setIsAlertOpen(true);
 	};
 
-	const confirmDelete = () => {
-		if (conversationToDelete) {
-			deleteMutation.mutate({ sessionKey, ownerAddress, conversationId: conversationToDelete });
-		}
+	const handleSelectConversation = conversationId => {
+		dispatch(setActiveConversationId(conversationId));
+		navigate('/chat');
 	};
 
-	const handleRename = (e, conversation) => {
-		e.stopPropagation();
-		dispatch(openRenameModal({ id: conversation.id, title: conversation.title }));
-	};
+	const displayedConversations = useMemo(() => {
+		if (!conversations) {
+			return [];
+		}
+
+		if (filteredConversationIds === null) {
+			return conversations;
+		}
+
+		const filteredSet = new Set(filteredConversationIds);
+
+		return conversations.filter(c => filteredSet.has(c.id));
+	}, [conversations, filteredConversationIds]);
 
 	const handleSearchChange = e => {
 		const query = e.target.value;
@@ -128,15 +188,6 @@ export default function History() {
 		}
 	};
 
-	const displayedConversations = useMemo(() => {
-		if (!conversations) return [];
-		if (filteredConversationIds === null) {
-			return conversations;
-		}
-		const filteredSet = new Set(filteredConversationIds);
-		return conversations.filter(c => filteredSet.has(c.id));
-	}, [conversations, filteredConversationIds]);
-
 	const hasConversations = !isLoading && conversations && conversations.length > 0;
 	const showEmptyState = !isLoading && (!conversations || conversations.length === 0);
 	const showNoResults =
@@ -145,11 +196,16 @@ export default function History() {
 		filteredConversationIds &&
 		filteredConversationIds.length === 0;
 
-	const isSessionReady = !!sessionKey && !!ownerAddress;
-
 	return (
 		<>
-			<RenameConversationModal />
+			<RenameConversationModal
+				open={isRenameModalOpen}
+				onOpenChange={isOpen => !isOpen && dispatch(closeRenameModal())}
+				onRenameSubmit={handleRenameSubmit}
+				isProcessing={metadataUpdateMutation.isPending}
+				error={metadataUpdateMutation.error}
+				conversationToRename={conversationToRename}
+			/>
 			<div className="flex flex-col gap-4">
 				<div>
 					<h2 className="text-2xl font-bold">Conversations</h2>
@@ -219,20 +275,16 @@ export default function History() {
 											}
 										}}
 									>
-										{/* Main content block that grows */}
 										<div className="flex-1 min-w-0">
-											{/* Row 1: Icon and Title */}
 											<div className="flex items-center gap-3">
 												<MessageSquare className="size-5 flex-shrink-0 text-muted-foreground" />
 												<p className="font-medium truncate">{item.title}</p>
 											</div>
 
-											{/* FIX: The preview text now flows naturally below the Icon/Title block */}
-											{/* Desktop Preview */}
 											<p className="mt-1 hidden truncate text-muted-foreground md:block">
 												{markdownToPlainText(item.lastMessagePreview)}
 											</p>
-											{/* Mobile Preview + Date */}
+
 											<div className="md:hidden mt-1">
 												<p className="truncate text-xs text-muted-foreground">
 													{markdownToPlainText(item.lastMessagePreview)}
@@ -243,12 +295,10 @@ export default function History() {
 											</div>
 										</div>
 
-										{/* Desktop Date */}
 										<div className="hidden w-32 flex-shrink-0 text-right text-muted-foreground md:block">
 											{new Date(displayDate).toLocaleDateString()}
 										</div>
 
-										{/* Dropdown Menu */}
 										<div className="flex-shrink-0">
 											<DropdownMenu>
 												<DropdownMenuTrigger asChild>
@@ -264,17 +314,45 @@ export default function History() {
 													</Button>
 												</DropdownMenuTrigger>
 												<DropdownMenuContent align="end" onClick={e => e.stopPropagation()}>
-													<DropdownMenuItem onClick={e => handleRename(e, item)}>
-														<FilePenLine className="mr-2 size-4" />
-														Rename
-													</DropdownMenuItem>
-													<DropdownMenuItem
-														className="text-destructive"
-														onClick={e => handleDelete(e, item.id)}
-													>
-														<Trash2 className="mr-2 size-4" />
-														Delete
-													</DropdownMenuItem>
+													<TooltipProvider>
+														<Tooltip>
+															<TooltipTrigger asChild>
+																<div className="w-full">
+																	<DropdownMenuItem
+																		disabled={!hasActivePlan}
+																		onClick={e => hasActivePlan && handleRenameClick(e, item)}
+																	>
+																		<FilePenLine className="mr-2 size-4" />
+																		Rename
+																	</DropdownMenuItem>
+																</div>
+															</TooltipTrigger>
+															{!hasActivePlan && (
+																<TooltipContent>
+																	<p>You must have an active plan to rename.</p>
+																</TooltipContent>
+															)}
+														</Tooltip>
+														<Tooltip>
+															<TooltipTrigger asChild>
+																<div className="w-full">
+																	<DropdownMenuItem
+																		className="text-destructive"
+																		disabled={!hasActivePlan}
+																		onClick={e => hasActivePlan && handleDeleteClick(e, item.id)}
+																	>
+																		<Trash2 className="mr-2 size-4" />
+																		Delete
+																	</DropdownMenuItem>
+																</div>
+															</TooltipTrigger>
+															{!hasActivePlan && (
+																<TooltipContent>
+																	<p>You must have an active plan to delete.</p>
+																</TooltipContent>
+															)}
+														</Tooltip>
+													</TooltipProvider>
 												</DropdownMenuContent>
 											</DropdownMenu>
 										</div>
@@ -289,23 +367,23 @@ export default function History() {
 					<AlertDialogHeader>
 						<AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
 						<AlertDialogDescription>
-							This action cannot be undone. This will permanently delete this conversation and
-							remove its data from decentralised storage.
+							This will permanently delete this conversation. This action requires a transaction and
+							cannot be undone.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
 						<AlertDialogCancel
 							onClick={() => setConversationToDelete(null)}
-							disabled={deleteMutation.isPending}
+							disabled={metadataUpdateMutation.isPending}
 						>
 							Cancel
 						</AlertDialogCancel>
 						<AlertDialogAction
 							className="bg-destructive hover:bg-destructive/90"
 							onClick={confirmDelete}
-							disabled={deleteMutation.isPending || !isSessionReady}
+							disabled={metadataUpdateMutation.isPending}
 						>
-							{deleteMutation.isPending && <Loader2Icon className="mr-2 size-4 animate-spin" />}
+							{metadataUpdateMutation.isPending && <Loader2 className="mr-2 size-4 animate-spin" />}
 							Continue
 						</AlertDialogAction>
 					</AlertDialogFooter>

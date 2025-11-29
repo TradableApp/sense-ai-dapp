@@ -4,7 +4,8 @@ import { ConnectButton } from 'thirdweb/react';
 import RainbowButton from '@/components/magicui/rainbow-button';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import Separator from '@/components/ui/separator';
-import { client, localChain, wallets } from '@/config/thirdweb';
+import { SUPPORTED_TOKENS } from '@/config/contracts';
+import { client, deploymentChain, wallets } from '@/config/thirdweb';
 
 import { useSession } from './SessionProvider';
 
@@ -16,13 +17,13 @@ export default function SignatureScreen({ onRetry }) {
 
 	return (
 		<main className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-			{/* --- FIX: Added rounded-xl for a 12px border radius --- */}
 			<Card className="w-full max-w-[400px] animate-in fade-in-0 zoom-in-95 rounded-xl bg-[hsl(230_11.63%_8.43%)] border-[hsl(230_11.63%_17%)] text-white">
 				<CardHeader className="p-4">
 					<ConnectButton
 						client={client}
 						wallets={wallets}
-						chains={[localChain]}
+						chains={[deploymentChain]}
+						supportedTokens={SUPPORTED_TOKENS}
 						appMetadata={{
 							name: 'SenseAI App',
 							url: 'https://tradable.app',

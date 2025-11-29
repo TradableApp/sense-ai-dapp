@@ -1,9 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useActiveWallet } from 'thirdweb/react';
 
-import CONTRACTS from '@/config/contracts';
+import { CONTRACTS, LOCAL_CHAIN_ID } from '@/config/contracts';
 
-const LOCAL_CHAIN_ID = 31337;
 const ASSET_PLATFORM = 'base';
 
 export default function useTokenPrice() {

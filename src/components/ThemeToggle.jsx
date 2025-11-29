@@ -23,10 +23,6 @@ export default function ThemeToggle() {
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end">
-				{/*
-				  FIX: Each DropdownMenuItem now uses the `cn()` utility to conditionally
-				  apply the 'bg-accent' class if its theme matches the active theme.
-				*/}
 				<DropdownMenuItem
 					onClick={() => setTheme('light')}
 					className={cn(theme === 'light' && 'bg-accent')}

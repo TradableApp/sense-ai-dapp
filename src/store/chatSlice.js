@@ -17,7 +17,6 @@ export const chatSlice = createSlice({
 		// to its pristine, initial state.
 		clearUserSession: () => initialState,
 
-		// --- FIX: Make this an atomic state update ---
 		// When we set a new conversation ID, we must immediately clear the messages
 		// from the previous one. This prevents stale state and simplifies logic in the component.
 		setActiveConversationId: (state, action) => {

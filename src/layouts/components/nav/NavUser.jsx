@@ -1,7 +1,8 @@
 import { ConnectButton } from 'thirdweb/react';
 
 import { SidebarMenu, SidebarMenuItem } from '@/components/ui/sidebar';
-import { client, localChain, wallets } from '@/config/thirdweb';
+import { SUPPORTED_TOKENS } from '@/config/contracts';
+import { client, deploymentChain, wallets } from '@/config/thirdweb';
 
 export default function NavUser() {
 	return (
@@ -10,7 +11,8 @@ export default function NavUser() {
 				<ConnectButton
 					client={client}
 					wallets={wallets}
-					chains={[localChain]}
+					chains={[deploymentChain]}
+					supportedTokens={SUPPORTED_TOKENS}
 					appMetadata={{
 						name: 'SenseAI App',
 						url: 'https://tradable.app',

@@ -37,6 +37,8 @@ export default function PlanStatusCard({ plan }) {
 	const spentPercentage = allowance > 0 ? (spentAmount / allowance) * 100 : 0;
 	const formattedAllowance = new Intl.NumberFormat().format(allowance);
 	const formattedSpentAmount = new Intl.NumberFormat().format(spentAmount);
+
+	// We still want to visually warn them, but NOT disable the button
 	const hasPendingPrompts = pendingEscrowCount > 0;
 
 	return (
@@ -66,28 +68,16 @@ export default function PlanStatusCard({ plan }) {
 					</div>
 				</CardContent>
 				<CardFooter className="pt-4">
-					<TooltipProvider>
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<div className="w-full">
-									<Button
-										variant="outline"
-										className="h-10 w-full text-base font-medium"
-										disabled={hasPendingPrompts}
-										onClick={() => setIsManageModalOpen(true)}
-									>
-										<Settings className="mr-2 h-4 w-4" />
-										Manage Limit
-									</Button>
-								</div>
-							</TooltipTrigger>
-							{hasPendingPrompts && (
-								<TooltipContent>
-									<p>You cannot change your limit while prompts are pending.</p>
-								</TooltipContent>
-							)}
-						</Tooltip>
-					</TooltipProvider>
+					<div className="w-full">
+						<Button
+							variant="outline"
+							className="h-10 w-full text-base font-medium"
+							onClick={() => setIsManageModalOpen(true)}
+						>
+							<Settings className="mr-2 h-4 w-4" />
+							Manage Limit
+						</Button>
+					</div>
 				</CardFooter>
 			</Card>
 

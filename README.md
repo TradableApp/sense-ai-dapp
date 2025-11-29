@@ -1,5 +1,7 @@
 # SenseAI dApp
 
+[![License](https://img.shields.io/github/license/TradableApp/sense-ai-dapp.svg)](./LICENSE)
+
 This repository contains the source code for the SenseAI dApp, the primary frontend interface for the SenseAI tokenized AI agent. It is designed to be accessible both as a standalone web application and as a Telegram Mini App.
 
 The dApp provides a seamless "Web2" user experience by leveraging the power of the Thirdweb SDK for non-custodial wallet creation and management, allowing users to interact with the SenseAI platform with ease.
@@ -12,10 +14,13 @@ This project is built with a modern, performant stack:
 - **Web3 Provider**: [Thirdweb SDK v5](https://thirdweb.com/)
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/)
 - **UI Components**: [shadcn/ui](https://ui.shadcn.com/)
+- **State Management**: Redux Toolkit & React Query
+
+---
 
 ## Getting Started (Frontend Only)
 
-To get a local copy of just the frontend UI running, follow these simple steps. For a full local development setup that includes smart contract interaction, see the **Full Local Development Setup** section below.
+To get a local copy of just the frontend UI running (connected to public testnets), follow these steps.
 
 ### Prerequisites
 
@@ -27,53 +32,62 @@ To get a local copy of just the frontend UI running, follow these simple steps. 
 1.  **Clone the repository:**
 
     ```sh
-    git clone https://github.com/your-username/sense-ai-dapp.git
+    git clone https://github.com/TradableApp/sense-ai-dapp.git
     cd sense-ai-dapp
     ```
 
-2.  **Install NPM packages:**
+2.  **Install Dependencies:**
 
     ```sh
     npm install
     ```
 
-3.  **Set up environment variables:**
-    Create a `.env` file in the root of the project by copying the example file:
+3.  **Environment Setup:**
+    Create a `.env` file by copying the example:
 
     ```sh
     cp .env.example .env
     ```
 
-    Then, open the `.env` file and add your Thirdweb Client ID. You can get one from the [Thirdweb Dashboard](https://thirdweb.com/dashboard/settings/api-keys).
+    Add your Thirdweb Client ID (from [Thirdweb Dashboard](https://thirdweb.com/dashboard/settings/api-keys)):
 
-    ```
+    ```env
     VITE_THIRDWEB_CLIENT_ID="YOUR_CLIENT_ID_HERE"
     ```
 
-4.  **Run the development server:**
+4.  **Run Development Server:**
     ```sh
-    npm run dev
+    npm run dev:testnet
     ```
-    The application will be available at `http://localhost:3002`.
+    _Note: We use `dev:testnet` here so you can interact with the app immediately using Base Sepolia. The standard `npm run dev` command requires a local blockchain node (see below)._
 
 ---
 
 ## Full Local Development Setup (Frontend + Contracts)
 
-This guide explains how to set up a complete local development environment, including a local blockchain, deployed smart contracts, and a secure development wallet.
+This guide explains how to set up the complete local environment. This is required if you want to modify smart contracts and see changes reflected in the dApp immediately.
 
-This guide assumes you have cloned all three repositories (`sense-ai-dapp`, `tokenized-ai-agent`, `able-contracts`) into a common parent directory.
+### 1. Directory Structure
 
-### Part 1: Start the Local Blockchain
+**Crucial:** The `sync-contracts` script assumes the following sibling directory structure. Ensure all three repositories are cloned into the same parent folder:
 
-1.  Open a new terminal and navigate to the `tokenized-ai-agent` repository.
-2.  Run the following command to start a local Hardhat node:
+```text
+.
+├── able-contracts/         # The ERC-20 Token logic
+├── tokenized-ai-agent/     # The Agent & Escrow logic
+└── sense-ai-dapp/          # This repository
+```
+
+### 2. Start the Local Blockchain
+
+1.  Navigate to `tokenized-ai-agent`.
+2.  Start the Hardhat node:
     ```sh
     npx hardhat node
     ```
     This will start a local blockchain at `http://127.0.0.1:8545` and provide a list of 20 pre-funded test accounts. **Leave this terminal window running.**
 
-### Part 2: Create a Secure Dev Wallet
+### 3. Create a Secure Dev Wallet
 
 For security, **never** import publicly-known private keys (like the ones from Hardhat) into your primary MetaMask wallet. Instead, create an isolated development environment using a separate browser profile.
 
@@ -86,63 +100,57 @@ For security, **never** import publicly-known private keys (like the ones from H
     - Copy the **Private Key** for `Account #0` from the Hardhat node terminal.
     - Paste the key into MetaMask and click "Import". You should now see an account with a balance of 10000 ETH. Rename this account to "Hardhat #0" for clarity.
 
-### Part 3: Deploy Smart Contracts
+### 4. Deploy Smart Contracts
 
-1.  **Deploy `AbleToken`:**
+**Deploy Token:**
 
-    - Open a new terminal and navigate to your `able-contracts` repository.
-    - Run the local deployment script:
-      ```sh
-      npm run deploy:localnet
-      ```
-    - The script will output the deployed `AbleToken` proxy address. **Copy this address.**
+1.  Open a new terminal in `able-contracts`.
+2.  Run: `npm run deploy:localnet`
+3.  **Copy** the deployed `AbleToken` address.
 
-2.  **Deploy Agent & Escrow Contracts:**
-    - Navigate to your `tokenized-ai-agent` repository.
-    - Open the `.env.base-localnet` file. Paste the `AbleToken` address you just copied as the value for `TOKEN_CONTRACT_ADDRESS`.
-    - Run the local deployment script:
-      ```sh
-      npm run deploy:base-localnet
-      ```
-    - The script will output the deployed `EVMAIAgent` and `EVMAIAgentEscrow` addresses. **Copy both of these addresses.**
+**Deploy Agent:**
 
-### Part 4: Configure and Run the dApp
+1.  Navigate to `tokenized-ai-agent`.
+2.  Open `.env.base-localnet` (or create it). Set `TOKEN_CONTRACT_ADDRESS` to the address you just copied.
+3.  Run: `npm run deploy:base-localnet`
+4.  **Copy** the `EVMAIAgent` and `EVMAIAgentEscrow` addresses from the output.
 
-1.  **Navigate to the dApp:**
+### 5. Configure the dApp
 
-    - Navigate to your `sense-ai-dapp` repository.
+1.  Navigate to `sense-ai-dapp`.
+2.  **Sync ABIs:**
+    Run the sync script to copy the latest compiled contract artifacts from the sibling directories:
+    ```sh
+    npm run sync-contracts
+    ```
+3.  **Update Addresses:**
+    Open `src/config/contracts.js`. Update the `[LOCAL_CHAIN_ID]` section with the new addresses you copied in Step 4.
 
-2.  **Sync Contract ABIs:**
+4.  **Run Localnet Mode:**
+    Start the app pointing to your local hardhat node:
+    ```sh
+    npm run dev:localnet
+    ```
 
-    - Run the sync script to copy the latest contract interfaces into the project. This ensures the frontend knows how to communicate with the smart contracts you just deployed.
-      ```sh
-      npm run sync-contracts
-      ```
-
-3.  **Update Frontend Config:**
-
-    - Open the `src/config/contracts.js` file.
-    - Paste the three contract addresses you have copied into the `[LOCAL_CHAIN_ID]` section.
-
-4.  **Run the dApp:**
-
-    - Follow the steps in the "Getting Started" section to install dependencies and set up your `.env` file (if you haven't already).
-    - Start the development server:
-      ```sh
-      npm run dev
-      ```
-
-5.  **Connect Your Wallet:**
-    - Open the dApp in your "Web3 Dev" browser profile.
-    - Click "Connect Wallet". The dApp will prompt you to add and switch to the "Hardhat Localnet" (Chain ID 31337). Approve this in MetaMask.
-    - Connect your "Hardhat #0" account.
-
-You should now see the application's onboarding flow, fully connected to your local smart contracts.
+---
 
 ## Available Scripts
 
-- `npm run dev`: Starts the development server.
-- `npm run build`: Builds the app for production.
-- `npm run lint`: Lints the project files.
-- `npm run preview`: Serves the production build locally for preview.
-- `npm run sync-contracts`: Copies the latest contract ABIs from the `tokenized-ai-agent` and `able-contracts` repositories into the frontend project.
+### Development
+
+- `npm run dev`: Alias for `dev:localnet`.
+- `npm run dev:localnet`: Starts Vite in localnet mode (Chain ID 31337).
+- `npm run dev:testnet`: Starts Vite in testnet mode (Base Sepolia).
+
+### Production Build
+
+- `npm run build`: Alias for `build:mainnet`.
+- `npm run build:localnet`: Builds for local environment.
+- `npm run build:testnet`: Builds for Base Sepolia.
+- `npm run build:mainnet`: Builds for Base Mainnet.
+
+### Utilities
+
+- `npm run lint`: Runs ESLint.
+- `npm run format`: Formats code with Prettier.
+- `npm run sync-contracts`: Copies the latest `EVMAIAgent.json`, `EVMAIAgentEscrow.json`, and `AbleToken.json` artifacts from the sibling repositories into `src/lib/abi/`.

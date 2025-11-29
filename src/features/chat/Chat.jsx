@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import cuid from 'cuid';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { collection, query, where } from 'firebase/firestore';
-import { MicIcon, RotateCcwIcon, Split } from 'lucide-react';
+import { Loader2, MicIcon, RotateCcwIcon, Split } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import ReactMarkdown from 'react-markdown';
 import { useDispatch, useSelector } from 'react-redux';
@@ -26,6 +25,7 @@ import MessageActions from '@/components/ai/message-actions';
 import {
 	PromptInput,
 	PromptInputButton,
+	PromptInputCancel,
 	PromptInputSubmit,
 	PromptInputTextarea,
 	PromptInputToolbar,
@@ -35,25 +35,29 @@ import UserMessageActions from '@/components/ai/user-message-actions';
 import { Button } from '@/components/ui/button';
 import { db } from '@/config/firebase';
 import { useSession } from '@/features/auth/SessionProvider';
+import useChatMutations from '@/hooks/useChatMutations';
 import useConversations from '@/hooks/useConversations';
 import useFirestoreCollectionListener from '@/hooks/useFirestoreCollectionListener';
+import useLiveResponse from '@/hooks/useLiveResponse';
+import useUsagePlan from '@/hooks/useUsagePlan';
 import {
 	addMessageToConversation,
 	branchConversation,
 	createNewConversation,
+	deleteMessageFromConversation,
 	editUserMessage,
 	getMessagesForConversation,
 	regenerateAssistantResponse,
 } from '@/lib/dataService';
 import senseaiLogo from '@/senseai-logo.svg';
 import {
-	addReasoningStepById,
 	appendLiveMessages,
 	clearActiveConversation,
 	setActiveConversationId,
 	setActiveConversationMessages,
-	updateMessageContentById,
 } from '@/store/chatSlice';
+
+import ActivatePlanCTA from './ActivatePlanCTA';
 
 function MarkdownParagraph({ children }) {
 	return <p className="inline">{children}</p>;
@@ -126,6 +130,19 @@ export default function Chat() {
 	const { sessionKey, ownerAddress } = useSession();
 	const { activeConversationId, activeConversationMessages } = useSelector(state => state.chat);
 
+	const { data: plan, isLoading: isLoadingPlan } = useUsagePlan();
+	const hasActivePlan = !!plan;
+
+	// This activates the listener for the current chat
+	useLiveResponse(activeConversationId);
+
+	const {
+		initiatePromptMutation,
+		regenerateMutation,
+		branchConversationMutation,
+		cancelPromptMutation,
+	} = useChatMutations();
+
 	const [animatedContents, setAnimatedContents] = useState({});
 	const activeTimersRef = useRef({});
 	const prevMessagesRef = useRef([]);
@@ -180,7 +197,11 @@ export default function Chat() {
 
 	const { messagesToDisplay, versionInfo } = useMemo(() => {
 		const allMessages = activeConversationMessages;
-		if (!allMessages || allMessages.length === 0) return { messagesToDisplay: [], versionInfo: {} };
+
+		if (!allMessages || allMessages.length === 0) {
+			return { messagesToDisplay: [], versionInfo: {} };
+		}
+
 		const messageMap = new Map(allMessages.map(m => [m.id, m]));
 		const parentToChildrenMap = allMessages.reduce((acc, msg) => {
 			const parentKey = String(msg.parentId);
@@ -188,6 +209,7 @@ export default function Chat() {
 			acc[parentKey].push(msg);
 			return acc;
 		}, {});
+
 		const versions = {};
 		Object.keys(parentToChildrenMap).forEach(parentId => {
 			const children = parentToChildrenMap[parentId];
@@ -198,23 +220,23 @@ export default function Chat() {
 				});
 			}
 		});
+
 		const displayPath = [];
-		if (activeMessageId) {
-			let currentId = activeMessageId;
-			while (currentId && messageMap.has(currentId)) {
-				const message = messageMap.get(currentId);
-				displayPath.unshift(message);
-				currentId = message.parentId;
-			}
-		} else if (allMessages.length > 0) {
-			const latestMessage = allMessages.at(-1);
-			let currentId = latestMessage.id;
-			while (currentId && messageMap.has(currentId)) {
-				const message = messageMap.get(currentId);
-				displayPath.unshift(message);
-				currentId = message.parentId;
-			}
+
+		// If activeMessageId is set but doesn't exist in the map (e.g. it was just deleted),
+		// fall back to the latest message in the list.
+		let currentId = activeMessageId;
+		if (!currentId || !messageMap.has(currentId)) {
+			currentId = allMessages.at(-1)?.id;
 		}
+
+		// Trace path backwards
+		while (currentId && messageMap.has(currentId)) {
+			const message = messageMap.get(currentId);
+			displayPath.unshift(message);
+			currentId = message.parentId;
+		}
+
 		return { messagesToDisplay: displayPath, versionInfo: versions };
 	}, [activeConversationMessages, activeMessageId]);
 
@@ -239,169 +261,68 @@ export default function Chat() {
 
 	useEffect(() => () => Object.values(activeTimersRef.current).forEach(clearInterval), []);
 
-	const handleMutationError = error => {
-		console.error('On-chain transaction simulation failed:', error);
-	};
-
-	const newConversationMutation = useMutation({
-		mutationFn: variables =>
-			createNewConversation(
-				variables.sessionKey,
-				variables.ownerAddress,
-				variables.content,
-				variables.answerMessageId,
-				variables.onReasoningStep,
-				variables.onFinalAnswer,
-				variables.queryClient,
-			),
-		onSuccess: ({ newConversation, finalUserMessage, finalAiMessage }) => {
-			dispatch(setActiveConversationId(newConversation.id));
-			dispatch(setActiveConversationMessages([finalUserMessage, finalAiMessage]));
-		},
-		onError: handleMutationError,
-	});
-
-	const addMessageMutation = useMutation({
-		mutationFn: variables =>
-			addMessageToConversation(
-				variables.sessionKey,
-				variables.ownerAddress,
-				variables.conversationId,
-				variables.parentId,
-				variables.content,
-				variables.answerMessageId,
-				variables.onReasoningStep,
-				variables.onFinalAnswer,
-				variables.queryClient,
-			),
-		onSuccess: ({ finalUserMessage, finalAiMessage }) => {
-			dispatch(appendLiveMessages([finalUserMessage, finalAiMessage]));
-		},
-		onError: handleMutationError,
-	});
-
-	const regenerateMutation = useMutation({
-		mutationFn: variables =>
-			regenerateAssistantResponse(
-				variables.sessionKey,
-				variables.ownerAddress,
-				variables.conversationId,
-				variables.parentId,
-				variables.originalUserQuery,
-				variables.regenerationMode,
-				variables.answerMessageId,
-				variables.onReasoningStep,
-				variables.onFinalAnswer,
-				variables.queryClient,
-			),
-		onSuccess: ({ finalAiMessage }) => {
-			dispatch(appendLiveMessages([finalAiMessage]));
-		},
-		onError: handleMutationError,
-	});
-
-	const editUserMessageMutation = useMutation({
-		mutationFn: variables =>
-			editUserMessage(
-				variables.sessionKey,
-				variables.ownerAddress,
-				variables.conversationId,
-				variables.parentId,
-				variables.newContent,
-				variables.answerMessageId,
-				variables.onReasoningStep,
-				variables.onFinalAnswer,
-				variables.queryClient,
-			),
-		onSuccess: ({ finalUserMessage, finalAiMessage }) => {
-			setEditingMessageId(null);
-			dispatch(appendLiveMessages([finalUserMessage, finalAiMessage]));
-		},
-		onError: handleMutationError,
-	});
-
-	const branchConversationMutation = useMutation({
-		mutationFn: variables =>
-			branchConversation(
-				sessionKey,
-				ownerAddress,
-				variables.originalConversationId,
-				variables.branchPointMessageId,
-				queryClient,
-			),
-		onSuccess: newConversation => {
-			if (newConversation) {
-				dispatch(setActiveConversationId(newConversation.id));
-				navigate('/chat');
-			}
-		},
-	});
-
 	const handleRegenerate = (aiMessageToRegenerate, mode = 'default') => {
 		const userPrompt = activeConversationMessages.find(
 			m => m.id === aiMessageToRegenerate.parentId,
 		);
+		if (!userPrompt) return;
 
-		if (userPrompt) {
-			// 1. Generate the unique ID for this optimistic UI update
-			const answerMessageId = cuid(); // Or any other unique ID generator
-
-			// 2. Optimistically create the placeholder message and add it to the Redux store
-			const placeholderAiMessage = {
-				id: answerMessageId, // Use the correlation ID as a temporary key
-				answerMessageId,
+		regenerateMutation.mutate(
+			{
 				conversationId: activeConversationId,
-				parentId: userPrompt.id,
-				role: 'assistant',
-				content: null, // It's thinking
-				createdAt: Date.now(),
-				reasoning: [],
-			};
-			dispatch(appendLiveMessages([placeholderAiMessage]));
-
-			// 3. Call the mutation with all the necessary data
-			regenerateMutation.mutate({
+				promptMessageId: userPrompt.id,
+				originalAnswerMessageId: aiMessageToRegenerate.id,
+				instructions: mode,
 				sessionKey,
-				ownerAddress,
-				queryClient,
-				originalPromptMessageId: userPrompt.id,
-				previousAnswerMessageId: aiMessageToRegenerate.id,
-				regenerationInstructions: mode,
-				answerMessageId, // Pass the ID to the data service
-			});
-		}
+			},
+			{
+				onSuccess: async ({ newAnswerMessageId }) => {
+					const { finalAiMessage } = await regenerateAssistantResponse(
+						sessionKey,
+						ownerAddress,
+						activeConversationId,
+						userPrompt.id,
+						userPrompt.content,
+						mode,
+						newAnswerMessageId,
+						queryClient,
+					);
+					dispatch(appendLiveMessages([finalAiMessage]));
+				},
+				// onError: () => {},
+			},
+		);
 	};
 
 	const handleSaveEdit = data => {
 		const originalMessage = activeConversationMessages.find(m => m.id === editingMessageId);
-		if (originalMessage) {
-			const answerMessageId = cuid();
-			editUserMessageMutation.mutate({
-				sessionKey,
-				ownerAddress,
-				queryClient,
+		if (!originalMessage) return;
+
+		initiatePromptMutation.mutate(
+			{
 				conversationId: activeConversationId,
+				promptText: data.content,
+				sessionKey,
 				parentId: originalMessage.parentId,
-				newContent: data.content,
-				answerMessageId,
-				onReasoningStep: (reasoningMessageId, reasoningStep) => {
-					dispatch(
-						addReasoningStepById({
-							answerMessageId: reasoningMessageId,
-							reasoningStep,
-						}),
+			},
+			{
+				onSuccess: async newIds => {
+					const { finalUserMessage, finalAiMessage } = await editUserMessage(
+						sessionKey,
+						ownerAddress,
+						activeConversationId,
+						originalMessage.parentId,
+						data.content,
+						newIds.promptMessageId,
+						newIds.answerMessageId,
+						queryClient,
 					);
+					dispatch(appendLiveMessages([finalUserMessage, finalAiMessage]));
+					setEditingMessageId(null);
 				},
-				onFinalAnswer: (finalMessageId, finalAnswer) => {
-					dispatch(
-						updateMessageContentById({
-							answerMessageId: finalMessageId,
-							...finalAnswer,
-						}),
-					);
-				},
-			});
-		}
+				// onError: () => {},
+			},
+		);
 	};
 
 	const handleNavigate = targetBranchRootId => {
@@ -430,10 +351,30 @@ export default function Chat() {
 	};
 
 	const handleBranch = messageToBranchFrom => {
-		branchConversationMutation.mutate({
-			originalConversationId: activeConversationId,
-			branchPointMessageId: messageToBranchFrom.id,
-		});
+		const conversation = conversations.find(c => c.id === activeConversationId);
+		if (!conversation) return;
+
+		branchConversationMutation.mutate(
+			{
+				originalConversationId: activeConversationId,
+				branchPointMessageId: messageToBranchFrom.id,
+				originalTitle: conversation.title,
+				sessionKey,
+			},
+			{
+				onSuccess: async ({ newConversationId }) => {
+					await branchConversation(
+						sessionKey,
+						ownerAddress,
+						activeConversationId,
+						messageToBranchFrom.id,
+						newConversationId,
+						queryClient,
+					);
+				},
+				// onError: () => {},
+			},
+		);
 	};
 
 	const simulateTyping = message => {
@@ -500,46 +441,94 @@ export default function Chat() {
 		loadingTag: 'SenseAIFeedbackListener',
 	});
 
-	const onSubmit = data => {
-		const parentId = messagesToDisplay?.at(-1)?.id || null;
-		const answerMessageId = cuid();
+	// Derived state: Check if AI is thinking (assistant message with no content)
+	const lastMessage = messagesToDisplay.at(-1);
+	const isAiThinking = lastMessage?.role === 'assistant' && !lastMessage.content;
 
-		const onReasoningStep = (reasoningMessageId, reasoningStep) => {
-			dispatch(addReasoningStepById({ answerMessageId: reasoningMessageId, reasoningStep }));
-		};
-		const onFinalAnswer = (finalMessageId, finalAnswer) => {
-			dispatch(
-				updateMessageContentById({
-					answerMessageId: finalMessageId,
-					...finalAnswer,
-				}),
+	const handleCancelPrompt = () => {
+		if (lastMessage?.id) {
+			cancelPromptMutation.mutate(
+				{ answerMessageId: lastMessage.id },
+				{
+					onSuccess: async () => {
+						try {
+							// 1. Clean up IndexedDB so it doesn't reappear on refresh
+							await deleteMessageFromConversation(
+								sessionKey,
+								ownerAddress,
+								activeConversationId,
+								lastMessage.id,
+								queryClient,
+							);
+						} catch (error) {
+							console.error('Failed to cleanup cancelled message from DB:', error);
+						}
+
+						// 2. Update Redux to reflect change immediately
+						const newMessages = activeConversationMessages.filter(m => m.id !== lastMessage.id);
+						console.log('newMessages', newMessages);
+						dispatch(setActiveConversationMessages(newMessages));
+
+						// This ensures the UI renders the previous history instead of looking for the deleted ID.
+						const newLastMessage = newMessages.at(-1);
+						if (newLastMessage) {
+							setActiveMessageId(newLastMessage.id);
+						} else {
+							setActiveMessageId(null); // Conversation is empty
+						}
+					},
+				},
 			);
-		};
-
-		if (activeConversationId) {
-			addMessageMutation.mutate({
-				sessionKey,
-				ownerAddress,
-				queryClient,
-				conversationId: activeConversationId,
-				parentId,
-				content: data.prompt,
-				answerMessageId,
-				onReasoningStep,
-				onFinalAnswer,
-			});
-		} else {
-			newConversationMutation.mutate({
-				sessionKey,
-				ownerAddress,
-				queryClient,
-				content: data.prompt,
-				answerMessageId,
-				onReasoningStep,
-				onFinalAnswer,
-			});
 		}
-		reset();
+	};
+
+	const onSubmit = data => {
+		initiatePromptMutation.mutate(
+			{
+				conversationId: activeConversationId,
+				promptText: data.prompt,
+				sessionKey,
+				parentId: messagesToDisplay?.at(-1)?.id,
+			},
+			{
+				onSuccess: async newIds => {
+					const {
+						conversationId: onChainConversationId,
+						promptMessageId,
+						answerMessageId,
+					} = newIds;
+
+					if (activeConversationId) {
+						const { finalUserMessage, finalAiMessage } = await addMessageToConversation(
+							sessionKey,
+							ownerAddress,
+							activeConversationId,
+							messagesToDisplay?.at(-1)?.id,
+							data.prompt,
+							promptMessageId,
+							answerMessageId,
+							queryClient,
+						);
+						dispatch(appendLiveMessages([finalUserMessage, finalAiMessage]));
+					} else {
+						const { newConversation, finalUserMessage, finalAiMessage } =
+							await createNewConversation(
+								sessionKey,
+								ownerAddress,
+								data.prompt,
+								onChainConversationId,
+								promptMessageId,
+								answerMessageId,
+								queryClient,
+							);
+						dispatch(setActiveConversationId(newConversation.id));
+						dispatch(setActiveConversationMessages([finalUserMessage, finalAiMessage]));
+					}
+					reset();
+				},
+				// onError: () => {},
+			},
+		);
 	};
 
 	const handleReset = () => {
@@ -554,21 +543,27 @@ export default function Chat() {
 
 	const isProcessing =
 		isSubmitting ||
-		addMessageMutation.isPending ||
-		newConversationMutation.isPending ||
+		initiatePromptMutation.isPending ||
 		regenerateMutation.isPending ||
-		editUserMessageMutation.isPending ||
 		branchConversationMutation.isPending;
 
-	const lastMessage = messagesToDisplay.at(-1);
-	const isAiThinking = lastMessage?.role === 'assistant' && !lastMessage.content;
 	const hasValidationError = !!errors.prompt;
-	const isAiWorking = isProcessing || isAiThinking || !sessionKey;
+	const isDisabled = isProcessing || isAiThinking || !sessionKey || isLoadingPlan || !hasActivePlan;
 
+	const isInputDisabled = isProcessing || !sessionKey || isLoadingPlan || !hasActivePlan;
+
+	// Calculate UI status for the submit button
 	const submitStatus = (() => {
-		if (hasValidationError) return 'error';
-		if (isAiThinking) return 'streaming';
-		if (isProcessing) return 'submitted';
+		if (hasValidationError) {
+			return 'error';
+		}
+
+		// Show loader while sending
+		if (isProcessing) {
+			return 'submitted';
+		}
+
+		// Show Send icon
 		return 'ready';
 	})();
 
@@ -588,11 +583,12 @@ export default function Chat() {
 			</div>
 			<Conversation className="flex-1">
 				<ConversationContent className="space-y-4">
-					{isLoading && !messagesToDisplay.length && !isProcessing && (
+					{(isLoading || isFetching) && !messagesToDisplay.length && (
 						<div className="flex items-center justify-center h-full">
 							<Loader />
 						</div>
 					)}
+
 					{!activeConversationId && !isLoading && !isProcessing && (
 						<div className="flex h-full flex-col items-center justify-center text-center p-4">
 							<img src={senseaiLogo} alt="SenseAI" className="size-24 mb-4" />
@@ -602,11 +598,13 @@ export default function Chat() {
 							</p>
 						</div>
 					)}
+
 					{isProcessing && !activeConversationId && (
 						<div className="flex items-center justify-center h-full">
 							<Loader />
 						</div>
 					)}
+
 					{messagesToDisplay.map(message => {
 						if (message.id === editingMessageId) {
 							return (
@@ -627,6 +625,8 @@ export default function Chat() {
 							const animatedContent = animatedContents[message.id];
 							const isTyping =
 								animatedContent != null && animatedContent.length < (message.content?.length ?? 0);
+							const hasReasoning = message.reasoning && message.reasoning.length > 0;
+
 							return (
 								<div key={message.id || message.answerMessageId} className="space-y-3">
 									<div className="ml-10">
@@ -636,8 +636,9 @@ export default function Chat() {
 											reasoningDuration={message.reasoningDuration}
 											reasoningSteps={message.reasoning}
 										>
-											<ReasoningTrigger />
+											<ReasoningTrigger hidden={!hasReasoning} />
 											<ReasoningContent
+												hidden={!hasReasoning}
 												reasoningSteps={message.reasoning}
 												sources={message.sources}
 											/>
@@ -720,20 +721,35 @@ export default function Chat() {
 			</Conversation>
 
 			<div className="border-t p-4">
-				<PromptInput onSubmit={handleSubmit(onSubmit)} errors={errors}>
-					<PromptInputTextarea
-						placeholder="Ask about market sentiment, on-chain data..."
-						disabled={isAiWorking}
-						{...register('prompt')}
-					/>
-					<PromptInputToolbar>
-						<PromptInputButton disabled={!isValid || isAiWorking}>
-							<MicIcon size={16} />
-							<span>Voice</span>
-						</PromptInputButton>
-						<PromptInputSubmit disabled={!isValid || isAiWorking} status={submitStatus} />
-					</PromptInputToolbar>
-				</PromptInput>
+				{isLoadingPlan ? (
+					<div className="flex h-24 items-center justify-center">
+						<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+					</div>
+				) : hasActivePlan ? (
+					<PromptInput onSubmit={handleSubmit(onSubmit)} errors={errors}>
+						<PromptInputTextarea
+							placeholder="Ask about market sentiment, on-chain data..."
+							disabled={isDisabled}
+							{...register('prompt')}
+						/>
+						<PromptInputToolbar>
+							<PromptInputButton disabled>
+								<MicIcon size={16} />
+								<span>Voice</span>
+							</PromptInputButton>
+							{isAiThinking ? (
+								<PromptInputCancel
+									onClick={handleCancelPrompt}
+									isLoading={cancelPromptMutation.isPending}
+								/>
+							) : (
+								<PromptInputSubmit disabled={!isValid || isInputDisabled} status={submitStatus} />
+							)}
+						</PromptInputToolbar>
+					</PromptInput>
+				) : (
+					<ActivatePlanCTA />
+				)}
 			</div>
 		</div>
 	);

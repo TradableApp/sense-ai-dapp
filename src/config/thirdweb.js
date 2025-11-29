@@ -1,6 +1,8 @@
 import { createThirdwebClient, defineChain } from 'thirdweb';
 import { createWallet, inAppWallet, walletConnect } from 'thirdweb/wallets';
 
+import { LOCAL_CHAIN_ID } from './contracts';
+
 const clientId = import.meta.env.VITE_THIRDWEB_CLIENT_ID;
 
 if (!clientId) {
@@ -11,16 +13,37 @@ export const client = createThirdwebClient({
 	clientId,
 });
 
-// Define your local Hardhat chain
-export const localChain = defineChain({
-	id: 31337,
-	rpc: 'http://127.0.0.1:8545',
-	nativeCurrency: {
-		name: 'Hardhat Localnet',
-		symbol: 'HardhatETH',
-		decimals: 18,
-	},
-});
+// Determine the Chain ID from environment
+const envChainId = Number(import.meta.env.VITE_CHAIN_ID);
+console.log('envChainId', envChainId);
+
+// Define the chain configuration
+export const deploymentChain = defineChain(
+	envChainId === LOCAL_CHAIN_ID
+		? {
+				// Explicit config for Localnet to prevent "GoChain" naming collision
+				id: envChainId,
+				name: 'Hardhat Localnet',
+				rpc: import.meta.env.VITE_CHAIN_RPC_URL,
+				nativeCurrency: {
+					name: import.meta.env.VITE_CHAIN_NATIVE_CURRENCY_NAME || 'Ether',
+					symbol: import.meta.env.VITE_CHAIN_NATIVE_CURRENCY_SYMBOL || 'ETH',
+					decimals: Number(import.meta.env.VITE_CHAIN_NATIVE_CURRENCY_DECIMALS) || 18,
+				},
+				testnet: true,
+				slug: 'hardhat-local',
+		  }
+		: {
+				// Config for Testnet/Mainnet using your .env variables
+				id: envChainId,
+				rpc: import.meta.env.VITE_CHAIN_RPC_URL,
+				nativeCurrency: {
+					name: import.meta.env.VITE_CHAIN_NATIVE_CURRENCY_NAME || 'Ether',
+					symbol: import.meta.env.VITE_CHAIN_NATIVE_CURRENCY_SYMBOL || 'ETH',
+					decimals: Number(import.meta.env.VITE_CHAIN_NATIVE_CURRENCY_DECIMALS) || 18,
+				},
+		  },
+);
 
 // This is our curated, production-ready list of wallet options.
 export const wallets = [

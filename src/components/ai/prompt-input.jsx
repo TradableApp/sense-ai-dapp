@@ -141,6 +141,32 @@ export function PromptInputSubmit({
 	);
 }
 
+export function PromptInputCancel({
+	className,
+	variant = 'default',
+	size = 'icon',
+	isLoading, // Added to support showing spinner during cancel mutation
+	children,
+	...props
+}) {
+	return (
+		<Button
+			className={cn('gap-1.5 rounded-lg', className)}
+			size={size}
+			type="button" // Explicitly prevents form submission
+			variant={variant}
+			{...props}
+		>
+			{children ??
+				(isLoading ? (
+					<Loader2Icon className="size-4 animate-spin" />
+				) : (
+					<SquareIcon className="size-4" />
+				))}
+		</Button>
+	);
+}
+
 export function PromptInputModelSelect(props) {
 	return <Select {...props} />;
 }

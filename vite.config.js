@@ -2,6 +2,7 @@ import path from 'path';
 
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import { VitePWA } from 'vite-plugin-pwa';
 import svgr from 'vite-plugin-svgr';
 
@@ -13,7 +14,6 @@ export default defineConfig({
 		VitePWA({
 			registerType: 'autoUpdate',
 			workbox: {
-				// FIX: This is the critical fix for the build error.
 				// We are increasing the limit for files that can be precached by the service worker.
 				// This allows our large-but-essential vendor chunks to be available offline.
 				maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4 MiB
@@ -93,6 +93,14 @@ export default defineConfig({
 					},
 				],
 			},
+		}),
+		nodePolyfills({
+			globals: {
+				Buffer: true,
+				global: true,
+				process: true,
+			},
+			protocolImports: true,
 		}),
 	],
 	resolve: {

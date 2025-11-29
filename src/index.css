@@ -12,7 +12,6 @@
 		--popover-foreground: 227 93% 11%;
 		--primary: 217 100% 72%;
 		--primary-foreground: 0 0% 100%;
-		/* FIX: Made secondary bg a clearer gray and its text a high-contrast dark color. */
 		--secondary: 210 20% 96%;
 		--secondary-foreground: 220 10% 25%;
 		--muted: 211 53% 94%;
@@ -58,7 +57,6 @@
 		--primary: 237 22% 47%;
 		--primary-foreground: 0 0% 100%;
 		--secondary: 240 43% 17%;
-		/* FIX: Increased brightness of secondary text for better readability. */
 		--secondary-foreground: 0 0% 90%;
 		--muted: 240 28% 19%;
 		--muted-foreground: 0 0% 64%;
