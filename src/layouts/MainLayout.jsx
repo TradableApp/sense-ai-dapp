@@ -22,10 +22,12 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/s
 import { SUPPORTED_TOKENS } from '@/config/contracts';
 import { client, deploymentChain, wallets } from '@/config/thirdweb';
 import useConversations from '@/hooks/useConversations';
+import useLiveResponse from '@/hooks/useLiveResponse';
 import useMobile from '@/hooks/useMobile';
 import AppSidebar from '@/layouts/components/AppSidebar';
 import MobileNav from '@/layouts/components/MobileNav';
 import { cn } from '@/lib/utils';
+import senseaiLogo from '@/senseai-logo.svg';
 import { openModal } from '@/store/uiSlice';
 
 function usePageTitle() {
@@ -41,6 +43,7 @@ export default function MainLayout() {
 	const dispatch = useDispatch();
 
 	useConversations();
+	useLiveResponse();
 
 	return (
 		<div className={cn('flex h-screen bg-background', isMobile && 'flex-col')}>
@@ -81,6 +84,20 @@ export default function MainLayout() {
 										appMetadata={{
 											name: 'SenseAI App',
 											url: 'https://tradable.app',
+											description: 'Tokenized AI Agent',
+											logoUrl: senseaiLogo,
+										}}
+										detailsButton={{
+											className: '!w-full',
+											displayBalanceToken: {
+												[import.meta.env.VITE_CHAIN_ID]: import.meta.env
+													.VITE_TOKEN_CONTRACT_ADDRESS,
+												// You can add more chains and tokens here if needed
+												// [otherChain.id]: "0x...",
+											},
+										}}
+										detailsModal={{
+											showTestnetFaucet: true,
 										}}
 										theme="dark"
 									/>

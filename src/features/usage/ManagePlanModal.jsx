@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { formatDistanceToNow } from 'date-fns';
 import { ethers } from 'ethers';
 import { AlertCircle, Info, Loader2, Trash2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
@@ -37,8 +36,6 @@ import Input from '@/components/ui/input';
 import Label from '@/components/ui/label';
 import { CONTRACTS, LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
 import { client } from '@/config/thirdweb';
-import useChatMutations from '@/hooks/useChatMutations';
-import useStuckRequests from '@/hooks/useStuckRequests';
 import useTokenBalance, { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
 import useTokenPrice from '@/hooks/useTokenPrice';
 import requestTestTokens from '@/lib/faucetService';
@@ -87,11 +84,6 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 	const queryClient = useQueryClient();
 	const [statusText, setStatusText] = useState('');
 	const [isRequestingTokens, setIsRequestingTokens] = useState(false);
-	const [isRefundingAll, setIsRefundingAll] = useState(false);
-
-	// Hooks for Refund Functionality
-	const { data: stuckRequests /* , isLoading: isLoadingStuck */ } = useStuckRequests();
-	const { processRefundMutation } = useChatMutations();
 
 	const { data: balanceData, isLoading: isLoadingBalance } = useTokenBalance(
 		chainId,
@@ -134,7 +126,7 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 
 	const currentLimit = watch('limit');
 	const { data: livePrice, isLoading: isLoadingPrice, isError: isErrorPrice } = useTokenPrice();
-	const currentPrice = isLocalnet ? TGE_PRICE_USD : livePrice;
+	const currentPrice = isLocalnet || isTestnet ? TGE_PRICE_USD : livePrice;
 
 	const usdValue = useMemo(() => {
 		if (currentPrice === undefined) return null;
@@ -242,7 +234,10 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 			// Without this, invalidateQueries fetches stale data instantly.
 			await wait(2000);
 
-			await queryClient.invalidateQueries({ queryKey: ['usagePlan'] });
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: ['usagePlan'] }),
+				queryClient.invalidateQueries({ queryKey: ['tokenBalance'] }),
+			]);
 			onOpenChange(false);
 		},
 		onError: error => {
@@ -298,7 +293,10 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 			// Without this, invalidateQueries fetches stale data instantly.
 			await wait(2000);
 
-			await queryClient.invalidateQueries({ queryKey: ['usagePlan'] });
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: ['usagePlan'] }),
+				queryClient.invalidateQueries({ queryKey: ['tokenBalance'] }),
+			]);
 			onOpenChange(false);
 		},
 		onError: error => {
@@ -307,42 +305,6 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 			});
 		},
 	});
-
-	const handleRefundAll = async () => {
-		if (!stuckRequests) {
-			return;
-		}
-
-		const refundable = stuckRequests.filter(req => req.isRefundable);
-
-		if (refundable.length === 0) {
-			return;
-		}
-
-		setIsRefundingAll(true);
-		toast.info('Processing Refunds', {
-			description: `You will need to confirm ${refundable.length} transactions.`,
-		});
-
-		// We process sequentially to avoid nonce issues in the wallet
-		await refundable.reduce(async (previousPromise, req) => {
-			// 1. Wait for the previous item to finish
-			const shouldContinue = await previousPromise;
-
-			// 2. If a previous item failed, skip this one (effectively a "break")
-			if (!shouldContinue) return false;
-
-			try {
-				await processRefundMutation.mutateAsync({ answerMessageId: req.id });
-				return true; // Continue to the next item
-			} catch (error) {
-				console.error('Refund failed for', req.id, error);
-				return false; // Stop processing subsequent items
-			}
-		}, Promise.resolve(true));
-
-		setIsRefundingAll(false);
-	};
 
 	const onSubmit = data => {
 		const limitInWei = ethers.parseUnits(data.limit.toString(), 18);
@@ -421,15 +383,16 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 	};
 
 	const isProcessing = setPlanMutation.isPending || revokeMutation.isPending;
-	const refundableCount = stuckRequests?.filter(r => r.isRefundable).length || 0;
 
 	const renderPriceInfo = () => {
-		if (isLocalnet) {
+		if (isLocalnet || isTestnet) {
 			return (
 				<div className="flex items-center justify-end text-sm text-muted-foreground">
 					<PriceInfoDialog
-						title="Local Test Price"
-						description="You are on a local test network. The USD value is an estimate based on the planned TGE price of $0.015."
+						title="Test Price"
+						description={`You are on a ${
+							isLocalnet ? 'local' : 'test'
+						} network. The USD value is an estimate based on the planned TGE price of $${TGE_PRICE_USD}.`}
 					/>
 					<span>
 						Est. Value: ≈ $
@@ -484,14 +447,7 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 	};
 
 	return (
-		<Dialog
-			open={open}
-			onOpenChange={openState => {
-				if (!isProcessing && !isRefundingAll) {
-					onOpenChange(openState);
-				}
-			}}
-		>
+		<Dialog open={open} onOpenChange={openState => !isProcessing && onOpenChange(openState)}>
 			<DialogContent className="sm:max-w-[425px]">
 				<DialogHeader>
 					<DialogTitle>{existingPlan ? 'Manage' : 'Set'} Your Spending Limit</DialogTitle>
@@ -512,7 +468,6 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 							disabled={
 								hasPendingPrompts ||
 								isProcessing ||
-								isRefundingAll ||
 								setPlanMutation.isPending ||
 								revokeMutation.isPending
 							}
@@ -563,78 +518,12 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 							disabled={
 								hasPendingPrompts ||
 								isProcessing ||
-								isRefundingAll ||
 								setPlanMutation.isPending ||
 								revokeMutation.isPending
 							}
 						/>
 						{errors.days && <p className="text-sm text-destructive">{errors.days.message}</p>}
 					</div>
-
-					{hasPendingPrompts && stuckRequests && stuckRequests.length > 0 && (
-						<div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 p-3">
-							<div className="flex items-center justify-between mb-2">
-								<div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
-									<AlertCircle className="h-4 w-4" />
-									<span className="text-sm font-semibold">Pending Prompts Detected</span>
-								</div>
-								{refundableCount > 1 && (
-									<Button
-										type="button"
-										variant="ghost"
-										size="sm"
-										className="h-6 px-2 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/30"
-										onClick={handleRefundAll}
-										disabled={isRefundingAll}
-									>
-										{isRefundingAll ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Refund All'}
-									</Button>
-								)}
-							</div>
-							<p className="text-xs text-muted-foreground mb-3">
-								You have prompts that haven't completed. You cannot change or revoke your plan until
-								they finalize or are refunded.
-							</p>
-
-							<div className="space-y-2 max-h-40 overflow-y-auto">
-								{stuckRequests.map(req => (
-									<div
-										key={req.id}
-										className="flex items-center justify-between bg-background p-2 rounded border text-xs"
-									>
-										<span>
-											Request #{req.id}{' '}
-											<span className="text-muted-foreground">
-												({formatDistanceToNow(req.createdAt)} ago)
-											</span>
-										</span>
-
-										{req.isRefundable ? (
-											<Button
-												size="sm"
-												variant="outline"
-												type="button"
-												className="h-6 text-xs"
-												onClick={e => {
-													e.preventDefault();
-													processRefundMutation.mutate({ answerMessageId: req.id });
-												}}
-												disabled={processRefundMutation.isPending || isRefundingAll}
-											>
-												{processRefundMutation.isPending && !isRefundingAll ? (
-													<Loader2 className="w-3 h-3 animate-spin" />
-												) : (
-													'Refund'
-												)}
-											</Button>
-										) : (
-											<span className="text-muted-foreground italic px-2">Wait 1h to refund</span>
-										)}
-									</div>
-								))}
-							</div>
-						</div>
-					)}
 
 					<DialogFooter className="flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-between">
 						<div className="w-full sm:w-auto">
@@ -647,7 +536,6 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 											disabled={
 												hasPendingPrompts ||
 												isProcessing ||
-												isRefundingAll ||
 												setPlanMutation.isPending ||
 												revokeMutation.isPending
 											}
@@ -691,12 +579,7 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 								type="button"
 								variant="outline"
 								onClick={() => onOpenChange(false)}
-								disabled={
-									isProcessing ||
-									isRefundingAll ||
-									setPlanMutation.isPending ||
-									revokeMutation.isPending
-								}
+								disabled={isProcessing || setPlanMutation.isPending || revokeMutation.isPending}
 								className="w-full sm:w-auto"
 							>
 								Cancel
@@ -707,7 +590,6 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 									hasPendingPrompts ||
 									!isValid ||
 									isProcessing ||
-									isRefundingAll ||
 									setPlanMutation.isPending ||
 									revokeMutation.isPending
 								}

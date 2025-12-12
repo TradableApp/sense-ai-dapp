@@ -280,6 +280,20 @@ export const createNewConversation = async (
 	return { newConversation, finalUserMessage, finalAiMessage };
 };
 
+export const getConversation = async (sessionKey, ownerAddress, conversationId) => {
+	if (!sessionKey || !ownerAddress || !conversationId) {
+		return null;
+	}
+
+	const record = await db.conversations.get([ownerAddress, conversationId]);
+
+	if (!record) {
+		return null;
+	}
+
+	return decryptData(sessionKey, record.encryptedData);
+};
+
 export const renameConversation = async (
 	sessionKey,
 	ownerAddress,
@@ -351,10 +365,10 @@ export const branchConversation = async (
 		id: newConversationId,
 		ownerAddress,
 		createdAt: originalConversation.createdAt,
-		title: `Branch · ${originalConversation.title.replace('Branch · ', '')}`,
+		title: `Branch of ${originalConversation.title.replace('Branch of ', '')}`,
 		isDeleted: false,
 		lastUpdatedAt: now,
-		lastMessageCreatedAt: historyToBranch.at(-1)?.createdAt || now,
+		lastMessageCreatedAt: now,
 		lastMessagePreview: historyToBranch.at(-1)?.content || '',
 		branchedFromConversationId: originalConversationId,
 		branchedAtMessageId: branchPointMessageId,

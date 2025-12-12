@@ -6,6 +6,7 @@ import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
 import Separator from '@/components/ui/separator';
 import { SUPPORTED_TOKENS } from '@/config/contracts';
 import { client, deploymentChain, wallets } from '@/config/thirdweb';
+import senseaiLogo from '@/senseai-logo.svg';
 
 import { useSession } from './SessionProvider';
 
@@ -27,6 +28,19 @@ export default function SignatureScreen({ onRetry }) {
 						appMetadata={{
 							name: 'SenseAI App',
 							url: 'https://tradable.app',
+							description: 'Tokenized AI Agent',
+							logoUrl: senseaiLogo,
+						}}
+						detailsButton={{
+							className: '!w-full',
+							displayBalanceToken: {
+								[import.meta.env.VITE_CHAIN_ID]: import.meta.env.VITE_TOKEN_CONTRACT_ADDRESS,
+								// You can add more chains and tokens here if needed
+								// [otherChain.id]: "0x...",
+							},
+						}}
+						detailsModal={{
+							showTestnetFaucet: true,
 						}}
 						theme="dark"
 					/>

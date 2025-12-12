@@ -17,7 +17,7 @@ import { gql } from 'graphql-request';
 export const GET_USER_UPDATES_QUERY = gql`
 	query GetUserUpdates($owner: Bytes!, $lastSync: BigInt!, $limit: Int!, $offset: Int!) {
 		conversations(
-			where: { owner: $owner, lastMessageCreatedAt_gt: $lastSync, isDeleted: false }
+			where: { owner: $owner, lastMessageCreatedAt_gte: $lastSync, isDeleted: false }
 			orderBy: lastMessageCreatedAt
 			orderDirection: desc
 			first: $limit
@@ -35,6 +35,16 @@ export const GET_USER_UPDATES_QUERY = gql`
 					id
 					searchDeltaCID
 				}
+			}
+			# Fetch "incomplete" requests (Cancelled, Refunded, or Pending)
+			# We only want those that are NOT answered, to avoid duplication with 'messages'
+			promptRequests(where: { isAnswered: false }) {
+				id # answerMessageId
+				promptMessageId
+				encryptedPayload
+				isCancelled
+				isRefunded
+				createdAt
 			}
 		}
 	}

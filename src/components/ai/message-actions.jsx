@@ -37,7 +37,7 @@ function ActionButton({ label, icon, onClick }) {
 					<Button
 						variant="ghost"
 						size="icon"
-						className="size-7 text-muted-foreground"
+						className="size-7 text-muted-foreground shrink-0"
 						onClick={onClick || (() => {})}
 					>
 						<Icon className="size-4" />
@@ -67,7 +67,7 @@ function DropdownAction({ label, icon, children, align }) {
 				<Tooltip open={isTooltipOpen} onOpenChange={setIsTooltipOpen} delayDuration={100}>
 					<TooltipTrigger asChild>
 						<DropdownMenuTrigger asChild>
-							<Button variant="ghost" size="icon" className="size-7 text-muted-foreground">
+							<Button variant="ghost" size="icon" className="size-7 text-muted-foreground shrink-0">
 								<Icon className="size-4" />
 							</Button>
 						</DropdownMenuTrigger>
@@ -139,9 +139,9 @@ export default function MessageActions({
 	const showPagination = versionInfo && versionInfo.siblings.length > 1;
 
 	return (
-		<div className="-mt-3 ml-10 flex items-center gap-2">
+		<div className="-mt-3 ml-0 md:ml-10 flex items-center gap-2 overflow-x-auto">
 			{showPagination && (
-				<div className="flex items-center gap-1 text-xs text-muted-foreground">
+				<div className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
 					<Button
 						variant="ghost"
 						size="icon"
@@ -151,7 +151,7 @@ export default function MessageActions({
 					>
 						<ChevronLeftIcon className="size-3" />
 					</Button>
-					<span>
+					<span className="whitespace-nowrap">
 						{versionInfo.currentIndex + 1} / {versionInfo.siblings.length}
 					</span>
 					<Button
@@ -172,7 +172,7 @@ export default function MessageActions({
 						<Button
 							variant="ghost"
 							size="icon"
-							className="size-7 text-muted-foreground"
+							className="size-7 text-muted-foreground shrink-0"
 							onClick={handleCopy}
 						>
 							{isCopied ? (
@@ -195,7 +195,7 @@ export default function MessageActions({
 							<Button
 								variant="ghost"
 								size="icon"
-								className="size-7 text-muted-foreground"
+								className="size-7 text-muted-foreground shrink-0"
 								onClick={() => handleFeedback('like')}
 								disabled={!canGiveFeedback || isSubmitting}
 							>
@@ -221,7 +221,7 @@ export default function MessageActions({
 							<Button
 								variant="ghost"
 								size="icon"
-								className="size-7 text-muted-foreground"
+								className="size-7 text-muted-foreground shrink-0"
 								onClick={() => handleFeedback('dislike')}
 								disabled={!canGiveFeedback || isSubmitting}
 							>
@@ -262,10 +262,10 @@ export default function MessageActions({
 					<Split className="mr-2 size-4 rotate-90" />
 					Branch in new chat
 				</DropdownMenuItem>
-				<DropdownMenuItem>
+				{/* <DropdownMenuItem>
 					<Mic className="mr-2 size-4" />
 					Read aloud
-				</DropdownMenuItem>
+				</DropdownMenuItem> */}
 			</DropdownAction>
 		</div>
 	);

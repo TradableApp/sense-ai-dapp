@@ -10,7 +10,6 @@ import { eth_getTransactionReceipt, getRpcClient } from 'thirdweb/rpc';
 import { Button } from '@/components/ui/button';
 import { CONTRACTS, TESTNET_CHAIN_ID } from '@/config/contracts';
 import { client } from '@/config/thirdweb';
-import useStuckRequests from '@/hooks/useStuckRequests'; // Import for invalidation
 import AbleTokenABI from '@/lib/abi/AbleToken.json';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
@@ -85,9 +84,6 @@ export default function useChatMutations() {
 	const isTestnet = chainId === TESTNET_CHAIN_ID;
 	const queryClient = useQueryClient();
 
-	// Used to refresh the "Pending Requests" list in ManagePlanModal
-	const { refetch: refetchStuck } = useStuckRequests();
-
 	const handleFaucetRequest = async () => {
 		toast.dismiss();
 
@@ -155,6 +151,18 @@ export default function useChatMutations() {
 		}
 	};
 
+	// We invalidate 'usagePlan' (Allowance, Pending Count) and 'tokenBalance' (Wallet funds)
+	// immediately after a transaction confirms, as these live on-chain and update instantly.
+	// Graph data ('conversations', 'messages', 'stuckRequests') is handled by useLiveResponse.jsx
+	const genericOnSuccess = (queryKeysToInvalidate = []) => {
+		queryClient.invalidateQueries({ queryKey: ['usagePlan'] });
+		queryClient.invalidateQueries({ queryKey: ['tokenBalance'] });
+
+		queryKeysToInvalidate.forEach(key => {
+			queryClient.invalidateQueries({ queryKey: [key] });
+		});
+	};
+
 	// A centralized onError handler that decodes specific contract errors.
 	const genericOnError = (error, action) => {
 		console.error(`Failed to ${action}:`, error);
@@ -174,8 +182,6 @@ export default function useChatMutations() {
 		// --- Token Errors ---
 		if (isError(tokenInterface, 'ERC20InsufficientBalance')) {
 			toast.error('Insufficient ABLE Balance', {
-				// By removing the 'action' prop and putting the button in the description,
-				// we get full control over the layout (stacking instead of side-by-side).
 				description: (
 					<div className="flex flex-col gap-3 mt-1">
 						<p>You need more ABLE tokens to pay for this action.</p>
@@ -205,7 +211,7 @@ export default function useChatMutations() {
 			return;
 		}
 
-		// --- Escrow Errors ---
+		// --- Escrow Errors (EVMAIAgentEscrow.sol) ---
 		if (isError(escrowInterface, 'NoActiveSpendingLimit')) {
 			toast.error('No Active Plan', {
 				description: 'You must set a spending limit before starting a conversation.',
@@ -242,11 +248,49 @@ export default function useChatMutations() {
 			});
 			return;
 		}
+		if (isError(escrowInterface, 'NotPromptOwner')) {
+			toast.error('Access Denied', {
+				description: 'You are not the owner of this prompt.',
+			});
+			return;
+		}
+		if (isError(escrowInterface, 'EscrowNotPending')) {
+			toast.error('Action Invalid', {
+				description: 'This request has already been completed, cancelled, or refunded.',
+			});
+			return;
+		}
+		if (isError(escrowInterface, 'EscrowNotFound')) {
+			toast.error('Request Not Found', {
+				description: 'The payment record for this request could not be found.',
+			});
+			return;
+		}
 
-		// --- Agent Errors ---
+		// --- Agent Errors (EVMAIAgent.sol) ---
 		if (isError(agentInterface, 'RegenerationAlreadyPending')) {
 			toast.error('Regeneration in Progress', {
-				description: 'Please wait for the current regeneration to finish.',
+				description:
+					'A regeneration for this message is already pending. Please wait or cancel it.',
+			});
+			return;
+		}
+		if (isError(agentInterface, 'JobAlreadyFinalized')) {
+			toast.error('Request Already Finalized', {
+				description:
+					'This prompt has already been answered or cancelled. Please refresh your page.',
+			});
+			return;
+		}
+		if (isError(agentInterface, 'Unauthorized')) {
+			toast.error('Access Denied', {
+				description: 'You do not have permission to modify this conversation.',
+			});
+			return;
+		}
+		if (isError(agentInterface, 'InvalidPromptMessageId')) {
+			toast.error('Invalid Message', {
+				description: 'The prompt you are trying to reply to does not exist.',
 			});
 			return;
 		}
@@ -265,13 +309,7 @@ export default function useChatMutations() {
 		});
 	};
 
-	// A generic onSuccess handler for invalidating common queries.
-	const genericOnSuccess = (queryKeysToInvalidate = []) => {
-		queryClient.invalidateQueries({ queryKey: ['usagePlan'] }); // Always invalidate usage plan
-		queryKeysToInvalidate.forEach(key => {
-			queryClient.invalidateQueries({ queryKey: [key] });
-		});
-	};
+	// --- MUTATIONS ---
 
 	/**
 	 * Represents the mutation for both creating a new conversation and sending a follow-up prompt.
@@ -332,7 +370,10 @@ export default function useChatMutations() {
 				answerMessageId: parsedLog.args.answerMessageId.toString(),
 			};
 		},
-		onSuccess: () => genericOnSuccess(),
+		onSuccess: () => {
+			// Immediate RPC update
+			genericOnSuccess();
+		},
 		onError: error => genericOnError(error, 'send message'),
 	});
 
@@ -401,7 +442,10 @@ export default function useChatMutations() {
 			const parsedLog = agentInterface.parseLog({ topics: log.topics, data: log.data });
 			return { newAnswerMessageId: parsedLog.args.answerMessageId.toString() };
 		},
-		onSuccess: () => genericOnSuccess(),
+		onSuccess: () => {
+			// Immediate RPC update
+			genericOnSuccess();
+		},
 		onError: error => genericOnError(error, 'regenerate response'),
 	});
 
@@ -459,7 +503,10 @@ export default function useChatMutations() {
 			const parsedLog = agentInterface.parseLog({ topics: log.topics, data: log.data });
 			return { newConversationId: parsedLog.args.newConversationId.toString() };
 		},
-		onSuccess: () => genericOnSuccess(['conversations']),
+		onSuccess: () => {
+			// Immediate RPC update
+			genericOnSuccess();
+		},
 		onError: error => genericOnError(error, 'branch conversation'),
 	});
 
@@ -505,7 +552,10 @@ export default function useChatMutations() {
 
 			return { conversationId };
 		},
-		onSuccess: () => genericOnSuccess(['conversations']),
+		onSuccess: () => {
+			// Immediate RPC update
+			genericOnSuccess();
+		},
 		onError: error => genericOnError(error, 'update conversation'),
 	});
 
@@ -545,8 +595,9 @@ export default function useChatMutations() {
 			toast.success('Prompt Cancelled', {
 				description: 'The prompt has been cancelled and tokens refunded.',
 			});
+
+			// Immediate RPC update
 			genericOnSuccess();
-			refetchStuck(); // Refresh the list of stuck requests in the UI
 		},
 		onError: error => genericOnError(error, 'cancel prompt'),
 	});
@@ -586,8 +637,9 @@ export default function useChatMutations() {
 			toast.success('Refund Processed', {
 				description: 'Your pending request count has been cleared.',
 			});
+
+			// Immediate RPC update
 			genericOnSuccess();
-			refetchStuck(); // Refresh the list to remove the refunded item
 		},
 		onError: error => genericOnError(error, 'process refund'),
 	});

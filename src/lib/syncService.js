@@ -8,6 +8,7 @@
  *      performing a bulk update to the local IndexedDB. This provides a fast, offline-first experience.
  */
 
+import { ethers } from 'ethers';
 import { GraphQLClient } from 'graphql-request';
 
 import { decryptData, encryptData } from './crypto';
@@ -100,6 +101,10 @@ async function fetchUpdatesFromTheGraph(ownerAddress, lastSync) {
 				...msg,
 				createdAt: Number(msg.createdAt) * 1000,
 			})),
+			promptRequests: conv.promptRequests.map(req => ({
+				...req,
+				createdAt: Number(req.createdAt) * 1000,
+			})),
 		}));
 
 		return conversations;
@@ -173,11 +178,32 @@ export default async function syncWithRemote(sessionKey, ownerAddress) {
 			return;
 		}
 		console.log(
-			`[syncService] Found ${graphUpdates.length} updated conversation(s) from The Graph.`,
+			`[syncService] Found ${graphUpdates.length} potentially updated conversation(s) from The Graph.`,
 		);
 
 		// 3. "Hydrate" the Graph data by fetching and decrypting all associated CIDs from Arweave in parallel.
 		const hydrationPromises = graphUpdates.map(async conv => {
+			// Before downloading from Arweave, check if we already have these specific CIDs stored locally.
+			const localRecord = await db.conversations.get([ownerAddress, conv.id]);
+			let localConv = null;
+
+			if (localRecord) {
+				try {
+					localConv = await decryptData(sessionKey, localRecord.encryptedData);
+					if (
+						localConv.conversationCID === conv.conversationCID &&
+						localConv.conversationMetadataCID === conv.conversationMetadataCID &&
+						// We also check timestamps to ensure we don't skip if the message list changed
+						localConv.lastMessageCreatedAt === conv.lastMessageCreatedAt
+					) {
+						// Data is identical. Skip hydration to save bandwidth and processing.
+						return { conversation: null, messages: [], searchDeltas: [] };
+					}
+				} catch (e) {
+					// Decryption failed, proceed with fresh hydration
+				}
+			}
+
 			// For each conversation, fetch its core data, metadata, and all its messages in parallel.
 			const [convData, metadataData] = await Promise.all([
 				fetchFromArweave(conv.conversationCID)
@@ -201,47 +227,119 @@ export default async function syncWithRemote(sessionKey, ownerAddress) {
 				]);
 				// Return a structured object for clarity, associating the message with its search delta.
 				return {
-					message: messageData ? { ...messageData, id: msg.id } : null,
+					message: messageData
+						? {
+								...messageData,
+								id: msg.id,
+								messageCID: msg.messageCID,
+						  }
+						: null,
 					searchDelta: searchDeltaData,
 				};
 			});
 
 			const messageResults = await Promise.all(messageHydrationPromises);
 
+			// --- Process Cancelled/Refunded/Pending Prompt Requests ---
+			// These don't have Arweave CIDs, so we decrypt the on-chain payload directly.
+			const promptRequestPromises = (conv.promptRequests || []).map(async req => {
+				try {
+					// Convert Hex (0x...) to UTF-8 String to recover "iv.encryptedData" format
+					const encryptedString = ethers.toUtf8String(req.encryptedPayload);
+					const payload = await decryptData(sessionKey, encryptedString);
+					console.log('promptRequests payload', payload, req);
+
+					// payload is { promptText: "...", ... }
+					let status = 'pending';
+					if (req.isCancelled) status = 'cancelled';
+					if (req.isRefunded) status = 'refunded';
+
+					return {
+						id: req.promptMessageId.toString(), // Use the prompt ID, not answer ID
+						conversationId: conv.id,
+						parentId: payload.previousMessageId || null,
+						role: 'user',
+						content: payload.promptText,
+						createdAt: req.createdAt,
+						status, // This flag allows the UI to style them differently
+					};
+				} catch (err) {
+					console.warn(
+						`[syncService] Failed to decrypt prompt request ${req.promptMessageId}:`,
+						err,
+					);
+					return null;
+				}
+			});
+
+			const requestResults = await Promise.all(promptRequestPromises);
+			const validRequests = requestResults.filter(Boolean);
+			const validMessages = messageResults.map(r => r.message).filter(Boolean);
+
+			// Merge normal messages with recovered prompt requests
+			const allMessages = [...validMessages, ...validRequests];
+
+			// Construct the Remote Conversation Object
+			const remoteConversation = convData
+				? {
+						...convData,
+						...metadataData,
+						id: conv.id,
+						// Inject the timestamp from The Graph (converted to MS) because
+						// the Arweave metadata file usually lacks this sortable field.
+						lastMessageCreatedAt: conv.lastMessageCreatedAt,
+						// Important: Store the CIDs in the encrypted payload so the optimization check works next time
+						conversationCID: conv.conversationCID,
+						conversationMetadataCID: conv.conversationMetadataCID,
+				  }
+				: null;
+
+			// If we have a local record with a NEWER timestamp (Optimistic Update),
+			// DO NOT return the remote conversation. Keep the local one to prevent UI jitter/reversion.
+			if (remoteConversation && localConv) {
+				if (localConv.lastUpdatedAt > remoteConversation.lastUpdatedAt) {
+					console.log(
+						`[syncService] Preserving local optimistic update for conv ${conv.id}. Local: ${localConv.lastUpdatedAt} > Remote: ${remoteConversation.lastUpdatedAt}`,
+					);
+					// Returning null conversation prevents the overwrite in the next step
+					return { conversation: null, messages: allMessages, searchDeltas: [] };
+				}
+			}
+
 			// Return a single, fully hydrated object for the conversation.
 			return {
-				conversation: convData
-					? {
-							...convData,
-							...metadataData,
-							id: conv.id,
-							// Inject the timestamp from The Graph (converted to MS) because
-							// the Arweave metadata file usually lacks this sortable field.
-							lastMessageCreatedAt: conv.lastMessageCreatedAt,
-					  }
-					: null,
-				messages: messageResults.map(r => r.message).filter(Boolean),
+				conversation: remoteConversation,
+				messages: allMessages,
 				searchDeltas: messageResults.map(r => r.searchDelta).filter(Boolean),
 			};
 		});
 
-		const hydratedData = (await Promise.all(hydrationPromises)).filter(item => item.conversation);
+		const hydratedData = await Promise.all(hydrationPromises);
 
 		// 4. Prepare all fetched data for bulk insertion into IndexedDB.
 		const allSearchDeltas = hydratedData.flatMap(item => item.searchDeltas);
 
-		const conversationCachePromises = hydratedData.map(async item => {
-			const encryptedConv = await encryptData(sessionKey, item.conversation);
-			return { ownerAddress, id: item.conversation.id, encryptedData: encryptedConv };
-		});
+		const conversationCachePromises = hydratedData
+			.filter(item => item.conversation) // Only cache if we got a valid (non-skipped) conversation
+			.map(async item => {
+				const encryptedConv = await encryptData(sessionKey, item.conversation);
+				return { ownerAddress, id: item.conversation.id, encryptedData: encryptedConv };
+			});
 
 		const messageCachePromises = hydratedData
 			.filter(item => item.messages.length > 0)
 			.map(async item => {
 				const encryptedMessages = await encryptData(sessionKey, item.messages);
+
+				// We need to ensure we have a valid conversationId for the cache key.
+				// If the metadata update was skipped, we grab the ID from the first message.
+				const conversationId = item.conversation
+					? item.conversation.id
+					: item.messages[0].conversationId;
+
 				return {
 					ownerAddress,
-					conversationId: item.conversation.id,
+					conversationId,
 					encryptedData: encryptedMessages,
 					lastAccessedAt: Date.now(),
 				};

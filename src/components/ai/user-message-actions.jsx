@@ -1,10 +1,18 @@
 import { useState } from 'react';
 
-import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, CopyIcon, PencilIcon } from 'lucide-react';
+import {
+	Ban,
+	CheckIcon,
+	ChevronLeftIcon,
+	ChevronRightIcon,
+	CopyIcon,
+	PencilIcon,
+	RotateCcw,
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { copyMarkdownToClipboard } from '@/lib/utils';
+import { cn, copyMarkdownToClipboard } from '@/lib/utils';
 
 export default function UserMessageActions({ message, versionInfo, onEdit, onNavigate }) {
 	const [isCopied, setIsCopied] = useState(false);
@@ -18,10 +26,41 @@ export default function UserMessageActions({ message, versionInfo, onEdit, onNav
 		}
 	};
 
+	const isUser = message?.role === 'user';
 	const showPagination = versionInfo && versionInfo.siblings.length > 1;
 
 	return (
 		<div className="flex justify-end items-center gap-1 mr-10">
+			{message?.status && (
+				<div
+					className={cn(
+						'mb-1 flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider',
+						// Add margin to align with the bubble, not the avatar (Avatar is size-8 = 32px + gap-2)
+						'mr-4 text-left',
+						message.status === 'refunded' ? 'text-amber-500' : 'text-muted-foreground/60',
+					)}
+				>
+					{message.status === 'cancelled' && (
+						<>
+							<Ban className="size-3" />
+							<span>Cancelled</span>
+						</>
+					)}
+					{message.status === 'refunded' && (
+						<>
+							<RotateCcw className="size-3" />
+							<span>Refunded</span>
+						</>
+					)}
+					{message.status === 'pending' && isUser && (
+						<>
+							<span className="size-1.5 rounded-full bg-current animate-pulse" />
+							<span>Sending...</span>
+						</>
+					)}
+				</div>
+			)}
+
 			<TooltipProvider>
 				<Tooltip delayDuration={100}>
 					<TooltipTrigger asChild>

@@ -23,7 +23,7 @@ createRoot(document.getElementById('root')).render(
 			<ThirdwebProvider>
 				<Provider store={store}>
 					<QueryClientProvider client={queryClient}>
-						<ThemeProvider defaultTheme="dark" storageKey="senseai-ui-theme">
+						<ThemeProvider defaultTheme="system" storageKey="senseai-ui-theme">
 							<SessionProvider>
 								<App />
 								<Toaster position="bottom-right" closeButton />

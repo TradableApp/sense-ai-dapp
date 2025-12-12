@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -10,9 +10,9 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
+import { toast } from 'sonner';
 import { z } from 'zod';
 
-import userAvatarPlaceholder from '@/assets/react.svg';
 import {
 	Conversation,
 	ConversationContent,
@@ -38,7 +38,6 @@ import { useSession } from '@/features/auth/SessionProvider';
 import useChatMutations from '@/hooks/useChatMutations';
 import useConversations from '@/hooks/useConversations';
 import useFirestoreCollectionListener from '@/hooks/useFirestoreCollectionListener';
-import useLiveResponse from '@/hooks/useLiveResponse';
 import useUsagePlan from '@/hooks/useUsagePlan';
 import {
 	addMessageToConversation,
@@ -46,6 +45,7 @@ import {
 	createNewConversation,
 	deleteMessageFromConversation,
 	editUserMessage,
+	getConversation,
 	getMessagesForConversation,
 	regenerateAssistantResponse,
 } from '@/lib/dataService';
@@ -102,15 +102,26 @@ function isQueryAhead(reduxMessages, queryMessages) {
 	const latestReduxMsg = reduxMessages.at(-1);
 	const latestQueryMsg = queryMessages.at(-1);
 
+	// 1. Check if we have a newer message ID
 	if (latestQueryMsg.id > latestReduxMsg.id) {
 		return true;
 	}
+
+	// 2. If IDs are the same, check for data updates
 	if (latestQueryMsg.id === latestReduxMsg.id) {
+		// Check for status change (e.g. 'pending' -> 'cancelled')
+		if (latestQueryMsg.status !== latestReduxMsg.status) {
+			return true;
+		}
+
+		// Check for reasoning updates (streaming)
 		const queryReasoningLength = latestQueryMsg.reasoning?.length || 0;
 		const reduxReasoningLength = latestReduxMsg.reasoning?.length || 0;
 		if (queryReasoningLength > reduxReasoningLength) {
 			return true;
 		}
+
+		// Check for content updates (streaming completion)
 		if (latestQueryMsg.content && !latestReduxMsg.content) {
 			return true;
 		}
@@ -132,9 +143,6 @@ export default function Chat() {
 
 	const { data: plan, isLoading: isLoadingPlan } = useUsagePlan();
 	const hasActivePlan = !!plan;
-
-	// This activates the listener for the current chat
-	useLiveResponse(activeConversationId);
 
 	const {
 		initiatePromptMutation,
@@ -164,6 +172,14 @@ export default function Chat() {
 
 	const { data: conversations } = useConversations();
 	const currentConversation = conversations?.find(c => c.id === activeConversationId);
+
+	const { data: activeConversationMetadata } = useQuery({
+		queryKey: ['conversations', 'metadata', activeConversationId, sessionKey, ownerAddress],
+		queryFn: () => getConversation(sessionKey, ownerAddress, activeConversationId),
+		enabled: !!activeConversationId && !!sessionKey && !!ownerAddress,
+		// We want this to be fresh, so we don't cache it for long
+		staleTime: 0,
+	});
 
 	const {
 		data: messagesFromQuery,
@@ -247,6 +263,25 @@ export default function Chat() {
 		prevMessagesRef.current = [];
 	}, [activeConversationId]);
 
+	const handleReset = useCallback(() => {
+		dispatch(clearActiveConversation());
+		setAnimatedContents({});
+		Object.values(activeTimersRef.current).forEach(clearInterval);
+		activeTimersRef.current = {};
+		prevMessagesRef.current = [];
+		setActiveMessageId(null);
+		prevMessageCountRef.current = 0;
+	}, [dispatch]);
+
+	// Detect if the active conversation was deleted (e.g. by another tab)
+	useEffect(() => {
+		if (activeConversationId && activeConversationMetadata?.isDeleted) {
+			toast.info('Conversation was deleted.');
+
+			handleReset();
+		}
+	}, [activeConversationId, activeConversationMetadata?.isDeleted, handleReset]);
+
 	useEffect(() => {
 		if (
 			activeConversationMessages &&
@@ -267,13 +302,23 @@ export default function Chat() {
 		);
 		if (!userPrompt) return;
 
+		// Map UI modes to natural language instructions
+		const instructionMap = {
+			default: 'better',
+			detailed: 'more detailed',
+			concise: 'more concise',
+		};
+		const instructions = instructionMap[mode] || 'better';
+
 		regenerateMutation.mutate(
 			{
 				conversationId: activeConversationId,
 				promptMessageId: userPrompt.id,
 				originalAnswerMessageId: aiMessageToRegenerate.id,
-				instructions: mode,
+				instructions,
 				sessionKey,
+				promptMessageCID: userPrompt.messageCID,
+				originalAnswerMessageCID: aiMessageToRegenerate.messageCID,
 			},
 			{
 				onSuccess: async ({ newAnswerMessageId }) => {
@@ -371,6 +416,15 @@ export default function Chat() {
 						newConversationId,
 						queryClient,
 					);
+
+					// Navigate to the new branch immediately
+					dispatch(setActiveConversationId(newConversationId));
+					// const newMessages = await getMessagesForConversation(
+					// 	sessionKey,
+					// 	ownerAddress,
+					// 	newConversationId,
+					// );
+					// dispatch(setActiveConversationMessages(newMessages));
 				},
 				// onError: () => {},
 			},
@@ -531,16 +585,6 @@ export default function Chat() {
 		);
 	};
 
-	const handleReset = () => {
-		dispatch(clearActiveConversation());
-		setAnimatedContents({});
-		Object.values(activeTimersRef.current).forEach(clearInterval);
-		activeTimersRef.current = {};
-		prevMessagesRef.current = [];
-		setActiveMessageId(null);
-		prevMessageCountRef.current = 0;
-	};
-
 	const isProcessing =
 		isSubmitting ||
 		initiatePromptMutation.isPending ||
@@ -646,7 +690,7 @@ export default function Chat() {
 									</div>
 									{!isThinking && (
 										<>
-											<Message from={message.role} className="items-start">
+											<Message from={message.role} className="items-start" status={message.status}>
 												<MessageContent>
 													<div className="prose inherit-color prose-sm dark:prose-invert max-w-none">
 														<ReactMarkdown
@@ -693,7 +737,7 @@ export default function Chat() {
 											</ReactMarkdown>
 										</div>
 									</MessageContent>
-									<MessageAvatar src={userAvatarPlaceholder} name="You" />
+									<MessageAvatar address={ownerAddress} name="ME" />
 								</Message>
 								<div className="opacity-0 group-hover:opacity-100 transition-opacity">
 									<UserMessageActions

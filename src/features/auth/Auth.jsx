@@ -62,11 +62,25 @@ export default function Auth() {
 						appMetadata={{
 							name: 'SenseAI App',
 							url: 'https://tradable.app',
+							description: 'Tokenized AI Agent',
+							logoUrl: senseaiLogo,
 						}}
 						connectButton={{
 							label: <RainbowLabel>Connect Wallet</RainbowLabel>,
 							style: { padding: 0, height: 'fit-content', background: 'none' },
 						}}
+						detailsButton={{
+							className: '!w-full',
+							displayBalanceToken: {
+								[import.meta.env.VITE_CHAIN_ID]: import.meta.env.VITE_TOKEN_CONTRACT_ADDRESS,
+								// You can add more chains and tokens here if needed
+								// [otherChain.id]: "0x...",
+							},
+						}}
+						detailsModal={{
+							showTestnetFaucet: true,
+						}}
+						theme="dark"
 					/>
 				</div>
 			</div>

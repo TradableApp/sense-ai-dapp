@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useActiveWallet } from 'thirdweb/react';
 
-import { CONTRACTS, LOCAL_CHAIN_ID } from '@/config/contracts';
+import { CONTRACTS, LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
 
 const ASSET_PLATFORM = 'base';
 
@@ -12,6 +12,7 @@ export default function useTokenPrice() {
 	const tokenAddress = contractConfig?.token?.address;
 
 	const isLocalnet = chainId === LOCAL_CHAIN_ID;
+	const isTestnet = chainId === TESTNET_CHAIN_ID;
 
 	return useQuery({
 		queryKey: ['tokenPrice', 'able', chainId],
@@ -29,7 +30,7 @@ export default function useTokenPrice() {
 			}
 			return price;
 		},
-		enabled: !!tokenAddress && !isLocalnet,
+		enabled: !!tokenAddress && !isLocalnet && !isTestnet,
 		staleTime: 60 * 1000,
 		refetchInterval: 60 * 1000,
 	});

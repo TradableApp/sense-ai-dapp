@@ -59,6 +59,8 @@ export default function History() {
 	const { data: plan } = useUsagePlan();
 	const hasActivePlan = !!plan;
 
+	const hasPendingPrompts = plan?.pendingEscrowCount > 0;
+
 	const { metadataUpdateMutation } = useChatMutations();
 	const { isRenameModalOpen, conversationToRename } = useSelector(state => state.chat);
 	const activeConversationId = useSelector(state => state.chat.activeConversationId);
@@ -338,17 +340,25 @@ export default function History() {
 																<div className="w-full">
 																	<DropdownMenuItem
 																		className="text-destructive"
-																		disabled={!hasActivePlan}
-																		onClick={e => hasActivePlan && handleDeleteClick(e, item.id)}
+																		disabled={!hasActivePlan || hasPendingPrompts}
+																		onClick={e =>
+																			hasActivePlan &&
+																			!hasPendingPrompts &&
+																			handleDeleteClick(e, item.id)
+																		}
 																	>
 																		<Trash2 className="mr-2 size-4" />
 																		Delete
 																	</DropdownMenuItem>
 																</div>
 															</TooltipTrigger>
-															{!hasActivePlan && (
+															{(!hasActivePlan || hasPendingPrompts) && (
 																<TooltipContent>
-																	<p>You must have an active plan to delete.</p>
+																	<p>
+																		{hasPendingPrompts
+																			? 'Cannot delete while prompts are pending.'
+																			: 'You must have an active plan to delete.'}
+																	</p>
 																</TooltipContent>
 															)}
 														</Tooltip>
