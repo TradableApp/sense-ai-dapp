@@ -17,11 +17,14 @@ import ProtectedRoute from '@/features/auth/ProtectedRoute';
 import useNetwork from '@/hooks/useNetwork';
 import { loadState, saveState } from '@/lib/browserStorage';
 import { setAppError, setFirebaseReady, setThirdwebReady } from '@/store/appSlice';
-import { setDeviceInfo, setDeviceScreen } from '@/store/deviceSlice';
+import { setDeviceInfo, setDeviceScreen, setPwa } from '@/store/deviceSlice';
 
 const UsageDashboard = lazy(() => import('@/features/usage/UsageDashboard'));
 const Chat = lazy(() => import('@/features/chat/Chat'));
 const History = lazy(() => import('@/features/history/History'));
+const PrivacyPolicyPage = lazy(() => import('@/features/legal/PrivacyPolicyPage'));
+const TermsAndConditionsPage = lazy(() => import('@/features/legal/TermsAndConditionsPage'));
+const WebsiteDisclaimerPage = lazy(() => import('@/features/legal/WebsiteDisclaimerPage'));
 const Error404 = lazy(() => import('@/features/error/Error404'));
 const Reroute = lazy(() => import('@/features/error/Reroute'));
 
@@ -82,6 +85,14 @@ export default function App() {
 	}, [handleDeviceScreen]);
 
 	useEffect(() => {
+		// Initialize Telegram Mini App
+		if (window.Telegram?.WebApp) {
+			const tg = window.Telegram.WebApp;
+			tg.ready(); // Hides the Telegram loading spinner
+			tg.expand(); // Forces the app to open to full height
+			dispatch(setPwa(true)); // Treats the Telegram environment as a PWA/Native App
+		}
+
 		if (loadState('consentSettings') === null) {
 			setShowConsent(true);
 		}
@@ -137,6 +148,10 @@ export default function App() {
 				<Routes>
 					<Route path="/auth" element={<Auth />} />
 					<Route path="/error" element={<Error404 />} />
+					<Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+					<Route path="/terms-and-conditions" element={<TermsAndConditionsPage />} />
+					<Route path="/website-disclaimer" element={<WebsiteDisclaimerPage />} />
+
 					<Route element={<ProtectedRoute />}>
 						<Route path="/" element={<UsageDashboard />} />
 						<Route path="/chat" element={<Chat />} />

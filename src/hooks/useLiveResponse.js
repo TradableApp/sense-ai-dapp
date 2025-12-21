@@ -72,8 +72,8 @@ export default function useLiveResponse() {
 			try {
 				const iface = new ethers.Interface(contractConfig.agent.abi);
 				const eventsToWatch = [
-					'AnswerMessageAdded',
 					'PromptSubmitted',
+					'AnswerMessageAdded',
 					'RegenerationRequested',
 					'BranchRequested',
 					'ConversationBranched',
@@ -292,6 +292,7 @@ export default function useLiveResponse() {
 				) {
 					addInvalidationKey(['usagePlan']); // New prompt/regeneration always affects usage
 					addInvalidationKey(['tokenBalance']);
+					addInvalidationKey(['conversations']);
 					newWorkDetected = true;
 				}
 
@@ -320,6 +321,8 @@ export default function useLiveResponse() {
 								: args.promptMessageId.toString();
 
 						const queryKey = ['messages', activeConversationId, sessionKey, ownerAddress];
+
+						addInvalidationKey(['conversations']);
 
 						const cachedMessages = queryClient.getQueryData(queryKey) || [];
 						const existingMsg = cachedMessages.find(m => m.id === msgId);

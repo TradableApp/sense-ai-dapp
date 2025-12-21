@@ -1,11 +1,11 @@
 /**
  * @file syncService.js
- * @notice This service is the bridge between the decentralized backend (The Graph, Arweave)
+ * @notice This service is the bridge between the decentralized backend (The Graph, Arweave/Autonomys)
  *         and the client-side IndexedDB cache. It is designed to be the primary mechanism
  *         for keeping the user's local data consistent with on-chain and decentralized storage state.
  * @dev The core workflow is to periodically fetch a list of updated entities from The Graph,
- *      "hydrate" this list by fetching the actual content from Arweave, decrypting it, and then
- *      performing a bulk update to the local IndexedDB. This provides a fast, offline-first experience.
+ *      "hydrate" this list by fetching the actual content from decentralized storage (Arweave or Autonomys),
+ *      decrypting it, and then performing a bulk update to the local IndexedDB. This provides a fast, offline-first experience.
  */
 
 import { ethers } from 'ethers';
@@ -21,6 +21,71 @@ const THE_GRAPH_API_URL = import.meta.env.VITE_THE_GRAPH_API_URL;
 const graphQLClient = new GraphQLClient(THE_GRAPH_API_URL);
 
 // --- Internal Helper Functions ---
+
+/**
+ * Determines the storage provider based on the CID format.
+ * This acts as a router to support multiple storage backends.
+ * @param {string} cid The Content ID.
+ * @returns {object} The appropriate storage utility module.
+ */
+function getStorageProvider(cid) {
+	// Autonomys Auto Drive CID validation
+	// Format: CIDv1 with base32 encoding
+	// Starts with 'bafkr6i' (base32 prefix + CIDv1 identifier)
+	// Uses base32 character set: a-z, 2-7
+	if (cid && /^bafkr6i[a-z2-7]{52}$/.test(cid)) {
+		return 'autonomys';
+	}
+
+	// Heuristic for Arweave/Irys: Base64URL (check second - less specific)
+	// Standard Arweave is 43 chars, but Irys can sometimes return 44 chars.
+	// We check for a valid range and character set.
+	if (cid && cid.length >= 43 && cid.length <= 44 && /^[a-zA-Z0-9_-]+$/.test(cid)) {
+		return 'arweave';
+	}
+
+	throw new Error(`Unsupported CID format: ${cid}`);
+}
+
+/**
+ * @notice Fetches a single encrypted payload from decentralized storage (Autonomys or Arweave).
+ * @param {string} cid The Content ID of the file.
+ * @returns {Promise<string|null>} A promise resolving to the encrypted data as a string, or null on failure.
+ */
+async function fetchFromStorage(cid) {
+	if (!cid) return null;
+
+	const provider = getStorageProvider(cid);
+
+	let url;
+	if (provider === 'autonomys') {
+		// Use the Autonomys Astral Gateway (or standard IPFS gateway if bridged)
+		// const envNetwork = import.meta.env.VITE_AUTONOMYS_NETWORK || 'testnet';
+
+		// For now just using mainnet
+		// const subDomain = 'mainnet';
+		// const subDomain = envNetwork === 'mainnet' ? envNetwork : 'taurus';
+
+		url = `https://gateway.autonomys.xyz/file/${cid}`;
+	} else {
+		url = `https://gateway.irys.xyz/${cid}`;
+	}
+	console.log('provider', provider, 'url', url);
+
+	try {
+		console.log(`[syncService] Fetching from ${provider}: ${cid}`);
+
+		const response = await fetch(url);
+
+		if (!response.ok) {
+			throw new Error(`Storage gateway returned status ${response.status} for CID ${cid}`);
+		}
+		return response.text();
+	} catch (error) {
+		console.error(`[syncService] Failed to fetch CID ${cid} from ${provider}:`, error);
+		return null; // Return null to prevent a single failed fetch from crashing the entire sync.
+	}
+}
 
 /**
  * @notice Retrieves the last successful sync timestamp from the user's encrypted metadata.
@@ -92,6 +157,7 @@ async function fetchUpdatesFromTheGraph(ownerAddress, lastSync) {
 		};
 
 		const data = await graphQLClient.request(GET_USER_UPDATES_QUERY, variables);
+		console.log('[syncService] Raw Graph Data:', data.conversations);
 
 		// Convert BigInt strings from The Graph response into Numbers (MS) for frontend consistency.
 		const conversations = (data.conversations || []).map(conv => ({
@@ -111,25 +177,6 @@ async function fetchUpdatesFromTheGraph(ownerAddress, lastSync) {
 	} catch (error) {
 		console.error('[syncService] Failed to fetch updates from The Graph:', error);
 		return []; // Return an empty array to allow the app to continue functioning.
-	}
-}
-
-/**
- * @notice Fetches a single encrypted payload from an Arweave/Irys gateway.
- * @param {string} cid The Content ID (Arweave transaction ID) of the file.
- * @returns {Promise<string|null>} A promise resolving to the encrypted data as a string, or null on failure.
- */
-async function fetchFromArweave(cid) {
-	if (!cid) return null;
-	try {
-		const response = await fetch(`https://gateway.irys.xyz/${cid}`);
-		if (!response.ok) {
-			throw new Error(`Gateway returned status ${response.status} for CID ${cid}`);
-		}
-		return response.text();
-	} catch (error) {
-		console.error(`[syncService] Failed to fetch CID ${cid} from Arweave:`, error);
-		return null; // Return null to prevent a single failed fetch from crashing the entire sync.
 	}
 }
 
@@ -185,8 +232,8 @@ export default async function syncWithRemote(sessionKey, ownerAddress) {
 		const hydrationPromises = graphUpdates.map(async conv => {
 			// Before downloading from Arweave, check if we already have these specific CIDs stored locally.
 			const localRecord = await db.conversations.get([ownerAddress, conv.id]);
-			let localConv = null;
 
+			let localConv = null;
 			if (localRecord) {
 				try {
 					localConv = await decryptData(sessionKey, localRecord.encryptedData);
@@ -206,21 +253,21 @@ export default async function syncWithRemote(sessionKey, ownerAddress) {
 
 			// For each conversation, fetch its core data, metadata, and all its messages in parallel.
 			const [convData, metadataData] = await Promise.all([
-				fetchFromArweave(conv.conversationCID)
+				fetchFromStorage(conv.conversationCID)
 					.then(data => data && decryptData(sessionKey, data))
 					.catch(() => null),
-				fetchFromArweave(conv.conversationMetadataCID)
+				fetchFromStorage(conv.conversationMetadataCID)
 					.then(data => data && decryptData(sessionKey, data))
 					.catch(() => null),
 			]);
 
 			const messageHydrationPromises = (conv.messages || []).map(async msg => {
 				const [messageData, searchDeltaData] = await Promise.all([
-					fetchFromArweave(msg.messageCID)
+					fetchFromStorage(msg.messageCID)
 						.then(data => data && decryptData(sessionKey, data))
 						.catch(() => null),
 					msg.searchDelta
-						? fetchFromArweave(msg.searchDelta.searchDeltaCID)
+						? fetchFromStorage(msg.searchDelta.searchDeltaCID)
 								.then(data => data && decryptData(sessionKey, data))
 								.catch(() => null)
 						: Promise.resolve(null),
@@ -241,13 +288,12 @@ export default async function syncWithRemote(sessionKey, ownerAddress) {
 			const messageResults = await Promise.all(messageHydrationPromises);
 
 			// --- Process Cancelled/Refunded/Pending Prompt Requests ---
-			// These don't have Arweave CIDs, so we decrypt the on-chain payload directly.
+			// These don't have storage CIDs, so we decrypt the on-chain payload directly.
 			const promptRequestPromises = (conv.promptRequests || []).map(async req => {
 				try {
 					// Convert Hex (0x...) to UTF-8 String to recover "iv.encryptedData" format
 					const encryptedString = ethers.toUtf8String(req.encryptedPayload);
 					const payload = await decryptData(sessionKey, encryptedString);
-					console.log('promptRequests payload', payload, req);
 
 					// payload is { promptText: "...", ... }
 					let status = 'pending';

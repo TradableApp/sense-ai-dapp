@@ -39,8 +39,6 @@ export function MessageContent({ children, className, ...props }) {
 }
 
 export function MessageAvatar({ src, name, address, className, ...props }) {
-	console.log('src', src, 'name', name, 'ownerAddress', address, 'className', className);
-
 	return (
 		<Avatar className={cn('size-8 ring ring-1 ring-border mt-1.5', className)} {...props}>
 			{/* If an address is provided, use Thirdweb's AccountAvatar (User) */}
