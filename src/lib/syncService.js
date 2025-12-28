@@ -375,13 +375,45 @@ export default async function syncWithRemote(sessionKey, ownerAddress) {
 		const messageCachePromises = hydratedData
 			.filter(item => item.messages.length > 0)
 			.map(async item => {
-				const encryptedMessages = await encryptData(sessionKey, item.messages);
-
 				// We need to ensure we have a valid conversationId for the cache key.
 				// If the metadata update was skipped, we grab the ID from the first message.
 				const conversationId = item.conversation
 					? item.conversation.id
 					: item.messages[0].conversationId;
+
+				// Instead of overwriting, we fetch existing messages and merge them.
+				// This preserves history when The Graph only returns the newest messages (e.g. after branching).
+				let finalMessages = item.messages;
+
+				try {
+					const existingRecord = await db.messageCache.get([ownerAddress, conversationId]);
+
+					if (existingRecord) {
+						const existingMessages = await decryptData(sessionKey, existingRecord.encryptedData);
+
+						// Create a Map by ID to deduplicate
+						const msgMap = new Map();
+
+						// 1. Add existing messages
+						if (Array.isArray(existingMessages)) {
+							existingMessages.forEach(m => msgMap.set(m.id, m));
+						}
+
+						// 2. Add/Overwrite with new messages from Graph
+						// We use the new messages as authority for the same IDs (updates status, content etc)
+						item.messages.forEach(m => msgMap.set(m.id, m));
+
+						// 3. Convert back to array and sort by creation time
+						finalMessages = Array.from(msgMap.values()).sort((a, b) => a.createdAt - b.createdAt);
+					}
+				} catch (err) {
+					console.warn(
+						`[syncService] Error merging messages for conv ${conversationId}, overwriting cache:`,
+						err,
+					);
+				}
+
+				const encryptedMessages = await encryptData(sessionKey, finalMessages);
 
 				return {
 					ownerAddress,

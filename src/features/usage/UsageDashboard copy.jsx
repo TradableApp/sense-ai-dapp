@@ -51,7 +51,15 @@ export default function UsageDashboard() {
 			>
 				{plan ? (
 					// DASHBOARD LAYOUT
+					// Used max-w-4xl to keep it compact and centered like your screenshot
 					<div className="mx-auto max-w-4xl">
+						{/* Header Section */}
+						<div className="mb-8">
+							<h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+							<p className="text-muted-foreground">Overview of your AI agent usage and billing.</p>
+						</div>
+
+						{/* Stack Layout (PlanStatusCard on Top, Activity Below) */}
 						<div className="flex flex-col gap-6">
 							<PlanStatusCard plan={plan} />
 							<RecentActivityCard />

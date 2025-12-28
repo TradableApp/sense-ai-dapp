@@ -59,3 +59,15 @@ export const GET_STUCK_PAYMENTS_QUERY = gql`
 		}
 	}
 `;
+
+export const GET_RECENT_ACTIVITY_QUERY = gql`
+	query GetRecentActivity($owner: Bytes!, $limit: Int!) {
+		activities(where: { user: $owner }, orderBy: timestamp, orderDirection: desc, first: $limit) {
+			id
+			type
+			amount
+			timestamp
+			transactionHash
+		}
+	}
+`;

@@ -29,6 +29,10 @@ import { wait } from '@/lib/utils';
  * - User Cancellations/Refunds:
  *   - `PromptCancelled`: A pending prompt is cancelled by the user. (Updates usage plan, resolves pending message).
  *   - `PaymentRefunded`: A stuck prompt is refunded. (Updates usage plan, resolves pending message).
+ *
+ * - Plan Management:
+ *   - `SpendingLimitSet`: User sets a new allowance. (Updates usage plan).
+ *   - `SpendingLimitCancelled`: User revokes allowance. (Updates usage plan).
  */
 export default function useLiveResponse() {
 	const activeWallet = useActiveWallet();
@@ -98,7 +102,12 @@ export default function useLiveResponse() {
 		if (contractConfig?.escrow?.abi) {
 			try {
 				const iface = new ethers.Interface(contractConfig.escrow.abi);
-				const eventsToWatch = ['PromptCancelled', 'PaymentRefunded'];
+				const eventsToWatch = [
+					'PromptCancelled',
+					'PaymentRefunded',
+					'SpendingLimitSet',
+					'SpendingLimitCancelled',
+				];
 				eventsToWatch.forEach(name => {
 					const fragment = iface.getEvent(name);
 					if (fragment) {
@@ -172,6 +181,8 @@ export default function useLiveResponse() {
 			const hasMessagesKey = uniqueKeys.some(k => k[0] === 'messages');
 			const hasConversationsKey = uniqueKeys.some(k => k[0] === 'conversations');
 
+			// Important: Ensure we invalidate the generic 'conversations' key so the
+			// new `activeConversationMetadata` query (which starts with 'conversations') matches.
 			if (hasMessagesKey && !hasConversationsKey) {
 				uniqueKeys.push(['conversations']);
 			}
@@ -271,7 +282,7 @@ export default function useLiveResponse() {
 
 				const { args, eventName } = e;
 
-				// **Direct Ownership Check** for events that have `indexed user`
+				// Direct ownership check for all events that include the `user` parameter
 				if (
 					eventName === 'PromptSubmitted' ||
 					eventName === 'RegenerationRequested' ||
@@ -284,6 +295,7 @@ export default function useLiveResponse() {
 					}
 				}
 
+				// Invalidate usagePlan AND tokenBalance for ANY action that costs tokens
 				if (
 					eventName === 'PromptSubmitted' ||
 					eventName === 'RegenerationRequested' ||
@@ -292,10 +304,12 @@ export default function useLiveResponse() {
 				) {
 					addInvalidationKey(['usagePlan']); // New prompt/regeneration always affects usage
 					addInvalidationKey(['tokenBalance']);
+					addInvalidationKey(['recentActivity']);
 					addInvalidationKey(['conversations']);
 					newWorkDetected = true;
 				}
 
+				// Invalidate conversation list for structural changes
 				if (eventName === 'ConversationBranched' || eventName === 'ConversationMetadataUpdated') {
 					addInvalidationKey(['conversations']);
 					newWorkDetected = true;
@@ -313,6 +327,10 @@ export default function useLiveResponse() {
 							eventName === 'PromptSubmitted' ||
 							eventName === 'RegenerationRequested')
 					) {
+						if (eventName === 'AnswerMessageAdded') {
+							addInvalidationKey(['usagePlan']);
+						}
+
 						const msgId =
 							eventName === 'AnswerMessageAdded'
 								? args.messageId.toString()
@@ -349,25 +367,29 @@ export default function useLiveResponse() {
 			const newEvents = escrowLog.slice(prevEscrowCountRef.current);
 			newEvents.forEach(e => {
 				const { eventName, transactionHash, logIndex } = e;
-				console.log(
-					'eventName',
-					eventName,
-					'transactionHash',
-					transactionHash,
-					'logIndex',
-					logIndex,
-				);
 
 				// DE-DUPLICATION CHECK
 				const eventKey = `${transactionHash}-${logIndex}`;
 				if (processedEventKeysRef.current.has(eventKey)) return;
 				processedEventKeysRef.current.add(eventKey);
 
+				// Handle Plan Management Events
+				if (eventName === 'SpendingLimitSet' || eventName === 'SpendingLimitCancelled') {
+					if (e.args.user.toLowerCase() === ownerAddress.toLowerCase()) {
+						addInvalidationKey(['usagePlan']);
+						addInvalidationKey(['recentActivity']);
+						// Token balance might change if allowance/approval changes (gas)
+						addInvalidationKey(['tokenBalance']);
+						newWorkDetected = true;
+					}
+				}
+
 				if (eventName === 'PromptCancelled') {
 					if (e.args.user.toLowerCase() === ownerAddress.toLowerCase()) {
 						addInvalidationKey(['stuckRequests']);
 						addInvalidationKey(['usagePlan']);
 						addInvalidationKey(['tokenBalance']);
+						addInvalidationKey(['recentActivity']);
 
 						// Only invalidate the chat if it's the one we are currently looking at
 						if (activeConversationId) {
@@ -385,6 +407,7 @@ export default function useLiveResponse() {
 						addInvalidationKey(['stuckRequests']);
 						addInvalidationKey(['usagePlan']);
 						addInvalidationKey(['tokenBalance']);
+						addInvalidationKey(['recentActivity']);
 
 						if (activeConversationId) {
 							addInvalidationKey(['conversations']);

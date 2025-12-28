@@ -17,6 +17,7 @@ import {
 import Input from '@/components/ui/input';
 
 const renameSchema = z.object({
+	// Any changes to schema must be updated in tokenized-ai-agent/oracle/src/payloadValidator.js
 	title: z
 		.string()
 		.trim()

@@ -21,9 +21,6 @@ import useStuckRequests from '@/hooks/useStuckRequests';
 
 import ManagePlanModal from './ManagePlanModal';
 
-/**
- * A helper function to format the expiration date into a "days remaining" string.
- */
 function formatTimeRemaining(expiryDate) {
 	if (!expiryDate) return 'No expiration set';
 	const now = new Date();
@@ -40,40 +37,30 @@ export default function PlanStatusCard({ plan }) {
 
 	const { allowance, spentAmount, expiresAt, pendingEscrowCount } = plan;
 
-	// Hooks for Refund Functionality
-	const { data: stuckRequests /* , isLoading: isLoadingStuck */ } = useStuckRequests();
+	const { data: stuckRequests } = useStuckRequests();
 	const { processRefundMutation } = useChatMutations();
 
 	const spentPercentage = allowance > 0 ? (spentAmount / allowance) * 100 : 0;
 	const formattedAllowance = new Intl.NumberFormat().format(allowance);
 	const formattedSpentAmount = new Intl.NumberFormat().format(spentAmount);
 
-	// We still want to visually warn them, but NOT disable the button
 	const hasPendingPrompts = pendingEscrowCount > 0;
 	const refundableRequests = stuckRequests?.filter(r => r.isRefundable) || [];
 
 	const handleRefundAll = async () => {
-		if (refundableRequests.length === 0) {
-			return;
-		}
+		if (refundableRequests.length === 0) return;
 
 		setIsRefundingAll(true);
 		toast.info('Processing Refunds', {
-			description: `You will need to confirm ${refundableRequests.length} transaction${
-				refundableRequests.length === 1 ? '' : 's'
-			} in your wallet.`,
+			description: `Please confirm ${refundableRequests.length} transaction(s) in your wallet.`,
 		});
 
-		// Using a linter-friendly for loop for sequential async operations.
 		for (let i = 0; i < refundableRequests.length; i += 1) {
 			const req = refundableRequests[i];
 			try {
-				// The `await` pauses the loop. The mutation's own onSuccess/onError will handle the toasts.
 				// eslint-disable-next-line no-await-in-loop
 				await processRefundMutation.mutateAsync({ answerMessageId: req.id });
 			} catch (error) {
-				// The mutation's onError will have already shown a toast.
-				// We just need to log it and stop the process.
 				console.error('Refund failed for request:', req.id, error);
 				break;
 			}
@@ -91,8 +78,9 @@ export default function PlanStatusCard({ plan }) {
 				</CardHeader>
 				<CardContent>
 					{/* RESPONSIVE LAYOUT: Stacks on mobile, Side-by-Side on Desktop */}
-					<div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-						<div className="flex-1 space-y-3">
+					<div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
+						{/* Left Side: Progress, Numbers & Expiry */}
+						<div className="flex-1 space-y-4">
 							<div className="space-y-1.5">
 								<div className="flex justify-between text-sm font-medium">
 									<span className="text-muted-foreground">Used</span>
@@ -114,6 +102,8 @@ export default function PlanStatusCard({ plan }) {
 									<span className="font-semibold">{formattedAllowance} ABLE</span>
 								</div>
 							</div>
+
+							{/* Expiry moved here (Left side) */}
 							<p className="text-xs text-muted-foreground pt-1">{formatTimeRemaining(expiresAt)}</p>
 						</div>
 
@@ -121,14 +111,14 @@ export default function PlanStatusCard({ plan }) {
 						<Separator className="md:hidden" />
 
 						{/* Right Side: Pending & Actions */}
-						<div className="flex flex-col gap-4 md:w-48 md:shrink-0 md:border-l md:pl-6 md:border-border/50">
-							<div className="space-y-1">
-								<div className="flex items-center gap-2 text-sm font-medium text-amber-600 dark:text-amber-500">
-									<Clock className="h-4 w-4" />
-									<span>{pendingEscrowCount} Pending Prompts</span>
-								</div>
+						<div className="flex flex-col gap-4 md:w-auto md:shrink-0 md:items-end">
+							{/* Pending Prompts */}
+							<div className="flex items-center gap-2 text-sm font-medium text-amber-600 dark:text-amber-500">
+								<Clock className="h-4 w-4" />
+								<span>{pendingEscrowCount} Pending Prompts</span>
 							</div>
 
+							{/* Action Button */}
 							<TooltipProvider>
 								<Tooltip>
 									<TooltipTrigger asChild>

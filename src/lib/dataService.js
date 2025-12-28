@@ -280,6 +280,7 @@ export const createNewConversation = async (
 	return { newConversation, finalUserMessage, finalAiMessage };
 };
 
+// Helper to get a single conversation (used for deletion checks)
 export const getConversation = async (sessionKey, ownerAddress, conversationId) => {
 	if (!sessionKey || !ownerAddress || !conversationId) {
 		return null;
