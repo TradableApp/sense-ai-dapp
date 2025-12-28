@@ -1,32 +1,36 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 
 import cuid from 'cuid';
+import posthog from 'posthog-js';
 import { useDispatch, useSelector } from 'react-redux';
 import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useAutoConnect } from 'thirdweb/react';
+import { getUserEmail } from 'thirdweb/wallets';
 
 import ErrorBoundary from '@/components/ErrorBoundary';
 import ModalManager from '@/components/ModalManager';
 import OfflineMessage from '@/components/OfflineMessage';
 import SplashScreen from '@/components/SplashScreen';
-import UserConsent from '@/components/UserConsent';
+import UserConsentOptions from '@/components/UserConsentOptions';
 import { initialiseFirebaseError } from '@/config/firebase';
+import { INTERNAL_DOMAINS } from '@/config/posthog';
 import { client, wallets } from '@/config/thirdweb';
 import Auth from '@/features/auth/Auth';
 import ProtectedRoute from '@/features/auth/ProtectedRoute';
+import { useSession } from '@/features/auth/SessionProvider';
 import useNetwork from '@/hooks/useNetwork';
 import { loadState, saveState } from '@/lib/browserStorage';
 import { setAppError, setFirebaseReady, setThirdwebReady } from '@/store/appSlice';
 import { setDeviceInfo, setDeviceScreen, setPwa } from '@/store/deviceSlice';
 
-const UsageDashboard = lazy(() => import('@/features/usage/UsageDashboard'));
 const Chat = lazy(() => import('@/features/chat/Chat'));
+const Error404 = lazy(() => import('@/features/error/Error404'));
+const Reroute = lazy(() => import('@/features/error/Reroute'));
 const History = lazy(() => import('@/features/history/History'));
 const PrivacyPolicyPage = lazy(() => import('@/features/legal/PrivacyPolicyPage'));
 const TermsAndConditionsPage = lazy(() => import('@/features/legal/TermsAndConditionsPage'));
 const WebsiteDisclaimerPage = lazy(() => import('@/features/legal/WebsiteDisclaimerPage'));
-const Error404 = lazy(() => import('@/features/error/Error404'));
-const Reroute = lazy(() => import('@/features/error/Reroute'));
+const UsageDashboard = lazy(() => import('@/features/usage/UsageDashboard'));
 
 function ErrorBoundaryWrapper({ children }) {
 	const navigate = useNavigate();
@@ -42,6 +46,7 @@ export default function App() {
 	const dispatch = useDispatch();
 	const appStatus = useSelector(state => state.app.status);
 	const isOnline = useSelector(state => state.device.online);
+	const { ownerAddress, status: sessionStatus } = useSession();
 
 	const { status: thirdwebStatus, isInitialLoading } = useAutoConnect({ client, wallets });
 	const [showConsent, setShowConsent] = useState(false);
@@ -124,6 +129,52 @@ export default function App() {
 		getDevice();
 	}, [dispatch]);
 
+	// PostHog Identification Logic
+	useEffect(() => {
+		const identifyUser = async () => {
+			if (ownerAddress && sessionStatus === 'ready') {
+				// Only identify if user has opted in to capturing
+				if (posthog.has_opted_in_capturing && posthog.has_opted_in_capturing()) {
+					let email = null;
+					try {
+						// Attempt to get email from Thirdweb (works for In-App Wallets)
+						email = await getUserEmail({ client });
+					} catch (e) {
+						// User might be using an external wallet (MetaMask) which doesn't expose email
+						console.log('[PostHog] Could not retrieve email from wallet:', e);
+					}
+
+					const ENV = import.meta.env.MODE;
+
+					const isInternal =
+						(email &&
+							INTERNAL_DOMAINS.some(domain => email.toLowerCase().endsWith(`@${domain}`))) ||
+						false;
+
+					// Construct properties mirroring main app structure
+					const userProperties = {
+						email: email || '',
+						wallet_address: ownerAddress,
+						is_internal: isInternal,
+						role: 'user',
+						env: ENV,
+					};
+
+					// Filter out undefined values
+					const filteredProperties = Object.fromEntries(
+						Object.entries(userProperties).filter(([, value]) => value !== undefined),
+					);
+
+					posthog.identify(ownerAddress, filteredProperties);
+				}
+			} else if (sessionStatus === 'disconnected') {
+				posthog.reset();
+			}
+		};
+
+		identifyUser();
+	}, [ownerAddress, sessionStatus]);
+
 	useEffect(() => {
 		if (thirdwebStatus && !isInitialLoading) {
 			dispatch(setThirdwebReady());
@@ -163,7 +214,7 @@ export default function App() {
 
 			<ModalManager />
 
-			{showConsent && <UserConsent onConsentGiven={() => setShowConsent(false)} />}
+			{showConsent && <UserConsentOptions onConsentGiven={() => setShowConsent(false)} />}
 
 			{!isOnline && <OfflineMessage />}
 		</ErrorBoundaryWrapper>

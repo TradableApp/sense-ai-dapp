@@ -7,10 +7,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import Label from '@/components/ui/label';
+import { disablePosthogAfterOptOut, enablePosthogAfterConsent } from '@/config/posthog';
 import { saveState } from '@/lib/browserStorage';
 import { openModal } from '@/store/uiSlice';
 
-export default function UserConsent({ onConsentGiven }) {
+export default function UserConsentOptions({ onConsentGiven }) {
 	const dispatch = useDispatch();
 	const [isExpanded, setIsExpanded] = useState(false);
 	const [consentChoices, setConsentChoices] = useState({
@@ -29,6 +30,12 @@ export default function UserConsent({ onConsentGiven }) {
 			ad_storage: consentChoices.marketing,
 			personalization_storage: consentChoices.personalization,
 		};
+
+		if (consentState.analytics_storage) {
+			enablePosthogAfterConsent();
+		} else {
+			disablePosthogAfterOptOut();
+		}
 
 		setConsent({
 			analytics_storage: consentState.analytics_storage ? 'granted' : 'denied',
@@ -49,6 +56,8 @@ export default function UserConsent({ onConsentGiven }) {
 			ad_storage: true,
 			personalization_storage: true,
 		};
+
+		enablePosthogAfterConsent();
 
 		setConsent({
 			analytics_storage: 'granted',
