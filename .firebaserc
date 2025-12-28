@@ -1,0 +1,39 @@
+{
+	"projects": {
+		"prod": "tradable-app",
+		"staging": "tradable-app-staging",
+		"dev": "tradable-app-dev",
+		"local": "tradable-app-garrick"
+	},
+	"targets": {
+		"tradable-app": {
+			"hosting": {
+				"sense-ai": [
+					"sense-ai-app"
+				]
+			}
+		},
+		"tradable-app-staging": {
+			"hosting": {
+				"sense-ai": [
+					"sense-ai-app-staging"
+				]
+			}
+		},
+		"tradable-app-dev": {
+			"hosting": {
+				"sense-ai": [
+					"sense-ai-app-dev"
+				]
+			}
+		},
+		"tradable-app-garrick": {
+			"hosting": {
+				"sense-ai": [
+					"sense-ai-app-garrick"
+				]
+			}
+		}
+	},
+	"etags": {}
+}

@@ -1,0 +1,179 @@
+.
+├── .env
+├── .env.example
+├── .env.local
+├── .eslintrc.json
+├── .firebase
+│   └── hosting.ZGlzdA.cache
+├── .firebaserc
+├── .gitignore
+├── .prettierignore
+├── .prettierrc.json
+├── components.json
+├── file-structure.txt
+├── firebase.json
+├── index.html
+├── jsconfig.json
+├── LICENSE
+├── package-lock.json
+├── package.json
+├── postcss.config.cjs
+├── public
+│   └── icons
+│       ├── icon-128x128.png
+│       ├── icon-144x144.png
+│       ├── icon-192x192.png
+│       ├── icon-384x384.png
+│       ├── icon-48x48.png
+│       ├── icon-512x512-maskable.png
+│       ├── icon-512x512.png
+│       ├── icon-72x72.png
+│       └── shortcut-icon-96x96.png
+├── README.md
+├── sense-ai-dapp.code-workspace
+├── src
+│   ├── assets
+│   │   ├── animation
+│   │   │   ├── rocket-splash-300kb.webm
+│   │   │   └── rocket-splash-blue-background.mp4
+│   │   ├── react.svg
+│   │   ├── tradable-logo-mono.svg
+│   │   └── tradable-logo.svg
+│   ├── client.js
+│   ├── components
+│   │   ├── ai
+│   │   │   ├── code-block.jsx
+│   │   │   ├── conversation.jsx
+│   │   │   ├── edit-prompt-input.jsx
+│   │   │   ├── loader.jsx
+│   │   │   ├── message-actions.jsx
+│   │   │   ├── message.jsx
+│   │   │   ├── prompt-input.jsx
+│   │   │   ├── reasoning.jsx
+│   │   │   ├── response.jsx
+│   │   │   ├── source.jsx
+│   │   │   └── user-message-actions.jsx
+│   │   ├── ErrorBoundary.jsx
+│   │   ├── icons
+│   │   │   ├── OfflineCloudIcon.jsx
+│   │   │   ├── TradableLogo.jsx
+│   │   │   └── XLogo.jsx
+│   │   ├── magicui
+│   │   │   ├── dock.jsx
+│   │   │   ├── rainbow-button.jsx
+│   │   │   └── rainbow-label.jsx
+│   │   ├── ModalManager.jsx
+│   │   ├── OfflineMessage.jsx
+│   │   ├── SplashScreen.jsx
+│   │   ├── ThemeProvider.jsx
+│   │   ├── ThemeToggle.jsx
+│   │   ├── ui
+│   │   │   ├── alert-dialog.jsx
+│   │   │   ├── avatar.jsx
+│   │   │   ├── breadcrumb.jsx
+│   │   │   ├── button.jsx
+│   │   │   ├── card.jsx
+│   │   │   ├── checkbox.jsx
+│   │   │   ├── collapsible.jsx
+│   │   │   ├── dialog.jsx
+│   │   │   ├── dropdown-menu.jsx
+│   │   │   ├── empty-state.jsx
+│   │   │   ├── input.jsx
+│   │   │   ├── label.jsx
+│   │   │   ├── scroll-area.jsx
+│   │   │   ├── select.jsx
+│   │   │   ├── separator.jsx
+│   │   │   ├── sheet.jsx
+│   │   │   ├── sidebar.jsx
+│   │   │   ├── skeleton.jsx
+│   │   │   ├── sonner.jsx
+│   │   │   ├── table.jsx
+│   │   │   ├── textarea.jsx
+│   │   │   └── tooltip.jsx
+│   │   └── UserConsent.jsx
+│   ├── config
+│   │   ├── firebase.js
+│   │   └── thirdweb.js
+│   ├── favicon.svg
+│   ├── features
+│   │   ├── auth
+│   │   │   ├── Auth.jsx
+│   │   │   ├── ProtectedRoute.jsx
+│   │   │   ├── SessionProvider.jsx
+│   │   │   └── SignatureScreen.jsx
+│   │   ├── chat
+│   │   │   └── Chat.jsx
+│   │   ├── error
+│   │   │   ├── Error404.jsx
+│   │   │   └── Reroute.jsx
+│   │   ├── feedback
+│   │   │   └── FeedbackModal.jsx
+│   │   ├── history
+│   │   │   ├── History.jsx
+│   │   │   └── RenameConversationModal.jsx
+│   │   ├── legal
+│   │   │   ├── DisclaimerModal.jsx
+│   │   │   ├── docs
+│   │   │   │   ├── PrivacyPolicyDoc.jsx
+│   │   │   │   ├── TermsAndConditionsDoc.jsx
+│   │   │   │   └── WebsiteDisclaimerDoc.jsx
+│   │   │   ├── PrivacyModal.jsx
+│   │   │   └── TermsModal.jsx
+│   │   ├── market
+│   │   │   └── MarketPulse.jsx
+│   │   └── support
+│   │       └── SupportModal.jsx
+│   ├── hooks
+│   │   ├── useCompare.js
+│   │   ├── useConversations.js
+│   │   ├── useFirestoreCollectionListener.js
+│   │   ├── useFirestoreDocumentListener.js
+│   │   ├── useFirestoreMultiDocumentListener.js
+│   │   ├── useMobile.js
+│   │   ├── useNetwork.js
+│   │   └── usePrevious.js
+│   ├── index.css
+│   ├── layouts
+│   │   ├── components
+│   │   │   ├── AppSidebar.jsx
+│   │   │   ├── MobileNav.jsx
+│   │   │   └── nav
+│   │   │       ├── NavMain.jsx
+│   │   │       ├── NavSecondary.jsx
+│   │   │       └── NavUser.jsx
+│   │   └── MainLayout.jsx
+│   ├── lib
+│   │   ├── browserStorage.js
+│   │   ├── contactService.js
+│   │   ├── crypto.js
+│   │   ├── dataService.js
+│   │   ├── db.js
+│   │   ├── feedbackService.js
+│   │   ├── firestoreService.js
+│   │   ├── graph
+│   │   │   ├── queries.js
+│   │   │   └── schema.graphql
+│   │   ├── mockApi.js
+│   │   ├── mockData.js
+│   │   ├── schema.js
+│   │   ├── searchService.js
+│   │   ├── syncService.js
+│   │   └── utils.js
+│   ├── main.jsx
+│   ├── pages
+│   │   └── App.jsx
+│   ├── senseai-logo.svg
+│   ├── senseai-text-logo-black-purple.svg
+│   ├── senseai-text-logo-white-purple.svg
+│   ├── store
+│   │   ├── appSlice.js
+│   │   ├── asyncSlice.js
+│   │   ├── chatSlice.js
+│   │   ├── deviceSlice.js
+│   │   ├── store.js
+│   │   └── uiSlice.js
+│   └── thirdweb.svg
+├── tailwind.config.js
+└── vite.config.js
+
+31 directories, 146 files

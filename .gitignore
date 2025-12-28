@@ -43,6 +43,10 @@ coverage
 # Local files
 *.local
 
+# firebase
+firebase-debug.log*
+hosting.*.cache
+
 # macos
 ._*
 **/._.*

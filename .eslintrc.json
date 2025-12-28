@@ -13,7 +13,7 @@
 		"import/resolver": {
 			"alias": {
 				"map": [["@", "./src"]],
-				"extensions": [".js", ".jsx"]
+				"extensions": [".js", ".jsx", ".svg"]
 			},
 			"node": {
 				"extensions": [".js", ".jsx"]
@@ -21,6 +21,12 @@
 		}
 	},
 	"rules": {
+		"import/no-unresolved": [
+			"error",
+			{
+				"ignore": ["\\.svg\\?react$"]
+			}
+		],
 		"sort-imports": [
 			"error",
 			{
