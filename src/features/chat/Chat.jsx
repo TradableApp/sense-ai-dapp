@@ -342,7 +342,13 @@ export default function Chat() {
 
 	const handleSaveEdit = data => {
 		const originalMessage = activeConversationMessages.find(m => m.id === editingMessageId);
-		if (!originalMessage) return;
+
+		if (!originalMessage) {
+			return;
+		}
+
+		// Find parent to get CID for context reconstruction
+		const parentMessage = activeConversationMessages.find(m => m.id === originalMessage.parentId);
 
 		initiatePromptMutation.mutate(
 			{
@@ -350,6 +356,7 @@ export default function Chat() {
 				promptText: data.content,
 				sessionKey,
 				parentId: originalMessage.parentId,
+				parentCID: parentMessage?.messageCID || null,
 			},
 			{
 				onSuccess: async newIds => {
@@ -373,32 +380,44 @@ export default function Chat() {
 
 	const handleNavigate = targetBranchRootId => {
 		const allMessages = activeConversationMessages;
-		if (!allMessages) return;
+		if (!allMessages) {
+			return;
+		}
+
 		const messageMap = new Map(allMessages.map(m => [m.id, m]));
+
 		const parentToChildrenMap = allMessages.reduce((acc, msg) => {
 			const parentKey = String(msg.parentId);
 			if (!acc[parentKey]) acc[parentKey] = [];
 			acc[parentKey].push(msg);
 			return acc;
 		}, {});
+
 		let latestMessageInBranch = messageMap.get(targetBranchRootId);
+
 		const queue = [latestMessageInBranch];
 		while (queue.length > 0) {
 			const [currentNode] = queue.splice(0, 1);
+
 			if (currentNode.createdAt > latestMessageInBranch.createdAt) {
 				latestMessageInBranch = currentNode;
 			}
+
 			const children = parentToChildrenMap[String(currentNode.id)];
+
 			if (children) {
 				queue.push(...children);
 			}
 		}
+
 		setActiveMessageId(latestMessageInBranch.id);
 	};
 
 	const handleBranch = messageToBranchFrom => {
 		const conversation = conversations.find(c => c.id === activeConversationId);
-		if (!conversation) return;
+		if (!conversation) {
+			return;
+		}
 
 		branchConversationMutation.mutate(
 			{
@@ -544,6 +563,7 @@ export default function Chat() {
 				promptText: data.prompt,
 				sessionKey,
 				parentId: messagesToDisplay?.at(-1)?.id,
+				parentCID: messagesToDisplay?.at(-1)?.messageCID || null,
 			},
 			{
 				onSuccess: async newIds => {

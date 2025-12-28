@@ -328,6 +328,18 @@ export default function useChatMutations() {
 			if (!contractConfig?.escrow) {
 				throw new Error('Contracts not configured for this chain.');
 			}
+			console.log(
+				'conversationId',
+				conversationId,
+				'promptText',
+				promptText,
+				'sessionKey',
+				sessionKey,
+				'parentId',
+				parentId,
+				'parentCID',
+				parentCID,
+			);
 
 			const { encryptedPayload, roflEncryptedKey } = await createEncryptedPayloads(sessionKey, {
 				promptText,
