@@ -40,17 +40,16 @@ export default function UsageDashboard() {
 		<div
 			style={!plan ? onboardingParentStyles : undefined}
 			className={cn(
-				'h-full',
+				'min-h-full',
 				// Add a subtle background for the dashboard view
 				plan && 'bg-muted/10 p-4 md:p-8',
 			)}
 		>
 			<div
 				style={!plan ? onboardingChildStyles : undefined}
-				className={cn('h-full', !plan && 'relative')}
+				className={cn('min-h-full', !plan && 'relative')}
 			>
 				{plan ? (
-					// DASHBOARD LAYOUT
 					<div className="mx-auto max-w-4xl">
 						<div className="flex flex-col gap-6">
 							<PlanStatusCard plan={plan} />

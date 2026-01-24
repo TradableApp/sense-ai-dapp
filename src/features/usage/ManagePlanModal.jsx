@@ -7,7 +7,7 @@ import { AlertCircle, Info, Loader2, Trash2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { getContract, prepareContractCall } from 'thirdweb';
-import { useActiveWallet, useSendTransaction } from 'thirdweb/react';
+import { useActiveWallet, useSendAndConfirmTransaction } from 'thirdweb/react';
 // eslint-disable-next-line camelcase
 import { eth_getTransactionReceipt, getRpcClient } from 'thirdweb/rpc';
 import { z } from 'zod';
@@ -80,7 +80,9 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 	const chainId = activeWallet?.getChain()?.id;
 	const isLocalnet = chainId === LOCAL_CHAIN_ID;
 	const isTestnet = chainId === TESTNET_CHAIN_ID;
-	const { mutate: send } = useSendTransaction();
+
+	// Use the confirmation-aware hook
+	const { mutateAsync: sendAndConfirm } = useSendAndConfirmTransaction();
 	const queryClient = useQueryClient();
 	const [statusText, setStatusText] = useState('');
 	const [isRequestingTokens, setIsRequestingTokens] = useState(false);
@@ -183,48 +185,62 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 			}
 
 			setStatusText('1/2: Approving...');
-			toast.info('Step 1/2: Please approve the token spending limit in your wallet.');
+			const approvalToastId = toast.info(
+				'Step 1/2: Please approve the token spending limit in your wallet.',
+			);
 
-			const tokenContract = getContract({
-				client,
-				chain: connectedChain,
-				address: contractConfig.token.address,
-				abi: contractConfig.token.abi,
-			});
-			console.log('tokenContract', tokenContract);
+			try {
+				const tokenContract = getContract({
+					client,
+					chain: connectedChain,
+					address: contractConfig.token.address,
+					abi: contractConfig.token.abi,
+				});
+				console.log('tokenContract', tokenContract);
 
-			const approveTx = prepareContractCall({
-				contract: tokenContract,
-				method: 'approve',
-				params: [contractConfig.escrow.address, limitInWei],
-			});
-			console.log('approveTx', approveTx);
+				const approveTx = prepareContractCall({
+					contract: tokenContract,
+					method: 'approve',
+					params: [contractConfig.escrow.address, limitInWei],
+				});
+				console.log('approveTx', approveTx);
 
-			await new Promise((resolve, reject) => {
-				send(approveTx, { onSuccess: resolve, onError: reject });
-			});
+				await sendAndConfirm(approveTx);
+				toast.dismiss(approvalToastId);
+				console.log('Approval confirmed on-chain.');
 
-			setStatusText('2/2: Setting Limit...');
-			toast.info('Step 2/2: Please confirm setting the new spending limit in your wallet.');
+				// We wait 2 seconds to ensure the RPC has indexed the updated nonce
+				// from the first transaction before sending the second one.
+				setStatusText('Waiting for network...');
+				await wait(2000);
 
-			const escrowContract = getContract({
-				client,
-				chain: connectedChain,
-				address: contractConfig.escrow.address,
-				abi: contractConfig.escrow.abi,
-			});
-			console.log('escrowContract', escrowContract);
+				setStatusText('2/2: Setting Limit...');
+				const limitToastId = toast.info(
+					'Step 2/2: Please confirm setting the new spending limit in your wallet.',
+				);
 
-			const setSubTx = prepareContractCall({
-				contract: escrowContract,
-				method: 'setSpendingLimit',
-				params: [limitInWei, expiresAtTimestamp],
-			});
-			console.log('setSubTx', setSubTx);
+				const escrowContract = getContract({
+					client,
+					chain: connectedChain,
+					address: contractConfig.escrow.address,
+					abi: contractConfig.escrow.abi,
+				});
+				console.log('escrowContract', escrowContract);
 
-			await new Promise((resolve, reject) => {
-				send(setSubTx, { onSuccess: resolve, onError: reject });
-			});
+				const setSubTx = prepareContractCall({
+					contract: escrowContract,
+					method: 'setSpendingLimit',
+					params: [limitInWei, expiresAtTimestamp],
+				});
+				console.log('setSubTx', setSubTx);
+
+				await sendAndConfirm(setSubTx);
+				toast.dismiss(limitToastId);
+				console.log('Spending limit confirmed on-chain.');
+			} catch (error) {
+				toast.dismiss(); // Clear loading toasts on error
+				throw error;
+			}
 		},
 		onSuccess: async () => {
 			toast.success('Spending Limit Set!', {
@@ -235,12 +251,14 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 			await wait(2000);
 
 			await Promise.all([
-				queryClient.invalidateQueries({ queryKey: ['usagePlan'] }),
-				queryClient.invalidateQueries({ queryKey: ['tokenBalance'] }),
+				queryClient.invalidateQueries({ queryKey: ['usagePlan'], refetchType: 'all' }),
+				queryClient.invalidateQueries({ queryKey: ['tokenBalance'], refetchType: 'all' }),
 			]);
 			onOpenChange(false);
 		},
 		onError: error => {
+			console.error('setPlanMutation Error:', error);
+
 			toast.error('Transaction Failed', {
 				description: error.message || 'An unexpected error occurred. Please try again.',
 			});
@@ -268,7 +286,9 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 				throw new Error('Could not determine connected chain.');
 			}
 
-			toast.info('Please confirm the transaction in your wallet to revoke access.');
+			const revokeToastId = toast.info(
+				'Please confirm the transaction in your wallet to revoke access.',
+			);
 
 			const escrowContract = getContract({
 				client,
@@ -280,9 +300,8 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 				contract: escrowContract,
 				method: 'cancelSpendingLimit',
 			});
-			await new Promise((resolve, reject) => {
-				send(revokeTx, { onSuccess: resolve, onError: reject });
-			});
+			await sendAndConfirm(revokeTx);
+			toast.dismiss(revokeToastId);
 		},
 		onSuccess: async () => {
 			toast.success('Access Revoked', {
@@ -294,12 +313,14 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 			await wait(2000);
 
 			await Promise.all([
-				queryClient.invalidateQueries({ queryKey: ['usagePlan'] }),
-				queryClient.invalidateQueries({ queryKey: ['tokenBalance'] }),
+				queryClient.invalidateQueries({ queryKey: ['usagePlan'], refetchType: 'all' }),
+				queryClient.invalidateQueries({ queryKey: ['tokenBalance'], refetchType: 'all' }),
 			]);
 			onOpenChange(false);
 		},
 		onError: error => {
+			console.error('revokeMutation Error:', error);
+
 			toast.error('Revoke Failed', {
 				description: error.message || 'Could not revoke access. Please try again.',
 			});
@@ -362,7 +383,10 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 								CONTRACTS[chainId]?.token?.address,
 							);
 							// eslint-disable-next-line no-await-in-loop
-							await queryClient.invalidateQueries({ queryKey });
+							await queryClient.invalidateQueries({
+								queryKey,
+								refetchType: 'all', // Forces refetch even if component is unmounted or data is "fresh"
+							});
 
 							break;
 						}
@@ -448,7 +472,7 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 
 	return (
 		<Dialog open={open} onOpenChange={openState => !isProcessing && onOpenChange(openState)}>
-			<DialogContent className="sm:max-w-[425px]">
+			<DialogContent className="sm:max-w-[480px]">
 				<DialogHeader>
 					<DialogTitle>{existingPlan ? 'Manage' : 'Set'} Your Spending Limit</DialogTitle>
 					<DialogDescription>
@@ -525,7 +549,7 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 						{errors.days && <p className="text-sm text-destructive">{errors.days.message}</p>}
 					</div>
 
-					<DialogFooter className="flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-between">
+					<DialogFooter className="flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-between">
 						<div className="w-full sm:w-auto">
 							{existingPlan && (
 								<AlertDialog>

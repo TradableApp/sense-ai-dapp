@@ -8,13 +8,14 @@ import { client } from '@/config/thirdweb';
 
 /**
  * A custom hook to fetch all relevant data for the user's usage plan
- * from the EVMAIAgentEscrow smart contract.
+ * from the EVMAIAgentEscrow smart contract, AND the raw ERC20 allowance.
  *
  * @returns {import('@tanstack/react-query').UseQueryResult<{
  *   allowance: number,
  *   spentAmount: number,
  *   expiresAt: Date,
- *   pendingEscrowCount: number
+ *   pendingEscrowCount: number,
+ *   realTokenAllowance: number The actual ERC20 allowance
  * }|null, Error>} The result object from React Query.
  */
 export default function useUsagePlan() {
@@ -44,12 +45,24 @@ export default function useUsagePlan() {
 				abi: contractConfig.escrow.abi,
 			});
 
+			// Get Token Contract to check raw allowance
+			const tokenContract = getContract({
+				client,
+				chain,
+				address: contractConfig.token.address,
+				abi: contractConfig.token.abi,
+			});
+
 			const spendingLimitsAbi = contractConfig?.escrow.abi.find(
 				item => item.name === 'spendingLimits' && item.type === 'function',
 			);
 
 			const pendingEscrowCountAbi = contractConfig?.escrow.abi.find(
 				item => item.name === 'pendingEscrowCount' && item.type === 'function',
+			);
+
+			const allowanceAbi = contractConfig.token.abi.find(
+				item => item.name === 'allowance' && item.type === 'function',
 			);
 			console.log(
 				'contractConfig',
@@ -60,10 +73,12 @@ export default function useUsagePlan() {
 				spendingLimitsAbi,
 				'pendingEscrowCountAbi',
 				pendingEscrowCountAbi,
+				'allowanceAbi',
+				allowanceAbi,
 			);
 
-			// Perform the two read calls in parallel for efficiency.
-			const [spendingLimitData, pendingEscrowCount] = await Promise.all([
+			// Perform read calls in parallel for efficiency.
+			const [spendingLimitData, pendingEscrowCount, rawTokenAllowance] = await Promise.all([
 				readContract({
 					contract: escrowContract,
 					method: spendingLimitsAbi,
@@ -74,8 +89,20 @@ export default function useUsagePlan() {
 					method: pendingEscrowCountAbi,
 					params: [ownerAddress],
 				}),
+				readContract({
+					contract: tokenContract,
+					method: allowanceAbi,
+					params: [ownerAddress, contractConfig.escrow.address],
+				}),
 			]);
-			console.log('spendingLimitData', spendingLimitData, 'pendingEscrowCount', pendingEscrowCount);
+			console.log(
+				'spendingLimitData',
+				spendingLimitData,
+				'pendingEscrowCount',
+				pendingEscrowCount,
+				'rawTokenAllowance',
+				rawTokenAllowance,
+			);
 
 			const [allowance, spentAmount, expiresAt] = spendingLimitData || [];
 			console.log('allowance', allowance, 'spentAmount', spentAmount, 'expiresAt', expiresAt);
@@ -91,6 +118,7 @@ export default function useUsagePlan() {
 				spentAmount: Number(ethers.formatEther(spentAmount)),
 				expiresAt: new Date(Number(expiresAt) * 1000),
 				pendingEscrowCount: Number(pendingEscrowCount || 0),
+				realTokenAllowance: Number(ethers.formatEther(rawTokenAllowance)),
 			};
 			console.log('plan', plan);
 

@@ -16,7 +16,7 @@ export default function RecentActivityCard() {
 	const { data: activities, isLoading } = useRecentActivity(20);
 
 	return (
-		<Card className="h-full flex flex-col border-border/30 bg-background shadow-lg">
+		<Card className="flex flex-col border-border/30 bg-background shadow-lg">
 			<CardHeader>
 				<CardTitle>Recent Activity</CardTitle>
 				<CardDescription>A log of your recent on-chain actions.</CardDescription>

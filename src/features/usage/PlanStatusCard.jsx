@@ -1,12 +1,11 @@
 import { useState } from 'react';
 
 import { formatDistanceToNow } from 'date-fns';
-import { AlertCircle, Clock, Loader2, Settings } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Clock, Loader2, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import Progress from '@/components/ui/progress';
 import Separator from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import useChatMutations from '@/hooks/useChatMutations';
@@ -31,15 +30,32 @@ export default function PlanStatusCard({ plan }) {
 	const [isManageModalOpen, setIsManageModalOpen] = useState(false);
 	const [isRefundingAll, setIsRefundingAll] = useState(false);
 
-	const { allowance, spentAmount, expiresAt, pendingEscrowCount } = plan;
+	const { allowance, spentAmount, expiresAt, pendingEscrowCount, realTokenAllowance } = plan;
 
 	// Hooks for Refund Functionality
 	const { data: stuckRequests /* , isLoading: isLoadingStuck */ } = useStuckRequests();
 	const { processRefundMutation } = useChatMutations();
 
-	const spentPercentage = allowance > 0 ? (spentAmount / allowance) * 100 : 0;
+	// --- GAP CALCULATION LOGIC ---
+	// 1. Theoretical Remaining (Based on Plan)
+	const theoreticalRemaining = Math.max(0, allowance - spentAmount);
+
+	// 2. The "Gap" (Plan Limit vs Actual Wallet Allowance)
+	// If the wallet allowance is less than what the plan thinks is remaining, there is a gap.
+	const allowanceGap = Math.max(0, theoreticalRemaining - (realTokenAllowance || 0));
+
+	// 3. Actual Available (The smaller of Plan Remaining vs Token Allowance)
+	const actualAvailable = Math.min(theoreticalRemaining, realTokenAllowance || 0);
+
+	// 4. Percentages for the Custom Bar
+	const totalWidth = allowance > 0 ? allowance : 1;
+	const spentPct = (spentAmount / totalWidth) * 100;
+	const availablePct = (actualAvailable / totalWidth) * 100;
+	const gapPct = (allowanceGap / totalWidth) * 100;
+
 	const formattedAllowance = new Intl.NumberFormat().format(allowance);
 	const formattedSpentAmount = new Intl.NumberFormat().format(spentAmount);
+	const formattedAvailable = new Intl.NumberFormat().format(actualAvailable);
 
 	// We still want to visually warn them, but NOT disable the button
 	const hasPendingPrompts = pendingEscrowCount > 0;
@@ -83,16 +99,48 @@ export default function PlanStatusCard({ plan }) {
 					<CardDescription>Your approved spending limit for the AI agent.</CardDescription>
 				</CardHeader>
 				<CardContent>
-					{/* RESPONSIVE LAYOUT: Stacks on mobile, Side-by-Side on Desktop */}
-					<div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-						<div className="flex-1 space-y-3">
-							<div className="space-y-1.5">
-								<div className="flex justify-between text-sm font-medium">
-									<span className="text-muted-foreground">Used</span>
-									<span>{spentPercentage.toFixed(1)}%</span>
-								</div>
-								<Progress value={spentPercentage} className="h-2.5" />
+					<div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
+						{/* Left Side: Custom Progress & Stats */}
+						<div className="flex-1 space-y-4">
+							{/* Multi-Segment Progress Bar */}
+							<div className="h-2.5 w-full rounded-full bg-secondary overflow-hidden flex relative">
+								{/* Segment 1: Spent (Blue) */}
+								<div
+									className="bg-primary h-full transition-all duration-500"
+									style={{ width: `${spentPct}%` }}
+								/>
+								{/* Segment 2: Available (Green) */}
+								<div
+									className="bg-green-500/80 h-full transition-all duration-500"
+									style={{ width: `${availablePct}%` }}
+								/>
+								{/* Segment 3: Gap (Grey/Striped) */}
+								{gapPct > 0 && (
+									<TooltipProvider>
+										<Tooltip delayDuration={0}>
+											<TooltipTrigger asChild>
+												<div
+													className="bg-muted-foreground/30 h-full cursor-help transition-all duration-500"
+													style={{
+														width: `${gapPct}%`,
+														backgroundImage:
+															'linear-gradient(45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent)',
+														backgroundSize: '8px 8px',
+													}}
+												/>
+											</TooltipTrigger>
+											<TooltipContent className="max-w-xs">
+												<p className="font-semibold mb-1">Authorization Gap</p>
+												<p>
+													You have {allowanceGap.toFixed(2)} ABLE unused in your plan, but your
+													wallet allowance is lower. Use "Manage Limit" to re-sync.
+												</p>
+											</TooltipContent>
+										</Tooltip>
+									</TooltipProvider>
+								)}
 							</div>
+
 							<div className="flex justify-between text-sm">
 								<div className="flex flex-col">
 									<span className="text-muted-foreground text-xs uppercase tracking-wider">
@@ -100,6 +148,19 @@ export default function PlanStatusCard({ plan }) {
 									</span>
 									<span className="font-semibold">{formattedSpentAmount} ABLE</span>
 								</div>
+
+								{/* Show Available explicitly if there is a gap */}
+								{allowanceGap > 0 ? (
+									<div className="flex flex-col text-center">
+										<span className="text-green-600 dark:text-green-500 text-xs uppercase tracking-wider font-bold">
+											Available
+										</span>
+										<span className="font-bold text-green-600 dark:text-green-500">
+											{formattedAvailable} ABLE
+										</span>
+									</div>
+								) : null}
+
 								<div className="flex flex-col text-right">
 									<span className="text-muted-foreground text-xs uppercase tracking-wider">
 										Limit
@@ -107,7 +168,21 @@ export default function PlanStatusCard({ plan }) {
 									<span className="font-semibold">{formattedAllowance} ABLE</span>
 								</div>
 							</div>
+
 							<p className="text-xs text-muted-foreground pt-1">{formatTimeRemaining(expiresAt)}</p>
+
+							{/* New Gap Warning (Using AlertTriangle for distinction) */}
+							{allowanceGap > 0 && (
+								<div className="text-xs text-muted-foreground bg-muted/30 p-2 rounded flex items-start gap-2 border border-border/50">
+									<AlertTriangle className="h-3.5 w-3.5 mt-0.5 text-amber-500 shrink-0" />
+									<span>
+										<b>Note:</b> Your wallet allowance is lower than your plan limit by{' '}
+										{Number(allowanceGap.toFixed(2))} ABLE. This happens after prompt
+										cancellations/refunds because the ERC-20 allowance does not add these amounts
+										back in. You will need to reset your allowance to use the full plan.
+									</span>
+								</div>
+							)}
 						</div>
 
 						{/* Divider for Mobile Only */}
@@ -118,7 +193,9 @@ export default function PlanStatusCard({ plan }) {
 							<div className="space-y-1">
 								<div className="flex items-center gap-2 text-sm font-medium text-amber-600 dark:text-amber-500">
 									<Clock className="h-4 w-4" />
-									<span>{pendingEscrowCount} Pending Prompts</span>
+									<span>
+										{pendingEscrowCount} Pending Prompt{pendingEscrowCount !== 1 && 's'}
+									</span>
 								</div>
 							</div>
 

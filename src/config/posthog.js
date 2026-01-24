@@ -49,7 +49,7 @@ export function disablePosthogAfterOptOut() {
 
 export function initPosthog() {
 	const ENV = import.meta.env.MODE; // 'development', 'production', 'testnet', etc.
-	const IS_PROD = ENV === 'production' || ENV === 'mainnet';
+	// const IS_PROD = ENV === 'production' || ENV === 'mainnet';
 
 	posthog.init(import.meta.env.VITE_PUBLIC_POSTHOG_KEY, {
 		api_host: import.meta.env.VITE_PUBLIC_POSTHOG_HOST || 'https://eu.i.posthog.com',
@@ -61,7 +61,7 @@ export function initPosthog() {
 		opt_out_persistence_by_default: true,
 		session_recording: { maskAllInputs: true },
 		person_profiles: 'identified_only',
-		debug: !IS_PROD,
+		debug: false, // !IS_PROD
 	});
 
 	// Segment this data from the main app
