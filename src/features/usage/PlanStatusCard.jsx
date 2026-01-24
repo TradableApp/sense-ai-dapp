@@ -98,9 +98,9 @@ export default function PlanStatusCard({ plan }) {
 					<CardTitle>Spending Limit Status</CardTitle>
 					<CardDescription>Your approved spending limit for the AI agent.</CardDescription>
 				</CardHeader>
-				<CardContent>
+				<CardContent className="space-y-6">
 					<div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
-						{/* Left Side: Custom Progress & Stats */}
+						{/* Left Side: Progress & Stats */}
 						<div className="flex-1 space-y-4">
 							{/* Multi-Segment Progress Bar */}
 							<div className="h-2.5 w-full rounded-full bg-secondary overflow-hidden flex relative">
@@ -150,7 +150,7 @@ export default function PlanStatusCard({ plan }) {
 								</div>
 
 								{/* Show Available explicitly if there is a gap */}
-								{allowanceGap > 0 ? (
+								{allowanceGap > 0 && (
 									<div className="flex flex-col text-center">
 										<span className="text-green-600 dark:text-green-500 text-xs uppercase tracking-wider font-bold">
 											Available
@@ -159,7 +159,7 @@ export default function PlanStatusCard({ plan }) {
 											{formattedAvailable} ABLE
 										</span>
 									</div>
-								) : null}
+								)}
 
 								<div className="flex flex-col text-right">
 									<span className="text-muted-foreground text-xs uppercase tracking-wider">
@@ -170,19 +170,6 @@ export default function PlanStatusCard({ plan }) {
 							</div>
 
 							<p className="text-xs text-muted-foreground pt-1">{formatTimeRemaining(expiresAt)}</p>
-
-							{/* New Gap Warning (Using AlertTriangle for distinction) */}
-							{allowanceGap > 0 && (
-								<div className="text-xs text-muted-foreground bg-muted/30 p-2 rounded flex items-start gap-2 border border-border/50">
-									<AlertTriangle className="h-3.5 w-3.5 mt-0.5 text-amber-500 shrink-0" />
-									<span>
-										<b>Note:</b> Your wallet allowance is lower than your plan limit by{' '}
-										{Number(allowanceGap.toFixed(2))} ABLE. This happens after prompt
-										cancellations/refunds because the ERC-20 allowance does not add these amounts
-										back in. You will need to reset your allowance to use the full plan.
-									</span>
-								</div>
-							)}
 						</div>
 
 						{/* Divider for Mobile Only */}
@@ -224,79 +211,96 @@ export default function PlanStatusCard({ plan }) {
 						</div>
 					</div>
 
-					{/* Refund Section - Full Width Alert */}
-					{hasPendingPrompts && stuckRequests && stuckRequests.length > 0 && (
-						<div className="mt-6 space-y-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
-							<div className="flex items-start gap-3">
-								<AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
-								<div className="flex-1 space-y-1">
-									<h4 className="font-semibold text-amber-700 dark:text-amber-500">
-										Action Required
-									</h4>
-									<p className="text-amber-700/80 dark:text-amber-400/90 leading-relaxed">
-										You have pending prompts. Transactions older than 1 hour can be refunded to
-										unlock your plan.
-									</p>
-								</div>
+					<div className="space-y-3">
+						{/* Gap Warning moved here to be full width and text-sm */}
+						{allowanceGap > 0 && (
+							<div className="text-sm text-muted-foreground bg-muted/30 p-4 rounded-md flex items-start gap-3 border border-border/50">
+								<AlertTriangle className="h-5 w-5 mt-0.5 text-amber-500 shrink-0" />
+								<span>
+									<b className="text-foreground">Note:</b> Your wallet allowance is lower than your
+									plan limit by {Number(allowanceGap.toFixed(2))} ABLE. This happens after prompt
+									cancellations/refunds because the ERC-20 allowance does not add these amounts back
+									in. You will need to reset your allowance to use the full plan.
+								</span>
 							</div>
+						)}
 
-							<div className="space-y-2 pl-8">
-								<div className="flex items-center justify-between">
-									<span className="text-xs font-medium text-amber-700/60 dark:text-amber-400/60 uppercase tracking-wider">
-										Pending Requests
-									</span>
-									{refundableRequests.length > 1 && (
-										<Button
-											size="xs"
-											variant="ghost"
-											className="h-6 text-xs hover:bg-amber-500/20 hover:text-amber-800 text-amber-700"
-											onClick={handleRefundAll}
-											disabled={isRefundingAll || processRefundMutation.isPending}
-										>
-											{isRefundingAll ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-											Refund All
-										</Button>
-									)}
+						{/* Refund Section - Action Required */}
+						{hasPendingPrompts && stuckRequests && stuckRequests.length > 0 && (
+							<div className="space-y-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
+								<div className="flex items-start gap-3">
+									<AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+									<div className="flex-1 space-y-1">
+										<h4 className="font-semibold text-amber-700 dark:text-amber-500">
+											Action Required
+										</h4>
+										<p className="text-amber-700/80 dark:text-amber-400/90 leading-relaxed">
+											You have pending prompts. Transactions older than 1 hour can be refunded to
+											unlock your plan.
+										</p>
+									</div>
 								</div>
 
-								<div className="max-h-32 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-									{stuckRequests.map(req => (
-										<div
-											key={req.id}
-											className="flex items-center justify-between rounded-md bg-background/60 p-2 text-xs border border-border/50"
-										>
-											<div className="flex flex-col">
-												<span className="font-medium">Request #{req.id}</span>
-												<span className="text-muted-foreground text-[10px]">
-													{formatDistanceToNow(req.createdAt)} ago
-												</span>
+								<div className="space-y-2 pl-8">
+									<div className="flex items-center justify-between">
+										<span className="text-xs font-medium text-amber-700/60 dark:text-amber-400/60 uppercase tracking-wider">
+											Pending Requests
+										</span>
+										{refundableRequests.length > 1 && (
+											<Button
+												size="xs"
+												variant="ghost"
+												className="h-6 text-xs hover:bg-amber-500/20 hover:text-amber-800 text-amber-700"
+												onClick={handleRefundAll}
+												disabled={isRefundingAll || processRefundMutation.isPending}
+											>
+												{isRefundingAll ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+												Refund All
+											</Button>
+										)}
+									</div>
+
+									<div className="max-h-32 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+										{stuckRequests.map(req => (
+											<div
+												key={req.id}
+												className="flex items-center justify-between rounded-md bg-background/60 p-2 text-xs border border-border/50"
+											>
+												<div className="flex flex-col">
+													<span className="font-medium">Request #{req.id}</span>
+													<span className="text-muted-foreground text-[10px]">
+														{formatDistanceToNow(req.createdAt)} ago
+													</span>
+												</div>
+
+												{req.isRefundable ? (
+													<Button
+														size="sm"
+														variant="secondary"
+														className="h-7 text-xs px-3"
+														onClick={() =>
+															processRefundMutation.mutate({ answerMessageId: req.id })
+														}
+														disabled={processRefundMutation.isPending || isRefundingAll}
+													>
+														{processRefundMutation.isPending && !isRefundingAll ? (
+															<Loader2 className="w-3 h-3 animate-spin" />
+														) : (
+															'Refund'
+														)}
+													</Button>
+												) : (
+													<span className="text-muted-foreground italic px-2 py-1 bg-muted rounded">
+														Wait 1h
+													</span>
+												)}
 											</div>
-
-											{req.isRefundable ? (
-												<Button
-													size="sm"
-													variant="secondary"
-													className="h-7 text-xs px-3"
-													onClick={() => processRefundMutation.mutate({ answerMessageId: req.id })}
-													disabled={processRefundMutation.isPending || isRefundingAll}
-												>
-													{processRefundMutation.isPending && !isRefundingAll ? (
-														<Loader2 className="w-3 h-3 animate-spin" />
-													) : (
-														'Refund'
-													)}
-												</Button>
-											) : (
-												<span className="text-muted-foreground italic px-2 py-1 bg-muted rounded">
-													Wait 1h
-												</span>
-											)}
-										</div>
-									))}
+										))}
+									</div>
 								</div>
 							</div>
-						</div>
-					)}
+						)}
+					</div>
 				</CardContent>
 			</Card>
 
