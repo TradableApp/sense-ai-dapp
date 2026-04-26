@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
+
 import { CANCELLATION_TIMEOUT_MS, REFUND_TIMEOUT_MS } from './constants';
 
 describe('constants', () => {

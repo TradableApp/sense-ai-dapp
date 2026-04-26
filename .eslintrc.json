@@ -86,6 +86,15 @@
 		],
 		"import/no-extraneous-dependencies": ["error", { "devDependencies": ["**/*vite.config.js"] }]
 	},
+	"overrides": [
+		{
+			"files": ["**/*.test.js", "**/*.test.jsx", "**/*.spec.js", "**/*.spec.jsx"],
+			"rules": {
+				"import/no-extraneous-dependencies": ["error", { "devDependencies": true }],
+				"import/first": "off"
+			}
+		}
+	],
 	"globals": {
 		"window": true,
 		"document": true,

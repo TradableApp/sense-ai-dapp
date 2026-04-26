@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { deriveKeyFromEntropy, encryptData, decryptData } from './crypto';
+import { describe, expect, it } from 'vitest';
+
+import { decryptData, deriveKeyFromEntropy, encryptData } from './crypto';
 
 const ENTROPY = 'test-entropy-signature-0xdeadbeef';
 const OWNER = '0xabc123def456abc123def456abc123def456abc1';

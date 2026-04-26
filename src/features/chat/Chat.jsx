@@ -36,11 +36,10 @@ import { Button } from '@/components/ui/button';
 import { db } from '@/config/firebase';
 import { useSession } from '@/features/auth/SessionProvider';
 import useChatMutations from '@/hooks/useChatMutations';
-import { CANCELLATION_TIMEOUT_MS, REFUND_TIMEOUT_MS } from '@/lib/constants';
-import { isRefundEligible } from '@/lib/refund';
 import useConversations from '@/hooks/useConversations';
 import useFirestoreCollectionListener from '@/hooks/useFirestoreCollectionListener';
 import useUsagePlan from '@/hooks/useUsagePlan';
+import { CANCELLATION_TIMEOUT_MS, REFUND_TIMEOUT_MS } from '@/lib/constants';
 import {
 	addMessageToConversation,
 	branchConversation,
@@ -534,14 +533,14 @@ export default function Chat() {
 	useEffect(() => {
 		if (cancelDeadline === null) {
 			setCancelSecondsLeft(0);
-			return;
+			return undefined;
 		}
 		const tick = () => {
 			const remaining = Math.max(0, Math.ceil((cancelDeadline - Date.now()) / 1000));
 			setCancelSecondsLeft(remaining);
 			return remaining;
 		};
-		if (tick() === 0) return;
+		if (tick() === 0) return undefined;
 		const id = setInterval(() => {
 			if (tick() === 0) clearInterval(id);
 		}, 200);
@@ -553,7 +552,7 @@ export default function Chat() {
 	useEffect(() => {
 		if (!isAiThinking || submittedAt === null) {
 			setRefundSecondsLeft(null);
-			return;
+			return undefined;
 		}
 		const tick = () => {
 			const remaining = Math.max(

@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { readFileSync } from 'fs';
 import path from 'path';
-import { describe, it, expect } from 'vitest';
+
+import { describe, expect, it } from 'vitest';
 
 const abiDir = path.resolve(import.meta.dirname);
 
