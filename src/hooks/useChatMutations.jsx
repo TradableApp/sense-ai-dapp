@@ -74,106 +74,20 @@ export async function createEncryptedPayloads(sessionKey, payload) {
 }
 
 /**
- * A centralized hook for managing all "write" transactions for chat and history.
- * It returns a collection of pre-configured `useMutation` hooks that components can use.
+ * Builds the centralized contract-error handler. Exported for testability.
+ * @param {boolean} isTestnet
+ * @param {Function} handleFaucetRequest
+ * @returns {(error: unknown, action: string) => void}
  */
-export default function useChatMutations() {
-	const activeAccount = useActiveAccount();
-	const activeWallet = useActiveWallet();
-	const chainId = activeWallet?.getChain()?.id;
-	const isTestnet = chainId === TESTNET_CHAIN_ID;
-	const queryClient = useQueryClient();
+export function buildErrorHandler(isTestnet, handleFaucetRequest) {
+	const tokenInterface = new ethers.Interface(AbleTokenABI.abi);
+	const agentInterface = new ethers.Interface(EVMAIAgentABI.abi);
+	const escrowInterface = new ethers.Interface(EVMAIAgentEscrowABI.abi);
 
-	const handleFaucetRequest = async () => {
-		toast.dismiss();
-
-		const loadingToastId = toast.loading('Requesting Testnet Tokens...');
-
-		const address = activeWallet?.getAccount()?.address;
-		const { success, txHash } = await requestTestTokens(address);
-		console.log('success', success, 'txHash', txHash);
-
-		toast.dismiss(loadingToastId);
-
-		if (success && txHash) {
-			// 1. Show initial Toast with Explorer Link
-			const sentToastId = toast.info('Tokens Sent', {
-				description: 'Waiting for network confirmation...',
-				action: {
-					label: 'View on Explorer',
-					onClick: () => window.open(`https://sepolia.basescan.org/tx/${txHash}`, '_blank'),
-				},
-				duration: 10000,
-			});
-
-			// 2. Poll for confirmation using Thirdweb RPC
-			try {
-				// Get the RPC client for the current chain
-				const rpcRequest = getRpcClient({ client, chain: activeWallet.getChain() });
-
-				let attempts = 0;
-				const maxAttempts = 30; // Try for ~60 seconds (2s interval)
-				while (attempts < maxAttempts) {
-					try {
-						// Check if receipt exists
-						// eslint-disable-next-line no-await-in-loop
-						const receipt = await eth_getTransactionReceipt(rpcRequest, { hash: txHash });
-						console.log('receipt', receipt);
-
-						if (receipt) {
-							toast.dismiss(sentToastId); // Dismiss the "Tokens Sent" info toast
-							toast.success('Tokens Received', {
-								description: '100 ABLE tokens have been added to your wallet.',
-							});
-
-							// Refresh balance
-							const queryKey = getTokenBalanceQueryKey(
-								chainId,
-								address,
-								CONTRACTS[chainId]?.token?.address,
-							);
-							// eslint-disable-next-line no-await-in-loop
-							await queryClient.invalidateQueries({ queryKey });
-
-							break;
-						}
-					} catch (e) {
-						// Receipt not found yet, ignore
-					}
-
-					// eslint-disable-next-line no-await-in-loop
-					await wait(2000);
-					attempts += 1;
-				}
-			} catch (error) {
-				console.error('Error waiting for faucet receipt:', error);
-			}
-		}
-	};
-
-	// We invalidate 'usagePlan' (Allowance, Pending Count) and 'tokenBalance' (Wallet funds)
-	// immediately after a transaction confirms, as these live on-chain and update instantly.
-	// Graph data ('conversations', 'messages', 'stuckRequests') is handled by useLiveResponse.jsx
-	const genericOnSuccess = (queryKeysToInvalidate = []) => {
-		queryClient.invalidateQueries({ queryKey: ['usagePlan'] });
-		queryClient.invalidateQueries({ queryKey: ['tokenBalance'] });
-
-		queryKeysToInvalidate.forEach(key => {
-			queryClient.invalidateQueries({ queryKey: [key] });
-		});
-	};
-
-	// A centralized onError handler that decodes specific contract errors.
-	const genericOnError = (error, action) => {
+	return function genericOnError(error, action) {
 		console.error(`Failed to ${action}:`, error);
 		const errorMessage = error?.message || '';
 
-		// Create Interfaces for decoding
-		const tokenInterface = new ethers.Interface(AbleTokenABI.abi);
-		const agentInterface = new ethers.Interface(EVMAIAgentABI.abi);
-		const escrowInterface = new ethers.Interface(EVMAIAgentEscrowABI.abi);
-
-		// Helper to check error against a specific interface
 		const isError = (iface, name) => {
 			const fragment = iface.getError(name);
 			return fragment && (errorMessage.includes(fragment.selector) || errorMessage.includes(name));
@@ -296,7 +210,6 @@ export default function useChatMutations() {
 		}
 
 		// --- Generic Fallback ---
-		// Handle user rejection specifically
 		if (errorMessage.includes('User rejected') || errorMessage.includes('User denied')) {
 			toast.warning('Transaction Cancelled', {
 				description: 'You rejected the request in your wallet. Please try again.',
@@ -308,6 +221,99 @@ export default function useChatMutations() {
 			description: 'An unexpected error occurred. Check console for details.',
 		});
 	};
+}
+
+/**
+ * A centralized hook for managing all "write" transactions for chat and history.
+ * It returns a collection of pre-configured `useMutation` hooks that components can use.
+ */
+export default function useChatMutations() {
+	const activeAccount = useActiveAccount();
+	const activeWallet = useActiveWallet();
+	const chainId = activeWallet?.getChain()?.id;
+	const isTestnet = chainId === TESTNET_CHAIN_ID;
+	const queryClient = useQueryClient();
+
+	const handleFaucetRequest = async () => {
+		toast.dismiss();
+
+		const loadingToastId = toast.loading('Requesting Testnet Tokens...');
+
+		const address = activeWallet?.getAccount()?.address;
+		const { success, txHash } = await requestTestTokens(address);
+		console.log('success', success, 'txHash', txHash);
+
+		toast.dismiss(loadingToastId);
+
+		if (success && txHash) {
+			// 1. Show initial Toast with Explorer Link
+			const sentToastId = toast.info('Tokens Sent', {
+				description: 'Waiting for network confirmation...',
+				action: {
+					label: 'View on Explorer',
+					onClick: () => window.open(`https://sepolia.basescan.org/tx/${txHash}`, '_blank'),
+				},
+				duration: 10000,
+			});
+
+			// 2. Poll for confirmation using Thirdweb RPC
+			try {
+				// Get the RPC client for the current chain
+				const rpcRequest = getRpcClient({ client, chain: activeWallet.getChain() });
+
+				let attempts = 0;
+				const maxAttempts = 30; // Try for ~60 seconds (2s interval)
+				while (attempts < maxAttempts) {
+					try {
+						// Check if receipt exists
+						// eslint-disable-next-line no-await-in-loop
+						const receipt = await eth_getTransactionReceipt(rpcRequest, { hash: txHash });
+						console.log('receipt', receipt);
+
+						if (receipt) {
+							toast.dismiss(sentToastId); // Dismiss the "Tokens Sent" info toast
+							toast.success('Tokens Received', {
+								description: '100 ABLE tokens have been added to your wallet.',
+							});
+
+							// Refresh balance
+							const queryKey = getTokenBalanceQueryKey(
+								chainId,
+								address,
+								CONTRACTS[chainId]?.token?.address,
+							);
+							// eslint-disable-next-line no-await-in-loop
+							await queryClient.invalidateQueries({ queryKey });
+
+							break;
+						}
+					} catch (e) {
+						// Receipt not found yet, ignore
+					}
+
+					// eslint-disable-next-line no-await-in-loop
+					await wait(2000);
+					attempts += 1;
+				}
+			} catch (error) {
+				console.error('Error waiting for faucet receipt:', error);
+			}
+		}
+	};
+
+	// We invalidate 'usagePlan' (Allowance, Pending Count) and 'tokenBalance' (Wallet funds)
+	// immediately after a transaction confirms, as these live on-chain and update instantly.
+	// Graph data ('conversations', 'messages', 'stuckRequests') is handled by useLiveResponse.jsx
+	const genericOnSuccess = (queryKeysToInvalidate = []) => {
+		queryClient.invalidateQueries({ queryKey: ['usagePlan'] });
+		queryClient.invalidateQueries({ queryKey: ['tokenBalance'] });
+
+		queryKeysToInvalidate.forEach(key => {
+			queryClient.invalidateQueries({ queryKey: [key] });
+		});
+	};
+
+	const genericOnError = buildErrorHandler(isTestnet, handleFaucetRequest);
 
 	// --- MUTATIONS ---
 

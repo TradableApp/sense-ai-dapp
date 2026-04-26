@@ -16,7 +16,9 @@ import { gql } from 'graphql-request';
 export const GET_USER_UPDATES_QUERY = gql`
 	query GetUserUpdates($owner: Bytes!, $lastSync: BigInt!, $limit: Int!, $offset: Int!) {
 		conversations(
-			where: { owner: $owner, lastMessageCreatedAt_gte: $lastSync, isDeleted: false }
+			# isDeleted: false is a permanent no-op — the subgraph never sets isDeleted=true
+		# (soft-delete is handled by the dApp via CID encoding, not an on-chain flag)
+		where: { owner: $owner, lastMessageCreatedAt_gte: $lastSync, isDeleted: false }
 			orderBy: lastMessageCreatedAt
 			orderDirection: desc
 			first: $limit

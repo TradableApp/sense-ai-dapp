@@ -49,6 +49,21 @@ describe('EVMAIAgent ABI — PromptSubmitted event', () => {
 	});
 });
 
+describe('AbleToken ABI — custom errors used by buildErrorHandler', () => {
+	const raw = loadAbi('AbleToken.json');
+	const abi = Array.isArray(raw) ? raw : raw.abi ?? [];
+
+	it('ERC20InsufficientBalance error exists', () => {
+		const entry = abi.find(x => x.type === 'error' && x.name === 'ERC20InsufficientBalance');
+		expect(entry).toBeDefined();
+	});
+
+	it('ERC20InsufficientAllowance error exists', () => {
+		const entry = abi.find(x => x.type === 'error' && x.name === 'ERC20InsufficientAllowance');
+		expect(entry).toBeDefined();
+	});
+});
+
 describe('EVMAIAgentEscrow ABI — cancelPrompt and processRefund', () => {
 	const raw = loadAbi('EVMAIAgentEscrow.json');
 	const abi = Array.isArray(raw) ? raw : raw.abi ?? [];
