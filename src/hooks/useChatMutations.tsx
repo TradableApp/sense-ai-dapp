@@ -101,10 +101,15 @@ export async function createEncryptedPayloads(
 export function buildErrorHandler(
 	isTestnet: boolean,
 	handleFaucetRequest: () => Promise<void>,
-): (error: unknown, action: string) => void {
+): (_error: unknown, _action: string) => void {
 	return function genericOnError(error: unknown, action: string): void {
 		console.error(`Failed to ${action}:`, error);
-		const errorMessage = (error instanceof Error ? error.message : String(error)) || '';
+		const errorMessage =
+			(error instanceof Error
+				? error.message
+				: typeof error === 'object' && error !== null && 'message' in error
+					? String((error as { message: unknown }).message)
+					: String(error)) || '';
 
 		const isError = (abi: Parameters<typeof getAbiItem>[0]['abi'], name: string) => {
 			const item = getAbiItem({ abi, name });
@@ -289,7 +294,9 @@ export default function useChatMutations() {
 					try {
 						// Check if receipt exists
 						// eslint-disable-next-line no-await-in-loop
-						const receipt = await eth_getTransactionReceipt(rpcRequest, { hash: txHash as `0x${string}` });
+						const receipt = await eth_getTransactionReceipt(rpcRequest, {
+							hash: txHash as `0x${string}`,
+						});
 						console.log('receipt', receipt);
 
 						if (receipt) {
