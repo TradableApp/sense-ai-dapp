@@ -5,7 +5,15 @@ import { getContract, prepareContractCall, sendAndConfirmTransaction } from 'thi
 import { useActiveAccount, useActiveWallet } from 'thirdweb/react';
 // eslint-disable-next-line camelcase
 import { eth_getTransactionReceipt, getRpcClient } from 'thirdweb/rpc';
-import { decodeEventLog, getAbiItem, toEventSelector, toFunctionSelector, toHex, type AbiEvent, type AbiFunction } from 'viem';
+import {
+	type AbiEvent,
+	type AbiFunction,
+	decodeEventLog,
+	getAbiItem,
+	toEventSelector,
+	toFunctionSelector,
+	toHex,
+} from 'viem';
 
 import { Button } from '@/components/ui/button';
 import { CONTRACTS, TESTNET_CHAIN_ID } from '@/config/contracts';
@@ -19,7 +27,11 @@ import { wait } from '@/lib/utils';
 
 import { getTokenBalanceQueryKey } from './useTokenBalance';
 
-type EvmLog = { address: `0x${string}`; topics: [`0x${string}`, ...`0x${string}`[]]; data: `0x${string}` };
+type EvmLog = {
+	address: `0x${string}`;
+	topics: [`0x${string}`, ...`0x${string}`[]];
+	data: `0x${string}`;
+};
 
 /**
  * A helper to remove the '0x' and '04' prefixes from an uncompressed public key,
@@ -89,7 +101,10 @@ export function buildErrorHandler(isTestnet, handleFaucetRequest) {
 		const isError = (abi: Parameters<typeof getAbiItem>[0]['abi'], name: string) => {
 			const item = getAbiItem({ abi, name });
 			if (!item) return false;
-			return errorMessage.includes(toFunctionSelector(item as AbiFunction)) || errorMessage.includes(name);
+			return (
+				errorMessage.includes(toFunctionSelector(item as AbiFunction)) ||
+				errorMessage.includes(name)
+			);
 		};
 
 		// --- Token Errors ---
@@ -370,7 +385,9 @@ export default function useChatMutations() {
 			});
 			console.log('transactionReceipt', transactionReceipt);
 
-			const promptSubmittedTopic = toEventSelector(getAbiItem({ abi: contractConfig.agent.abi, name: 'PromptSubmitted' }) as AbiEvent);
+			const promptSubmittedTopic = toEventSelector(
+				getAbiItem({ abi: contractConfig.agent.abi, name: 'PromptSubmitted' }) as AbiEvent,
+			);
 			const logs = transactionReceipt.logs as unknown as EvmLog[];
 			const log = logs.find(
 				l =>
@@ -379,7 +396,11 @@ export default function useChatMutations() {
 			);
 
 			if (!log) throw new Error('PromptSubmitted event log not found in transaction receipt.');
-			const { args } = decodeEventLog({ abi: contractConfig.agent.abi, topics: log.topics, data: log.data }) as unknown as {
+			const { args } = decodeEventLog({
+				abi: contractConfig.agent.abi,
+				topics: log.topics,
+				data: log.data,
+			}) as unknown as {
 				args: { conversationId: bigint; promptMessageId: bigint; answerMessageId: bigint };
 			};
 
@@ -450,7 +471,9 @@ export default function useChatMutations() {
 			});
 			console.log('transactionReceipt', transactionReceipt);
 
-			const eventTopic = toEventSelector(getAbiItem({ abi: contractConfig.agent.abi, name: 'RegenerationRequested' }) as AbiEvent);
+			const eventTopic = toEventSelector(
+				getAbiItem({ abi: contractConfig.agent.abi, name: 'RegenerationRequested' }) as AbiEvent,
+			);
 			const logs = transactionReceipt.logs as unknown as EvmLog[];
 			const log = logs.find(
 				l =>
@@ -458,7 +481,11 @@ export default function useChatMutations() {
 					l.topics[0] === eventTopic,
 			);
 			if (!log) throw new Error('RegenerationRequested event log not found.');
-			const { args } = decodeEventLog({ abi: contractConfig.agent.abi, topics: log.topics, data: log.data }) as unknown as {
+			const { args } = decodeEventLog({
+				abi: contractConfig.agent.abi,
+				topics: log.topics,
+				data: log.data,
+			}) as unknown as {
 				args: { answerMessageId: bigint };
 			};
 			return { newAnswerMessageId: args.answerMessageId.toString() };
@@ -513,7 +540,9 @@ export default function useChatMutations() {
 			});
 			console.log('transactionReceipt', transactionReceipt);
 
-			const eventTopic = toEventSelector(getAbiItem({ abi: contractConfig.agent.abi, name: 'BranchRequested' }) as AbiEvent);
+			const eventTopic = toEventSelector(
+				getAbiItem({ abi: contractConfig.agent.abi, name: 'BranchRequested' }) as AbiEvent,
+			);
 			const logs = transactionReceipt.logs as unknown as EvmLog[];
 			const log = logs.find(
 				l =>
@@ -521,7 +550,11 @@ export default function useChatMutations() {
 					l.topics[0] === eventTopic,
 			);
 			if (!log) throw new Error('BranchRequested event log not found.');
-			const { args } = decodeEventLog({ abi: contractConfig.agent.abi, topics: log.topics, data: log.data }) as unknown as {
+			const { args } = decodeEventLog({
+				abi: contractConfig.agent.abi,
+				topics: log.topics,
+				data: log.data,
+			}) as unknown as {
 				args: { newConversationId: bigint };
 			};
 			return { newConversationId: args.newConversationId.toString() };

@@ -1,4 +1,11 @@
-import type { Activity, Conversation, Message, Payment, PromptRequest, SearchDelta } from './generated';
+import type {
+	Activity,
+	Conversation,
+	Message,
+	Payment,
+	PromptRequest,
+	SearchDelta,
+} from './generated';
 
 // --- GetUserUpdates ---
 
@@ -13,8 +20,14 @@ type SearchDeltaFields = Pick<SearchDelta, 'id' | 'searchDeltaCID'>;
 type MessageFields = Pick<Message, 'id' | 'messageCID' | 'createdAt'> & {
 	searchDelta: SearchDeltaFields | null;
 };
-type PromptRequestFields = Pick<PromptRequest, 'id' | 'promptMessageId' | 'encryptedPayload' | 'isCancelled' | 'isRefunded' | 'createdAt'>;
-type ConversationFields = Pick<Conversation, 'id' | 'conversationCID' | 'conversationMetadataCID' | 'lastMessageCreatedAt'> & {
+type PromptRequestFields = Pick<
+	PromptRequest,
+	'id' | 'promptMessageId' | 'encryptedPayload' | 'isCancelled' | 'isRefunded' | 'createdAt'
+>;
+type ConversationFields = Pick<
+	Conversation,
+	'id' | 'conversationCID' | 'conversationMetadataCID' | 'lastMessageCreatedAt'
+> & {
 	messages: MessageFields[];
 	promptRequests: PromptRequestFields[];
 };

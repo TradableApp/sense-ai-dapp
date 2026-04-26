@@ -1,10 +1,7 @@
 import type { CodegenConfig } from '@graphql-codegen/cli';
 
 const config: CodegenConfig = {
-	schema: [
-		{ 'src/lib/graph/schema.graphql': {} },
-		{ 'scalar BigInt\nscalar Bytes': {} },
-	],
+	schema: [{ 'src/lib/graph/schema.graphql': {} }, { 'scalar BigInt\nscalar Bytes': {} }],
 	generates: {
 		'src/lib/graph/generated.ts': {
 			plugins: ['typescript'],

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { formatEther } from 'viem';
 import { getContract, readContract } from 'thirdweb';
 import { useActiveWallet } from 'thirdweb/react';
+import { formatEther } from 'viem';
 
 import { CONTRACTS } from '@/config/contracts';
 import { client } from '@/config/thirdweb';

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { parseUnits } from 'viem';
 import { AlertCircle, Info, Loader2, Trash2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -10,6 +9,7 @@ import { getContract, prepareContractCall } from 'thirdweb';
 import { useActiveWallet, useSendAndConfirmTransaction } from 'thirdweb/react';
 // eslint-disable-next-line camelcase
 import { eth_getTransactionReceipt, getRpcClient } from 'thirdweb/rpc';
+import { parseUnits } from 'viem';
 import { z } from 'zod';
 
 import {

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { useQueryClient } from '@tanstack/react-query';
-import { getAbiItem } from 'viem';
-import { formatAbiItem } from 'viem/utils';
 import { useSelector } from 'react-redux';
 import { getContract, prepareEvent } from 'thirdweb';
 import { useActiveWallet, useContractEvents } from 'thirdweb/react';
+import { getAbiItem } from 'viem';
+import { formatAbiItem } from 'viem/utils';
 
 import { CONTRACTS } from '@/config/contracts';
 import { client, deploymentChain } from '@/config/thirdweb';

@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
-import { formatEther } from 'viem';
 import { GraphQLClient } from 'graphql-request';
 import {
 	Activity,
@@ -13,10 +12,14 @@ import {
 	Split,
 	Trash2,
 } from 'lucide-react';
+import { formatEther } from 'viem';
 
 import { useSession } from '@/features/auth/SessionProvider';
 import { GET_RECENT_ACTIVITY_QUERY } from '@/lib/graph/queries';
-import type { GetRecentActivityQuery, GetRecentActivityQueryVariables } from '@/lib/graph/query-types';
+import type {
+	GetRecentActivityQuery,
+	GetRecentActivityQueryVariables,
+} from '@/lib/graph/query-types';
 
 const THE_GRAPH_API_URL = import.meta.env.VITE_THE_GRAPH_API_URL;
 const graphQLClient = new GraphQLClient(THE_GRAPH_API_URL);
@@ -43,8 +46,14 @@ export default function useRecentActivity(limit = 10) {
 		queryFn: async () => {
 			if (!ownerAddress) return [];
 
-			const variables: GetRecentActivityQueryVariables = { owner: ownerAddress.toLowerCase(), limit };
-			const data = await graphQLClient.request<GetRecentActivityQuery>(GET_RECENT_ACTIVITY_QUERY, variables);
+			const variables: GetRecentActivityQueryVariables = {
+				owner: ownerAddress.toLowerCase(),
+				limit,
+			};
+			const data = await graphQLClient.request<GetRecentActivityQuery>(
+				GET_RECENT_ACTIVITY_QUERY,
+				variables,
+			);
 
 			return (data.activities || []).map(activity => {
 				// If type is not found, fallback to Activity icon

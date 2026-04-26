@@ -8,8 +8,8 @@
  *      decrypting it, and then performing a bulk update to the local IndexedDB. This provides a fast, offline-first experience.
  */
 
-import { hexToBytes } from 'viem';
 import { GraphQLClient } from 'graphql-request';
+import { hexToBytes } from 'viem';
 
 import { decryptData, encryptData } from './crypto';
 import db from './db';
@@ -157,7 +157,10 @@ async function fetchUpdatesFromTheGraph(ownerAddress, lastSync) {
 			offset: 0,
 		};
 
-		const data = await graphQLClient.request<GetUserUpdatesQuery>(GET_USER_UPDATES_QUERY, variables);
+		const data = await graphQLClient.request<GetUserUpdatesQuery>(
+			GET_USER_UPDATES_QUERY,
+			variables,
+		);
 		console.log('[syncService] Raw Graph Data:', data.conversations);
 
 		// Convert BigInt strings from The Graph response into Numbers (MS) for frontend consistency.

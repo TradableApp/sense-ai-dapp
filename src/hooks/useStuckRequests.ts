@@ -7,7 +7,10 @@ import { CONTRACTS } from '@/config/contracts';
 import { client } from '@/config/thirdweb';
 import { REFUND_TIMEOUT_MS } from '@/lib/constants';
 import { GET_STUCK_PAYMENTS_QUERY } from '@/lib/graph/queries';
-import type { GetStuckPaymentsQuery, GetStuckPaymentsQueryVariables } from '@/lib/graph/query-types';
+import type {
+	GetStuckPaymentsQuery,
+	GetStuckPaymentsQueryVariables,
+} from '@/lib/graph/query-types';
 
 const THE_GRAPH_API_URL = import.meta.env.VITE_THE_GRAPH_API_URL;
 const graphQLClient = new GraphQLClient(THE_GRAPH_API_URL);
@@ -27,7 +30,10 @@ export default function useStuckRequests() {
 
 			try {
 				const variables: GetStuckPaymentsQueryVariables = { user: ownerAddress.toLowerCase() };
-				const data = await graphQLClient.request<GetStuckPaymentsQuery>(GET_STUCK_PAYMENTS_QUERY, variables);
+				const data = await graphQLClient.request<GetStuckPaymentsQuery>(
+					GET_STUCK_PAYMENTS_QUERY,
+					variables,
+				);
 				const candidates = data.payments || [];
 				console.log('candidates', candidates);
 
