@@ -131,7 +131,7 @@ export const ReasoningContent = memo(({ className, hidden, reasoningSteps, sourc
 		const currentSteps = reasoningSteps || [];
 		const simulateReasoningTyping = step => {
 			const targetDescription = step.description || '';
-			if (!targetDescription) return;
+			if (!targetDescription) return undefined;
 			setAnimatedDescriptions(prev => ({ ...prev, [step.title]: '' }));
 			const timerId = setTimeout(() => {
 				let index = 0;

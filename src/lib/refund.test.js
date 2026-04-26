@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { REFUND_TIMEOUT_MS } from './constants';
-import { isRefundEligible } from './refund';
+import isRefundEligible from './refund';
 
 describe('isRefundEligible', () => {
 	const now = 1_700_000_000_000;

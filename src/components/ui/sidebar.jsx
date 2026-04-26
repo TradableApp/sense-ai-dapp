@@ -74,7 +74,7 @@ const SidebarProvider = React.forwardRef(
 
 		// Helper to toggle the sidebar.
 		const toggleSidebar = React.useCallback(
-			() => (isMobile ? setOpenMobile(open => !open) : setOpen(open => !open)),
+			() => (isMobile ? setOpenMobile(prevOpen => !prevOpen) : setOpen(prevOpen => !prevOpen)),
 			[isMobile, setOpen, setOpenMobile],
 		);
 
@@ -481,11 +481,7 @@ const SidebarMenuButton = React.forwardRef(
 			return button;
 		}
 
-		if (typeof tooltip === 'string') {
-			tooltip = {
-				children: tooltip,
-			};
-		}
+		const tooltipProps = typeof tooltip === 'string' ? { children: tooltip } : tooltip;
 
 		return (
 			<Tooltip>
@@ -494,7 +490,7 @@ const SidebarMenuButton = React.forwardRef(
 					side="right"
 					align="center"
 					hidden={state !== 'collapsed' || isMobile}
-					{...tooltip}
+					{...tooltipProps}
 				/>
 			</Tooltip>
 		);

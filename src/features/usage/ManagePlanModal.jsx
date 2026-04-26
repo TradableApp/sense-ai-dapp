@@ -376,7 +376,6 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 							});
 
 							// Refresh balance
-							// eslint-disable-next-line no-await-in-loop
 							const queryKey = getTokenBalanceQueryKey(
 								chainId,
 								address,

@@ -1,4 +1,3 @@
-/* eslint-disable import/prefer-default-export */
 import { decryptData, encryptData } from './crypto';
 import db from './db';
 // import simulateOracleProcess from './mockApi';

@@ -6,7 +6,6 @@ import {
 	ChevronLeftIcon,
 	ChevronRightIcon,
 	CopyIcon,
-	Mic,
 	MoreHorizontal,
 	RotateCcwIcon,
 	Share,

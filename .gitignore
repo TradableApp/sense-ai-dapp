@@ -51,3 +51,9 @@ hosting.*.cache
 ._*
 **/._.*
 *.tmp
+
+# Local agent orchestration
+.tmux-devfleet/
+.dmux/
+.dmux-hooks/
+.dmux-session/

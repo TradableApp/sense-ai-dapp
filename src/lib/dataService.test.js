@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import db from '@/lib/db';
+
 import { deriveKeyFromEntropy, encryptData } from './crypto';
+import { fetchAndCacheConversations } from './dataService';
 
 vi.mock('@/lib/db', () => {
 	const conversations = {
@@ -19,9 +22,6 @@ vi.mock('@/lib/searchService', () => ({
 	indexConversations: vi.fn(),
 	search: vi.fn(),
 }));
-
-import db from '@/lib/db';
-import { fetchAndCacheConversations } from './dataService';
 
 const ENTROPY = 'test-sig-0xdeadbeef';
 const OWNER = '0xabc123def456abc123def456abc123def456abc1';

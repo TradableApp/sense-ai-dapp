@@ -13,7 +13,6 @@ import { gql } from 'graphql-request';
  * @param {number} $limit - The maximum number of conversations to fetch.
  * @param {number} $offset - The number of conversations to skip (for pagination).
  */
-// eslint-disable-next-line import/prefer-default-export
 export const GET_USER_UPDATES_QUERY = gql`
 	query GetUserUpdates($owner: Bytes!, $lastSync: BigInt!, $limit: Int!, $offset: Int!) {
 		conversations(

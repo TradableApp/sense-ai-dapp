@@ -101,9 +101,6 @@ function parseIncompleteMarkdown(text) {
 	const inlineCodeMatch = result.match(inlineCodePattern);
 	if (inlineCodeMatch) {
 		// Check if we're dealing with a code block (triple backticks)
-		const hasCodeBlockStart = result.includes('```');
-		const codeBlockPattern = /```[\s\S]*?```/g;
-		const completeCodeBlocks = (result.match(codeBlockPattern) || []).length;
 		const allTripleBackticks = (result.match(/```/g) || []).length;
 		// If we have an odd number of ``` sequences, we're inside an incomplete code block
 		// In this case, don't complete inline code
@@ -111,14 +108,14 @@ function parseIncompleteMarkdown(text) {
 		if (!insideIncompleteCodeBlock) {
 			// Count the number of single backticks that are NOT part of triple backticks
 			let singleBacktickCount = 0;
-			for (let i = 0; i < result.length; i++) {
+			for (let i = 0; i < result.length; i += 1) {
 				if (result[i] === '`') {
 					// Check if this backtick is part of a triple backtick sequence
 					const isTripleStart = result.substring(i, i + 3) === '```';
 					const isTripleMiddle = i > 0 && result.substring(i - 1, i + 2) === '```';
 					const isTripleEnd = i > 1 && result.substring(i - 2, i + 1) === '```';
 					if (!(isTripleStart || isTripleMiddle || isTripleEnd)) {
-						singleBacktickCount++;
+						singleBacktickCount += 1;
 					}
 				}
 			}
