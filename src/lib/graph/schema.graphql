@@ -71,3 +71,15 @@ type SpendingLimit @entity(immutable: false) {
 	expiresAt: BigInt!
 	updatedAt: BigInt!
 }
+
+# --- Activity Feed ---
+
+# Immutable: id = txHash-logIndex
+type Activity @entity(immutable: true) {
+	id: ID!
+	user: Bytes!
+	type: String!
+	amount: BigInt!
+	timestamp: BigInt!
+	transactionHash: Bytes!
+}

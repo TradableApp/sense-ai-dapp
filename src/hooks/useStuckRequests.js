@@ -5,6 +5,7 @@ import { useActiveWallet } from 'thirdweb/react';
 
 import { CONTRACTS } from '@/config/contracts';
 import { client } from '@/config/thirdweb';
+import { REFUND_TIMEOUT_MS } from '@/lib/constants';
 import { GET_STUCK_PAYMENTS_QUERY } from '@/lib/graph/queries';
 
 const THE_GRAPH_API_URL = import.meta.env.VITE_THE_GRAPH_API_URL;
@@ -66,8 +67,7 @@ export default function useStuckRequests() {
 							}
 
 							const createdAtMs = Number(p.createdAt) * 1000;
-							const ONE_HOUR = 60 * 60 * 1000;
-							const isRefundable = Date.now() > createdAtMs + ONE_HOUR;
+							const isRefundable = Date.now() > createdAtMs + REFUND_TIMEOUT_MS;
 
 							return {
 								...p,

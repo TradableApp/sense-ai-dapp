@@ -42,7 +42,7 @@ function cleanPublicKey(publicKey) {
  * @param {object} payload The plaintext JavaScript object to encrypt for the TEE.
  * @returns {Promise<{encryptedPayload: string, roflEncryptedKey: string}>}
  */
-async function createEncryptedPayloads(sessionKey, payload) {
+export async function createEncryptedPayloads(sessionKey, payload) {
 	// 1. Symmetrically encrypt the main payload for the TEE using the user's session key.
 	const encryptedPayloadString = await encryptData(sessionKey, payload);
 	const encryptedPayloadBytes = ethers.toUtf8Bytes(encryptedPayloadString);

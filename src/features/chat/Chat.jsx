@@ -36,6 +36,8 @@ import { Button } from '@/components/ui/button';
 import { db } from '@/config/firebase';
 import { useSession } from '@/features/auth/SessionProvider';
 import useChatMutations from '@/hooks/useChatMutations';
+import { CANCELLATION_TIMEOUT_MS, REFUND_TIMEOUT_MS } from '@/lib/constants';
+import { isRefundEligible } from '@/lib/refund';
 import useConversations from '@/hooks/useConversations';
 import useFirestoreCollectionListener from '@/hooks/useFirestoreCollectionListener';
 import useUsagePlan from '@/hooks/useUsagePlan';
@@ -150,6 +152,7 @@ export default function Chat() {
 		regenerateMutation,
 		branchConversationMutation,
 		cancelPromptMutation,
+		processRefundMutation,
 	} = useChatMutations();
 
 	const [animatedContents, setAnimatedContents] = useState({});
@@ -159,6 +162,9 @@ export default function Chat() {
 	const [editingMessageId, setEditingMessageId] = useState(null);
 	const prevMessageCountRef = useRef(0);
 	const [feedbackData, setFeedbackData] = useState({});
+	const [cancelDeadline, setCancelDeadline] = useState(null);
+	const [cancelSecondsLeft, setCancelSecondsLeft] = useState(0);
+	const [refundSecondsLeft, setRefundSecondsLeft] = useState(null);
 
 	const {
 		register,
@@ -519,12 +525,56 @@ export default function Chat() {
 	const lastMessage = messagesToDisplay.at(-1);
 	const isAiThinking = lastMessage?.role === 'assistant' && !lastMessage.content;
 
+	// Clear cancel deadline when answer arrives or thinking stops
+	useEffect(() => {
+		if (!isAiThinking) setCancelDeadline(null);
+	}, [isAiThinking]);
+
+	// Cancel countdown: compares Date.now() against deadline for tab-background safety
+	useEffect(() => {
+		if (cancelDeadline === null) {
+			setCancelSecondsLeft(0);
+			return;
+		}
+		const tick = () => {
+			const remaining = Math.max(0, Math.ceil((cancelDeadline - Date.now()) / 1000));
+			setCancelSecondsLeft(remaining);
+			return remaining;
+		};
+		if (tick() === 0) return;
+		const id = setInterval(() => {
+			if (tick() === 0) clearInterval(id);
+		}, 200);
+		return () => clearInterval(id);
+	}, [cancelDeadline]);
+
+	// Refund eligibility countdown
+	const submittedAt = lastMessage?.createdAt ?? null;
+	useEffect(() => {
+		if (!isAiThinking || submittedAt === null) {
+			setRefundSecondsLeft(null);
+			return;
+		}
+		const tick = () => {
+			const remaining = Math.max(
+				0,
+				Math.ceil((submittedAt + REFUND_TIMEOUT_MS - Date.now()) / 1000),
+			);
+			setRefundSecondsLeft(remaining);
+		};
+		tick();
+		const id = setInterval(tick, 1000);
+		return () => clearInterval(id);
+	}, [isAiThinking, submittedAt]);
+
 	const handleCancelPrompt = () => {
 		if (lastMessage?.id) {
 			cancelPromptMutation.mutate(
 				{ answerMessageId: lastMessage.id },
 				{
 					onSuccess: async () => {
+						setCancelDeadline(null);
+
 						try {
 							// 1. Clean up IndexedDB so it doesn't reappear on refresh
 							await deleteMessageFromConversation(
@@ -540,7 +590,6 @@ export default function Chat() {
 
 						// 2. Update Redux to reflect change immediately
 						const newMessages = activeConversationMessages.filter(m => m.id !== lastMessage.id);
-						console.log('newMessages', newMessages);
 						dispatch(setActiveConversationMessages(newMessages));
 
 						// This ensures the UI renders the previous history instead of looking for the deleted ID.
@@ -599,6 +648,7 @@ export default function Chat() {
 						dispatch(setActiveConversationId(newConversation.id));
 						dispatch(setActiveConversationMessages([finalUserMessage, finalAiMessage]));
 					}
+					setCancelDeadline(Date.now() + CANCELLATION_TIMEOUT_MS);
 					reset();
 				},
 				// onError: () => {},
@@ -797,6 +847,32 @@ export default function Chat() {
 							disabled={isDisabled}
 							{...register('prompt')}
 						/>
+						{isAiThinking && refundSecondsLeft !== null && (
+							<div className="flex items-center justify-end px-3 py-1.5 text-xs text-muted-foreground">
+								{refundSecondsLeft > 0 ? (
+									<span>
+										Refund eligible in {Math.floor(refundSecondsLeft / 60)}m{' '}
+										{refundSecondsLeft % 60}s
+									</span>
+								) : (
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										onClick={() =>
+											lastMessage?.id &&
+											processRefundMutation.mutate({ answerMessageId: lastMessage.id })
+										}
+										disabled={processRefundMutation.isPending}
+									>
+										{processRefundMutation.isPending && (
+											<Loader2 className="size-3 animate-spin mr-1" />
+										)}
+										Request refund
+									</Button>
+								)}
+							</div>
+						)}
 						<PromptInputToolbar>
 							<PromptInputButton disabled>
 								<MicIcon size={16} />
@@ -806,7 +882,11 @@ export default function Chat() {
 								<PromptInputCancel
 									onClick={handleCancelPrompt}
 									isLoading={cancelPromptMutation.isPending}
-								/>
+									disabled={cancelPromptMutation.isPending || cancelSecondsLeft === 0}
+									size={cancelSecondsLeft > 0 ? 'default' : 'icon'}
+								>
+									{cancelSecondsLeft > 0 ? `Cancel (${cancelSecondsLeft}s)` : undefined}
+								</PromptInputCancel>
 							) : (
 								<PromptInputSubmit disabled={!isValid || isInputDisabled} status={submitStatus} />
 							)}
