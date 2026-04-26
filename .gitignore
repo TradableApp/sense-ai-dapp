@@ -52,6 +52,11 @@ hosting.*.cache
 **/._.*
 *.tmp
 
+# Claude Code — local only
+.claude/settings.local.json
+.claude/memory/
+.mcp.json
+
 # Local agent orchestration
 .tmux-devfleet/
 .dmux/
