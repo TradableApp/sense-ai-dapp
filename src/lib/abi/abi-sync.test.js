@@ -10,7 +10,8 @@ function loadAbi(filename) {
 }
 
 describe('EVMAIAgent ABI — PromptSubmitted event', () => {
-	const abi = loadAbi('EVMAIAgent.json');
+	const raw = loadAbi('EVMAIAgent.json');
+	const abi = Array.isArray(raw) ? raw : raw.abi ?? [];
 
 	const event = abi.find(x => x.type === 'event' && x.name === 'PromptSubmitted');
 
