@@ -57,6 +57,7 @@ hosting.*.cache
 .claude/memory/
 .mcp.json
 
+# Local agent orchestration
 .tmux-devfleet/
 .dmux/
 .dmux-hooks/

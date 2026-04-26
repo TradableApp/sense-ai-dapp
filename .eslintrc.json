@@ -84,7 +84,10 @@
 				"jsx": "never"
 			}
 		],
-		"import/no-extraneous-dependencies": ["error", { "devDependencies": ["**/*vite.config.js"] }]
+		"import/no-extraneous-dependencies": [
+			"error",
+			{ "devDependencies": ["**/*vite.config.js", "**/*vitest.config.js"] }
+		]
 	},
 	"overrides": [
 		{

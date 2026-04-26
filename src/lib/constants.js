@@ -1,0 +1,2 @@
+export const CANCELLATION_TIMEOUT_MS = 3_000;
+export const REFUND_TIMEOUT_MS = 3_600_000;

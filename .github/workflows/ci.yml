@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  ci:
+    name: Lint, Test & Build
+    runs-on: ubuntu-latest
+    env:
+      VITE_CHAIN_ID: '84532'
+      VITE_TOKEN_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000000'
+      VITE_AGENT_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000000'
+      VITE_ESCROW_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000000'
+      VITE_ORACLE_PUBLIC_KEY: '0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Test
+        run: bun run test
+
+      - name: Build (testnet)
+        run: bun run build:testnet

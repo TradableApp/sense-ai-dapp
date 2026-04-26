@@ -1,5 +1,5 @@
+import { Loader2, ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { ShieldCheck, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import useUsagePlan from '@/hooks/useUsagePlan';

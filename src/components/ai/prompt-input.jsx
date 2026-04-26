@@ -34,17 +34,7 @@ export function PromptInput({ errors, className, ...props }) {
 }
 
 export const PromptInputTextarea = forwardRef(
-	(
-		{
-			onChange,
-			className,
-			placeholder = 'What would you like to know?',
-			minHeight = 48,
-			maxHeight = 164,
-			...props
-		},
-		ref,
-	) => {
+	({ onChange, className, placeholder = 'What would you like to know?', ...props }, ref) => {
 		const handleKeyDown = e => {
 			if (e.key === 'Enter') {
 				if (e.shiftKey) {
