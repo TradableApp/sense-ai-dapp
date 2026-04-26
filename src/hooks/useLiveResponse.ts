@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { useQueryClient } from '@tanstack/react-query';
-import { ethers } from 'ethers';
+import { getAbiItem } from 'viem';
+import { formatAbiItem } from 'viem/utils';
 import { useSelector } from 'react-redux';
 import { getContract, prepareEvent } from 'thirdweb';
 import { useActiveWallet, useContractEvents } from 'thirdweb/react';
@@ -74,7 +75,6 @@ export default function useLiveResponse() {
 		const events = [];
 		if (contractConfig?.agent?.abi) {
 			try {
-				const iface = new ethers.Interface(contractConfig.agent.abi);
 				const eventsToWatch = [
 					'PromptSubmitted',
 					'AnswerMessageAdded',
@@ -85,9 +85,9 @@ export default function useLiveResponse() {
 					'ConversationMetadataUpdated',
 				];
 				eventsToWatch.forEach(name => {
-					const fragment = iface.getEvent(name);
-					if (fragment) {
-						events.push(prepareEvent({ signature: fragment.format('full') }));
+					const item = getAbiItem({ abi: contractConfig.agent.abi, name });
+					if (item) {
+						events.push(prepareEvent({ signature: formatAbiItem(item) }));
 					}
 				});
 			} catch (error) {
@@ -101,7 +101,6 @@ export default function useLiveResponse() {
 		const events = [];
 		if (contractConfig?.escrow?.abi) {
 			try {
-				const iface = new ethers.Interface(contractConfig.escrow.abi);
 				const eventsToWatch = [
 					'PromptCancelled',
 					'PaymentRefunded',
@@ -109,9 +108,9 @@ export default function useLiveResponse() {
 					'SpendingLimitCancelled',
 				];
 				eventsToWatch.forEach(name => {
-					const fragment = iface.getEvent(name);
-					if (fragment) {
-						events.push(prepareEvent({ signature: fragment.format('full') }));
+					const item = getAbiItem({ abi: contractConfig.escrow.abi, name });
+					if (item) {
+						events.push(prepareEvent({ signature: formatAbiItem(item) }));
 					}
 				});
 			} catch (error) {

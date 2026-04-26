@@ -8,12 +8,13 @@
  *      decrypting it, and then performing a bulk update to the local IndexedDB. This provides a fast, offline-first experience.
  */
 
-import { ethers } from 'ethers';
+import { hexToBytes } from 'viem';
 import { GraphQLClient } from 'graphql-request';
 
 import { decryptData, encryptData } from './crypto';
 import db from './db';
 import { GET_USER_UPDATES_QUERY } from './graph/queries';
+import type { GetUserUpdatesQuery, GetUserUpdatesQueryVariables } from './graph/query-types';
 import { mergeSearchIndexDeltas } from './searchService';
 
 // The Graph endpoint is configured via environment variables for flexibility between environments.
@@ -149,14 +150,14 @@ async function fetchUpdatesFromTheGraph(ownerAddress, lastSync) {
 		const lastSyncSeconds = Math.floor(lastSync / 1000);
 
 		// The query variables are passed to the GraphQL client.
-		const variables = {
+		const variables: GetUserUpdatesQueryVariables = {
 			owner: ownerAddress.toLowerCase(),
 			lastSync: lastSyncSeconds.toString(), // Send SECONDS
 			limit: 250,
 			offset: 0,
 		};
 
-		const data = await graphQLClient.request(GET_USER_UPDATES_QUERY, variables);
+		const data = await graphQLClient.request<GetUserUpdatesQuery>(GET_USER_UPDATES_QUERY, variables);
 		console.log('[syncService] Raw Graph Data:', data.conversations);
 
 		// Convert BigInt strings from The Graph response into Numbers (MS) for frontend consistency.
@@ -292,7 +293,7 @@ export default async function syncWithRemote(sessionKey, ownerAddress) {
 			const promptRequestPromises = (conv.promptRequests || []).map(async req => {
 				try {
 					// Convert Hex (0x...) to UTF-8 String to recover "iv.encryptedData" format
-					const encryptedString = ethers.toUtf8String(req.encryptedPayload);
+					const encryptedString = new TextDecoder().decode(hexToBytes(req.encryptedPayload));
 					const payload = await decryptData(sessionKey, encryptedString);
 
 					// payload is { promptText: "...", ... }

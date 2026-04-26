@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ethers } from 'ethers';
+import { parseUnits } from 'viem';
 import { AlertCircle, Info, Loader2, Trash2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -328,7 +328,7 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 	});
 
 	const onSubmit = data => {
-		const limitInWei = ethers.parseUnits(data.limit.toString(), 18);
+		const limitInWei = parseUnits(data.limit.toString(), 18);
 		const nowInSeconds = Math.floor(Date.now() / 1000);
 		const expiresAtTimestamp = nowInSeconds + data.days * 24 * 60 * 60;
 		setPlanMutation.mutate({ limitInWei, expiresAtTimestamp });

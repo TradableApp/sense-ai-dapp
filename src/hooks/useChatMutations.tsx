@@ -1,11 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import ethCrypto from 'eth-crypto';
-import { ethers } from 'ethers';
 import { toast } from 'sonner';
 import { getContract, prepareContractCall, sendAndConfirmTransaction } from 'thirdweb';
 import { useActiveAccount, useActiveWallet } from 'thirdweb/react';
 // eslint-disable-next-line camelcase
 import { eth_getTransactionReceipt, getRpcClient } from 'thirdweb/rpc';
+import { decodeEventLog, getAbiItem, toEventSelector, toFunctionSelector, toHex, type AbiEvent, type AbiFunction } from 'viem';
 
 import { Button } from '@/components/ui/button';
 import { CONTRACTS, TESTNET_CHAIN_ID } from '@/config/contracts';
@@ -18,6 +18,8 @@ import requestTestTokens from '@/lib/faucetService';
 import { wait } from '@/lib/utils';
 
 import { getTokenBalanceQueryKey } from './useTokenBalance';
+
+type EvmLog = { address: `0x${string}`; topics: [`0x${string}`, ...`0x${string}`[]]; data: `0x${string}` };
 
 /**
  * A helper to remove the '0x' and '04' prefixes from an uncompressed public key,
@@ -45,10 +47,10 @@ function cleanPublicKey(publicKey) {
 export async function createEncryptedPayloads(sessionKey, payload) {
 	// 1. Symmetrically encrypt the main payload for the TEE using the user's session key.
 	const encryptedPayloadString = await encryptData(sessionKey, payload);
-	const encryptedPayloadBytes = ethers.toUtf8Bytes(encryptedPayloadString);
+	const encryptedPayloadBytes = new TextEncoder().encode(encryptedPayloadString);
 
 	// 2. Convert the Uint8Array to a hex string
-	const encryptedPayload = ethers.hexlify(encryptedPayloadBytes);
+	const encryptedPayload = toHex(encryptedPayloadBytes);
 
 	// 3. Export the raw session key material from the CryptoKey object.
 	const rawSessionKey = await window.crypto.subtle.exportKey('raw', sessionKey);
@@ -65,10 +67,10 @@ export async function createEncryptedPayloads(sessionKey, payload) {
 		Buffer.from(rawSessionKey).toString('hex'),
 	);
 	const roflEncryptedKeyString = ethCrypto.cipher.stringify(encryptedKeyForOracle);
-	const roflEncryptedKeyBytes = ethers.toUtf8Bytes(roflEncryptedKeyString);
+	const roflEncryptedKeyBytes = new TextEncoder().encode(roflEncryptedKeyString);
 
 	// Convert the Uint8Array to a hex string
-	const roflEncryptedKey = ethers.hexlify(roflEncryptedKeyBytes);
+	const roflEncryptedKey = toHex(roflEncryptedKeyBytes);
 
 	return { encryptedPayload, roflEncryptedKey };
 }
@@ -80,21 +82,18 @@ export async function createEncryptedPayloads(sessionKey, payload) {
  * @returns {(error: unknown, action: string) => void}
  */
 export function buildErrorHandler(isTestnet, handleFaucetRequest) {
-	const tokenInterface = new ethers.Interface(AbleTokenABI.abi);
-	const agentInterface = new ethers.Interface(EVMAIAgentABI.abi);
-	const escrowInterface = new ethers.Interface(EVMAIAgentEscrowABI.abi);
-
 	return function genericOnError(error, action) {
 		console.error(`Failed to ${action}:`, error);
 		const errorMessage = error?.message || '';
 
-		const isError = (iface, name) => {
-			const fragment = iface.getError(name);
-			return fragment && (errorMessage.includes(fragment.selector) || errorMessage.includes(name));
+		const isError = (abi: Parameters<typeof getAbiItem>[0]['abi'], name: string) => {
+			const item = getAbiItem({ abi, name });
+			if (!item) return false;
+			return errorMessage.includes(toFunctionSelector(item as AbiFunction)) || errorMessage.includes(name);
 		};
 
 		// --- Token Errors ---
-		if (isError(tokenInterface, 'ERC20InsufficientBalance')) {
+		if (isError(AbleTokenABI.abi, 'ERC20InsufficientBalance')) {
 			toast.error('Insufficient ABLE Balance', {
 				description: (
 					<div className="flex flex-col gap-3 mt-1">
@@ -117,7 +116,7 @@ export function buildErrorHandler(isTestnet, handleFaucetRequest) {
 			return;
 		}
 
-		if (isError(tokenInterface, 'ERC20InsufficientAllowance')) {
+		if (isError(AbleTokenABI.abi, 'ERC20InsufficientAllowance')) {
 			toast.error('Spending Limit Reached', {
 				description:
 					'The contract is not authorized to spend your tokens. Please increase your limit.',
@@ -126,55 +125,55 @@ export function buildErrorHandler(isTestnet, handleFaucetRequest) {
 		}
 
 		// --- Escrow Errors (EVMAIAgentEscrow.sol) ---
-		if (isError(escrowInterface, 'NoActiveSpendingLimit')) {
+		if (isError(EVMAIAgentEscrowABI.abi, 'NoActiveSpendingLimit')) {
 			toast.error('No Active Plan', {
 				description: 'You must set a spending limit before starting a conversation.',
 			});
 			return;
 		}
-		if (isError(escrowInterface, 'SpendingLimitExpired')) {
+		if (isError(EVMAIAgentEscrowABI.abi, 'SpendingLimitExpired')) {
 			toast.error('Plan Expired', {
 				description: 'Your spending limit has expired. Please renew it in the dashboard.',
 			});
 			return;
 		}
-		if (isError(escrowInterface, 'InsufficientSpendingLimitAllowance')) {
+		if (isError(EVMAIAgentEscrowABI.abi, 'InsufficientSpendingLimitAllowance')) {
 			toast.error('Limit Reached', {
 				description: 'You have used up your spending limit for this period.',
 			});
 			return;
 		}
-		if (isError(escrowInterface, 'HasPendingPrompts')) {
+		if (isError(EVMAIAgentEscrowABI.abi, 'HasPendingPrompts')) {
 			toast.error('Pending Action', {
 				description: 'You cannot change your plan while a prompt is still processing.',
 			});
 			return;
 		}
-		if (isError(escrowInterface, 'PromptNotCancellableYet')) {
+		if (isError(EVMAIAgentEscrowABI.abi, 'PromptNotCancellableYet')) {
 			toast.error('Too Soon to Cancel', {
 				description: 'Please wait a few seconds before cancelling the prompt.',
 			});
 			return;
 		}
-		if (isError(escrowInterface, 'PromptNotRefundableYet')) {
+		if (isError(EVMAIAgentEscrowABI.abi, 'PromptNotRefundableYet')) {
 			toast.error('Too Soon to Refund', {
 				description: 'You must wait 1 hour after the request was created before refunding.',
 			});
 			return;
 		}
-		if (isError(escrowInterface, 'NotPromptOwner')) {
+		if (isError(EVMAIAgentEscrowABI.abi, 'NotPromptOwner')) {
 			toast.error('Access Denied', {
 				description: 'You are not the owner of this prompt.',
 			});
 			return;
 		}
-		if (isError(escrowInterface, 'EscrowNotPending')) {
+		if (isError(EVMAIAgentEscrowABI.abi, 'EscrowNotPending')) {
 			toast.error('Action Invalid', {
 				description: 'This request has already been completed, cancelled, or refunded.',
 			});
 			return;
 		}
-		if (isError(escrowInterface, 'EscrowNotFound')) {
+		if (isError(EVMAIAgentEscrowABI.abi, 'EscrowNotFound')) {
 			toast.error('Request Not Found', {
 				description: 'The payment record for this request could not be found.',
 			});
@@ -182,27 +181,27 @@ export function buildErrorHandler(isTestnet, handleFaucetRequest) {
 		}
 
 		// --- Agent Errors (EVMAIAgent.sol) ---
-		if (isError(agentInterface, 'RegenerationAlreadyPending')) {
+		if (isError(EVMAIAgentABI.abi, 'RegenerationAlreadyPending')) {
 			toast.error('Regeneration in Progress', {
 				description:
 					'A regeneration for this message is already pending. Please wait or cancel it.',
 			});
 			return;
 		}
-		if (isError(agentInterface, 'JobAlreadyFinalized')) {
+		if (isError(EVMAIAgentABI.abi, 'JobAlreadyFinalized')) {
 			toast.error('Request Already Finalized', {
 				description:
 					'This prompt has already been answered or cancelled. Please refresh your page.',
 			});
 			return;
 		}
-		if (isError(agentInterface, 'Unauthorized')) {
+		if (isError(EVMAIAgentABI.abi, 'Unauthorized')) {
 			toast.error('Access Denied', {
 				description: 'You do not have permission to modify this conversation.',
 			});
 			return;
 		}
-		if (isError(agentInterface, 'InvalidPromptMessageId')) {
+		if (isError(EVMAIAgentABI.abi, 'InvalidPromptMessageId')) {
 			toast.error('Invalid Message', {
 				description: 'The prompt you are trying to reply to does not exist.',
 			});
@@ -371,21 +370,23 @@ export default function useChatMutations() {
 			});
 			console.log('transactionReceipt', transactionReceipt);
 
-			const agentInterface = new ethers.Interface(contractConfig.agent.abi);
-			const promptSubmittedTopic = agentInterface.getEvent('PromptSubmitted').topicHash;
-			const log = transactionReceipt.logs.find(
+			const promptSubmittedTopic = toEventSelector(getAbiItem({ abi: contractConfig.agent.abi, name: 'PromptSubmitted' }) as AbiEvent);
+			const logs = transactionReceipt.logs as unknown as EvmLog[];
+			const log = logs.find(
 				l =>
 					l.address.toLowerCase() === contractConfig.agent.address.toLowerCase() &&
 					l.topics[0] === promptSubmittedTopic,
 			);
 
 			if (!log) throw new Error('PromptSubmitted event log not found in transaction receipt.');
-			const parsedLog = agentInterface.parseLog({ topics: log.topics, data: log.data });
+			const { args } = decodeEventLog({ abi: contractConfig.agent.abi, topics: log.topics, data: log.data }) as unknown as {
+				args: { conversationId: bigint; promptMessageId: bigint; answerMessageId: bigint };
+			};
 
 			return {
-				conversationId: parsedLog.args.conversationId.toString(),
-				promptMessageId: parsedLog.args.promptMessageId.toString(),
-				answerMessageId: parsedLog.args.answerMessageId.toString(),
+				conversationId: args.conversationId.toString(),
+				promptMessageId: args.promptMessageId.toString(),
+				answerMessageId: args.answerMessageId.toString(),
 			};
 		},
 		onSuccess: () => {
@@ -449,16 +450,18 @@ export default function useChatMutations() {
 			});
 			console.log('transactionReceipt', transactionReceipt);
 
-			const agentInterface = new ethers.Interface(contractConfig.agent.abi);
-			const eventTopic = agentInterface.getEvent('RegenerationRequested').topicHash;
-			const log = transactionReceipt.logs.find(
+			const eventTopic = toEventSelector(getAbiItem({ abi: contractConfig.agent.abi, name: 'RegenerationRequested' }) as AbiEvent);
+			const logs = transactionReceipt.logs as unknown as EvmLog[];
+			const log = logs.find(
 				l =>
 					l.address.toLowerCase() === contractConfig.agent.address.toLowerCase() &&
 					l.topics[0] === eventTopic,
 			);
 			if (!log) throw new Error('RegenerationRequested event log not found.');
-			const parsedLog = agentInterface.parseLog({ topics: log.topics, data: log.data });
-			return { newAnswerMessageId: parsedLog.args.answerMessageId.toString() };
+			const { args } = decodeEventLog({ abi: contractConfig.agent.abi, topics: log.topics, data: log.data }) as unknown as {
+				args: { answerMessageId: bigint };
+			};
+			return { newAnswerMessageId: args.answerMessageId.toString() };
 		},
 		onSuccess: () => {
 			// Immediate RPC update
@@ -510,16 +513,18 @@ export default function useChatMutations() {
 			});
 			console.log('transactionReceipt', transactionReceipt);
 
-			const agentInterface = new ethers.Interface(contractConfig.agent.abi);
-			const eventTopic = agentInterface.getEvent('BranchRequested').topicHash;
-			const log = transactionReceipt.logs.find(
+			const eventTopic = toEventSelector(getAbiItem({ abi: contractConfig.agent.abi, name: 'BranchRequested' }) as AbiEvent);
+			const logs = transactionReceipt.logs as unknown as EvmLog[];
+			const log = logs.find(
 				l =>
 					l.address.toLowerCase() === contractConfig.agent.address.toLowerCase() &&
 					l.topics[0] === eventTopic,
 			);
 			if (!log) throw new Error('BranchRequested event log not found.');
-			const parsedLog = agentInterface.parseLog({ topics: log.topics, data: log.data });
-			return { newConversationId: parsedLog.args.newConversationId.toString() };
+			const { args } = decodeEventLog({ abi: contractConfig.agent.abi, topics: log.topics, data: log.data }) as unknown as {
+				args: { newConversationId: bigint };
+			};
+			return { newConversationId: args.newConversationId.toString() };
 		},
 		onSuccess: () => {
 			// Immediate RPC update

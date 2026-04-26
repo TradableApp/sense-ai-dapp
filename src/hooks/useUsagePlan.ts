@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { ethers } from 'ethers';
+import { formatEther } from 'viem';
 import { getContract, readContract } from 'thirdweb';
 import { useActiveWallet } from 'thirdweb/react';
 
@@ -112,13 +112,12 @@ export default function useUsagePlan() {
 				return null;
 			}
 
-			// Use ethers.formatEther to convert from wei (BigInt) to a human-readable number string, then convert to Number.
 			const plan = {
-				allowance: Number(ethers.formatEther(allowance)),
-				spentAmount: Number(ethers.formatEther(spentAmount)),
+				allowance: Number(formatEther(allowance)),
+				spentAmount: Number(formatEther(spentAmount)),
 				expiresAt: new Date(Number(expiresAt) * 1000),
 				pendingEscrowCount: Number(pendingEscrowCount || 0),
-				realTokenAllowance: Number(ethers.formatEther(rawTokenAllowance)),
+				realTokenAllowance: Number(formatEther(rawTokenAllowance)),
 			};
 			console.log('plan', plan);
 

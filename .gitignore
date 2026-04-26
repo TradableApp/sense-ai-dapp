@@ -57,6 +57,9 @@ hosting.*.cache
 .claude/memory/
 .mcp.json
 
+# GraphQL codegen output
+src/lib/graph/generated.ts
+
 # Local agent orchestration
 .tmux-devfleet/
 .dmux/
