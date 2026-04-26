@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import { describe, expect, it, vi } from 'vitest';
 
 // Mock all React / app-level imports so useChatMutations.jsx can be imported in Node.
@@ -47,8 +48,6 @@ vi.mock('eth-crypto', () => ({
 	default: { encryptWithPublicKey: vi.fn(), cipher: { stringify: vi.fn() } },
 }));
 
-// Import after mocks
-import { toast } from 'sonner';
 import { buildErrorHandler } from './useChatMutations';
 
 // Helper that creates a pre-built handler with test defaults
