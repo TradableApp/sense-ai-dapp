@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('@/config/thirdweb', () => ({ client: {} }));
 vi.mock('thirdweb', () => ({}));
 vi.mock('thirdweb/react', () => ({}));
 vi.mock('thirdweb/wallets', () => ({}));
