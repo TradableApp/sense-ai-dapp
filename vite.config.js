@@ -112,11 +112,6 @@ export default defineConfig(({ mode }) => {
 				'@': path.resolve(__dirname, './src'),
 			},
 		},
-		test: {
-			globals: true,
-			environment: 'node',
-			exclude: ['**/node_modules/**', '**/._*'],
-		},
 		build: {
 			// Adjust the warning limit to silence the cosmetic warning for the large vendor chunks.
 			chunkSizeWarningLimit: 2500,
