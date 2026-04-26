@@ -6,7 +6,7 @@ import { collection, query, where } from 'firebase/firestore';
 import { Loader2, MicIcon, RotateCcwIcon, Split } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import ReactMarkdown from 'react-markdown';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
@@ -57,6 +57,7 @@ import {
 	setActiveConversationId,
 	setActiveConversationMessages,
 } from '@/store/chatSlice';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
 import ActivatePlanCTA from './ActivatePlanCTA';
 
@@ -137,11 +138,11 @@ const promptSchema = z.object({
 });
 
 export default function Chat() {
-	const dispatch = useDispatch();
+	const dispatch = useAppDispatch();
 	const queryClient = useQueryClient();
 	const navigate = useNavigate();
 	const { sessionKey, ownerAddress } = useSession();
-	const { activeConversationId, activeConversationMessages } = useSelector(state => state.chat);
+	const { activeConversationId, activeConversationMessages } = useAppSelector(state => state.chat);
 
 	const { data: plan, isLoading: isLoadingPlan } = useUsagePlan();
 	const hasActivePlan = !!plan;

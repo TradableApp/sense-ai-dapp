@@ -14,7 +14,14 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn, copyMarkdownToClipboard } from '@/lib/utils';
 
-export default function UserMessageActions({ message, versionInfo, onEdit, onNavigate }) {
+interface UserMessageActionsProps {
+	message?: any;
+	versionInfo?: any;
+	onEdit?: () => void;
+	onNavigate?: (direction: string) => void;
+}
+
+export default function UserMessageActions({ message, versionInfo, onEdit, onNavigate }: UserMessageActionsProps) {
 	const [isCopied, setIsCopied] = useState(false);
 
 	const handleCopy = async () => {

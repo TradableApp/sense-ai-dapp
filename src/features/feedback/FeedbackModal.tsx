@@ -4,7 +4,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { Loader2, Mail } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { useDispatch, useSelector } from 'react-redux';
 import { toast } from 'sonner';
 import { getUserEmail } from 'thirdweb/wallets';
 import { z } from 'zod';
@@ -19,11 +18,12 @@ import {
 	DialogTitle,
 } from '@/components/ui/dialog';
 import Input from '@/components/ui/input';
-import Textarea from '@/components/ui/textarea';
+import { Textarea } from '@/components/ui/textarea';
 import { client } from '@/config/thirdweb';
 import { useSession } from '@/features/auth/SessionProvider';
 import { sendFeedback } from '@/lib/contactService';
 import { closeModal } from '@/store/uiSlice';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
 const feedbackSchema = z.object({
 	feedback: z
@@ -37,10 +37,16 @@ const feedbackSchema = z.object({
 		.email({ message: 'Please enter a valid email address.' }),
 });
 
+interface FeedbackVariables {
+	data: z.infer<typeof feedbackSchema>;
+	userAddress: string;
+	displayName?: string;
+}
+
 export default function FeedbackModal() {
-	const dispatch = useDispatch();
+	const dispatch = useAppDispatch();
 	const { ownerAddress, activeWallet } = useSession();
-	const isOpen = useSelector(state => state.ui.currentModal.type === 'Feedback');
+	const isOpen = useAppSelector(state => state.ui.currentModal.type === 'Feedback');
 
 	const {
 		register,
@@ -71,14 +77,14 @@ export default function FeedbackModal() {
 		}
 	}, [isOpen, reset, setFocus]);
 
-	const feedbackMutation = useMutation({
+	const feedbackMutation = useMutation<{ success: boolean; message: string }, Error, FeedbackVariables>({
 		mutationFn: variables =>
 			sendFeedback(variables.data, variables.userAddress, variables.displayName),
 		onSuccess: () => {
 			toast.success('Thank you!', {
 				description: 'Your feedback has been submitted successfully.',
 			});
-			dispatch(closeModal());
+			dispatch(closeModal(undefined));
 		},
 		onError: error => {
 			toast.error('Submission Failed', {
@@ -87,15 +93,15 @@ export default function FeedbackModal() {
 		},
 	});
 
-	const onSubmit = data => {
+	const onSubmit = (data: z.infer<typeof feedbackSchema>) => {
 		const displayName = activeWallet?.getAccount()?.ens?.name;
-		feedbackMutation.mutate({ data, userAddress: ownerAddress, displayName });
+		feedbackMutation.mutate({ data, userAddress: ownerAddress || '', displayName });
 	};
 
-	const handleOpenChange = open => {
+	const handleOpenChange = (open: boolean) => {
 		if (!open) {
 			feedbackMutation.reset();
-			dispatch(closeModal());
+			dispatch(closeModal(undefined));
 		}
 	};
 
@@ -142,7 +148,7 @@ export default function FeedbackModal() {
 						<Button
 							type="button"
 							variant="outline"
-							onClick={() => dispatch(closeModal())}
+							onClick={() => dispatch(closeModal(undefined))}
 							disabled={isProcessing}
 						>
 							Cancel

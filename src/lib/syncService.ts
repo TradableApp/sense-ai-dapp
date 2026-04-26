@@ -296,7 +296,7 @@ export default async function syncWithRemote(sessionKey, ownerAddress) {
 			const promptRequestPromises = (conv.promptRequests || []).map(async req => {
 				try {
 					// Convert Hex (0x...) to UTF-8 String to recover "iv.encryptedData" format
-					const encryptedString = new TextDecoder().decode(hexToBytes(req.encryptedPayload));
+					const encryptedString = new TextDecoder().decode(hexToBytes(req.encryptedPayload as `0x${string}`));
 					const payload = await decryptData(sessionKey, encryptedString);
 
 					// payload is { promptText: "...", ... }

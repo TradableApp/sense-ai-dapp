@@ -36,7 +36,7 @@ describe('createEncryptedPayloads', () => {
 	});
 
 	it('throws when VITE_ORACLE_PUBLIC_KEY is not set', async () => {
-		const mockKey = {};
+		const mockKey = {} as CryptoKey;
 		const payload = { test: 'data' };
 
 		await expect(createEncryptedPayloads(mockKey, payload)).rejects.toThrow(

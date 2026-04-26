@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { useQueryClient } from '@tanstack/react-query';
-import { useSelector } from 'react-redux';
+import type { RootState } from '@/store/store';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { getContract, prepareEvent } from 'thirdweb';
 import { useActiveWallet, useContractEvents } from 'thirdweb/react';
+import type { AbiEvent } from 'viem';
 import { getAbiItem } from 'viem';
 import { formatAbiItem } from 'viem/utils';
 
@@ -43,7 +45,7 @@ export default function useLiveResponse() {
 	const { sessionKey, ownerAddress } = useSession();
 
 	// Get active conversation from Redux Store
-	const activeConversationId = useSelector(state => state.chat.activeConversationId);
+	const activeConversationId = useAppSelector((state: RootState) => state.chat.activeConversationId);
 
 	const contractConfig = CONTRACTS[chainId];
 	const targetChain = chainId === deploymentChain.id ? deploymentChain : chain;
@@ -55,7 +57,7 @@ export default function useLiveResponse() {
 					client,
 					chain: targetChain,
 					address: contractConfig.agent.address,
-					abi: contractConfig.agent.abi,
+					abi: contractConfig.agent.abi as Parameters<typeof getContract>[0]['abi'],
 			  })
 			: null;
 
@@ -64,7 +66,7 @@ export default function useLiveResponse() {
 					client,
 					chain: targetChain,
 					address: contractConfig.escrow.address,
-					abi: contractConfig.escrow.abi,
+					abi: contractConfig.escrow.abi as Parameters<typeof getContract>[0]['abi'],
 			  })
 			: null;
 		return { agentContract: agent, escrowContract: escrow };
@@ -87,7 +89,8 @@ export default function useLiveResponse() {
 				eventsToWatch.forEach(name => {
 					const item = getAbiItem({ abi: contractConfig.agent.abi, name });
 					if (item) {
-						events.push(prepareEvent({ signature: formatAbiItem(item) }));
+						const signature = formatAbiItem(item as AbiEvent);
+						events.push(prepareEvent({ signature: signature as `event ${string}` }));
 					}
 				});
 			} catch (error) {
@@ -110,7 +113,8 @@ export default function useLiveResponse() {
 				eventsToWatch.forEach(name => {
 					const item = getAbiItem({ abi: contractConfig.escrow.abi, name });
 					if (item) {
-						events.push(prepareEvent({ signature: formatAbiItem(item) }));
+						const signature = formatAbiItem(item as AbiEvent);
+						events.push(prepareEvent({ signature: signature as `event ${string}` }));
 					}
 				});
 			} catch (error) {
@@ -147,7 +151,7 @@ export default function useLiveResponse() {
 	const keysToInvalidateRef = useRef(new Set());
 	const resetBackoffRef = useRef(false);
 
-	const addInvalidationKey = useCallback(queryKey => {
+	const addInvalidationKey = useCallback((queryKey: (string | number | symbol)[]) => {
 		keysToInvalidateRef.current.add(JSON.stringify(queryKey));
 	}, []);
 
@@ -160,7 +164,7 @@ export default function useLiveResponse() {
 		isSyncingRef.current = true;
 		console.log('[useLiveResponse] Starting sync loop...');
 
-		const schedule = [2000, 3000, 5000, 5000, 5000];
+		const schedule: number[] = [2000, 3000, 5000, 5000, 5000];
 		let attempt = 0;
 
 		while (keysToInvalidateRef.current.size > 0) {
@@ -175,7 +179,7 @@ export default function useLiveResponse() {
 			await wait(delay);
 			console.log(`[useLiveResponse] Syncing (Attempt ${attempt + 1}, Delay ${delay}ms)`);
 
-			const uniqueKeys = Array.from(keysToInvalidateRef.current).map(k => JSON.parse(k));
+			const uniqueKeys = Array.from(keysToInvalidateRef.current).map(k => JSON.parse(k as string));
 
 			const hasMessagesKey = uniqueKeys.some(k => k[0] === 'messages');
 			const hasConversationsKey = uniqueKeys.some(k => k[0] === 'conversations');
@@ -188,7 +192,11 @@ export default function useLiveResponse() {
 
 			if (uniqueKeys.length > 0) {
 				// eslint-disable-next-line no-await-in-loop
-				await Promise.all(uniqueKeys.map(key => queryClient.invalidateQueries({ queryKey: key })));
+				await Promise.all(
+					uniqueKeys.map((key: (string | number | symbol)[]) =>
+						queryClient.invalidateQueries({ queryKey: key }),
+					),
+				);
 			}
 
 			if (
@@ -198,11 +206,15 @@ export default function useLiveResponse() {
 				ownerAddress
 			) {
 				const queryKey = ['messages', activeConversationId, sessionKey, ownerAddress];
-				const cachedMessages = queryClient.getQueryData(queryKey) || [];
+				const cachedMessages = (queryClient.getQueryData(queryKey) || []) as Array<{
+					id: string;
+					content: string | null;
+					status: string;
+				}>;
 				const messageMap = new Map(cachedMessages.map(m => [m.id, m]));
 
-				const resolvedIds = [];
-				pendingMessageIdsRef.current.forEach(id => {
+				const resolvedIds: string[] = [];
+				pendingMessageIdsRef.current.forEach((id: string) => {
 					const msg = messageMap.get(id);
 
 					// Stop syncing if content exists OR if status is cancelled/refunded
@@ -273,7 +285,7 @@ export default function useLiveResponse() {
 		// --- HANDLE AGENT EVENTS ---
 		if (agentLog && agentLog.length > prevAgentCountRef.current) {
 			const newEvents = agentLog.slice(prevAgentCountRef.current);
-			newEvents.forEach(e => {
+			newEvents.forEach((e: any) => {
 				// DE-DUPLICATION CHECK
 				const eventKey = `${e.transactionHash}-${e.logIndex}`;
 				if (processedEventKeysRef.current.has(eventKey)) return;
@@ -289,7 +301,7 @@ export default function useLiveResponse() {
 					eventName === 'BranchRequested' ||
 					eventName === 'MetadataUpdateRequested'
 				) {
-					if (args.user.toLowerCase() !== ownerAddress.toLowerCase()) {
+					if ((args as any).user.toLowerCase() !== ownerAddress.toLowerCase()) {
 						return; // Ignore event from other users
 					}
 				}
@@ -317,8 +329,8 @@ export default function useLiveResponse() {
 				// Indirect ownership check for events filtered by active conversation
 				if (activeConversationId) {
 					const isRelevant =
-						args.conversationId?.toString() === activeConversationId ||
-						args.originalConversationId?.toString() === activeConversationId;
+						(args as any).conversationId?.toString() === activeConversationId ||
+						(args as any).originalConversationId?.toString() === activeConversationId;
 
 					if (
 						isRelevant &&
@@ -332,16 +344,20 @@ export default function useLiveResponse() {
 
 						const msgId =
 							eventName === 'AnswerMessageAdded'
-								? args.messageId.toString()
+								? (args as any).messageId.toString()
 								: eventName === 'RegenerationRequested'
-								? args.answerMessageId.toString()
-								: args.promptMessageId.toString();
+								? (args as any).answerMessageId.toString()
+								: (args as any).promptMessageId.toString();
 
 						const queryKey = ['messages', activeConversationId, sessionKey, ownerAddress];
 
 						addInvalidationKey(['conversations']);
 
-						const cachedMessages = queryClient.getQueryData(queryKey) || [];
+						const cachedMessages = (queryClient.getQueryData(queryKey) || []) as Array<{
+							id: string;
+							content: string | null;
+							status: string;
+						}>;
 						const existingMsg = cachedMessages.find(m => m.id === msgId);
 
 						// If the message doesn't exist OR is still pending/thinking, add to watch list
@@ -364,7 +380,7 @@ export default function useLiveResponse() {
 		// --- HANDLE ESCROW EVENTS ---
 		if (escrowLog && escrowLog.length > prevEscrowCountRef.current) {
 			const newEvents = escrowLog.slice(prevEscrowCountRef.current);
-			newEvents.forEach(e => {
+			newEvents.forEach((e: any) => {
 				const { eventName, transactionHash, logIndex } = e;
 
 				// DE-DUPLICATION CHECK
@@ -374,7 +390,7 @@ export default function useLiveResponse() {
 
 				// Handle Plan Management Events
 				if (eventName === 'SpendingLimitSet' || eventName === 'SpendingLimitCancelled') {
-					if (e.args.user.toLowerCase() === ownerAddress.toLowerCase()) {
+					if ((e.args as any).user.toLowerCase() === ownerAddress.toLowerCase()) {
 						addInvalidationKey(['usagePlan']);
 						addInvalidationKey(['recentActivity']);
 						// Token balance might change if allowance/approval changes (gas)
@@ -384,7 +400,7 @@ export default function useLiveResponse() {
 				}
 
 				if (eventName === 'PromptCancelled') {
-					if (e.args.user.toLowerCase() === ownerAddress.toLowerCase()) {
+					if ((e.args as any).user.toLowerCase() === ownerAddress.toLowerCase()) {
 						addInvalidationKey(['stuckRequests']);
 						addInvalidationKey(['usagePlan']);
 						addInvalidationKey(['tokenBalance']);
@@ -401,8 +417,8 @@ export default function useLiveResponse() {
 
 				if (eventName === 'PaymentRefunded') {
 					const stuckKey = ['stuckRequests', chainId, ownerAddress];
-					const stuckList = queryClient.getQueryData(stuckKey) || [];
-					if (stuckList.some(s => s.id === e.args.escrowId.toString())) {
+					const stuckList = (queryClient.getQueryData(stuckKey) || []) as Array<{ id: string }>;
+					if (stuckList.some(s => s.id === (e.args as any).escrowId.toString())) {
 						addInvalidationKey(['stuckRequests']);
 						addInvalidationKey(['usagePlan']);
 						addInvalidationKey(['tokenBalance']);

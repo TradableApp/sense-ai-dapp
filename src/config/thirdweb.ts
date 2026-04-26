@@ -22,8 +22,8 @@ export const deploymentChain = defineChain({
 	id: envChainId,
 	name: import.meta.env.VITE_CHAIN_NAME || 'Base',
 	// The slug is important for some Thirdweb internal routing
-	slug: import.meta.env.VITE_CHAIN_SLUG || 'base',
-	rpc: import.meta.env.VITE_CHAIN_RPC_URL,
+	slug: (import.meta.env.VITE_CHAIN_SLUG || 'base') as string,
+	rpc: import.meta.env.VITE_CHAIN_RPC_URL as string,
 	nativeCurrency: {
 		name: import.meta.env.VITE_CHAIN_NATIVE_CURRENCY_NAME || 'Ether',
 		symbol: import.meta.env.VITE_CHAIN_NATIVE_CURRENCY_SYMBOL || 'ETH',
@@ -32,13 +32,13 @@ export const deploymentChain = defineChain({
 	blockExplorers: [
 		{
 			name: import.meta.env.VITE_BLOCK_EXPLORER_NAME || 'Explorer',
-			url: import.meta.env.VITE_BLOCK_EXPLORER_URL,
+			url: import.meta.env.VITE_BLOCK_EXPLORER_URL as string,
 			// The API URL is optional but recommended for contract verification status
-			apiUrl: import.meta.env.VITE_BLOCK_EXPLORER_API_URL || undefined,
+			apiUrl: (import.meta.env.VITE_BLOCK_EXPLORER_API_URL || undefined) as string | undefined,
 		},
 	],
 	testnet: envChainId === LOCAL_CHAIN_ID || envChainId === TESTNET_CHAIN_ID,
-});
+} as any);
 
 // This is our curated, production-ready list of wallet options.
 export const wallets = [

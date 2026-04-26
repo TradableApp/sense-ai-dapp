@@ -10,7 +10,7 @@ import { ThirdwebProvider } from 'thirdweb/react';
 
 import PostHogPageViewTracker from '@/components/PostHogPageViewTracker';
 import { ThemeProvider } from '@/components/ThemeProvider';
-import Toaster from '@/components/ui/sonner';
+import { Toaster } from '@/components/ui/sonner';
 import { initPosthog } from '@/config/posthog';
 import App from '@/pages/App';
 

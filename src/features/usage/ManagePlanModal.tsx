@@ -143,8 +143,8 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 	// Logic to block actions if there are pending prompts
 	const hasPendingPrompts = existingPlan?.pendingEscrowCount > 0;
 
-	const setPlanMutation = useMutation({
-		mutationFn: async ({ limitInWei, expiresAtTimestamp }) => {
+	const setPlanMutation = useMutation<void, Error, { limitInWei: bigint; expiresAtTimestamp: bigint }>({
+		mutationFn: async ({ limitInWei, expiresAtTimestamp }: { limitInWei: bigint; expiresAtTimestamp: bigint }): Promise<void> => {
 			console.log(
 				'limitInWei',
 				limitInWei,
@@ -194,7 +194,7 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 					client,
 					chain: connectedChain,
 					address: contractConfig.token.address,
-					abi: contractConfig.token.abi,
+					abi: contractConfig.token.abi as any,
 				});
 				console.log('tokenContract', tokenContract);
 
@@ -223,7 +223,7 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 					client,
 					chain: connectedChain,
 					address: contractConfig.escrow.address,
-					abi: contractConfig.escrow.abi,
+					abi: contractConfig.escrow.abi as any,
 				});
 				console.log('escrowContract', escrowContract);
 
@@ -231,7 +231,7 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 					contract: escrowContract,
 					method: 'setSpendingLimit',
 					params: [limitInWei, expiresAtTimestamp],
-				});
+				} as any);
 				console.log('setSubTx', setSubTx);
 
 				await sendAndConfirm(setSubTx);
@@ -265,7 +265,7 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 		},
 	});
 
-	const revokeMutation = useMutation({
+	const revokeMutation = useMutation<void, Error, void>({
 		mutationFn: async () => {
 			if (!activeWallet || !chainId) {
 				throw new Error('Wallet not connected');
@@ -294,12 +294,12 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 				client,
 				chain: connectedChain,
 				address: contractConfig.escrow.address,
-				abi: contractConfig.escrow.abi,
+				abi: contractConfig.escrow.abi as any,
 			});
 			const revokeTx = prepareContractCall({
 				contract: escrowContract,
 				method: 'cancelSpendingLimit',
-			});
+			} as any);
 			await sendAndConfirm(revokeTx);
 			toast.dismiss(revokeToastId);
 		},
@@ -327,10 +327,10 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 		},
 	});
 
-	const onSubmit = data => {
+	const onSubmit = (data: any) => {
 		const limitInWei = parseUnits(data.limit.toString(), 18);
 		const nowInSeconds = Math.floor(Date.now() / 1000);
-		const expiresAtTimestamp = nowInSeconds + data.days * 24 * 60 * 60;
+		const expiresAtTimestamp = BigInt(nowInSeconds + (data.days as number) * 24 * 60 * 60);
 		setPlanMutation.mutate({ limitInWei, expiresAtTimestamp });
 	};
 
@@ -367,7 +367,7 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 					try {
 						// Check if receipt exists
 						// eslint-disable-next-line no-await-in-loop
-						const receipt = await eth_getTransactionReceipt(rpcRequest, { hash: txHash });
+						const receipt = await eth_getTransactionReceipt(rpcRequest, { hash: txHash as `0x${string}` });
 						console.log('receipt', receipt);
 
 						if (receipt) {

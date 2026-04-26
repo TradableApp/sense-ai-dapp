@@ -2,7 +2,9 @@ import React from 'react';
 
 import { cn } from '@/lib/utils';
 
-const RainbowLabel = React.forwardRef(({ children, className, ...props }, ref) => (
+export interface RainbowLabelProps extends React.HTMLAttributes<HTMLDivElement> {}
+
+const RainbowLabel = React.forwardRef<HTMLDivElement, RainbowLabelProps>(({ children, className, ...props }, ref) => (
 	<div
 		ref={ref}
 		className={cn(

@@ -10,7 +10,6 @@ import {
 	Search,
 	Trash2,
 } from 'lucide-react';
-import { useDispatch, useSelector } from 'react-redux';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -31,9 +30,9 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import EmptyState from '@/components/ui/empty-state';
+import { EmptyState } from '@/components/ui/empty-state';
 import Input from '@/components/ui/input';
-import Skeleton from '@/components/ui/skeleton';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSession } from '@/features/auth/SessionProvider';
 import useChatMutations from '@/hooks/useChatMutations';
@@ -48,12 +47,13 @@ import {
 	openRenameModal,
 	setActiveConversationId,
 } from '@/store/chatSlice';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
 import RenameConversationModal from './RenameConversationModal';
 
 export default function History() {
 	const navigate = useNavigate();
-	const dispatch = useDispatch();
+	const dispatch = useAppDispatch();
 	const queryClient = useQueryClient();
 	const { sessionKey, ownerAddress } = useSession();
 	const { data: plan } = useUsagePlan();
@@ -62,8 +62,8 @@ export default function History() {
 	const hasPendingPrompts = plan?.pendingEscrowCount > 0;
 
 	const { metadataUpdateMutation } = useChatMutations();
-	const { isRenameModalOpen, conversationToRename } = useSelector(state => state.chat);
-	const activeConversationId = useSelector(state => state.chat.activeConversationId);
+	const { isRenameModalOpen, conversationToRename } = useAppSelector(state => state.chat);
+	const activeConversationId = useAppSelector(state => state.chat.activeConversationId);
 
 	const [searchQuery, setSearchQuery] = useState('');
 	const [filteredConversationIds, setFilteredConversationIds] = useState(null);

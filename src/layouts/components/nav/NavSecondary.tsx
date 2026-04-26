@@ -1,10 +1,9 @@
 import React from 'react';
 
-import { useDispatch } from 'react-redux';
 import { Link } from 'react-router-dom';
 
 import ThemeToggle from '@/components/ThemeToggle';
-import Separator from '@/components/ui/separator';
+import { Separator } from '@/components/ui/separator';
 import {
 	SidebarGroup,
 	SidebarMenu,
@@ -12,11 +11,22 @@ import {
 	SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { openModal } from '@/store/uiSlice';
+import { useAppDispatch } from '@/store/hooks';
 
-export default function NavSecondary({ items, ...props }) {
-	const dispatch = useDispatch();
+interface NavItem {
+	title: string;
+	url: string;
+	icon: React.ComponentType<{ className?: string }>;
+}
 
-	const handleClick = (e, item) => {
+interface NavSecondaryProps extends React.HTMLAttributes<HTMLDivElement> {
+	items: NavItem[];
+}
+
+export default function NavSecondary({ items, ...props }: NavSecondaryProps) {
+	const dispatch = useAppDispatch();
+
+	const handleClick = (e: React.MouseEvent<HTMLAnchorElement>, item: NavItem): void => {
 		if (item.title === 'Feedback') {
 			e.preventDefault();
 			dispatch(openModal({ type: 'Feedback' }));

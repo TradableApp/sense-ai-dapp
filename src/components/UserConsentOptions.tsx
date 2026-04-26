@@ -1,26 +1,36 @@
 import { useState } from 'react';
 
 import { setConsent } from 'firebase/analytics';
-import { useDispatch } from 'react-redux';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import Checkbox from '@/components/ui/checkbox';
+import { Checkbox } from '@/components/ui/checkbox';
 import Label from '@/components/ui/label';
 import { disablePosthogAfterOptOut, enablePosthogAfterConsent } from '@/config/posthog';
 import { saveState } from '@/lib/browserStorage';
 import { openModal } from '@/store/uiSlice';
+import { useAppDispatch } from '@/store/hooks';
 
-export default function UserConsentOptions({ onConsentGiven }) {
-	const dispatch = useDispatch();
+interface UserConsentOptionsProps {
+	onConsentGiven: () => void;
+}
+
+interface ConsentChoices {
+	analytics: boolean;
+	marketing: boolean;
+	personalization: boolean;
+}
+
+export default function UserConsentOptions({ onConsentGiven }: UserConsentOptionsProps) {
+	const dispatch = useAppDispatch();
 	const [isExpanded, setIsExpanded] = useState(false);
-	const [consentChoices, setConsentChoices] = useState({
+	const [consentChoices, setConsentChoices] = useState<ConsentChoices>({
 		analytics: false,
 		marketing: false,
 		personalization: false,
 	});
 
-	const handleChoiceChange = (key, value) => {
+	const handleChoiceChange = (key: keyof ConsentChoices, value: boolean) => {
 		setConsentChoices(prev => ({ ...prev, [key]: value }));
 	};
 
@@ -100,7 +110,7 @@ export default function UserConsentOptions({ onConsentGiven }) {
 								<Checkbox
 									id="analytics"
 									checked={consentChoices.analytics}
-									onCheckedChange={value => handleChoiceChange('analytics', value)}
+									onCheckedChange={value => handleChoiceChange('analytics', typeof value === 'boolean' ? value : false)}
 								/>
 								<Label htmlFor="analytics">Analytics Cookies</Label>
 							</div>
@@ -108,7 +118,7 @@ export default function UserConsentOptions({ onConsentGiven }) {
 								<Checkbox
 									id="marketing"
 									checked={consentChoices.marketing}
-									onCheckedChange={value => handleChoiceChange('marketing', value)}
+									onCheckedChange={value => handleChoiceChange('marketing', typeof value === 'boolean' ? value : false)}
 								/>
 								<Label htmlFor="marketing">Marketing Cookies</Label>
 							</div>
@@ -116,7 +126,7 @@ export default function UserConsentOptions({ onConsentGiven }) {
 								<Checkbox
 									id="personalization"
 									checked={consentChoices.personalization}
-									onCheckedChange={value => handleChoiceChange('personalization', value)}
+									onCheckedChange={value => handleChoiceChange('personalization', typeof value === 'boolean' ? value : false)}
 								/>
 								<Label htmlFor="personalization">Personalization Cookies</Label>
 							</div>

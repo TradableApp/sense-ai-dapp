@@ -1,6 +1,19 @@
+import { ReactNode } from 'react';
+
 import { cn } from '@/lib/utils';
 
-function LoaderIcon({ size = 16 }) {
+interface LoaderIconProps {
+	size?: number;
+}
+
+interface LoaderProps {
+	className?: string;
+	size?: number;
+	children?: ReactNode;
+	[key: string]: any;
+}
+
+function LoaderIcon({ size = 16 }: LoaderIconProps) {
 	return (
 		<svg
 			height={size}
@@ -71,7 +84,7 @@ function LoaderIcon({ size = 16 }) {
 	);
 }
 
-export default function Loader({ className, size = 16, ...props }) {
+export default function Loader({ className, size = 16, ...props }: LoaderProps) {
 	return (
 		<div
 			className={cn('inline-flex animate-spin items-center justify-center', className)}

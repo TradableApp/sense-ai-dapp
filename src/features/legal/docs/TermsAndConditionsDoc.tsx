@@ -1,9 +1,8 @@
-import { useDispatch } from 'react-redux';
-
 import { openModal } from '@/store/uiSlice';
+import { useAppDispatch } from '@/store/hooks';
 
 export default function TermsAndConditionsDoc() {
-	const dispatch = useDispatch();
+	const dispatch = useAppDispatch();
 
 	const openPrivacyModal = () => {
 		dispatch(openModal({ type: 'Privacy' }));

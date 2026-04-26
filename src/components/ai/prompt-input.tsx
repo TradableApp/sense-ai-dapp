@@ -1,10 +1,10 @@
 'use client';
 
-import { Children, forwardRef } from 'react';
+import { Children, forwardRef, ReactNode } from 'react';
 
 import { Loader2Icon, SendHorizontalIcon, SendIcon, SquareIcon, XIcon } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
+import { Button, type ButtonProps } from '@/components/ui/button';
 import {
 	Select,
 	SelectContent,
@@ -12,11 +12,39 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from '@/components/ui/select';
-import Textarea from '@/components/ui/textarea';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
+interface PromptInputProps {
+	errors?: any;
+	className?: string;
+	children?: ReactNode;
+	onSubmit?: (e?: any) => void;
+}
+
+interface PromptInputTextareaProps {
+	onChange?: (e: any) => void;
+	className?: string;
+	placeholder?: string;
+	[key: string]: any;
+}
+
+interface PromptInputToolbarProps {
+	className?: string;
+	children?: ReactNode;
+}
+
+interface PromptInputToolsProps {
+	className?: string;
+	children?: ReactNode;
+}
+
+interface PromptInputButtonProps extends ButtonProps {
+	children?: ReactNode;
+}
+
 // The 'errors' prop is now accepted to control the styling
-export function PromptInput({ errors, className, ...props }) {
+export function PromptInput({ errors, className, ...props }: PromptInputProps) {
 	// Only show the error state for messages other than the "empty" validation.
 	const hasVisibleError = !!errors?.prompt && errors.prompt.message !== 'Message cannot be empty.';
 
@@ -33,9 +61,9 @@ export function PromptInput({ errors, className, ...props }) {
 	);
 }
 
-export const PromptInputTextarea = forwardRef(
+export const PromptInputTextarea = forwardRef<HTMLTextAreaElement, PromptInputTextareaProps>(
 	({ onChange, className, placeholder = 'What would you like to know?', ...props }, ref) => {
-		const handleKeyDown = e => {
+		const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
 			if (e.key === 'Enter') {
 				if (e.shiftKey) {
 					return;
@@ -69,11 +97,11 @@ export const PromptInputTextarea = forwardRef(
 );
 PromptInputTextarea.displayName = 'PromptInputTextarea';
 
-export function PromptInputToolbar({ className, ...props }) {
+export function PromptInputToolbar({ className, ...props }: PromptInputToolbarProps) {
 	return <div className={cn('flex items-center justify-between p-1', className)} {...props} />;
 }
 
-export function PromptInputTools({ className, ...props }) {
+export function PromptInputTools({ className, ...props }: PromptInputToolsProps) {
 	return (
 		<div
 			className={cn('flex items-center gap-1', '[&_button:first-child]:rounded-bl-xl', className)}
@@ -82,7 +110,7 @@ export function PromptInputTools({ className, ...props }) {
 	);
 }
 
-export function PromptInputButton({ variant = 'ghost', className, size, ...props }) {
+export function PromptInputButton({ variant = 'ghost', className, size, ...props }: PromptInputButtonProps) {
 	const newSize = size ?? Children.count(props.children) > 1 ? 'default' : 'icon';
 	return (
 		<Button
@@ -100,6 +128,16 @@ export function PromptInputButton({ variant = 'ghost', className, size, ...props
 	);
 }
 
+interface PromptInputSubmitProps extends ButtonProps {
+	status?: string;
+	children?: ReactNode;
+}
+
+interface PromptInputCancelProps extends ButtonProps {
+	isLoading?: boolean;
+	children?: ReactNode;
+}
+
 export function PromptInputSubmit({
 	className,
 	variant = 'default',
@@ -107,7 +145,7 @@ export function PromptInputSubmit({
 	status,
 	children,
 	...props
-}) {
+}: PromptInputSubmitProps) {
 	let Icon = <SendIcon className="size-4" />;
 	if (status === 'submitted') {
 		Icon = <Loader2Icon className="size-4 animate-spin" />;
@@ -138,7 +176,7 @@ export function PromptInputCancel({
 	isLoading, // Added to support showing spinner during cancel mutation
 	children,
 	...props
-}) {
+}: PromptInputCancelProps) {
 	return (
 		<Button
 			className={cn('gap-1.5 rounded-lg', className)}
@@ -157,10 +195,21 @@ export function PromptInputCancel({
 	);
 }
 
-export function PromptInputModelSelect(props) {
+interface SelectComponentProps {
+	className?: string;
+	children?: ReactNode;
+	value?: string;
+	[key: string]: any;
+}
+
+interface SelectItemProps extends SelectComponentProps {
+	value: string;
+}
+
+export function PromptInputModelSelect(props: SelectComponentProps) {
 	return <Select {...props} />;
 }
-export function PromptInputModelSelectTrigger({ className, ...props }) {
+export function PromptInputModelSelectTrigger({ className, ...props }: SelectComponentProps) {
 	return (
 		<SelectTrigger
 			className={cn(
@@ -172,12 +221,12 @@ export function PromptInputModelSelectTrigger({ className, ...props }) {
 		/>
 	);
 }
-export function PromptInputModelSelectContent({ className, ...props }) {
+export function PromptInputModelSelectContent({ className, ...props }: SelectComponentProps) {
 	return <SelectContent className={cn(className)} {...props} />;
 }
-export function PromptInputModelSelectItem({ className, ...props }) {
-	return <SelectItem className={cn(className)} {...props} />;
+export function PromptInputModelSelectItem({ className, value, ...props }: SelectItemProps) {
+	return <SelectItem className={cn(className)} value={value} {...props} />;
 }
-export function PromptInputModelSelectValue({ className, ...props }) {
+export function PromptInputModelSelectValue({ className, ...props }: SelectComponentProps) {
 	return <SelectValue className={cn(className)} {...props} />;
 }

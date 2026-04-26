@@ -1,6 +1,6 @@
-import React, { Component } from 'react';
+import React, { Component, ReactNode } from 'react';
 
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import errorBotIllustration from '@/assets/react.svg'; // Placeholder illustration
 import { Button } from '@/components/ui/button';
@@ -32,23 +32,33 @@ function CrashDisplay() {
 	);
 }
 
-class ErrorBoundary extends Component {
-	constructor(props) {
+interface ErrorBoundaryProps {
+	children?: ReactNode;
+	location?: ReturnType<typeof useLocation>;
+	navigate?: ReturnType<typeof useNavigate>;
+}
+
+interface ErrorBoundaryState {
+	hasError: boolean;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+	constructor(props: ErrorBoundaryProps) {
 		super(props);
 		this.state = { hasError: false };
 	}
 
-	static getDerivedStateFromError(error) {
+	static getDerivedStateFromError(error: Error): ErrorBoundaryState {
 		console.error('ErrorBoundary caught an error:', error);
 		return { hasError: true };
 	}
 
-	componentDidUpdate(prevProps) {
+	componentDidUpdate(prevProps: ErrorBoundaryProps) {
 		const { location } = this.props;
 		const { hasError } = this.state;
 
 		// If the user navigates to a new page, reset the error state.
-		if (hasError && prevProps.location.pathname !== location.pathname) {
+		if (hasError && prevProps.location?.pathname !== location?.pathname) {
 			this.setState({ hasError: false });
 		}
 	}

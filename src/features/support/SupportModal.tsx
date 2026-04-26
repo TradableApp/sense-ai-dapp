@@ -4,7 +4,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { Loader2, Mail } from 'lucide-react';
 import { Controller, useForm } from 'react-hook-form';
-import { useDispatch, useSelector } from 'react-redux';
 import { toast } from 'sonner';
 import { getUserEmail } from 'thirdweb/wallets';
 import { z } from 'zod';
@@ -26,11 +25,12 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from '@/components/ui/select';
-import Textarea from '@/components/ui/textarea';
+import { Textarea } from '@/components/ui/textarea';
 import { client } from '@/config/thirdweb';
 import { useSession } from '@/features/auth/SessionProvider';
 import { sendSupportRequest } from '@/lib/contactService';
 import { closeModal } from '@/store/uiSlice';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
 const supportSchema = z.object({
 	topic: z
@@ -61,9 +61,9 @@ const supportTopics = [
 ];
 
 export default function SupportModal() {
-	const dispatch = useDispatch();
+	const dispatch = useAppDispatch();
 	const { ownerAddress, activeWallet } = useSession();
-	const isOpen = useSelector(state => state.ui.currentModal.type === 'Support');
+	const isOpen = useAppSelector(state => state.ui.currentModal.type === 'Support');
 
 	const {
 		register,
@@ -93,14 +93,20 @@ export default function SupportModal() {
 		}
 	}, [isOpen, reset]);
 
-	const supportMutation = useMutation({
+	interface SupportVariables {
+		data: z.infer<typeof supportSchema>;
+		userAddress: string | null;
+		displayName?: string;
+	}
+
+	const supportMutation = useMutation<{ success: boolean; message: string }, Error, SupportVariables>({
 		mutationFn: variables =>
-			sendSupportRequest(variables.data, variables.userAddress, variables.displayName),
+			sendSupportRequest(variables.data, variables.userAddress || '', variables.displayName),
 		onSuccess: () => {
 			toast.success('Request Submitted', {
 				description: 'Our team has received your request and will get back to you shortly.',
 			});
-			dispatch(closeModal());
+			dispatch(closeModal(undefined));
 		},
 		onError: error => {
 			toast.error('Submission Failed', {
@@ -110,7 +116,7 @@ export default function SupportModal() {
 		},
 	});
 
-	const onSubmit = data => {
+	const onSubmit = (data: z.infer<typeof supportSchema>) => {
 		const displayName = activeWallet?.getAccount()?.ens?.name;
 		supportMutation.mutate({ data, userAddress: ownerAddress, displayName });
 	};
@@ -118,7 +124,7 @@ export default function SupportModal() {
 	const isProcessing = isSubmitting || supportMutation.isPending;
 
 	return (
-		<Dialog open={isOpen} onOpenChange={() => dispatch(closeModal())}>
+		<Dialog open={isOpen} onOpenChange={() => dispatch(closeModal(undefined))}>
 			<DialogContent className="w-full max-w-[calc(100vw-2rem)] rounded-xl sm:max-w-md">
 				<DialogHeader>
 					<DialogTitle>Submit a Support Request</DialogTitle>
@@ -187,7 +193,7 @@ export default function SupportModal() {
 						<Button
 							type="button"
 							variant="outline"
-							onClick={() => dispatch(closeModal())}
+							onClick={() => dispatch(closeModal(undefined))}
 							disabled={isProcessing}
 						>
 							Cancel

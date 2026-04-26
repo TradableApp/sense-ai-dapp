@@ -33,7 +33,7 @@ const initialiseFirebase = () => {
 		firebaseApp = initializeApp(firebaseConfig);
 
 		if (import.meta.env.DEV || import.meta.env.VITE_APP_DEBUG) {
-			window.FIREBASE_APPCHECK_DEBUG_TOKEN = import.meta.env.VITE_APP_CHECK_DEBUG_TOKEN;
+			(window as unknown as Record<string, unknown>).FIREBASE_APPCHECK_DEBUG_TOKEN = import.meta.env.VITE_APP_CHECK_DEBUG_TOKEN;
 		}
 
 		// Initialize App Check to protect backend resources

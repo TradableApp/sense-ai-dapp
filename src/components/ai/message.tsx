@@ -1,10 +1,34 @@
+import { ReactNode } from 'react';
+
 import { AccountAvatar, AccountProvider, Blobbie } from 'thirdweb/react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { client } from '@/config/thirdweb';
 import { cn } from '@/lib/utils';
 
-export function Message({ className, from, status, ...props }) {
+interface MessageProps {
+	className?: string;
+	from?: string;
+	status?: string;
+	children?: ReactNode;
+	[key: string]: any;
+}
+
+interface MessageContentProps {
+	children?: ReactNode;
+	className?: string;
+	[key: string]: any;
+}
+
+interface MessageAvatarProps {
+	src?: string;
+	name?: string;
+	address?: string;
+	className?: string;
+	[key: string]: any;
+}
+
+export function Message({ className, from, status, ...props }: MessageProps) {
 	return (
 		<div
 			className={cn(
@@ -21,7 +45,7 @@ export function Message({ className, from, status, ...props }) {
 	);
 }
 
-export function MessageContent({ children, className, ...props }) {
+export function MessageContent({ children, className, ...props }: MessageContentProps) {
 	return (
 		<div
 			className={cn(
@@ -38,7 +62,7 @@ export function MessageContent({ children, className, ...props }) {
 	);
 }
 
-export function MessageAvatar({ src, name, address, className, ...props }) {
+export function MessageAvatar({ src, name, address, className, ...props }: MessageAvatarProps) {
 	return (
 		<Avatar className={cn('size-8 ring ring-1 ring-border mt-1.5', className)} {...props}>
 			{/* If an address is provided, use Thirdweb's AccountAvatar (User) */}

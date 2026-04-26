@@ -16,7 +16,13 @@ const editSchema = z.object({
 	content: z.string().trim().min(1, { message: 'Message cannot be empty.' }),
 });
 
-export default function EditPromptInput({ originalContent, onSave, onCancel }) {
+interface EditPromptInputProps {
+	originalContent: string;
+	onSave: (data: { content: string }) => void;
+	onCancel: () => void;
+}
+
+export default function EditPromptInput({ originalContent, onSave, onCancel }: EditPromptInputProps) {
 	const {
 		register,
 		handleSubmit,

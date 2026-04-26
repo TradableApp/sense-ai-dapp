@@ -177,10 +177,10 @@ describe('buildErrorHandler — Generic fallbacks', () => {
 	});
 
 	it('isTestnet=true renders faucet button in ERC20InsufficientBalance toast', () => {
-		toast.error.mockClear();
+		(toast.error as any).mockClear();
 		const handler = buildErrorHandler(true, vi.fn());
 		handler({ message: 'ERC20InsufficientBalance' }, 'send message');
-		const [, options] = toast.error.mock.calls[0];
+		const [, options] = (toast.error as any).mock.calls[0];
 		// duration should be Infinity on testnet so the button stays visible
 		expect(options.duration).toBe(Infinity);
 	});

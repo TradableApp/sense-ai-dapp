@@ -1,10 +1,21 @@
-import { useSelector } from 'react-redux';
+import { useAppSelector } from '@/store/hooks';
 
 import FeedbackModal from '@/features/feedback/FeedbackModal';
 import DisclaimerModal from '@/features/legal/DisclaimerModal';
 import PrivacyModal from '@/features/legal/PrivacyModal';
 import TermsModal from '@/features/legal/TermsModal';
 import SupportModal from '@/features/support/SupportModal';
+
+interface Modal {
+	type: string;
+	props?: any;
+}
+
+interface UIState {
+	currentModal?: Modal;
+	overlayModal?: Modal;
+	priorityModal?: Modal;
+}
 
 export const modalLookup = {
 	Feedback: FeedbackModal,
@@ -14,9 +25,9 @@ export const modalLookup = {
 	Disclaimer: DisclaimerModal,
 };
 
-const renderModal = modal => {
+const renderModal = (modal: Modal | undefined) => {
 	if (!modal?.type) return null;
-	const ModalComponent = modalLookup[modal.type];
+	const ModalComponent = modalLookup[modal.type as keyof typeof modalLookup];
 	if (!ModalComponent) {
 		console.warn(`Modal type "${modal.type}" not found in modalLookup.`);
 		return null;
@@ -25,7 +36,7 @@ const renderModal = modal => {
 };
 
 export default function ModalManager() {
-	const { currentModal, overlayModal, priorityModal } = useSelector(state => state.ui);
+	const { currentModal, overlayModal, priorityModal } = useAppSelector((state) => state.ui) as UIState;
 
 	return (
 		<>

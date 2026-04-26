@@ -1,10 +1,11 @@
+import type { Dispatch } from '@reduxjs/toolkit';
 import { addReasoningStepById, updateMessageContentById } from '@/store/chatSlice';
 
 class WebSocketService {
-	constructor() {
-		this.socket = null;
-		this.dispatch = null;
-	}
+	socket: WebSocket | null = null;
+	dispatch: Dispatch | null = null;
+
+	constructor() {}
 
 	/**
 	 * Initializes the service and connects the websocket.
@@ -12,7 +13,7 @@ class WebSocketService {
 	 * @param {function} dispatch - The Redux store's dispatch function.
 	 * @param {string} authToken - A token to authenticate the websocket connection (e.g., a SIWE signature).
 	 */
-	init(dispatch, authToken) {
+	init(dispatch: Dispatch, authToken: string): void {
 		if (this.socket || !dispatch || !authToken) {
 			return;
 		}
@@ -50,7 +51,7 @@ class WebSocketService {
 	 * Parses incoming messages from the TEE and dispatches the appropriate Redux actions.
 	 * @param {string} rawMessage - The raw JSON string from the websocket.
 	 */
-	handleMessage(rawMessage) {
+	handleMessage(rawMessage: string): void {
 		try {
 			const message = JSON.parse(rawMessage);
 			console.log('[WebSocketService] Received message:', message);
@@ -88,7 +89,7 @@ class WebSocketService {
 	 * Closes the websocket connection.
 	 * Should be called on user logout.
 	 */
-	disconnect() {
+	disconnect(): void {
 		if (this.socket) {
 			this.socket.close();
 		}

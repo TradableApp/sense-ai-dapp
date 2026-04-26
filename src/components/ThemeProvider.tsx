@@ -1,16 +1,28 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
 
-const ThemeProviderContext = createContext({
+interface ThemeContextValue {
+	theme: string;
+	setTheme: (newTheme: string) => void;
+}
+
+const ThemeProviderContext = createContext<ThemeContextValue>({
 	theme: 'system',
 	setTheme: () => null,
 });
+
+interface ThemeProviderProps {
+	children?: ReactNode;
+	defaultTheme?: string;
+	storageKey?: string;
+	[key: string]: any;
+}
 
 export function ThemeProvider({
 	children,
 	defaultTheme = 'system',
 	storageKey = 'vite-ui-theme',
 	...props
-}) {
+}: ThemeProviderProps) {
 	const [theme, setTheme] = useState(() => localStorage.getItem(storageKey) || defaultTheme);
 
 	useEffect(() => {
@@ -57,13 +69,13 @@ export function ThemeProvider({
 	const value = useMemo(
 		() => ({
 			theme,
-			setTheme: newTheme => {
+			setTheme: (newTheme: string) => {
 				localStorage.setItem(storageKey, newTheme);
 				setTheme(newTheme);
 			},
 		}),
 		[theme, storageKey],
-	);
+	) as ThemeContextValue;
 
 	return (
 		<ThemeProviderContext.Provider {...props} value={value}>

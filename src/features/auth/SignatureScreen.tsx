@@ -3,7 +3,7 @@ import { ConnectButton } from 'thirdweb/react';
 
 import RainbowButton from '@/components/magicui/rainbow-button';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
-import Separator from '@/components/ui/separator';
+import { Separator } from '@/components/ui/separator';
 import { SUPPORTED_TOKENS } from '@/config/contracts';
 import { client, deploymentChain, wallets } from '@/config/thirdweb';
 import senseaiLogo from '@/senseai-logo.svg';

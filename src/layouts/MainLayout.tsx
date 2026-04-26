@@ -1,5 +1,4 @@
 import { HelpCircle, LifeBuoy, Send } from 'lucide-react';
-import { useDispatch } from 'react-redux';
 import { Outlet, useLocation } from 'react-router-dom';
 import { ConnectButton } from 'thirdweb/react';
 
@@ -17,7 +16,7 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import Separator from '@/components/ui/separator';
+import { Separator } from '@/components/ui/separator';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { SUPPORTED_TOKENS } from '@/config/contracts';
 import { client, deploymentChain, wallets } from '@/config/thirdweb';
@@ -29,6 +28,7 @@ import MobileNav from '@/layouts/components/MobileNav';
 import { cn } from '@/lib/utils';
 import senseaiLogo from '@/senseai-logo.svg';
 import { openModal } from '@/store/uiSlice';
+import { useAppDispatch } from '@/store/hooks';
 
 function usePageTitle() {
 	const location = useLocation();
@@ -40,7 +40,7 @@ function usePageTitle() {
 export default function MainLayout() {
 	const pageTitle = usePageTitle();
 	const isMobile = useMobile();
-	const dispatch = useDispatch();
+	const dispatch = useAppDispatch();
 
 	useConversations();
 	useLiveResponse();

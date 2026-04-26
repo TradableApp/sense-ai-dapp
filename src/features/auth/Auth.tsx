@@ -1,4 +1,3 @@
-import { useDispatch } from 'react-redux';
 import { Navigate } from 'react-router-dom';
 import { ConnectButton, useActiveAccount } from 'thirdweb/react';
 
@@ -11,6 +10,7 @@ import senseaiLogo from '@/senseai-logo.svg';
 import senseaiTextLogoBlack from '@/senseai-text-logo-black-purple.svg';
 import senseaiTextLogoWhite from '@/senseai-text-logo-white-purple.svg';
 import { openModal } from '@/store/uiSlice';
+import { useAppDispatch } from '@/store/hooks';
 
 function FooterLink({ label, onClick }) {
 	return (
@@ -26,7 +26,7 @@ function FooterLink({ label, onClick }) {
 
 export default function Auth() {
 	const activeAccount = useActiveAccount();
-	const dispatch = useDispatch();
+	const dispatch = useAppDispatch();
 
 	if (activeAccount) {
 		return <Navigate to="/" replace />;

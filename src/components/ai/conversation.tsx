@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, ReactNode } from 'react';
 
 import { ArrowDownIcon } from 'lucide-react';
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom';
@@ -8,7 +8,22 @@ import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-export function Conversation({ className, ...props }) {
+interface ConversationProps {
+	className?: string;
+	children: ReactNode;
+}
+
+interface ConversationContentProps {
+	className?: string;
+	children: ReactNode;
+}
+
+interface ConversationScrollButtonProps {
+	className?: string;
+	children?: ReactNode;
+}
+
+export function Conversation({ className, ...props }: ConversationProps) {
 	return (
 		<StickToBottom
 			className={cn('relative flex-1 overflow-y-auto', className)}
@@ -20,11 +35,11 @@ export function Conversation({ className, ...props }) {
 	);
 }
 
-export function ConversationContent({ className, ...props }) {
+export function ConversationContent({ className, ...props }: ConversationContentProps) {
 	return <StickToBottom.Content className={cn('p-4', className)} {...props} />;
 }
 
-export function ConversationScrollButton({ className, ...props }) {
+export function ConversationScrollButton({ className, ...props }: ConversationScrollButtonProps) {
 	const { isAtBottom, scrollToBottom } = useStickToBottomContext();
 	const handleScrollToBottom = useCallback(() => {
 		scrollToBottom();

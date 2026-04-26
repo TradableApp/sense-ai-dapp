@@ -1,3 +1,5 @@
+import type { QueryClient } from '@tanstack/react-query';
+import type { Conversation, Message } from './types';
 import { decryptData, encryptData } from './crypto';
 import db from './db';
 // import simulateOracleProcess from './mockApi';
@@ -9,7 +11,12 @@ import {
 
 const MESSAGE_CACHE_LIMIT = 5;
 
-const updateAndEncryptConversation = async (sessionKey, ownerAddress, conversationId, messages) => {
+const updateAndEncryptConversation = async (
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	conversationId: string,
+	messages: Message[],
+): Promise<Conversation | null> => {
 	const convRecord = await db.conversations.get([ownerAddress, conversationId]);
 	if (!convRecord) return null;
 
@@ -46,7 +53,7 @@ const updateAndEncryptConversation = async (sessionKey, ownerAddress, conversati
 	return decryptedConv;
 };
 
-const maintainMessageCache = async ownerAddress => {
+const maintainMessageCache = async (ownerAddress: string): Promise<void> => {
 	const cacheCount = await db.messageCache.where({ ownerAddress }).count();
 	if (cacheCount > MESSAGE_CACHE_LIMIT) {
 		// The compound index '[ownerAddress+lastAccessedAt]' in db.js ensures
@@ -61,7 +68,10 @@ const maintainMessageCache = async ownerAddress => {
 	}
 };
 
-export const fetchAndCacheConversations = async (sessionKey, ownerAddress) => {
+export const fetchAndCacheConversations = async (
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+): Promise<Conversation[]> => {
 	if (!sessionKey || !ownerAddress) return [];
 	const finalRecords = await db.conversations.where({ ownerAddress }).toArray();
 	const decrypted = await Promise.all(
@@ -72,7 +82,11 @@ export const fetchAndCacheConversations = async (sessionKey, ownerAddress) => {
 		.sort((a, b) => (b.lastMessageCreatedAt || 0) - (a.lastMessageCreatedAt || 0));
 };
 
-export const getMessagesForConversation = async (sessionKey, ownerAddress, conversationId) => {
+export const getMessagesForConversation = async (
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	conversationId: string,
+): Promise<Message[]> => {
 	if (!sessionKey || !ownerAddress || !conversationId) return [];
 
 	const cachedRecord = await db.messageCache.get([ownerAddress, conversationId]);
@@ -103,20 +117,20 @@ export const getMessagesForConversation = async (sessionKey, ownerAddress, conve
 };
 
 const createMessageWorkflow = async (
-	sessionKey,
-	ownerAddress,
-	conversationId,
-	existingMessages,
-	userMessage,
-	aiMessage,
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	conversationId: string,
+	existingMessages: Message[],
+	userMessage: Message | null,
+	aiMessage: Message,
 	// These parameters are now dormant but preserved for the future websocket implementation.
-	// queryForOracle,
-	// answerMessageId,
-	// onReasoningStep,
-	// onFinalAnswer,
-	// regenerationMode,
-	// queryClient,
-) => {
+	queryForOracle?: string,
+	answerMessageId?: string,
+	onReasoningStep?: unknown,
+	onFinalAnswer?: unknown,
+	regenerationMode?: unknown,
+	queryClient?: QueryClient,
+): Promise<void> => {
 	const newMessages = userMessage
 		? [...existingMessages, userMessage, aiMessage]
 		: [...existingMessages, aiMessage];
@@ -179,17 +193,17 @@ const createMessageWorkflow = async (
 };
 
 export const addMessageToConversation = async (
-	sessionKey,
-	ownerAddress,
-	conversationId,
-	parentId,
-	messageContent,
-	promptMessageId,
-	answerMessageId,
-	queryClient,
-) => {
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	conversationId: string,
+	parentId: string | null,
+	messageContent: string,
+	promptMessageId: string,
+	answerMessageId: string,
+	queryClient: QueryClient,
+): Promise<{ finalUserMessage: Message; finalAiMessage: Message }> => {
 	const now = Date.now();
-	const finalUserMessage = {
+	const finalUserMessage: Message = {
 		id: promptMessageId,
 		conversationId,
 		parentId,
@@ -197,7 +211,7 @@ export const addMessageToConversation = async (
 		content: messageContent,
 		createdAt: now,
 	};
-	const finalAiMessage = {
+	const finalAiMessage: Message = {
 		id: answerMessageId,
 		conversationId,
 		parentId: finalUserMessage.id,
@@ -237,14 +251,14 @@ export const addMessageToConversation = async (
 };
 
 export const createNewConversation = async (
-	sessionKey,
-	ownerAddress,
-	firstMessageContent,
-	conversationId,
-	promptMessageId,
-	answerMessageId,
-	queryClient,
-) => {
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	firstMessageContent: string,
+	conversationId: string,
+	promptMessageId: string,
+	answerMessageId: string,
+	queryClient: QueryClient,
+): Promise<{ newConversation: Conversation; finalUserMessage: Message; finalAiMessage: Message }> => {
 	console.log('[dataService] Creating new conversation.');
 	const now = Date.now();
 	const newConversation = {
@@ -280,7 +294,11 @@ export const createNewConversation = async (
 };
 
 // Helper to get a single conversation (used for deletion checks)
-export const getConversation = async (sessionKey, ownerAddress, conversationId) => {
+export const getConversation = async (
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	conversationId: string,
+): Promise<Conversation | null> => {
 	if (!sessionKey || !ownerAddress || !conversationId) {
 		return null;
 	}
@@ -295,11 +313,11 @@ export const getConversation = async (sessionKey, ownerAddress, conversationId) 
 };
 
 export const renameConversation = async (
-	sessionKey,
-	ownerAddress,
-	{ id, newTitle },
-	queryClient,
-) => {
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	{ id, newTitle }: { id: string; newTitle: string },
+	queryClient: QueryClient,
+): Promise<Conversation> => {
 	console.log(`%c[dataService] Attempting to rename conv "${id}" to "${newTitle}"`, 'color: blue');
 	const record = await db.conversations.get([ownerAddress, id]);
 	if (!record) throw new Error(`Conversation with ID "${id}" not found.`);
@@ -316,7 +334,12 @@ export const renameConversation = async (
 	return decrypted;
 };
 
-export const deleteConversation = async (sessionKey, ownerAddress, conversationId, queryClient) => {
+export const deleteConversation = async (
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	conversationId: string,
+	queryClient: QueryClient,
+): Promise<string> => {
 	console.log(`%c[dataService] Attempting to delete conv "${conversationId}"`, 'color: red');
 	const record = await db.conversations.get([ownerAddress, conversationId]);
 	if (!record) throw new Error(`Conversation with ID "${conversationId}" not found.`);
@@ -335,13 +358,13 @@ export const deleteConversation = async (sessionKey, ownerAddress, conversationI
 };
 
 export const branchConversation = async (
-	sessionKey,
-	ownerAddress,
-	originalConversationId,
-	branchPointMessageId,
-	newConversationId,
-	queryClient,
-) => {
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	originalConversationId: string,
+	branchPointMessageId: string,
+	newConversationId: string,
+	queryClient: QueryClient,
+): Promise<Conversation> => {
 	console.log(
 		`[dataService] Branching conversation "${originalConversationId}" at message "${branchPointMessageId}".`,
 	);
@@ -354,11 +377,14 @@ export const branchConversation = async (
 		originalConversationId,
 	);
 	const messageMap = new Map(allOriginalMessages.map(m => [m.id, m]));
-	const historyToBranch = [];
-	let currentId = branchPointMessageId;
+	const historyToBranch: Message[] = [];
+	let currentId: string | undefined = branchPointMessageId;
 	while (currentId && messageMap.has(currentId)) {
-		historyToBranch.unshift(messageMap.get(currentId));
-		currentId = messageMap.get(currentId).parentId;
+		const msg = messageMap.get(currentId);
+		if (msg) {
+			historyToBranch.unshift(msg);
+			currentId = msg.parentId;
+		}
 	}
 	const now = Date.now();
 	const newConversation = {
@@ -399,15 +425,15 @@ export const branchConversation = async (
 };
 
 export const editUserMessage = (
-	sessionKey,
-	ownerAddress,
-	conversationId,
-	parentId,
-	newContent,
-	promptMessageId,
-	answerMessageId,
-	queryClient,
-) =>
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	conversationId: string,
+	parentId: string,
+	newContent: string,
+	promptMessageId: string,
+	answerMessageId: string,
+	queryClient: QueryClient,
+): Promise<{ finalUserMessage: Message; finalAiMessage: Message }> =>
 	addMessageToConversation(
 		sessionKey,
 		ownerAddress,
@@ -420,18 +446,18 @@ export const editUserMessage = (
 	);
 
 export const regenerateAssistantResponse = async (
-	sessionKey,
-	ownerAddress,
-	conversationId,
-	parentId,
-	originalUserQuery,
-	regenerationMode,
-	answerMessageId,
-	queryClient,
-) => {
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	conversationId: string,
+	parentId: string,
+	originalUserQuery: string,
+	regenerationMode: unknown,
+	answerMessageId: string,
+	queryClient: QueryClient,
+): Promise<{ finalAiMessage: Message }> => {
 	console.log(`[dataService] Regenerating response for parent message "${parentId}".`);
 	const now = Date.now();
-	const finalAiMessage = {
+	const finalAiMessage: Message = {
 		id: answerMessageId, // Use the real on-chain ID
 		conversationId,
 		parentId,
@@ -475,12 +501,12 @@ export const regenerateAssistantResponse = async (
  * Used when cancelling a prompt to ensure the "Thinking" bubble doesn't persist on refresh.
  */
 export const deleteMessageFromConversation = async (
-	sessionKey,
-	ownerAddress,
-	conversationId,
-	messageId,
-	queryClient,
-) => {
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	conversationId: string,
+	messageId: string,
+	queryClient: QueryClient,
+): Promise<void> => {
 	console.log(`[dataService] Deleting message ${messageId} from conversation ${conversationId}`);
 
 	const cachedRecord = await db.messageCache.get([ownerAddress, conversationId]);

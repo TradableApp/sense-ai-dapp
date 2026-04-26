@@ -1,12 +1,25 @@
 import { useEffect, useRef } from 'react';
 
+import type { DocumentSnapshot, Query } from 'firebase/firestore';
 import { onSnapshot } from 'firebase/firestore';
-import { useDispatch } from 'react-redux';
 
 import { dataFromSnapshot } from '@/lib/firestoreService';
 import { asyncActionError, asyncActionFinish, asyncActionStart } from '@/store/asyncSlice';
+import { useAppDispatch } from '@/store/hooks';
 
 import useCompare from './useCompare';
+
+interface FirestoreDocumentListenerProps {
+	queryFn: () => DocumentSnapshot | Query;
+	queryDeps: (string | number | null | undefined)[] | null;
+	docFn?: (doc: any) => any;
+	docId?: string;
+	dataFn: (data: any) => void;
+	errorFn?: () => void;
+	deps: unknown[];
+	shouldExecute?: boolean;
+	loadingTag?: string;
+}
 
 export default function useFirestoreDocumentListener({
 	queryFn,
@@ -18,9 +31,9 @@ export default function useFirestoreDocumentListener({
 	deps,
 	shouldExecute = true,
 	loadingTag = 'useFirestoreDocumentListener',
-}) {
+}: FirestoreDocumentListenerProps) {
 	// Redux Dispatch
-	const dispatch = useDispatch();
+	const dispatch = useAppDispatch();
 
 	// Previous state/ prop values for comparison
 	const queryDepsCompare = useCompare(queryDeps);
@@ -39,15 +52,18 @@ export default function useFirestoreDocumentListener({
 			dispatch(asyncActionStart(loadingTag));
 
 			const unsubscribe = onSnapshot(
-				queryFn(),
-				snapshot => {
+				queryFn() as any,
+				(snapshot: DocumentSnapshot) => {
 					dispatch(asyncActionStart(loadingTag));
 
 					if (!snapshot.exists()) {
 						dispatch(
-							asyncActionError(loadingTag, {
-								code: 'not-found',
-								message: 'Could not find document',
+							asyncActionError({
+								type: loadingTag,
+								error: {
+									code: 'not-found',
+									message: 'Could not find document',
+								},
 							}),
 						);
 
@@ -62,14 +78,14 @@ export default function useFirestoreDocumentListener({
 						dispatch(asyncActionFinish(loadingTag));
 					}
 				},
-				error => {
+				(error: Error) => {
 					console.log('error', error);
 					if (errorFn && isMounted.current) {
 						errorFn();
 					}
-					dispatch(asyncActionError(loadingTag, error));
+					dispatch(asyncActionError({ type: loadingTag, error }));
 				},
-			);
+			) as any;
 
 			return () => {
 				// Unmounting, stop loading if it still is and unsubscribe from Firestore listener

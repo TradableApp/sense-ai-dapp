@@ -8,8 +8,8 @@ import {
 	CardTitle,
 } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import Separator from '@/components/ui/separator';
-import Skeleton from '@/components/ui/skeleton';
+import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import useRecentActivity from '@/hooks/useRecentActivity';
 
 export default function RecentActivityCard() {

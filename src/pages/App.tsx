@@ -2,7 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 
 import cuid from 'cuid';
 import posthog from 'posthog-js';
-import { useDispatch, useSelector } from 'react-redux';
 import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useAutoConnect } from 'thirdweb/react';
 import { getUserEmail } from 'thirdweb/wallets';
@@ -21,6 +20,7 @@ import { useSession } from '@/features/auth/SessionProvider';
 import useNetwork from '@/hooks/useNetwork';
 import { loadState, saveState } from '@/lib/browserStorage';
 import { setAppError, setFirebaseReady, setThirdwebReady } from '@/store/appSlice';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { setDeviceInfo, setDeviceScreen, setPwa } from '@/store/deviceSlice';
 
 const Chat = lazy(() => import('@/features/chat/Chat'));
@@ -32,7 +32,11 @@ const TermsAndConditionsPage = lazy(() => import('@/features/legal/TermsAndCondi
 const WebsiteDisclaimerPage = lazy(() => import('@/features/legal/WebsiteDisclaimerPage'));
 const UsageDashboard = lazy(() => import('@/features/usage/UsageDashboard'));
 
-function ErrorBoundaryWrapper({ children }) {
+interface ErrorBoundaryWrapperProps {
+	children: React.ReactNode;
+}
+
+function ErrorBoundaryWrapper({ children }: ErrorBoundaryWrapperProps) {
 	const navigate = useNavigate();
 	const location = useLocation();
 	return (
@@ -43,9 +47,9 @@ function ErrorBoundaryWrapper({ children }) {
 }
 
 export default function App() {
-	const dispatch = useDispatch();
-	const appStatus = useSelector(state => state.app.status);
-	const isOnline = useSelector(state => state.device.online);
+	const dispatch = useAppDispatch();
+	const appStatus = useAppSelector((state) => state.app.status);
+	const isOnline = useAppSelector((state) => state.device.online);
 	const { ownerAddress, status: sessionStatus } = useSession();
 
 	const { status: thirdwebStatus, isInitialLoading } = useAutoConnect({ client, wallets });
@@ -91,8 +95,8 @@ export default function App() {
 
 	useEffect(() => {
 		// Initialize Telegram Mini App
-		if (window.Telegram?.WebApp) {
-			const tg = window.Telegram.WebApp;
+		if ((window as any).Telegram?.WebApp) {
+			const tg = (window as any).Telegram.WebApp;
 			tg.ready(); // Hides the Telegram loading spinner
 			tg.expand(); // Forces the app to open to full height
 			dispatch(setPwa(true)); // Treats the Telegram environment as a PWA/Native App
@@ -101,9 +105,9 @@ export default function App() {
 		if (loadState('consentSettings') === null) {
 			setShowConsent(true);
 		}
-		if (initialiseFirebaseError.error) {
+		if ((initialiseFirebaseError as any).error) {
 			dispatch(
-				setAppError(initialiseFirebaseError.error.message || 'Firebase initialization failed.'),
+				setAppError(((initialiseFirebaseError as any).error.message || 'Firebase initialization failed.') as string),
 			);
 		} else {
 			dispatch(setFirebaseReady());

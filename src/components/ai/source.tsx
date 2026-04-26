@@ -1,11 +1,39 @@
 'use client';
 
+import { ReactNode } from 'react';
+
 import { BookIcon, ChevronDownIcon } from 'lucide-react';
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 
-export function Sources({ className, ...props }) {
+interface SourcesProps {
+	className?: string;
+	children?: ReactNode;
+	[key: string]: any;
+}
+
+interface SourcesTriggerProps {
+	className?: string;
+	count?: number;
+	children?: ReactNode;
+	[key: string]: any;
+}
+
+interface SourcesContentProps {
+	className?: string;
+	children?: ReactNode;
+	[key: string]: any;
+}
+
+interface SourceProps {
+	href?: string;
+	title?: string;
+	children?: ReactNode;
+	[key: string]: any;
+}
+
+export function Sources({ className, ...props }: SourcesProps) {
 	return (
 		<Collapsible
 			className={cn('not-prose text-primary text-xs pt-4 border-t', className)}
@@ -14,7 +42,7 @@ export function Sources({ className, ...props }) {
 	);
 }
 
-export function SourcesTrigger({ className, count, children, ...props }) {
+export function SourcesTrigger({ className, count, children, ...props }: SourcesTriggerProps) {
 	return (
 		<CollapsibleTrigger
 			className={cn('flex items-center gap-2 font-medium text-muted-foreground', className)}
@@ -30,7 +58,7 @@ export function SourcesTrigger({ className, count, children, ...props }) {
 	);
 }
 
-export function SourcesContent({ className, ...props }) {
+export function SourcesContent({ className, ...props }: SourcesContentProps) {
 	return (
 		<CollapsibleContent
 			className={cn(
@@ -43,7 +71,7 @@ export function SourcesContent({ className, ...props }) {
 	);
 }
 
-export function Source({ href, title, children, ...props }) {
+export function Source({ href, title, children, ...props }: SourceProps) {
 	return (
 		<a
 			className="flex items-center gap-2 text-primary"

@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useMemo, useState } from 'react';
+import { createContext, useContext, useMemo, useState, ReactNode } from 'react';
 
 import { CheckIcon, CopyIcon } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -13,6 +13,22 @@ const CodeBlockContext = createContext({
 	code: '',
 });
 
+interface CodeBlockProps {
+	code: string;
+	language: string;
+	showLineNumbers?: boolean;
+	className?: string;
+	children?: ReactNode;
+}
+
+interface CodeBlockCopyButtonProps {
+	onCopy?: () => void;
+	onError?: (error: Error) => void;
+	timeout?: number;
+	children?: ReactNode;
+	className?: string;
+}
+
 export function CodeBlock({
 	code,
 	language,
@@ -20,7 +36,7 @@ export function CodeBlock({
 	className,
 	children,
 	...props
-}) {
+}: CodeBlockProps) {
 	const value = useMemo(() => ({ code }), [code]);
 	return (
 		<CodeBlockContext.Provider value={value}>
@@ -94,7 +110,7 @@ export function CodeBlockCopyButton({
 	children,
 	className,
 	...props
-}) {
+}: CodeBlockCopyButtonProps) {
 	const [isCopied, setIsCopied] = useState(false);
 	const { code } = useContext(CodeBlockContext);
 	const copyToClipboard = async () => {

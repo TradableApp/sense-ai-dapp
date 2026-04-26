@@ -1,7 +1,6 @@
 import { useState } from 'react';
 
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import { useDispatch, useSelector } from 'react-redux';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -15,14 +14,26 @@ import {
 import useConversations from '@/hooks/useConversations';
 import { cn } from '@/lib/utils';
 import { setActiveConversationId } from '@/store/chatSlice';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
-export default function NavMain({ items }) {
+interface NavItem {
+	title: string;
+	url: string;
+	icon: React.ComponentType<{ className?: string }>;
+	hasChildren?: boolean;
+}
+
+interface NavMainProps {
+	items: NavItem[];
+}
+
+export default function NavMain({ items }: NavMainProps) {
 	const location = useLocation();
 	const navigate = useNavigate();
-	const dispatch = useDispatch();
+	const dispatch = useAppDispatch();
 	const [isHistoryOpen, setIsHistoryOpen] = useState(true);
 
-	const activeConversationId = useSelector(state => state.chat.activeConversationId);
+	const activeConversationId = useAppSelector((state) => state.chat.activeConversationId);
 
 	const { data: allConversations } = useConversations();
 
@@ -56,7 +67,6 @@ export default function NavMain({ items }) {
 								<div className="group flex w-full items-center">
 									<SidebarMenuButton
 										asChild
-										tooltip={item.title}
 										isActive={location.pathname.startsWith(item.url)}
 										className="flex-1"
 									>
@@ -109,7 +119,6 @@ export default function NavMain({ items }) {
 						<SidebarMenuItem key={item.title} className="shrink-0">
 							<SidebarMenuButton
 								asChild
-								tooltip={item.title}
 								isActive={location.pathname === item.url}
 							>
 								<Link to={item.url}>

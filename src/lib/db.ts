@@ -1,6 +1,7 @@
 import Dexie from 'dexie';
+import type { SenseAIDb } from './types';
 
-const db = new Dexie('SenseAI');
+const db = new Dexie('SenseAI') as Dexie & SenseAIDb;
 
 db.version(1).stores({
 	conversations: '[ownerAddress+id]',

@@ -2,18 +2,19 @@
 import Fuse from 'fuse.js';
 import { eng, removeStopwords } from 'stopword';
 
+import type { Conversation, Message, SearchIndex } from './types';
 import { decryptData, encryptData } from './crypto';
 import db from './db';
 
 const SEARCH_INDEX_KEY = 'main';
 const POLLING_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
-let fuseInstance = null;
-let pollingIntervalId = null;
-let inMemoryRawIndex = { m: {}, c: {} };
+let fuseInstance: InstanceType<typeof Fuse<{ messageId: string; conversationId: string; contentKeywords: string; titleKeywords: string }>> | null = null;
+let pollingIntervalId: NodeJS.Timeout | null = null;
+let inMemoryRawIndex: { m: Record<string, { cid: string; c: string }>; c: Record<string, { t: string }> } = { m: {}, c: {} };
 let isSyncing = false;
 
-function generateKeywords(content = '') {
+function generateKeywords(content: string = ''): string {
 	if (!content) return '';
 	const tokens = content
 		.toLowerCase()
@@ -25,20 +26,24 @@ function generateKeywords(content = '') {
 	return removeStopwords(tokens, eng).join(' ').trim();
 }
 
-const getLastSyncedAt = async (sessionKey, ownerAddress) => {
+const getLastSyncedAt = async (sessionKey: CryptoKey, ownerAddress: string): Promise<number> => {
 	const metadataRecord = await db.userMetadata.get(ownerAddress);
 	if (!metadataRecord) return 0;
 	try {
 		const decrypted = await decryptData(sessionKey, metadataRecord.encryptedData);
-		return decrypted.searchLastSyncedAt || 0;
+		return (decrypted as Record<string, unknown>).searchLastSyncedAt as number || 0;
 	} catch (error) {
 		console.error('Could not decrypt user metadata, starting sync from scratch.', error);
 		return 0;
 	}
 };
 
-const setLastSyncedAt = async (sessionKey, ownerAddress, timestamp) => {
-	let metadata = { searchLastSyncedAt: 0 };
+const setLastSyncedAt = async (
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	timestamp: number,
+): Promise<void> => {
+	let metadata: Record<string, unknown> = { searchLastSyncedAt: 0 };
 	const existingRecord = await db.userMetadata.get(ownerAddress);
 	if (existingRecord) {
 		try {
@@ -52,7 +57,7 @@ const setLastSyncedAt = async (sessionKey, ownerAddress, timestamp) => {
 	await db.userMetadata.put({ ownerAddress, encryptedData: encryptedMetadata });
 };
 
-const initializeFuse = rawIndex => {
+const initializeFuse = (rawIndex: { m: Record<string, { cid: string; c: string }>; c: Record<string, { t: string }> }): void => {
 	const searchableMessagesMap = rawIndex.m || {};
 	const conversationTitlesMap = rawIndex.c || {};
 
@@ -78,7 +83,7 @@ const initializeFuse = rawIndex => {
 	});
 };
 
-const syncSearchIndex = async (sessionKey, ownerAddress) => {
+const syncSearchIndex = async (sessionKey: CryptoKey, ownerAddress: string): Promise<void> => {
 	if (isSyncing) return;
 	isSyncing = true;
 
@@ -141,7 +146,11 @@ const syncSearchIndex = async (sessionKey, ownerAddress) => {
  * @param {string} ownerAddress The user's wallet address.
  * @param {Array<object>} deltas An array of decrypted SearchIndexDeltaFile objects.
  */
-export const mergeSearchIndexDeltas = async (sessionKey, ownerAddress, deltas) => {
+export const mergeSearchIndexDeltas = async (
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	deltas: unknown[],
+): Promise<void> => {
 	if (!deltas || deltas.length === 0) {
 		console.log('[searchService] No search deltas to merge.');
 		return;
@@ -184,7 +193,7 @@ export const mergeSearchIndexDeltas = async (sessionKey, ownerAddress, deltas) =
 	}
 };
 
-export const initializeSearch = async (sessionKey, ownerAddress) => {
+export const initializeSearch = async (sessionKey: CryptoKey, ownerAddress: string): Promise<void> => {
 	if (!sessionKey || !ownerAddress) return;
 	if (pollingIntervalId) clearInterval(pollingIntervalId);
 
@@ -195,37 +204,37 @@ export const initializeSearch = async (sessionKey, ownerAddress) => {
 	);
 };
 
-export const search = query => {
+export const search = (query: string): string[] => {
 	if (!fuseInstance || !query) return [];
 	// This ensures we are comparing keywords against keywords for accurate results.
 	const keywordQuery = generateKeywords(query);
 	const results = fuseInstance.search(keywordQuery);
-	const conversationIds = results.map(result => result.item.conversationId);
-	return [...new Set(conversationIds)];
+	const conversationIds = results.map(result => result.item.conversationId as string);
+	return [...new Set(conversationIds)] as string[];
 };
 
-export const teardownSearch = () => {
+export const teardownSearch = (): void => {
 	if (pollingIntervalId) clearInterval(pollingIntervalId);
 	pollingIntervalId = null;
 	fuseInstance = null;
 	inMemoryRawIndex = { m: {}, c: {} };
 };
 
-export const addDeltaToLiveIndex = (userMessage, conversation) => {
+export const addDeltaToLiveIndex = (userMessage: Message, conversation: Conversation): void => {
 	if (isSyncing) return;
-	const keywords = generateKeywords(userMessage.content);
+	const keywords = generateKeywords(userMessage.content || '');
 	inMemoryRawIndex.m[userMessage.id] = { cid: conversation.id, c: keywords };
 	inMemoryRawIndex.c[conversation.id] = { t: generateKeywords(conversation.title) };
 	initializeFuse(inMemoryRawIndex);
 };
 
-export const updateTitleInLiveIndex = conversation => {
+export const updateTitleInLiveIndex = (conversation: Conversation): void => {
 	if (isSyncing) return;
 	inMemoryRawIndex.c[conversation.id] = { t: generateKeywords(conversation.title) };
 	initializeFuse(inMemoryRawIndex);
 };
 
-export const removeConversationFromLiveIndex = conversationId => {
+export const removeConversationFromLiveIndex = (conversationId: string): void => {
 	if (isSyncing) return;
 	delete inMemoryRawIndex.c[conversationId];
 	const newMessageIndex = Object.entries(inMemoryRawIndex.m).filter(

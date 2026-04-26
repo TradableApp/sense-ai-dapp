@@ -5,6 +5,8 @@ import db from '@/lib/db';
 import { deriveKeyFromEntropy, encryptData } from './crypto';
 import { fetchAndCacheConversations } from './dataService';
 
+const mockDb = db as any;
+
 vi.mock('@/lib/db', () => {
 	const conversations = {
 		where: vi.fn(),
@@ -48,7 +50,7 @@ describe('fetchAndCacheConversations', () => {
 			})),
 		);
 
-		db.conversations.where.mockReturnValue({ toArray: vi.fn().mockResolvedValue(encrypted) });
+		mockDb.conversations.where.mockReturnValue({ toArray: vi.fn().mockResolvedValue(encrypted) });
 
 		const result = await fetchAndCacheConversations(sessionKey, OWNER);
 
@@ -71,7 +73,7 @@ describe('fetchAndCacheConversations', () => {
 			})),
 		);
 
-		db.conversations.where.mockReturnValue({ toArray: vi.fn().mockResolvedValue(encrypted) });
+		mockDb.conversations.where.mockReturnValue({ toArray: vi.fn().mockResolvedValue(encrypted) });
 
 		const result = await fetchAndCacheConversations(sessionKey, OWNER);
 
@@ -80,7 +82,7 @@ describe('fetchAndCacheConversations', () => {
 	});
 
 	it('returns empty array when no conversations exist', async () => {
-		db.conversations.where.mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) });
+		mockDb.conversations.where.mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) });
 
 		const result = await fetchAndCacheConversations(sessionKey, OWNER);
 

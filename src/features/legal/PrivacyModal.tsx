@@ -1,5 +1,3 @@
-import { useDispatch, useSelector } from 'react-redux';
-
 import { Button } from '@/components/ui/button';
 import {
 	Dialog,
@@ -11,15 +9,16 @@ import {
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { closeModal } from '@/store/uiSlice';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
 import PrivacyPolicyDoc from './docs/PrivacyPolicyDoc';
 
 export default function PrivacyModal() {
-	const dispatch = useDispatch();
-	const isOpen = useSelector(state => state.ui.currentModal.type === 'Privacy');
+	const dispatch = useAppDispatch();
+	const isOpen = useAppSelector(state => state.ui.currentModal.type === 'Privacy');
 
 	return (
-		<Dialog open={isOpen} onOpenChange={() => dispatch(closeModal())}>
+		<Dialog open={isOpen} onOpenChange={() => dispatch(closeModal(undefined))}>
 			<DialogContent className="w-full max-w-[calc(100vw-2rem)] rounded-xl sm:max-w-2xl">
 				<DialogHeader>
 					<DialogTitle>Privacy Policy</DialogTitle>
@@ -29,7 +28,7 @@ export default function PrivacyModal() {
 					<PrivacyPolicyDoc />
 				</ScrollArea>
 				<DialogFooter>
-					<Button onClick={() => dispatch(closeModal())}>Close</Button>
+					<Button onClick={() => dispatch(closeModal(undefined))}>Close</Button>
 				</DialogFooter>
 			</DialogContent>
 		</Dialog>

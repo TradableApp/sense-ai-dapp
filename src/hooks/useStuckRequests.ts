@@ -53,7 +53,7 @@ export default function useStuckRequests() {
 					client,
 					chain,
 					address: contractConfig.escrow.address,
-					abi: contractConfig.escrow.abi,
+					abi: contractConfig.escrow.abi as Parameters<typeof getContract>[0]['abi'],
 				});
 
 				// Fetch status for all candidates in parallel
@@ -62,7 +62,7 @@ export default function useStuckRequests() {
 						try {
 							const escrowInfo = await readContract({
 								contract: escrowContract,
-								method: 'escrows',
+								method: 'escrows' as any,
 								params: [p.id],
 							});
 							console.log('escrowInfo', escrowInfo);

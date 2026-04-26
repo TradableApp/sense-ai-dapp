@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import Separator from '@/components/ui/separator';
+import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import useChatMutations from '@/hooks/useChatMutations';
 import useStuckRequests from '@/hooks/useStuckRequests';
@@ -248,7 +248,7 @@ export default function PlanStatusCard({ plan }) {
 										</span>
 										{refundableRequests.length > 1 && (
 											<Button
-												size="xs"
+												size="sm"
 												variant="ghost"
 												className="h-6 text-xs hover:bg-amber-500/20 hover:text-amber-800 text-amber-700"
 												onClick={handleRefundAll}

@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, memo, useContext, useEffect, useMemo, useRef, useState, ReactNode } from 'react';
 
 import { useControllableState } from '@radix-ui/react-use-controllable-state';
 import { BrainIcon, ChevronDownIcon } from 'lucide-react';
@@ -9,7 +9,41 @@ import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 
-const ReasoningContext = createContext(null);
+interface ReasoningContextValue {
+	isStreaming: boolean;
+	isOpen: boolean;
+	setIsOpen: (open: boolean) => void;
+	reasoningDuration?: number;
+	reasoningSteps?: any[];
+}
+
+interface ReasoningProps {
+	className?: string;
+	isStreaming?: boolean;
+	open?: boolean;
+	defaultOpen?: boolean;
+	onOpenChange?: (open: boolean) => void;
+	reasoningDuration?: number;
+	reasoningSteps?: any[];
+	children?: ReactNode;
+	[key: string]: any;
+}
+
+interface ReasoningTriggerProps {
+	className?: string;
+	hidden?: boolean;
+	[key: string]: any;
+}
+
+interface ReasoningContentProps {
+	className?: string;
+	hidden?: boolean;
+	reasoningSteps?: any[];
+	sources?: any;
+	[key: string]: any;
+}
+
+const ReasoningContext = createContext<ReasoningContextValue | null>(null);
 
 const useReasoning = () => {
 	const context = useContext(ReasoningContext);
@@ -33,7 +67,7 @@ export const Reasoning = memo(
 		reasoningSteps, // Accept reasoningSteps as a prop
 		children,
 		...props
-	}) => {
+	}: ReasoningProps) => {
 		const [isOpen, setIsOpen] = useControllableState({
 			prop: open,
 			defaultProp: defaultOpen,
@@ -67,8 +101,8 @@ export const Reasoning = memo(
 		};
 
 		const contextValue = useMemo(
-			() => ({ isStreaming, isOpen, setIsOpen, reasoningDuration }),
-			[isStreaming, isOpen, setIsOpen, reasoningDuration],
+			() => ({ isStreaming, isOpen, setIsOpen, reasoningDuration, reasoningSteps }),
+			[isStreaming, isOpen, setIsOpen, reasoningDuration, reasoningSteps],
 		);
 
 		return (
@@ -86,7 +120,7 @@ export const Reasoning = memo(
 	},
 );
 
-export const ReasoningTrigger = memo(({ className, hidden, ...props }) => {
+export const ReasoningTrigger = memo(({ className, hidden, ...props }: ReasoningTriggerProps) => {
 	const { isStreaming, isOpen, reasoningDuration, reasoningSteps } = useReasoning();
 	return (
 		<CollapsibleTrigger
@@ -118,7 +152,7 @@ export const ReasoningTrigger = memo(({ className, hidden, ...props }) => {
 	);
 });
 
-export const ReasoningContent = memo(({ className, hidden, reasoningSteps, sources, ...props }) => {
+export const ReasoningContent = memo(({ className, hidden, reasoningSteps, sources, ...props }: ReasoningContentProps) => {
 	const { isStreaming } = useReasoning();
 	const [animatedDescriptions, setAnimatedDescriptions] = useState({});
 	const typingTimerRef = useRef(null);

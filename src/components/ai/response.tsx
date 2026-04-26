@@ -1,6 +1,6 @@
 'use client';
 
-import { isValidElement, memo } from 'react';
+import { isValidElement, memo, ReactNode } from 'react';
 
 import hardenReactMarkdown from 'harden-react-markdown';
 import ReactMarkdown from 'react-markdown';
@@ -14,11 +14,21 @@ import { CodeBlock, CodeBlockCopyButton } from './code-block';
 
 import 'katex/dist/katex.min.css';
 
+interface MarkdownProps {
+	className?: string;
+	options?: any;
+	children?: ReactNode;
+	allowedImagePrefixes?: string[];
+	allowedLinkPrefixes?: string[];
+	defaultOrigin?: string;
+	parseIncompleteMarkdown?: boolean;
+}
+
 /**
  * Parses markdown text and removes incomplete tokens to prevent partial rendering
  * of links, images, bold, and italic formatting during streaming.
  */
-function parseIncompleteMarkdown(text) {
+function parseIncompleteMarkdown(text: string): string {
 	if (!text || typeof text !== 'string') {
 		return text;
 	}
@@ -261,15 +271,15 @@ const components = {
 			/>
 		);
 	},
-	pre: ({ node, className, children }) => {
+	pre: ({ node, className, children }: any) => {
 		let language = 'javascript';
 		if (typeof node?.properties?.className === 'string') {
 			language = node.properties.className.replace('language-', '');
 		}
 		// Extract code content from children safely
 		let code = '';
-		if (isValidElement(children) && children.props && typeof children.props.children === 'string') {
-			code = children.props.children;
+		if (isValidElement(children) && typeof (children.props as any)?.children === 'string') {
+			code = (children.props as any).children;
 		} else if (typeof children === 'string') {
 			code = children;
 		}
@@ -294,7 +304,7 @@ const Response = memo(
 		defaultOrigin,
 		parseIncompleteMarkdown: shouldParseIncompleteMarkdown = true,
 		...props
-	}) => {
+	}: MarkdownProps) => {
 		// Parse the children to remove incomplete markdown tokens if enabled
 		const parsedChildren =
 			typeof children === 'string' && shouldParseIncompleteMarkdown

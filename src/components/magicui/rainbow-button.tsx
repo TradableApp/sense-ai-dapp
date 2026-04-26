@@ -1,8 +1,14 @@
-import React from 'react';
+import React, { ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
-const RainbowButton = React.forwardRef(({ children, className, ...props }, ref) => (
+interface RainbowButtonProps {
+	children?: ReactNode;
+	className?: string;
+	[key: string]: any;
+}
+
+const RainbowButton = React.forwardRef<HTMLButtonElement, RainbowButtonProps>(({ children, className, ...props }, ref) => (
 	// eslint-disable-next-line react/button-has-type
 	<button
 		ref={ref}

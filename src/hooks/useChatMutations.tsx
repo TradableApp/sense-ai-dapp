@@ -1,3 +1,5 @@
+import React from 'react';
+
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import ethCrypto from 'eth-crypto';
 import { toast } from 'sonner';
@@ -39,7 +41,7 @@ type EvmLog = {
  * @param {string} publicKey - The public key string.
  * @returns {string} The cleaned, raw public key.
  */
-function cleanPublicKey(publicKey) {
+function cleanPublicKey(publicKey: string): string {
 	if (publicKey.startsWith('0x04')) {
 		return publicKey.slice(4);
 	}
@@ -56,7 +58,10 @@ function cleanPublicKey(publicKey) {
  * @param {object} payload The plaintext JavaScript object to encrypt for the TEE.
  * @returns {Promise<{encryptedPayload: string, roflEncryptedKey: string}>}
  */
-export async function createEncryptedPayloads(sessionKey, payload) {
+export async function createEncryptedPayloads(
+	sessionKey: CryptoKey,
+	payload: Record<string, unknown>,
+): Promise<{ encryptedPayload: string; roflEncryptedKey: string }> {
 	// 1. Symmetrically encrypt the main payload for the TEE using the user's session key.
 	const encryptedPayloadString = await encryptData(sessionKey, payload);
 	const encryptedPayloadBytes = new TextEncoder().encode(encryptedPayloadString);
@@ -93,10 +98,13 @@ export async function createEncryptedPayloads(sessionKey, payload) {
  * @param {Function} handleFaucetRequest
  * @returns {(error: unknown, action: string) => void}
  */
-export function buildErrorHandler(isTestnet, handleFaucetRequest) {
-	return function genericOnError(error, action) {
+export function buildErrorHandler(
+	isTestnet: boolean,
+	handleFaucetRequest: () => Promise<void>,
+): (error: unknown, action: string) => void {
+	return function genericOnError(error: unknown, action: string): void {
 		console.error(`Failed to ${action}:`, error);
-		const errorMessage = error?.message || '';
+		const errorMessage = (error instanceof Error ? error.message : String(error)) || '';
 
 		const isError = (abi: Parameters<typeof getAbiItem>[0]['abi'], name: string) => {
 			const item = getAbiItem({ abi, name });
@@ -118,7 +126,7 @@ export function buildErrorHandler(isTestnet, handleFaucetRequest) {
 								size="sm"
 								variant="outline"
 								className="w-full border-primary/20 bg-primary/10 hover:bg-primary/20 text-primary"
-								onClick={handleFaucetRequest}
+								onClick={handleFaucetRequest as React.MouseEventHandler<HTMLButtonElement>}
 							>
 								Get 100 Testnet ABLE
 							</Button>
@@ -281,7 +289,7 @@ export default function useChatMutations() {
 					try {
 						// Check if receipt exists
 						// eslint-disable-next-line no-await-in-loop
-						const receipt = await eth_getTransactionReceipt(rpcRequest, { hash: txHash });
+						const receipt = await eth_getTransactionReceipt(rpcRequest, { hash: txHash as `0x${string}` });
 						console.log('receipt', receipt);
 
 						if (receipt) {
@@ -337,7 +345,19 @@ export default function useChatMutations() {
 	 * Upon success, it parses the transaction receipt to find and return the real, on-chain IDs.
 	 */
 	const initiatePromptMutation = useMutation({
-		mutationFn: async ({ conversationId, promptText, sessionKey, parentId, parentCID }) => {
+		mutationFn: async ({
+			conversationId,
+			promptText,
+			sessionKey,
+			parentId,
+			parentCID,
+		}: {
+			conversationId: number | string;
+			promptText: string;
+			sessionKey: CryptoKey;
+			parentId: number | null;
+			parentCID: string | null;
+		}) => {
 			const chain = activeWallet?.getChain();
 			if (!activeWallet || !chain || !sessionKey || !activeAccount) {
 				throw new Error('Wallet not connected or session not ready.');
@@ -372,13 +392,13 @@ export default function useChatMutations() {
 				client,
 				chain,
 				address: contractConfig.escrow.address,
-				abi: contractConfig.escrow.abi,
+				abi: contractConfig.escrow.abi as Parameters<typeof getContract>[0]['abi'],
 			});
 			const tx = prepareContractCall({
 				contract: escrowContract,
 				method: 'initiatePrompt',
 				params: [conversationId || 0, encryptedPayload, roflEncryptedKey],
-			});
+			} as unknown as Parameters<typeof prepareContractCall>[0]);
 			const transactionReceipt = await sendAndConfirmTransaction({
 				transaction: tx,
 				account: activeAccount,
@@ -430,6 +450,14 @@ export default function useChatMutations() {
 			sessionKey,
 			promptMessageCID,
 			originalAnswerMessageCID,
+		}: {
+			conversationId: number | string;
+			promptMessageId: number | string;
+			originalAnswerMessageId: number | string;
+			instructions: string;
+			sessionKey: CryptoKey;
+			promptMessageCID: string;
+			originalAnswerMessageCID: string;
 		}) => {
 			const chain = activeWallet?.getChain();
 			if (!activeWallet || !chain || !sessionKey || !activeAccount) {
@@ -452,7 +480,7 @@ export default function useChatMutations() {
 				client,
 				chain,
 				address: contractConfig.escrow.address,
-				abi: contractConfig.escrow.abi,
+				abi: contractConfig.escrow.abi as Parameters<typeof getContract>[0]['abi'],
 			});
 			const tx = prepareContractCall({
 				contract: escrowContract,
@@ -464,7 +492,7 @@ export default function useChatMutations() {
 					encryptedPayload,
 					roflEncryptedKey,
 				],
-			});
+			} as unknown as Parameters<typeof prepareContractCall>[0]);
 			const transactionReceipt = await sendAndConfirmTransaction({
 				transaction: tx,
 				account: activeAccount,
@@ -507,6 +535,11 @@ export default function useChatMutations() {
 			branchPointMessageId,
 			originalTitle,
 			sessionKey,
+		}: {
+			originalConversationId: number | string;
+			branchPointMessageId: number | string;
+			originalTitle: string;
+			sessionKey: CryptoKey;
 		}) => {
 			const chain = activeWallet?.getChain();
 			if (!activeWallet || !chain || !sessionKey || !activeAccount) {
@@ -527,13 +560,13 @@ export default function useChatMutations() {
 				client,
 				chain,
 				address: contractConfig.escrow.address,
-				abi: contractConfig.escrow.abi,
+				abi: contractConfig.escrow.abi as Parameters<typeof getContract>[0]['abi'],
 			});
 			const tx = prepareContractCall({
 				contract: escrowContract,
 				method: 'initiateBranch',
 				params: [originalConversationId, branchPointMessageId, encryptedPayload, roflEncryptedKey],
-			});
+			} as unknown as Parameters<typeof prepareContractCall>[0]);
 			const transactionReceipt = await sendAndConfirmTransaction({
 				transaction: tx,
 				account: activeAccount,
@@ -571,7 +604,17 @@ export default function useChatMutations() {
 	 * It calls the `initiateMetadataUpdate` function on the smart contract.
 	 */
 	const metadataUpdateMutation = useMutation({
-		mutationFn: async ({ conversationId, title, isDeleted, sessionKey }) => {
+		mutationFn: async ({
+			conversationId,
+			title,
+			isDeleted,
+			sessionKey,
+		}: {
+			conversationId: number | string;
+			title: string;
+			isDeleted: boolean;
+			sessionKey: CryptoKey;
+		}) => {
 			const chain = activeWallet?.getChain();
 			if (!activeWallet || !chain || !sessionKey || !activeAccount) {
 				throw new Error('Wallet not connected or session not ready.');
@@ -592,13 +635,13 @@ export default function useChatMutations() {
 				client,
 				chain,
 				address: contractConfig.escrow.address,
-				abi: contractConfig.escrow.abi,
+				abi: contractConfig.escrow.abi as Parameters<typeof getContract>[0]['abi'],
 			});
 			const tx = prepareContractCall({
 				contract: escrowContract,
 				method: 'initiateMetadataUpdate',
 				params: [conversationId, encryptedPayload, roflEncryptedKey],
-			});
+			} as unknown as Parameters<typeof prepareContractCall>[0]);
 
 			const transactionReceipt = await sendAndConfirmTransaction({
 				transaction: tx,
@@ -621,7 +664,7 @@ export default function useChatMutations() {
 	 * Useful if the Oracle is down or taking too long.
 	 */
 	const cancelPromptMutation = useMutation({
-		mutationFn: async ({ answerMessageId }) => {
+		mutationFn: async ({ answerMessageId }: { answerMessageId: number | string }) => {
 			const chain = activeWallet?.getChain();
 			if (!activeWallet || !chain) throw new Error('Wallet not connected');
 
@@ -632,14 +675,14 @@ export default function useChatMutations() {
 				client,
 				chain,
 				address: contractConfig.escrow.address,
-				abi: contractConfig.escrow.abi,
+				abi: contractConfig.escrow.abi as Parameters<typeof getContract>[0]['abi'],
 			});
 
 			const tx = prepareContractCall({
 				contract: escrowContract,
 				method: 'cancelPrompt',
 				params: [answerMessageId],
-			});
+			} as unknown as Parameters<typeof prepareContractCall>[0]);
 
 			const transactionReceipt = await sendAndConfirmTransaction({
 				transaction: tx,
@@ -663,7 +706,7 @@ export default function useChatMutations() {
 	 * It calls the `processRefund` function on the smart contract.
 	 */
 	const processRefundMutation = useMutation({
-		mutationFn: async ({ answerMessageId }) => {
+		mutationFn: async ({ answerMessageId }: { answerMessageId: number | string }) => {
 			const chain = activeWallet?.getChain();
 			if (!activeWallet || !chain) throw new Error('Wallet not connected');
 
@@ -674,14 +717,14 @@ export default function useChatMutations() {
 				client,
 				chain,
 				address: contractConfig.escrow.address,
-				abi: contractConfig.escrow.abi,
+				abi: contractConfig.escrow.abi as Parameters<typeof getContract>[0]['abi'],
 			});
 
 			const tx = prepareContractCall({
 				contract: escrowContract,
 				method: 'processRefund',
 				params: [answerMessageId],
-			});
+			} as unknown as Parameters<typeof prepareContractCall>[0]);
 
 			const transactionReceipt = await sendAndConfirmTransaction({
 				transaction: tx,

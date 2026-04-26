@@ -42,7 +42,7 @@ export default function useUsagePlan() {
 				client,
 				chain,
 				address: contractConfig.escrow.address,
-				abi: contractConfig.escrow.abi,
+				abi: contractConfig.escrow.abi as Parameters<typeof getContract>[0]['abi'],
 			});
 
 			// Get Token Contract to check raw allowance
@@ -50,19 +50,19 @@ export default function useUsagePlan() {
 				client,
 				chain,
 				address: contractConfig.token.address,
-				abi: contractConfig.token.abi,
+				abi: contractConfig.token.abi as Parameters<typeof getContract>[0]['abi'],
 			});
 
-			const spendingLimitsAbi = contractConfig?.escrow.abi.find(
-				item => item.name === 'spendingLimits' && item.type === 'function',
+			const spendingLimitsAbi = (contractConfig?.escrow.abi as any).find(
+				(item: any) => item.name === 'spendingLimits' && item.type === 'function',
 			);
 
-			const pendingEscrowCountAbi = contractConfig?.escrow.abi.find(
-				item => item.name === 'pendingEscrowCount' && item.type === 'function',
+			const pendingEscrowCountAbi = (contractConfig?.escrow.abi as any).find(
+				(item: any) => item.name === 'pendingEscrowCount' && item.type === 'function',
 			);
 
-			const allowanceAbi = contractConfig.token.abi.find(
-				item => item.name === 'allowance' && item.type === 'function',
+			const allowanceAbi = (contractConfig.token.abi as any).find(
+				(item: any) => item.name === 'allowance' && item.type === 'function',
 			);
 			console.log(
 				'contractConfig',
@@ -104,7 +104,7 @@ export default function useUsagePlan() {
 				rawTokenAllowance,
 			);
 
-			const [allowance, spentAmount, expiresAt] = spendingLimitData || [];
+			const [allowance, spentAmount, expiresAt] = (spendingLimitData as any) || [];
 			console.log('allowance', allowance, 'spentAmount', spentAmount, 'expiresAt', expiresAt);
 
 			// The hook returns an array of results, so we check the third element (expiresAt).
@@ -113,11 +113,11 @@ export default function useUsagePlan() {
 			}
 
 			const plan = {
-				allowance: Number(formatEther(allowance)),
-				spentAmount: Number(formatEther(spentAmount)),
-				expiresAt: new Date(Number(expiresAt) * 1000),
+				allowance: Number(formatEther(allowance as bigint)),
+				spentAmount: Number(formatEther(spentAmount as bigint)),
+				expiresAt: new Date(Number(expiresAt as bigint) * 1000),
 				pendingEscrowCount: Number(pendingEscrowCount || 0),
-				realTokenAllowance: Number(formatEther(rawTokenAllowance)),
+				realTokenAllowance: Number(formatEther(rawTokenAllowance as bigint)),
 			};
 			console.log('plan', plan);
 

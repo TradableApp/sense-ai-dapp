@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, ReactNode } from 'react';
 
 import {
 	BookText,
@@ -13,6 +13,7 @@ import {
 	Split,
 	ThumbsDown,
 	ThumbsUp,
+	LucideIcon,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -27,7 +28,29 @@ import { useSession } from '@/features/auth/SessionProvider';
 import sendAiFeedback from '@/lib/feedbackService';
 import { copyMarkdownToClipboard } from '@/lib/utils';
 
-function ActionButton({ label, icon, onClick }) {
+interface ActionButtonProps {
+	label: string;
+	icon: LucideIcon;
+	onClick?: () => void;
+}
+
+interface DropdownActionProps {
+	label: string;
+	icon: LucideIcon;
+	children?: ReactNode;
+	align?: 'center' | 'end' | 'start';
+}
+
+interface MessageActionsProps {
+	message: any;
+	versionInfo?: any;
+	onRegenerate?: (mode?: string) => void;
+	onNavigate?: (direction: string) => void;
+	onBranch?: () => void;
+	initialFeedback?: string | null;
+}
+
+function ActionButton({ label, icon, onClick }: ActionButtonProps) {
 	const Icon = icon;
 	return (
 		<TooltipProvider>
@@ -50,11 +73,11 @@ function ActionButton({ label, icon, onClick }) {
 	);
 }
 
-function DropdownAction({ label, icon, children, align }) {
+function DropdownAction({ label, icon, children, align }: DropdownActionProps) {
 	const Icon = icon;
 	const [isTooltipOpen, setIsTooltipOpen] = useState(false);
 
-	const handleDropdownOpenChange = open => {
+	const handleDropdownOpenChange = (open: boolean) => {
 		if (open) {
 			setIsTooltipOpen(false);
 		}
@@ -88,7 +111,7 @@ export default function MessageActions({
 	onNavigate,
 	onBranch,
 	initialFeedback,
-}) {
+}: MessageActionsProps) {
 	const { ownerAddress } = useSession();
 	const [isCopied, setIsCopied] = useState(false);
 	const [feedback, setFeedback] = useState(null);

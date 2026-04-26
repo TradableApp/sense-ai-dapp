@@ -1,16 +1,36 @@
 /* eslint-disable react/no-array-index-key */
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, ReactNode, CSSProperties } from 'react';
 
 import { clsx } from 'clsx';
 import { motion } from 'motion/react';
 import { twMerge } from 'tailwind-merge';
 
 // Utility function to merge Tailwind CSS classes
-export function cn(...inputs) {
+export function cn(...inputs: any[]): string {
 	return twMerge(clsx(inputs));
 }
 
-function Beam({ width, x, delay, duration }) {
+interface BeamProps {
+	width: string | number;
+	x: string | number;
+	delay: number;
+	duration: number;
+}
+
+interface WarpBackgroundProps {
+	children?: ReactNode;
+	perspective?: number;
+	className?: string;
+	beamsPerSide?: number;
+	beamSize?: number;
+	beamDelayMax?: number;
+	beamDelayMin?: number;
+	beamDuration?: number;
+	gridColor?: string;
+	[key: string]: any;
+}
+
+function Beam({ width, x, delay, duration }: BeamProps) {
 	const hue = Math.floor(Math.random() * 360);
 	const ar = Math.floor(Math.random() * 10) + 1;
 
@@ -21,7 +41,7 @@ function Beam({ width, x, delay, duration }) {
 				'--width': `${width}`,
 				'--aspect-ratio': `${ar}`,
 				'--background': `linear-gradient(hsl(${hue} 80% 60%), transparent)`,
-			}}
+			} as CSSProperties}
 			className="absolute left-[var(--x)] top-0 [aspect-ratio:1/var(--aspect-ratio)] [background:var(--background)] [width:var(--width)]"
 			initial={{ y: '100cqmax', x: '-50%' }}
 			animate={{ y: '-100%', x: '-50%' }}
@@ -46,7 +66,7 @@ export default function WarpBackground({
 	beamDuration = 3,
 	gridColor = 'hsl(var(--border))',
 	...props
-}) {
+}: WarpBackgroundProps) {
 	const generateBeams = useCallback(() => {
 		const beams = [];
 		const cellsPerSide = Math.floor(100 / beamSize);
@@ -72,7 +92,7 @@ export default function WarpBackground({
 					'--perspective': `${perspective}px`,
 					'--grid-color': gridColor,
 					'--beam-size': `${beamSize}%`,
-				}}
+				} as CSSProperties}
 				className="pointer-events-none absolute left-0 top-0 size-full overflow-hidden [clip-path:inset(0)] [container-type:size] [perspective:var(--perspective)] [transform-style:preserve-3d]"
 			>
 				{/* top side */}
