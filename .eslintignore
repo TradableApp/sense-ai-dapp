@@ -1,0 +1,4 @@
+codegen.ts
+dist/
+node_modules/
+src/lib/graph/generated.ts
