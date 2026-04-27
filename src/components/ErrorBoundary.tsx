@@ -55,10 +55,6 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 		return { hasError: true };
 	}
 
-	componentDidCatch(error: Error, { componentStack }: React.ErrorInfo) {
-		Sentry.captureException(error, { contexts: { react: { componentStack } } });
-	}
-
 	componentDidUpdate(prevProps: ErrorBoundaryProps) {
 		const { location } = this.props;
 		const { hasError } = this.state;
@@ -67,6 +63,10 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 		if (hasError && prevProps.location?.pathname !== location?.pathname) {
 			this.setState({ hasError: false });
 		}
+	}
+
+	componentDidCatch(error: Error, { componentStack }: React.ErrorInfo) {
+		Sentry.captureException(error, { contexts: { react: { componentStack } } });
 	}
 
 	render() {

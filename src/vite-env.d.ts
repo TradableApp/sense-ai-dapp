@@ -50,6 +50,7 @@ declare module '*.css' {
 
 declare module '*.svg?react' {
 	import type { FunctionComponent, SVGProps } from 'react';
+
 	const content: FunctionComponent<SVGProps<SVGSVGElement> & { title?: string }>;
 	export default content;
 }
