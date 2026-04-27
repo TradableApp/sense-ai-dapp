@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { lazy, type ReactNode, Suspense, useCallback, useEffect, useState } from 'react';
 
 import cuid from 'cuid';
 import posthog from 'posthog-js';
@@ -20,8 +20,8 @@ import { useSession } from '@/features/auth/SessionProvider';
 import useNetwork from '@/hooks/useNetwork';
 import { loadState, saveState } from '@/lib/browserStorage';
 import { setAppError, setFirebaseReady, setThirdwebReady } from '@/store/appSlice';
-import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { setDeviceInfo, setDeviceScreen, setPwa } from '@/store/deviceSlice';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
 const Chat = lazy(() => import('@/features/chat/Chat'));
 const Error404 = lazy(() => import('@/features/error/Error404'));
@@ -33,7 +33,7 @@ const WebsiteDisclaimerPage = lazy(() => import('@/features/legal/WebsiteDisclai
 const UsageDashboard = lazy(() => import('@/features/usage/UsageDashboard'));
 
 interface ErrorBoundaryWrapperProps {
-	children: React.ReactNode;
+	children: ReactNode;
 }
 
 function ErrorBoundaryWrapper({ children }: ErrorBoundaryWrapperProps) {
@@ -48,8 +48,8 @@ function ErrorBoundaryWrapper({ children }: ErrorBoundaryWrapperProps) {
 
 export default function App() {
 	const dispatch = useAppDispatch();
-	const appStatus = useAppSelector((state) => state.app.status);
-	const isOnline = useAppSelector((state) => state.device.online);
+	const appStatus = useAppSelector(state => state.app.status);
+	const isOnline = useAppSelector(state => state.device.online);
 	const { ownerAddress, status: sessionStatus } = useSession();
 
 	const { status: thirdwebStatus, isInitialLoading } = useAutoConnect({ client, wallets });
@@ -107,7 +107,10 @@ export default function App() {
 		}
 		if ((initialiseFirebaseError as any).error) {
 			dispatch(
-				setAppError(((initialiseFirebaseError as any).error.message || 'Firebase initialization failed.') as string),
+				setAppError(
+					((initialiseFirebaseError as any).error.message ||
+						'Firebase initialization failed.') as string,
+				),
 			);
 		} else {
 			dispatch(setFirebaseReady());

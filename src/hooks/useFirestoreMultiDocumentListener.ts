@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import type { DocumentSnapshot, Query } from 'firebase/firestore';
+import type { DocumentSnapshot } from 'firebase/firestore';
 import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 
 import { dataFromSnapshot } from '@/lib/firestoreService';
@@ -25,9 +25,9 @@ interface FirestoreMultiDocumentListenerProps {
 	queryKey?: string;
 	queryMetric?: string;
 	queryValues?: string[];
-	docFn?: (doc: any) => any;
+	docFn?: (_doc: any) => any;
 	docId?: string;
-	dataFn: (id: string, data: any) => void;
+	dataFn: (_id: string, _data: any) => void;
 	errorFn?: () => void;
 	deps: unknown[];
 	shouldExecute?: boolean;
@@ -67,7 +67,7 @@ export default function useFirestoreMultiDocumentListener({
 	const loadingRef = useRef<Record<string, boolean>>({});
 
 	useEffect(() => {
-		if (!shouldExecute) return null;
+		if (!shouldExecute) return undefined;
 
 		if (queryDepsCompare && isMounted.current) {
 			const currentDocIds = Object.keys(docsRef.current);
@@ -109,7 +109,7 @@ export default function useFirestoreMultiDocumentListener({
 					// Store unsubscribe for each docId in docsRef if it's not already stored
 					if (!docsRef.current[currentDocId]) {
 						docsRef.current[currentDocId] = onSnapshot(
-							doc(queryFn() as any, queryCollection, currentDocId),
+							doc(queryFn() as any, queryCollection as string, currentDocId),
 							(snapshot: DocumentSnapshot) => {
 								if (!snapshot.exists()) {
 									dispatch(
@@ -129,7 +129,7 @@ export default function useFirestoreMultiDocumentListener({
 									if (isMounted.current) {
 										dataFn(
 											currentDocId,
-											docFn ? docFn(snapshot) : dataFromSnapshot(snapshot, docId),
+											docFn ? docFn(snapshot) : dataFromSnapshot(snapshot, docId || ''),
 										);
 									}
 
@@ -179,7 +179,10 @@ export default function useFirestoreMultiDocumentListener({
 							currentQueryValue,
 						);
 
-						docsRef.current[currentQueryValue] = collection(queryFn() as any, queryCollection);
+						docsRef.current[currentQueryValue] = collection(
+							queryFn() as any,
+							queryCollection || '',
+						);
 
 						if (metrics && metrics.length > 0) {
 							metrics.forEach((metric: Metric) => {
@@ -217,7 +220,7 @@ export default function useFirestoreMultiDocumentListener({
 
 										dataFn(
 											currentQueryValue,
-											docFn ? docFn(requiredDoc) : dataFromSnapshot(requiredDoc, docId),
+											docFn ? docFn(requiredDoc) : dataFromSnapshot(requiredDoc, docId || ''),
 										);
 									}
 

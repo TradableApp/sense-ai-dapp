@@ -1,9 +1,36 @@
 /* eslint-disable no-param-reassign */
 import { createSlice } from '@reduxjs/toolkit';
 
-const initialState = {
+interface ConversationRef {
+	id: string;
+	title: string;
+}
+
+export interface ActiveMessage {
+	id?: string | number;
+	parentId?: number | null;
+	messageCID?: string | null;
+	content?: string | null;
+	status?: string;
+	createdAt?: number;
+	role?: string;
+	answerMessageId?: string;
+	sources?: unknown;
+	reasoning?: unknown[];
+	reasoningDuration?: number;
+	[key: string]: unknown;
+}
+
+export interface ChatState {
+	activeConversationId: string | null;
+	activeConversationMessages: ActiveMessage[];
+	isRenameModalOpen: boolean;
+	conversationToRename: ConversationRef | null;
+}
+
+const initialState: ChatState = {
 	activeConversationId: null,
-	activeConversationMessages: [], // This is the "hot" in-memory state for the active chat
+	activeConversationMessages: [],
 	isRenameModalOpen: false,
 	conversationToRename: null,
 };
@@ -21,37 +48,16 @@ export const chatSlice = createSlice({
 		// from the previous one. This prevents stale state and simplifies logic in the component.
 		setActiveConversationId: (state, action) => {
 			const newId = action.payload;
-			// --- DEBUG LOG ---
-			console.log(
-				`%c[chatSlice.js-LOG] Reducer: setActiveConversationId. Payload: ${newId}. Current active ID: ${state.activeConversationId}`,
-				'color: purple; font-weight: bold;',
-			);
 			if (state.activeConversationId !== newId) {
 				state.activeConversationId = newId;
 				state.activeConversationMessages = [];
-				// --- DEBUG LOG ---
-				console.log(
-					`%c[chatSlice.js-LOG] State updated. New active ID: ${state.activeConversationId}, messages CLEARED.`,
-					'color: purple; font-weight: bold;',
-				);
 			}
 		},
 		clearActiveConversation: state => {
-			console.log(
-				`%c[chatSlice.js-LOG] Reducer: clearActiveConversation.`,
-				'color: purple; font-weight: bold;',
-			);
-
-			// ... (no change needed here, it's already correct)
 			state.activeConversationId = null;
 			state.activeConversationMessages = [];
 		},
 		setActiveConversationMessages: (state, action) => {
-			// --- DEBUG LOG ---
-			console.log(
-				`%c[chatSlice.js-LOG] Reducer: setActiveConversationMessages. Hydrating with ${action.payload.length} messages.`,
-				'color: purple; font-weight: bold;',
-			);
 			state.activeConversationMessages = action.payload;
 		},
 		appendLiveMessages: (state, action) => {

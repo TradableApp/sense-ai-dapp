@@ -51,12 +51,30 @@ const managePlanSchema = z.object({
 		.positive({ message: 'Duration must be at least one day.' }),
 });
 
+type FormValues = z.infer<typeof managePlanSchema>;
+
 const TGE_PRICE_USD = 0.015;
 const DEFAULT_USD_LIMIT = 15;
 const DEFAULT_TOKEN_LIMIT = DEFAULT_USD_LIMIT / TGE_PRICE_USD;
 const DEFAULT_DAYS = 365;
 
-function PriceInfoDialog({ title, description }) {
+interface PriceInfoDialogProps {
+	title: string;
+	description: string;
+}
+
+interface ExistingPlan {
+	allowance: number;
+	pendingEscrowCount: number;
+}
+
+interface ManagePlanModalProps {
+	open: boolean;
+	onOpenChange: (_open: boolean) => void;
+	existingPlan: ExistingPlan | null;
+}
+
+function PriceInfoDialog({ title, description }: PriceInfoDialogProps) {
 	return (
 		<AlertDialog>
 			<AlertDialogTrigger asChild>
@@ -75,7 +93,11 @@ function PriceInfoDialog({ title, description }) {
 	);
 }
 
-export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
+export default function ManagePlanModal({
+	open,
+	onOpenChange,
+	existingPlan,
+}: ManagePlanModalProps) {
 	const activeWallet = useActiveWallet();
 	const chainId = activeWallet?.getChain()?.id;
 	const isLocalnet = chainId === LOCAL_CHAIN_ID;
@@ -93,14 +115,6 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 	);
 	// The raw BigInt is now in `balanceData.value`
 	const formattedBalance = balanceData ? Number(balanceData.displayValue) : 0;
-	console.log(
-		'balanceData',
-		balanceData,
-		'isLoadingBalance',
-		isLoadingBalance,
-		'formattedBalance',
-		formattedBalance,
-	);
 
 	const {
 		register,
@@ -108,7 +122,7 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 		watch,
 		reset,
 		formState: { errors, isValid },
-	} = useForm({
+	} = useForm<FormValues>({
 		resolver: zodResolver(managePlanSchema),
 		mode: 'onChange',
 		defaultValues: {
@@ -134,34 +148,30 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 		if (currentPrice === undefined) return null;
 		return (currentLimit || 0) * currentPrice;
 	}, [currentLimit, currentPrice]);
-	console.log('currentLimit', currentLimit, 'currentPrice', currentPrice, 'usdValue', usdValue);
 
 	const isExceedingBalance =
 		!isLoadingBalance && balanceData !== undefined && currentLimit > formattedBalance;
-	console.log('isExceedingBalance', isExceedingBalance);
 
 	// Logic to block actions if there are pending prompts
-	const hasPendingPrompts = existingPlan?.pendingEscrowCount > 0;
+	const hasPendingPrompts = (existingPlan?.pendingEscrowCount ?? 0) > 0;
 
-	const setPlanMutation = useMutation<void, Error, { limitInWei: bigint; expiresAtTimestamp: bigint }>({
-		mutationFn: async ({ limitInWei, expiresAtTimestamp }: { limitInWei: bigint; expiresAtTimestamp: bigint }): Promise<void> => {
-			console.log(
-				'limitInWei',
-				limitInWei,
-				'expiresAtTimestamp',
-				expiresAtTimestamp,
-				'activeWallet',
-				activeWallet,
-				'chainId',
-				chainId,
-			);
-
+	const setPlanMutation = useMutation<
+		void,
+		Error,
+		{ limitInWei: bigint; expiresAtTimestamp: bigint }
+	>({
+		mutationFn: async ({
+			limitInWei,
+			expiresAtTimestamp,
+		}: {
+			limitInWei: bigint;
+			expiresAtTimestamp: bigint;
+		}): Promise<void> => {
 			if (!activeWallet || !chainId) {
 				throw new Error('Wallet not connected');
 			}
 
 			const contractConfig = CONTRACTS[chainId];
-			console.log('contractConfig', contractConfig);
 
 			if (!contractConfig) {
 				throw new Error('Contracts not configured for this chain');
@@ -169,16 +179,6 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 
 			// Get the full chain object from the wallet
 			const connectedChain = activeWallet.getChain();
-			console.log('connectedChain', connectedChain);
-
-			// --- DEBUG LOGGING START ---
-			console.log('--- Debugging Transaction Context ---');
-			console.log('Configured LOCAL_CHAIN_ID:', LOCAL_CHAIN_ID);
-			console.log('Wallet Chain ID (chainId prop):', chainId);
-			console.log('Wallet Object Chain (getChain()):', connectedChain);
-			console.log('Wallet Address:', activeWallet.getAccount()?.address);
-			console.log('Target Contract Config:', contractConfig);
-			// --- DEBUG LOGGING END ---
 
 			if (!connectedChain) {
 				throw new Error('Could not determine connected chain.');
@@ -194,20 +194,17 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 					client,
 					chain: connectedChain,
 					address: contractConfig.token.address,
-					abi: contractConfig.token.abi as any,
+					abi: contractConfig.token.abi as Parameters<typeof getContract>[0]['abi'],
 				});
-				console.log('tokenContract', tokenContract);
 
 				const approveTx = prepareContractCall({
 					contract: tokenContract,
 					method: 'approve',
 					params: [contractConfig.escrow.address, limitInWei],
-				});
-				console.log('approveTx', approveTx);
+				} as unknown as Parameters<typeof prepareContractCall>[0]);
 
 				await sendAndConfirm(approveTx);
 				toast.dismiss(approvalToastId);
-				console.log('Approval confirmed on-chain.');
 
 				// We wait 2 seconds to ensure the RPC has indexed the updated nonce
 				// from the first transaction before sending the second one.
@@ -223,20 +220,17 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 					client,
 					chain: connectedChain,
 					address: contractConfig.escrow.address,
-					abi: contractConfig.escrow.abi as any,
+					abi: contractConfig.escrow.abi as Parameters<typeof getContract>[0]['abi'],
 				});
-				console.log('escrowContract', escrowContract);
 
 				const setSubTx = prepareContractCall({
 					contract: escrowContract,
 					method: 'setSpendingLimit',
 					params: [limitInWei, expiresAtTimestamp],
-				} as any);
-				console.log('setSubTx', setSubTx);
+				} as unknown as Parameters<typeof prepareContractCall>[0]);
 
 				await sendAndConfirm(setSubTx);
 				toast.dismiss(limitToastId);
-				console.log('Spending limit confirmed on-chain.');
 			} catch (error) {
 				toast.dismiss(); // Clear loading toasts on error
 				throw error;
@@ -272,7 +266,6 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 			}
 
 			const contractConfig = CONTRACTS[chainId];
-			console.log('contractConfig', contractConfig);
 
 			if (!contractConfig) {
 				throw new Error('Contracts not configured for this chain');
@@ -280,7 +273,6 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 
 			// Get the full chain object from the wallet
 			const connectedChain = activeWallet.getChain();
-			console.log('connectedChain', connectedChain);
 
 			if (!connectedChain) {
 				throw new Error('Could not determine connected chain.');
@@ -294,12 +286,12 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 				client,
 				chain: connectedChain,
 				address: contractConfig.escrow.address,
-				abi: contractConfig.escrow.abi as any,
+				abi: contractConfig.escrow.abi as Parameters<typeof getContract>[0]['abi'],
 			});
 			const revokeTx = prepareContractCall({
 				contract: escrowContract,
 				method: 'cancelSpendingLimit',
-			} as any);
+			} as unknown as Parameters<typeof prepareContractCall>[0]);
 			await sendAndConfirm(revokeTx);
 			toast.dismiss(revokeToastId);
 		},
@@ -327,7 +319,7 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 		},
 	});
 
-	const onSubmit = (data: any) => {
+	const onSubmit = (data: FormValues) => {
 		const limitInWei = parseUnits(data.limit.toString(), 18);
 		const nowInSeconds = Math.floor(Date.now() / 1000);
 		const expiresAtTimestamp = BigInt(nowInSeconds + (data.days as number) * 24 * 60 * 60);
@@ -341,9 +333,8 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 	const handleFaucetRequest = async () => {
 		setIsRequestingTokens(true);
 
-		const address = activeWallet?.getAccount()?.address;
+		const address = activeWallet?.getAccount()?.address ?? '';
 		const { success, txHash } = await requestTestTokens(address);
-		console.log('success', success, 'txHash', txHash);
 
 		if (success && txHash) {
 			// 1. Show initial Toast with Explorer Link
@@ -359,7 +350,10 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 			// 2. Poll for confirmation using Thirdweb RPC
 			try {
 				// Get the RPC client for the current chain
-				const rpcRequest = getRpcClient({ client, chain: activeWallet.getChain() });
+				if (!activeWallet) throw new Error('Wallet not connected');
+				const chain = activeWallet.getChain();
+				if (!chain) throw new Error('Chain not found');
+				const rpcRequest = getRpcClient({ client, chain });
 
 				let attempts = 0;
 				const maxAttempts = 20; // Try for ~40 seconds (2s interval)
@@ -367,8 +361,9 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 					try {
 						// Check if receipt exists
 						// eslint-disable-next-line no-await-in-loop
-						const receipt = await eth_getTransactionReceipt(rpcRequest, { hash: txHash as `0x${string}` });
-						console.log('receipt', receipt);
+						const receipt = await eth_getTransactionReceipt(rpcRequest, {
+							hash: txHash as `0x${string}`,
+						});
 
 						if (receipt) {
 							toast.success('Tokens Received', {
@@ -377,9 +372,9 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 
 							// Refresh balance
 							const queryKey = getTokenBalanceQueryKey(
-								chainId,
+								chainId ?? 0,
 								address,
-								CONTRACTS[chainId]?.token?.address,
+								CONTRACTS[chainId ?? 0]?.token?.address,
 							);
 							// eslint-disable-next-line no-await-in-loop
 							await queryClient.invalidateQueries({
@@ -419,7 +414,7 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 					/>
 					<span>
 						Est. Value: ≈ $
-						{usdValue.toLocaleString(undefined, {
+						{(usdValue ?? 0).toLocaleString(undefined, {
 							minimumFractionDigits: 2,
 							maximumFractionDigits: 2,
 						})}{' '}
@@ -456,7 +451,7 @@ export default function ManagePlanModal({ open, onOpenChange, existingPlan }) {
 					/>
 					<span>
 						Current Value: ≈ $
-						{usdValue.toLocaleString(undefined, {
+						{(usdValue ?? 0).toLocaleString(undefined, {
 							minimumFractionDigits: 2,
 							maximumFractionDigits: 2,
 						})}{' '}

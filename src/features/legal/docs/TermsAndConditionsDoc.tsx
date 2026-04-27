@@ -1,5 +1,5 @@
-import { openModal } from '@/store/uiSlice';
 import { useAppDispatch } from '@/store/hooks';
+import { openModal } from '@/store/uiSlice';
 
 export default function TermsAndConditionsDoc() {
 	const dispatch = useAppDispatch();

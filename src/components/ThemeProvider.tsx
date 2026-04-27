@@ -1,8 +1,8 @@
-import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
+import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
 interface ThemeContextValue {
 	theme: string;
-	setTheme: (newTheme: string) => void;
+	setTheme: (_newTheme: string) => void;
 }
 
 const ThemeProviderContext = createContext<ThemeContextValue>({

@@ -1,12 +1,13 @@
 /**
- * Derives a secure, non-extractable AES-GCM CryptoKey from a high-entropy string
+ * Derives a secure AES-GCM CryptoKey from a high-entropy string
  * using the user's address as a salt for domain separation.
  * This key should only exist in memory for the session.
+ * The key is extractable (needed for roflEncryptedKey generation in contract calls).
  * @param {string} entropy - The high-entropy string (e.g., a signature or auth token).
  * @param {string} ownerAddress - The user's wallet address, used to generate a deterministic salt.
  * @returns {Promise<CryptoKey>} A 256-bit AES-GCM key for encryption and decryption.
  */
-export async function deriveKeyFromEntropy(entropy, ownerAddress) {
+export async function deriveKeyFromEntropy(entropy: string, ownerAddress: string) {
 	if (!entropy) {
 		throw new Error('Entropy string cannot be empty.');
 	}
@@ -43,7 +44,7 @@ export async function deriveKeyFromEntropy(entropy, ownerAddress) {
  * @param {object} data - The JavaScript object to encrypt.
  * @returns {Promise<string>} A base64 string containing the IV and encrypted data.
  */
-export async function encryptData(key, data) {
+export async function encryptData(key: CryptoKey, data: unknown) {
 	const iv = window.crypto.getRandomValues(new Uint8Array(12));
 	const encodedData = new TextEncoder().encode(JSON.stringify(data));
 
@@ -65,7 +66,7 @@ export async function encryptData(key, data) {
  * @param {string} encryptedString - The string from the database.
  * @returns {Promise<object>} The decrypted JavaScript object.
  */
-export async function decryptData(key, encryptedString) {
+export async function decryptData(key: CryptoKey, encryptedString: string) {
 	if (!encryptedString || !encryptedString.includes('.')) {
 		throw new Error('Invalid encrypted data format. Expected "iv.encryptedData".');
 	}

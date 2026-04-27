@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query';
-import type { Conversation, Message } from './types';
+
 import { decryptData, encryptData } from './crypto';
 import db from './db';
 // import simulateOracleProcess from './mockApi';
@@ -8,6 +8,7 @@ import {
 	removeConversationFromLiveIndex,
 	updateTitleInLiveIndex,
 } from './searchService';
+import type { Conversation, Message } from './types';
 
 const MESSAGE_CACHE_LIMIT = 5;
 
@@ -100,7 +101,9 @@ export const getMessagesForConversation = async (
 		const decryptedData = await decryptData(sessionKey, cachedRecord.encryptedData);
 
 		// Sort messages by timestamp immediately after decryption
-		const sortedMessages = decryptedData.sort((a, b) => a.createdAt - b.createdAt);
+		const sortedMessages = decryptedData.sort(
+			(a: Message, b: Message) => a.createdAt - b.createdAt,
+		);
 		console.log(
 			`%c[dataService-LOG] Returning ${sortedMessages.length} decrypted and sorted messages from cache.`,
 			'color: green',
@@ -124,12 +127,12 @@ const createMessageWorkflow = async (
 	userMessage: Message | null,
 	aiMessage: Message,
 	// These parameters are now dormant but preserved for the future websocket implementation.
-	queryForOracle?: string,
-	answerMessageId?: string,
-	onReasoningStep?: unknown,
-	onFinalAnswer?: unknown,
-	regenerationMode?: unknown,
-	queryClient?: QueryClient,
+	_queryForOracle?: string,
+	_answerMessageId?: string,
+	_onReasoningStep?: unknown,
+	_onFinalAnswer?: unknown,
+	_regenerationMode?: unknown,
+	_queryClient?: QueryClient,
 ): Promise<void> => {
 	const newMessages = userMessage
 		? [...existingMessages, userMessage, aiMessage]
@@ -206,7 +209,7 @@ export const addMessageToConversation = async (
 	const finalUserMessage: Message = {
 		id: promptMessageId,
 		conversationId,
-		parentId,
+		parentId: parentId ?? undefined,
 		role: 'user',
 		content: messageContent,
 		createdAt: now,
@@ -258,7 +261,11 @@ export const createNewConversation = async (
 	promptMessageId: string,
 	answerMessageId: string,
 	queryClient: QueryClient,
-): Promise<{ newConversation: Conversation; finalUserMessage: Message; finalAiMessage: Message }> => {
+): Promise<{
+	newConversation: Conversation;
+	finalUserMessage: Message;
+	finalAiMessage: Message;
+}> => {
 	console.log('[dataService] Creating new conversation.');
 	const now = Date.now();
 	const newConversation = {
@@ -520,7 +527,7 @@ export const deleteMessageFromConversation = async (
 		const currentMessages = await decryptData(sessionKey, cachedRecord.encryptedData);
 
 		// 2. Filter out the target message
-		const newMessages = currentMessages.filter(m => m.id !== messageId);
+		const newMessages = currentMessages.filter((m: Message) => m.id !== messageId);
 
 		// 3. Re-encrypt and save
 		const encryptedMessages = await encryptData(sessionKey, newMessages);

@@ -3,6 +3,14 @@ import { toast } from 'sonner';
 
 import { functions } from '@/config/firebase';
 
+interface FeedbackPayload {
+	ownerAddress: string;
+	conversationId: string;
+	messageId: string;
+	parentId: string;
+	feedbackValue: 'like' | 'dislike';
+}
+
 /**
  * Sends AI feedback to the dedicated cloud function.
  * @param {object} payload - The feedback data.
@@ -13,8 +21,9 @@ import { functions } from '@/config/firebase';
  * @param {'like' | 'dislike'} payload.feedbackValue - The feedback rating.
  * @returns {Promise<void>}
  */
-const sendAiFeedback = async payload => {
+const sendAiFeedback = async (payload: FeedbackPayload): Promise<void> => {
 	try {
+		if (!functions) throw new Error('Firebase functions not initialized');
 		const submitAiFeedback = httpsCallable(functions, 'submitAiFeedback');
 		await submitAiFeedback(payload);
 		toast.success('Feedback Submitted', {

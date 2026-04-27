@@ -8,8 +8,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import Label from '@/components/ui/label';
 import { disablePosthogAfterOptOut, enablePosthogAfterConsent } from '@/config/posthog';
 import { saveState } from '@/lib/browserStorage';
-import { openModal } from '@/store/uiSlice';
 import { useAppDispatch } from '@/store/hooks';
+import { openModal } from '@/store/uiSlice';
 
 interface UserConsentOptionsProps {
 	onConsentGiven: () => void;
@@ -110,7 +110,9 @@ export default function UserConsentOptions({ onConsentGiven }: UserConsentOption
 								<Checkbox
 									id="analytics"
 									checked={consentChoices.analytics}
-									onCheckedChange={value => handleChoiceChange('analytics', typeof value === 'boolean' ? value : false)}
+									onCheckedChange={value =>
+										handleChoiceChange('analytics', typeof value === 'boolean' ? value : false)
+									}
 								/>
 								<Label htmlFor="analytics">Analytics Cookies</Label>
 							</div>
@@ -118,7 +120,9 @@ export default function UserConsentOptions({ onConsentGiven }: UserConsentOption
 								<Checkbox
 									id="marketing"
 									checked={consentChoices.marketing}
-									onCheckedChange={value => handleChoiceChange('marketing', typeof value === 'boolean' ? value : false)}
+									onCheckedChange={value =>
+										handleChoiceChange('marketing', typeof value === 'boolean' ? value : false)
+									}
 								/>
 								<Label htmlFor="marketing">Marketing Cookies</Label>
 							</div>
@@ -126,7 +130,12 @@ export default function UserConsentOptions({ onConsentGiven }: UserConsentOption
 								<Checkbox
 									id="personalization"
 									checked={consentChoices.personalization}
-									onCheckedChange={value => handleChoiceChange('personalization', typeof value === 'boolean' ? value : false)}
+									onCheckedChange={value =>
+										handleChoiceChange(
+											'personalization',
+											typeof value === 'boolean' ? value : false,
+										)
+									}
 								/>
 								<Label htmlFor="personalization">Personalization Cookies</Label>
 							</div>

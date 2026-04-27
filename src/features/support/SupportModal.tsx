@@ -29,8 +29,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { client } from '@/config/thirdweb';
 import { useSession } from '@/features/auth/SessionProvider';
 import { sendSupportRequest } from '@/lib/contactService';
-import { closeModal } from '@/store/uiSlice';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import { closeModal } from '@/store/uiSlice';
 
 const supportSchema = z.object({
 	topic: z
@@ -62,7 +62,7 @@ const supportTopics = [
 
 export default function SupportModal() {
 	const dispatch = useAppDispatch();
-	const { ownerAddress, activeWallet } = useSession();
+	const { ownerAddress } = useSession();
 	const isOpen = useAppSelector(state => state.ui.currentModal.type === 'Support');
 
 	const {
@@ -99,9 +99,13 @@ export default function SupportModal() {
 		displayName?: string;
 	}
 
-	const supportMutation = useMutation<{ success: boolean; message: string }, Error, SupportVariables>({
+	const supportMutation = useMutation<
+		{ success: boolean; message: string },
+		Error,
+		SupportVariables
+	>({
 		mutationFn: variables =>
-			sendSupportRequest(variables.data, variables.userAddress || '', variables.displayName),
+			sendSupportRequest(variables.data, variables.userAddress || '', variables.displayName ?? ''),
 		onSuccess: () => {
 			toast.success('Request Submitted', {
 				description: 'Our team has received your request and will get back to you shortly.',
@@ -117,7 +121,7 @@ export default function SupportModal() {
 	});
 
 	const onSubmit = (data: z.infer<typeof supportSchema>) => {
-		const displayName = activeWallet?.getAccount()?.ens?.name;
+		const displayName: string | undefined = undefined;
 		supportMutation.mutate({ data, userAddress: ownerAddress, displayName });
 	};
 

@@ -1,9 +1,15 @@
 import { getAnalytics, isSupported as isAnalyticsSupported, setConsent } from 'firebase/analytics';
+import type { Analytics } from 'firebase/analytics';
 import { initializeApp } from 'firebase/app';
+import type { FirebaseApp } from 'firebase/app';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
+import type { AppCheck } from 'firebase/app-check';
 import { getFirestore } from 'firebase/firestore';
+import type { Firestore } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
+import type { Functions } from 'firebase/functions';
 import { getPerformance } from 'firebase/performance';
+import type { FirebasePerformance } from 'firebase/performance';
 
 import { loadState } from '@/lib/browserStorage';
 
@@ -20,20 +26,27 @@ const firebaseConfig = {
 
 // Some browsers have compatibility issues with GCP functions, so perform initialisation within try-catch block
 const initialiseFirebase = () => {
-	let firebaseApp;
-	const firebaseExports = {
+	let firebaseApp: FirebaseApp | undefined;
+	const firebaseExports: {
+		analytics: Analytics | undefined;
+		appCheck: AppCheck | undefined;
+		db: Firestore | undefined;
+		functions: Functions | undefined;
+		perf: FirebasePerformance | undefined;
+	} = {
 		analytics: undefined,
 		appCheck: undefined,
 		db: undefined,
 		functions: undefined,
 		perf: undefined,
 	};
-	let initialiseFirebaseError = {};
+	let initialiseFirebaseError: Record<string, unknown> = {};
 	try {
 		firebaseApp = initializeApp(firebaseConfig);
 
 		if (import.meta.env.DEV || import.meta.env.VITE_APP_DEBUG) {
-			(window as unknown as Record<string, unknown>).FIREBASE_APPCHECK_DEBUG_TOKEN = import.meta.env.VITE_APP_CHECK_DEBUG_TOKEN;
+			(window as unknown as Record<string, unknown>).FIREBASE_APPCHECK_DEBUG_TOKEN =
+				import.meta.env.VITE_APP_CHECK_DEBUG_TOKEN;
 		}
 
 		// Initialize App Check to protect backend resources
@@ -48,7 +61,7 @@ const initialiseFirebase = () => {
 		// Initialize Analytics and get a reference to the service
 		if (typeof window !== 'undefined') {
 			isAnalyticsSupported().then(supported => {
-				if (supported && import.meta.env.VITE_MEASUREMENT_ID) {
+				if (supported && import.meta.env.VITE_MEASUREMENT_ID && firebaseApp) {
 					const analytics = getAnalytics(firebaseApp);
 					firebaseExports.analytics = analytics;
 				}
@@ -56,7 +69,7 @@ const initialiseFirebase = () => {
 		}
 
 		// Check if consent has been provided previously by the user
-		const consentSettings = loadState('consentSettings') || {};
+		const consentSettings = (loadState('consentSettings') || {}) as Record<string, unknown>;
 
 		const {
 			ad_storage: marketingStorage,
@@ -95,7 +108,9 @@ const initialiseFirebase = () => {
 
 		initialiseFirebaseError = {
 			error,
-			missingFunctionality: Object.keys(firebaseExports).filter(key => !firebaseExports[key]),
+			missingFunctionality: Object.keys(firebaseExports).filter(
+				key => !firebaseExports[key as keyof typeof firebaseExports],
+			),
 		};
 	}
 

@@ -11,21 +11,26 @@ const AlertDialogTrigger = AlertDialogPrimitive.Trigger;
 
 const AlertDialogPortal = AlertDialogPrimitive.Portal;
 
-export interface AlertDialogOverlayProps extends React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Overlay> {}
+export interface AlertDialogOverlayProps
+	extends React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Overlay> {}
 
 const AlertDialogOverlay = React.forwardRef<
 	React.ElementRef<typeof AlertDialogPrimitive.Overlay>,
 	AlertDialogOverlayProps
 >(({ className, ...props }, ref) => (
 	<AlertDialogPrimitive.Overlay
-		className={cn('fixed inset-0 z-50 bg-black/80  data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0', className)}
+		className={cn(
+			'fixed inset-0 z-50 bg-black/80  data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+			className,
+		)}
 		{...props}
 		ref={ref}
 	/>
 ));
 AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName;
 
-export interface AlertDialogContentProps extends React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content> {}
+export interface AlertDialogContentProps
+	extends React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content> {}
 
 const AlertDialogContent = React.forwardRef<
 	React.ElementRef<typeof AlertDialogPrimitive.Content>,
@@ -48,34 +53,51 @@ AlertDialogContent.displayName = AlertDialogPrimitive.Content.displayName;
 export interface AlertDialogHeaderProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 function AlertDialogHeader({ className, ...props }: AlertDialogHeaderProps) {
-	return <div className={cn('flex flex-col space-y-2 text-center sm:text-left', className)} {...props} />;
+	return (
+		<div className={cn('flex flex-col space-y-2 text-center sm:text-left', className)} {...props} />
+	);
 }
 AlertDialogHeader.displayName = 'AlertDialogHeader';
 
 export interface AlertDialogFooterProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 function AlertDialogFooter({ className, ...props }: AlertDialogFooterProps) {
-	return <div className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2', className)} {...props} />;
+	return (
+		<div
+			className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2', className)}
+			{...props}
+		/>
+	);
 }
 AlertDialogFooter.displayName = 'AlertDialogFooter';
 
-export interface AlertDialogTitleProps extends React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Title> {}
+export interface AlertDialogTitleProps
+	extends React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Title> {}
 
 const AlertDialogTitle = React.forwardRef<
 	React.ElementRef<typeof AlertDialogPrimitive.Title>,
 	AlertDialogTitleProps
 >(({ className, ...props }, ref) => (
-	<AlertDialogPrimitive.Title ref={ref} className={cn('text-lg font-semibold', className)} {...props} />
+	<AlertDialogPrimitive.Title
+		ref={ref}
+		className={cn('text-lg font-semibold', className)}
+		{...props}
+	/>
 ));
 AlertDialogTitle.displayName = AlertDialogPrimitive.Title.displayName;
 
-export interface AlertDialogDescriptionProps extends React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Description> {}
+export interface AlertDialogDescriptionProps
+	extends React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Description> {}
 
 const AlertDialogDescription = React.forwardRef<
 	React.ElementRef<typeof AlertDialogPrimitive.Description>,
 	AlertDialogDescriptionProps
 >(({ className, ...props }, ref) => (
-	<AlertDialogPrimitive.Description ref={ref} className={cn('text-sm text-muted-foreground', className)} {...props} />
+	<AlertDialogPrimitive.Description
+		ref={ref}
+		className={cn('text-sm text-muted-foreground', className)}
+		{...props}
+	/>
 ));
 AlertDialogDescription.displayName = AlertDialogPrimitive.Description.displayName;
 

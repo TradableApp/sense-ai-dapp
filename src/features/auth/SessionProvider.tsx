@@ -1,16 +1,35 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import {
+	createContext,
+	type ReactNode,
+	useCallback,
+	useContext,
+	useEffect,
+	useMemo,
+	useState,
+} from 'react';
 
 import { useActiveWallet } from 'thirdweb/react';
 import { signMessage } from 'thirdweb/utils';
+import type { Wallet } from 'thirdweb/wallets';
 
 import { deriveKeyFromEntropy } from '@/lib/crypto';
 
-const SessionContext = createContext({
+type SessionStatus = 'disconnected' | 'deriving' | 'ready' | 'rejected' | 'error';
+
+interface SessionContextValue {
+	sessionKey: CryptoKey | null;
+	status: SessionStatus;
+	activeWallet: Wallet | undefined;
+	ownerAddress: string | null;
+	retry: () => void;
+}
+
+const SessionContext = createContext<SessionContextValue>({
 	sessionKey: null,
 	status: 'disconnected',
-	activeWallet: null,
+	activeWallet: undefined,
 	ownerAddress: null,
-	retry: () => {}, // Add retry function to the context
+	retry: () => {},
 });
 
 export const useSession = () => useContext(SessionContext);
@@ -42,22 +61,20 @@ const usePageVisibility = () => {
 	return isTabVisible;
 };
 
-export default function SessionProvider({ children }) {
+export default function SessionProvider({ children }: { children: ReactNode }) {
 	const activeWallet = useActiveWallet();
-	const [sessionKey, setSessionKey] = useState(null);
-	const [status, setStatus] = useState('disconnected');
-	const [ownerAddress, setOwnerAddress] = useState(null);
+	const [sessionKey, setSessionKey] = useState<CryptoKey | null>(null);
+	const [status, setStatus] = useState<SessionStatus>('disconnected');
+	const [ownerAddress, setOwnerAddress] = useState<string | null>(null);
 	const [retryCount, setRetryCount] = useState(0);
 
 	// Use our new custom hook to get the tab's visibility status.
 	const isTabVisible = usePageVisibility();
 
-	const retry = () => setRetryCount(prev => prev + 1);
+	const retry = useCallback(() => setRetryCount(prev => prev + 1), []);
 
 	useEffect(() => {
 		const generateKey = async () => {
-			console.log('Running generateKey');
-
 			// --- GUARD CLAUSE 1: NO WALLET ---
 			// If no wallet is connected, reset everything and stop.
 			if (!activeWallet) {
@@ -79,9 +96,6 @@ export default function SessionProvider({ children }) {
 			// If a wallet is connected but the tab is not visible, we wait.
 			// We do NOT request a signature. The effect will re-run when the tab becomes visible.
 			if (!isTabVisible) {
-				console.log(
-					'[SessionProvider] Wallet connected, but tab is hidden. Deferring signature request.',
-				);
 				return;
 			}
 
@@ -95,7 +109,6 @@ export default function SessionProvider({ children }) {
 			}
 
 			try {
-				console.log('[SessionProvider] Tab is visible and key is needed. Requesting signature...');
 				setStatus('deriving');
 				setOwnerAddress(account.address);
 
@@ -111,7 +124,8 @@ export default function SessionProvider({ children }) {
 			} catch (error) {
 				console.error('Failed to derive session key:', error);
 				setSessionKey(null);
-				if (error.message.toLowerCase().includes('user rejected')) {
+				const errorMessage = error instanceof Error ? error.message : String(error);
+				if (errorMessage.toLowerCase().includes('user rejected')) {
 					setStatus('rejected');
 				} else {
 					setStatus('error');
@@ -126,7 +140,7 @@ export default function SessionProvider({ children }) {
 
 	const value = useMemo(
 		() => ({ sessionKey, status, activeWallet, ownerAddress, retry }),
-		[sessionKey, status, activeWallet, ownerAddress],
+		[sessionKey, status, activeWallet, ownerAddress, retry],
 	);
 
 	return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

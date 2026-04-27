@@ -1,6 +1,6 @@
 'use client';
 
-import { Children, forwardRef, ReactNode } from 'react';
+import { Children, forwardRef, type KeyboardEvent, ReactNode } from 'react';
 
 import { Loader2Icon, SendHorizontalIcon, SendIcon, SquareIcon, XIcon } from 'lucide-react';
 
@@ -19,11 +19,11 @@ interface PromptInputProps {
 	errors?: any;
 	className?: string;
 	children?: ReactNode;
-	onSubmit?: (e?: any) => void;
+	onSubmit?: (_e?: any) => void;
 }
 
 interface PromptInputTextareaProps {
-	onChange?: (e: any) => void;
+	onChange?: (_e: any) => void;
 	className?: string;
 	placeholder?: string;
 	[key: string]: any;
@@ -63,7 +63,7 @@ export function PromptInput({ errors, className, ...props }: PromptInputProps) {
 
 export const PromptInputTextarea = forwardRef<HTMLTextAreaElement, PromptInputTextareaProps>(
 	({ onChange, className, placeholder = 'What would you like to know?', ...props }, ref) => {
-		const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+		const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
 			if (e.key === 'Enter') {
 				if (e.shiftKey) {
 					return;
@@ -110,7 +110,12 @@ export function PromptInputTools({ className, ...props }: PromptInputToolsProps)
 	);
 }
 
-export function PromptInputButton({ variant = 'ghost', className, size, ...props }: PromptInputButtonProps) {
+export function PromptInputButton({
+	variant = 'ghost',
+	className,
+	size,
+	...props
+}: PromptInputButtonProps) {
 	const newSize = size ?? Children.count(props.children) > 1 ? 'default' : 'icon';
 	return (
 		<Button

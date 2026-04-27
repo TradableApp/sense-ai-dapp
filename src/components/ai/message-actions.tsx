@@ -1,4 +1,4 @@
-import { useEffect, useState, ReactNode } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 
 import {
 	BookText,
@@ -6,6 +6,7 @@ import {
 	ChevronLeftIcon,
 	ChevronRightIcon,
 	CopyIcon,
+	LucideIcon,
 	MoreHorizontal,
 	RotateCcwIcon,
 	Share,
@@ -13,7 +14,6 @@ import {
 	Split,
 	ThumbsDown,
 	ThumbsUp,
-	LucideIcon,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -44,8 +44,8 @@ interface DropdownActionProps {
 interface MessageActionsProps {
 	message: any;
 	versionInfo?: any;
-	onRegenerate?: (mode?: string) => void;
-	onNavigate?: (direction: string) => void;
+	onRegenerate?: (_mode?: string) => void;
+	onNavigate?: (_direction: string) => void;
 	onBranch?: () => void;
 	initialFeedback?: string | null;
 }
@@ -114,7 +114,7 @@ export default function MessageActions({
 }: MessageActionsProps) {
 	const { ownerAddress } = useSession();
 	const [isCopied, setIsCopied] = useState(false);
-	const [feedback, setFeedback] = useState(null);
+	const [feedback, setFeedback] = useState<string | null>(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	useEffect(() => {
@@ -130,7 +130,7 @@ export default function MessageActions({
 		}
 	};
 
-	const handleFeedback = async newFeedbackValue => {
+	const handleFeedback = async (newFeedbackValue: string | null) => {
 		if (isSubmitting) return;
 
 		const previousFeedback = feedback;
@@ -142,11 +142,11 @@ export default function MessageActions({
 
 		try {
 			await sendAiFeedback({
-				ownerAddress,
+				ownerAddress: ownerAddress || '',
 				conversationId: message.conversationId,
 				messageId: message.id,
 				parentId: message.parentId,
-				feedbackValue: finalFeedback,
+				feedbackValue: finalFeedback as 'like' | 'dislike',
 			});
 			// On success, the optimistic state is now confirmed.
 		} catch (error) {
@@ -168,7 +168,7 @@ export default function MessageActions({
 						variant="ghost"
 						size="icon"
 						className="size-5"
-						onClick={() => onNavigate(versionInfo.siblings[versionInfo.currentIndex - 1])}
+						onClick={() => onNavigate?.(versionInfo.siblings[versionInfo.currentIndex - 1])}
 						disabled={versionInfo.currentIndex === 0}
 					>
 						<ChevronLeftIcon className="size-3" />
@@ -180,7 +180,7 @@ export default function MessageActions({
 						variant="ghost"
 						size="icon"
 						className="size-5"
-						onClick={() => onNavigate(versionInfo.siblings[versionInfo.currentIndex + 1])}
+						onClick={() => onNavigate?.(versionInfo.siblings[versionInfo.currentIndex + 1])}
 						disabled={versionInfo.currentIndex === versionInfo.siblings.length - 1}
 					>
 						<ChevronRightIcon className="size-3" />
@@ -265,22 +265,22 @@ export default function MessageActions({
 			<ActionButton label="Share" icon={Share} />
 
 			<DropdownAction label="Try again" icon={RotateCcwIcon} align="start">
-				<DropdownMenuItem onClick={() => onRegenerate('default')}>
+				<DropdownMenuItem onClick={() => onRegenerate?.('default')}>
 					<RotateCcwIcon className="mr-2 size-4" />
 					Try again
 				</DropdownMenuItem>
-				<DropdownMenuItem onClick={() => onRegenerate('detailed')}>
+				<DropdownMenuItem onClick={() => onRegenerate?.('detailed')}>
 					<BookText className="mr-2 size-4" />
 					Add details
 				</DropdownMenuItem>
-				<DropdownMenuItem onClick={() => onRegenerate('concise')}>
+				<DropdownMenuItem onClick={() => onRegenerate?.('concise')}>
 					<Sparkles className="mr-2 size-4" />
 					More concise
 				</DropdownMenuItem>
 			</DropdownAction>
 
 			<DropdownAction label="More actions" icon={MoreHorizontal} align="end">
-				<DropdownMenuItem onClick={onBranch}>
+				<DropdownMenuItem onClick={() => onBranch?.()}>
 					<Split className="mr-2 size-4 rotate-90" />
 					Branch in new chat
 				</DropdownMenuItem>

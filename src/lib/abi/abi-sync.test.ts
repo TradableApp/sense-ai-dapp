@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 const abiDir = path.resolve(import.meta.dirname);
 
-function loadAbi(filename) {
+function loadAbi(filename: string) {
 	return JSON.parse(readFileSync(path.join(abiDir, filename), 'utf8'));
 }
 
@@ -14,7 +14,9 @@ describe('EVMAIAgent ABI — PromptSubmitted event', () => {
 	const raw = loadAbi('EVMAIAgent.json');
 	const abi = Array.isArray(raw) ? raw : raw.abi ?? [];
 
-	const event = abi.find(x => x.type === 'event' && x.name === 'PromptSubmitted');
+	const event = abi.find(
+		(x: unknown) => (x as any).type === 'event' && (x as any).name === 'PromptSubmitted',
+	);
 
 	it('event exists', () => {
 		expect(event).toBeDefined();
@@ -54,12 +56,17 @@ describe('AbleToken ABI — custom errors used by buildErrorHandler', () => {
 	const abi = Array.isArray(raw) ? raw : raw.abi ?? [];
 
 	it('ERC20InsufficientBalance error exists', () => {
-		const entry = abi.find(x => x.type === 'error' && x.name === 'ERC20InsufficientBalance');
+		const entry = abi.find(
+			(x: unknown) => (x as any).type === 'error' && (x as any).name === 'ERC20InsufficientBalance',
+		);
 		expect(entry).toBeDefined();
 	});
 
 	it('ERC20InsufficientAllowance error exists', () => {
-		const entry = abi.find(x => x.type === 'error' && x.name === 'ERC20InsufficientAllowance');
+		const entry = abi.find(
+			(x: unknown) =>
+				(x as any).type === 'error' && (x as any).name === 'ERC20InsufficientAllowance',
+		);
 		expect(entry).toBeDefined();
 	});
 });
@@ -69,14 +76,18 @@ describe('EVMAIAgentEscrow ABI — cancelPrompt and processRefund', () => {
 	const abi = Array.isArray(raw) ? raw : raw.abi ?? [];
 
 	it('cancelPrompt accepts _answerMessageId uint256', () => {
-		const fn = abi.find(x => x.type === 'function' && x.name === 'cancelPrompt');
+		const fn = abi.find(
+			(x: unknown) => (x as any).type === 'function' && (x as any).name === 'cancelPrompt',
+		);
 		expect(fn).toBeDefined();
 		expect(fn.inputs).toHaveLength(1);
 		expect(fn.inputs[0]).toMatchObject({ name: '_answerMessageId', type: 'uint256' });
 	});
 
 	it('processRefund accepts _answerMessageId uint256', () => {
-		const fn = abi.find(x => x.type === 'function' && x.name === 'processRefund');
+		const fn = abi.find(
+			(x: unknown) => (x as any).type === 'function' && (x as any).name === 'processRefund',
+		);
 		expect(fn).toBeDefined();
 		expect(fn.inputs).toHaveLength(1);
 		expect(fn.inputs[0]).toMatchObject({ name: '_answerMessageId', type: 'uint256' });

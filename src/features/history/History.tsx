@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { type ChangeEvent, type MouseEvent, useEffect, useMemo, useState } from 'react';
 
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -40,6 +40,7 @@ import useConversations from '@/hooks/useConversations';
 import useUsagePlan from '@/hooks/useUsagePlan';
 import { deleteConversation, renameConversation } from '@/lib/dataService';
 import { initializeSearch, search, teardownSearch } from '@/lib/searchService';
+import type { Conversation } from '@/lib/types';
 import { markdownToPlainText } from '@/lib/utils';
 import {
 	clearActiveConversation,
@@ -59,16 +60,16 @@ export default function History() {
 	const { data: plan } = useUsagePlan();
 	const hasActivePlan = !!plan;
 
-	const hasPendingPrompts = plan?.pendingEscrowCount > 0;
+	const hasPendingPrompts = (plan?.pendingEscrowCount ?? 0) > 0;
 
 	const { metadataUpdateMutation } = useChatMutations();
 	const { isRenameModalOpen, conversationToRename } = useAppSelector(state => state.chat);
 	const activeConversationId = useAppSelector(state => state.chat.activeConversationId);
 
 	const [searchQuery, setSearchQuery] = useState('');
-	const [filteredConversationIds, setFilteredConversationIds] = useState(null);
+	const [filteredConversationIds, setFilteredConversationIds] = useState<string[] | null>(null);
 	const [isAlertOpen, setIsAlertOpen] = useState(false);
-	const [conversationToDelete, setConversationToDelete] = useState(null);
+	const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
 
 	const skeletonKeys = useMemo(() => Array.from({ length: 3 }, () => `skel-${Math.random()}`), []);
 	const isSessionReady = !!sessionKey && !!ownerAddress;
@@ -85,7 +86,7 @@ export default function History() {
 	}, [sessionKey, ownerAddress, isSessionReady]);
 
 	const confirmDelete = () => {
-		if (!conversationToDelete) {
+		if (!conversationToDelete || !conversations) {
 			return;
 		}
 
@@ -100,11 +101,11 @@ export default function History() {
 				conversationId: conversationToDelete,
 				isDeleted: true,
 				title: conversation.title,
-				sessionKey,
+				sessionKey: sessionKey!,
 			},
 			{
 				onSuccess: async () => {
-					await deleteConversation(sessionKey, ownerAddress, conversationToDelete, queryClient);
+					await deleteConversation(sessionKey!, ownerAddress!, conversationToDelete, queryClient);
 
 					toast.success('Conversation deleted.');
 
@@ -120,20 +121,20 @@ export default function History() {
 		);
 	};
 
-	const handleRenameSubmit = newTitle => {
+	const handleRenameSubmit = (newTitle: string) => {
 		if (!conversationToRename) return;
 		metadataUpdateMutation.mutate(
 			{
 				conversationId: conversationToRename.id,
 				title: newTitle,
 				isDeleted: false,
-				sessionKey,
+				sessionKey: sessionKey!,
 			},
 			{
 				onSuccess: async () => {
 					await renameConversation(
-						sessionKey,
-						ownerAddress,
+						sessionKey!,
+						ownerAddress!,
 						{ id: conversationToRename.id, newTitle },
 						queryClient,
 					);
@@ -146,20 +147,20 @@ export default function History() {
 		);
 	};
 
-	const handleRenameClick = (e, conversation) => {
+	const handleRenameClick = (e: MouseEvent, conversation: Conversation) => {
 		e.stopPropagation();
 
 		dispatch(openRenameModal({ id: conversation.id, title: conversation.title }));
 	};
 
-	const handleDeleteClick = (e, conversationId) => {
+	const handleDeleteClick = (e: MouseEvent, conversationId: string) => {
 		e.stopPropagation();
 
 		setConversationToDelete(conversationId);
 		setIsAlertOpen(true);
 	};
 
-	const handleSelectConversation = conversationId => {
+	const handleSelectConversation = (conversationId: string) => {
 		dispatch(setActiveConversationId(conversationId));
 		navigate('/chat');
 	};
@@ -178,7 +179,7 @@ export default function History() {
 		return conversations.filter(c => filteredSet.has(c.id));
 	}, [conversations, filteredConversationIds]);
 
-	const handleSearchChange = e => {
+	const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
 		const query = e.target.value;
 		setSearchQuery(query);
 

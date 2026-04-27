@@ -10,8 +10,8 @@ import {
 	SidebarMenuButton,
 	SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { openModal } from '@/store/uiSlice';
 import { useAppDispatch } from '@/store/hooks';
+import { openModal } from '@/store/uiSlice';
 
 interface NavItem {
 	title: string;

@@ -1,11 +1,16 @@
 import { cn } from '@/lib/utils';
 
-export default function OfflineCloudIcon({ className, ...props }) {
+interface OfflineCloudIconProps {
+	className?: string;
+	[key: string]: any;
+}
+
+export default function OfflineCloudIcon({ className, ...props }: OfflineCloudIconProps) {
 	return (
 		<svg
 			xmlns="http://www.w3.org/2000/svg"
 			viewBox="0 0 798.208 499.926"
-			className={cn('icon-colour', className)}
+			className={cn('icon-colour', className || '')}
 			aria-hidden="true"
 			{...props}
 		>

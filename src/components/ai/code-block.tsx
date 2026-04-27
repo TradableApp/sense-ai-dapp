@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useMemo, useState, ReactNode } from 'react';
+import React, { createContext, ReactNode, useContext, useMemo, useState } from 'react';
 
 import { CheckIcon, CopyIcon } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -19,14 +19,16 @@ interface CodeBlockProps {
 	showLineNumbers?: boolean;
 	className?: string;
 	children?: ReactNode;
+	[key: string]: any;
 }
 
 interface CodeBlockCopyButtonProps {
 	onCopy?: () => void;
-	onError?: (error: Error) => void;
+	onError?: (_error: Error) => void;
 	timeout?: number;
 	children?: ReactNode;
 	className?: string;
+	[key: string]: any;
 }
 
 export function CodeBlock({
@@ -124,7 +126,8 @@ export function CodeBlockCopyButton({
 			onCopy?.();
 			setTimeout(() => setIsCopied(false), timeout);
 		} catch (error) {
-			onError?.(error);
+			const errorObj = error instanceof Error ? error : new Error(String(error));
+			onError?.(errorObj);
 		}
 	};
 	const Icon = isCopied ? CheckIcon : CopyIcon;

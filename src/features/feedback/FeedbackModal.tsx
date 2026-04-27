@@ -22,8 +22,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { client } from '@/config/thirdweb';
 import { useSession } from '@/features/auth/SessionProvider';
 import { sendFeedback } from '@/lib/contactService';
-import { closeModal } from '@/store/uiSlice';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import { closeModal } from '@/store/uiSlice';
 
 const feedbackSchema = z.object({
 	feedback: z
@@ -45,7 +45,7 @@ interface FeedbackVariables {
 
 export default function FeedbackModal() {
 	const dispatch = useAppDispatch();
-	const { ownerAddress, activeWallet } = useSession();
+	const { ownerAddress } = useSession();
 	const isOpen = useAppSelector(state => state.ui.currentModal.type === 'Feedback');
 
 	const {
@@ -77,9 +77,13 @@ export default function FeedbackModal() {
 		}
 	}, [isOpen, reset, setFocus]);
 
-	const feedbackMutation = useMutation<{ success: boolean; message: string }, Error, FeedbackVariables>({
+	const feedbackMutation = useMutation<
+		{ success: boolean; message: string },
+		Error,
+		FeedbackVariables
+	>({
 		mutationFn: variables =>
-			sendFeedback(variables.data, variables.userAddress, variables.displayName),
+			sendFeedback(variables.data, variables.userAddress, variables.displayName ?? ''),
 		onSuccess: () => {
 			toast.success('Thank you!', {
 				description: 'Your feedback has been submitted successfully.',
@@ -94,7 +98,7 @@ export default function FeedbackModal() {
 	});
 
 	const onSubmit = (data: z.infer<typeof feedbackSchema>) => {
-		const displayName = activeWallet?.getAccount()?.ens?.name;
+		const displayName: string | undefined = undefined;
 		feedbackMutation.mutate({ data, userAddress: ownerAddress || '', displayName });
 	};
 

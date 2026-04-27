@@ -1,22 +1,31 @@
 import { httpsCallable } from 'firebase/functions';
 import { toast } from 'sonner';
 
-import type { FaucetResponse } from './types';
 import { functions } from '@/config/firebase';
+
+import type { FaucetResponse } from './types';
+
+interface FaucetCallableResult {
+	success: boolean;
+	txHash?: string;
+	message?: string;
+}
 
 const requestTestTokens = async (walletAddress: string): Promise<FaucetResponse> => {
 	try {
+		if (!functions) throw new Error('Firebase functions not initialized');
 		const faucetFunction = httpsCallable(functions, 'requestTestTokens');
 
 		const result = await faucetFunction({ walletAddress });
+		const data = result.data as FaucetCallableResult;
 
-		if ((result.data as any).success) {
+		if (data.success) {
 			// We handle the "Success" toast in the component now,
 			// so we can add the Explorer Link and Loading state there.
-			return { success: true, txHash: (result.data as any).txHash };
+			return { success: true, txHash: data.txHash };
 		}
 
-		throw new Error((result.data as any).message || 'Faucet failed');
+		throw new Error(data.message || 'Faucet failed');
 	} catch (error) {
 		console.error('[faucetService] Error:', error);
 		// Handle specific rate limit messages nicely

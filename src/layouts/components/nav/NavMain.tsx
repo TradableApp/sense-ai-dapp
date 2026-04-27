@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type ComponentType, useState } from 'react';
 
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -19,7 +19,7 @@ import { useAppDispatch, useAppSelector } from '@/store/hooks';
 interface NavItem {
 	title: string;
 	url: string;
-	icon: React.ComponentType<{ className?: string }>;
+	icon: ComponentType<{ className?: string }>;
 	hasChildren?: boolean;
 }
 
@@ -33,15 +33,11 @@ export default function NavMain({ items }: NavMainProps) {
 	const dispatch = useAppDispatch();
 	const [isHistoryOpen, setIsHistoryOpen] = useState(true);
 
-	const activeConversationId = useAppSelector((state) => state.chat.activeConversationId);
+	const activeConversationId = useAppSelector(state => state.chat.activeConversationId);
 
 	const { data: allConversations } = useConversations();
 
-	const handleSelectConversation = conversationId => {
-		console.log(
-			`%c[NavMain.jsx-LOG] handleSelectConversation clicked for ID: ${conversationId}. Dispatching setActiveConversationId.`,
-			'color: orange; font-weight: bold;',
-		);
+	const handleSelectConversation = (conversationId: string): void => {
 		dispatch(setActiveConversationId(conversationId));
 		navigate('/chat');
 	};
@@ -117,10 +113,7 @@ export default function NavMain({ items }: NavMainProps) {
 					) : (
 						// All other menu items (Dashboard, Chat) do NOT grow.
 						<SidebarMenuItem key={item.title} className="shrink-0">
-							<SidebarMenuButton
-								asChild
-								isActive={location.pathname === item.url}
-							>
+							<SidebarMenuButton asChild isActive={location.pathname === item.url}>
 								<Link to={item.url}>
 									<item.icon />
 									<span>{item.title}</span>

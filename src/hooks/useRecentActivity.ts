@@ -36,7 +36,7 @@ const activityTypeMap = {
 	REFUND: { label: 'Prompt Refunded', icon: RotateCcw },
 	PLAN_UPDATE: { label: 'Spending Limit Updated', icon: ShieldCheck },
 	PLAN_REVOKE: { label: 'Spending Limit Revoked', icon: ShieldOff },
-};
+} as const;
 
 export default function useRecentActivity(limit = 10) {
 	const { ownerAddress } = useSession();
@@ -57,7 +57,7 @@ export default function useRecentActivity(limit = 10) {
 
 			return (data.activities || []).map(activity => {
 				// If type is not found, fallback to Activity icon
-				const details = activityTypeMap[activity.type] || {
+				const details = activityTypeMap[activity.type as keyof typeof activityTypeMap] || {
 					label: 'Unknown Action',
 					icon: Activity,
 				};

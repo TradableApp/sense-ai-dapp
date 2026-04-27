@@ -14,7 +14,7 @@ export default function OnboardingFlow() {
 			<div className="relative z-10 flex h-full w-full items-center justify-center p-4">
 				<OnboardingCard onGetStarted={() => setIsModalOpen(true)} />
 			</div>
-			<ManagePlanModal open={isModalOpen} onOpenChange={setIsModalOpen} existingPlan={undefined} />
+			<ManagePlanModal open={isModalOpen} onOpenChange={setIsModalOpen} existingPlan={null} />
 		</>
 	);
 }

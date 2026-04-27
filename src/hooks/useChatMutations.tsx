@@ -108,8 +108,8 @@ export function buildErrorHandler(
 			(error instanceof Error
 				? error.message
 				: typeof error === 'object' && error !== null && 'message' in error
-					? String((error as { message: unknown }).message)
-					: String(error)) || '';
+				? String((error as { message: unknown }).message)
+				: String(error)) || '';
 
 		const isError = (abi: Parameters<typeof getAbiItem>[0]['abi'], name: string) => {
 			const item = getAbiItem({ abi, name });
@@ -266,9 +266,8 @@ export default function useChatMutations() {
 
 		const loadingToastId = toast.loading('Requesting Testnet Tokens...');
 
-		const address = activeWallet?.getAccount()?.address;
+		const address = activeWallet?.getAccount()?.address ?? '';
 		const { success, txHash } = await requestTestTokens(address);
-		console.log('success', success, 'txHash', txHash);
 
 		toast.dismiss(loadingToastId);
 
@@ -286,7 +285,10 @@ export default function useChatMutations() {
 			// 2. Poll for confirmation using Thirdweb RPC
 			try {
 				// Get the RPC client for the current chain
-				const rpcRequest = getRpcClient({ client, chain: activeWallet.getChain() });
+				if (!activeWallet) throw new Error('Wallet not connected');
+				const chain = activeWallet.getChain();
+				if (!chain) throw new Error('Chain not found');
+				const rpcRequest = getRpcClient({ client, chain });
 
 				let attempts = 0;
 				const maxAttempts = 30; // Try for ~60 seconds (2s interval)
@@ -297,7 +299,6 @@ export default function useChatMutations() {
 						const receipt = await eth_getTransactionReceipt(rpcRequest, {
 							hash: txHash as `0x${string}`,
 						});
-						console.log('receipt', receipt);
 
 						if (receipt) {
 							toast.dismiss(sentToastId); // Dismiss the "Tokens Sent" info toast
@@ -307,9 +308,9 @@ export default function useChatMutations() {
 
 							// Refresh balance
 							const queryKey = getTokenBalanceQueryKey(
-								chainId,
+								chainId ?? 0,
 								address,
-								CONTRACTS[chainId]?.token?.address,
+								CONTRACTS[chainId ?? 0]?.token?.address,
 							);
 							// eslint-disable-next-line no-await-in-loop
 							await queryClient.invalidateQueries({ queryKey });
@@ -375,19 +376,6 @@ export default function useChatMutations() {
 			if (!contractConfig?.escrow) {
 				throw new Error('Contracts not configured for this chain.');
 			}
-			console.log(
-				'conversationId',
-				conversationId,
-				'promptText',
-				promptText,
-				'sessionKey',
-				sessionKey,
-				'parentId',
-				parentId,
-				'parentCID',
-				parentCID,
-			);
-
 			const { encryptedPayload, roflEncryptedKey } = await createEncryptedPayloads(sessionKey, {
 				promptText,
 				isNewConversation: !conversationId,
@@ -410,8 +398,6 @@ export default function useChatMutations() {
 				transaction: tx,
 				account: activeAccount,
 			});
-			console.log('transactionReceipt', transactionReceipt);
-
 			const promptSubmittedTopic = toEventSelector(
 				getAbiItem({ abi: contractConfig.agent.abi, name: 'PromptSubmitted' }) as AbiEvent,
 			);
@@ -504,8 +490,6 @@ export default function useChatMutations() {
 				transaction: tx,
 				account: activeAccount,
 			});
-			console.log('transactionReceipt', transactionReceipt);
-
 			const eventTopic = toEventSelector(
 				getAbiItem({ abi: contractConfig.agent.abi, name: 'RegenerationRequested' }) as AbiEvent,
 			);
@@ -578,8 +562,6 @@ export default function useChatMutations() {
 				transaction: tx,
 				account: activeAccount,
 			});
-			console.log('transactionReceipt', transactionReceipt);
-
 			const eventTopic = toEventSelector(
 				getAbiItem({ abi: contractConfig.agent.abi, name: 'BranchRequested' }) as AbiEvent,
 			);
@@ -650,12 +632,10 @@ export default function useChatMutations() {
 				params: [conversationId, encryptedPayload, roflEncryptedKey],
 			} as unknown as Parameters<typeof prepareContractCall>[0]);
 
-			const transactionReceipt = await sendAndConfirmTransaction({
+			await sendAndConfirmTransaction({
 				transaction: tx,
 				account: activeAccount,
 			});
-			console.log('transactionReceipt', transactionReceipt);
-
 			return { conversationId };
 		},
 		onSuccess: () => {
@@ -691,11 +671,10 @@ export default function useChatMutations() {
 				params: [answerMessageId],
 			} as unknown as Parameters<typeof prepareContractCall>[0]);
 
-			const transactionReceipt = await sendAndConfirmTransaction({
+			await sendAndConfirmTransaction({
 				transaction: tx,
-				account: activeAccount,
+				account: activeAccount!,
 			});
-			console.log('transactionReceipt', transactionReceipt);
 		},
 		onSuccess: () => {
 			toast.success('Prompt Cancelled', {
@@ -733,11 +712,10 @@ export default function useChatMutations() {
 				params: [answerMessageId],
 			} as unknown as Parameters<typeof prepareContractCall>[0]);
 
-			const transactionReceipt = await sendAndConfirmTransaction({
+			await sendAndConfirmTransaction({
 				transaction: tx,
-				account: activeAccount,
+				account: activeAccount!,
 			});
-			console.log('transactionReceipt', transactionReceipt);
 		},
 		onSuccess: () => {
 			toast.success('Refund Processed', {

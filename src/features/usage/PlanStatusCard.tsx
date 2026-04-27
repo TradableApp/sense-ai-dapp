@@ -13,10 +13,18 @@ import useStuckRequests from '@/hooks/useStuckRequests';
 
 import ManagePlanModal from './ManagePlanModal';
 
+interface Plan {
+	allowance: number;
+	spentAmount: number;
+	expiresAt: Date | null;
+	pendingEscrowCount: number;
+	realTokenAllowance: number;
+}
+
 /**
  * A helper function to format the expiration date into a "days remaining" string.
  */
-function formatTimeRemaining(expiryDate) {
+function formatTimeRemaining(expiryDate: Date | null): string {
 	if (!expiryDate) return 'No expiration set';
 	const now = new Date();
 	const differenceInMs = expiryDate.getTime() - now.getTime();
@@ -26,7 +34,7 @@ function formatTimeRemaining(expiryDate) {
 	return `Expires in ${daysRemaining} days`;
 }
 
-export default function PlanStatusCard({ plan }) {
+export default function PlanStatusCard({ plan }: { plan: Plan }) {
 	const [isManageModalOpen, setIsManageModalOpen] = useState(false);
 	const [isRefundingAll, setIsRefundingAll] = useState(false);
 
@@ -59,7 +67,7 @@ export default function PlanStatusCard({ plan }) {
 
 	// We still want to visually warn them, but NOT disable the button
 	const hasPendingPrompts = pendingEscrowCount > 0;
-	const refundableRequests = stuckRequests?.filter(r => r.isRefundable) || [];
+	const refundableRequests = stuckRequests?.filter(r => r?.isRefundable) || [];
 
 	const handleRefundAll = async () => {
 		if (refundableRequests.length === 0) {
@@ -76,15 +84,17 @@ export default function PlanStatusCard({ plan }) {
 		// Using a linter-friendly for loop for sequential async operations.
 		for (let i = 0; i < refundableRequests.length; i += 1) {
 			const req = refundableRequests[i];
-			try {
-				// The `await` pauses the loop. The mutation's own onSuccess/onError will handle the toasts.
-				// eslint-disable-next-line no-await-in-loop
-				await processRefundMutation.mutateAsync({ answerMessageId: req.id });
-			} catch (error) {
-				// The mutation's onError will have already shown a toast.
-				// We just need to log it and stop the process.
-				console.error('Refund failed for request:', req.id, error);
-				break;
+			if (req) {
+				try {
+					// The `await` pauses the loop. The mutation's own onSuccess/onError will handle the toasts.
+					// eslint-disable-next-line no-await-in-loop
+					await processRefundMutation.mutateAsync({ answerMessageId: req.id });
+				} catch (error) {
+					// The mutation's onError will have already shown a toast.
+					// We just need to log it and stop the process.
+					console.error('Refund failed for request:', req.id, error);
+					break;
+				}
 			}
 		}
 
@@ -261,41 +271,44 @@ export default function PlanStatusCard({ plan }) {
 									</div>
 
 									<div className="max-h-32 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-										{stuckRequests.map(req => (
-											<div
-												key={req.id}
-												className="flex items-center justify-between rounded-md bg-background/60 p-2 text-xs border border-border/50"
-											>
-												<div className="flex flex-col">
-													<span className="font-medium">Request #{req.id}</span>
-													<span className="text-muted-foreground text-[10px]">
-														{formatDistanceToNow(req.createdAt)} ago
-													</span>
-												</div>
-
-												{req.isRefundable ? (
-													<Button
-														size="sm"
-														variant="secondary"
-														className="h-7 text-xs px-3"
-														onClick={() =>
-															processRefundMutation.mutate({ answerMessageId: req.id })
-														}
-														disabled={processRefundMutation.isPending || isRefundingAll}
+										{stuckRequests?.map(
+											req =>
+												req && (
+													<div
+														key={req.id}
+														className="flex items-center justify-between rounded-md bg-background/60 p-2 text-xs border border-border/50"
 													>
-														{processRefundMutation.isPending && !isRefundingAll ? (
-															<Loader2 className="w-3 h-3 animate-spin" />
+														<div className="flex flex-col">
+															<span className="font-medium">Request #{req.id}</span>
+															<span className="text-muted-foreground text-[10px]">
+																{formatDistanceToNow(req.createdAt)} ago
+															</span>
+														</div>
+
+														{req.isRefundable ? (
+															<Button
+																size="sm"
+																variant="secondary"
+																className="h-7 text-xs px-3"
+																onClick={() =>
+																	processRefundMutation.mutate({ answerMessageId: req.id })
+																}
+																disabled={processRefundMutation.isPending || isRefundingAll}
+															>
+																{processRefundMutation.isPending && !isRefundingAll ? (
+																	<Loader2 className="w-3 h-3 animate-spin" />
+																) : (
+																	'Refund'
+																)}
+															</Button>
 														) : (
-															'Refund'
+															<span className="text-muted-foreground italic px-2 py-1 bg-muted rounded">
+																Wait 1h
+															</span>
 														)}
-													</Button>
-												) : (
-													<span className="text-muted-foreground italic px-2 py-1 bg-muted rounded">
-														Wait 1h
-													</span>
-												)}
-											</div>
-										))}
+													</div>
+												),
+										)}
 									</div>
 								</div>
 							</div>

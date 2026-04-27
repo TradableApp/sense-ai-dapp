@@ -25,6 +25,17 @@ const renameSchema = z.object({
 		.max(100, { message: 'Title cannot be longer than 100 characters.' }),
 });
 
+type RenameFormValues = z.infer<typeof renameSchema>;
+
+interface RenameConversationModalProps {
+	open: boolean;
+	onOpenChange: (_open: boolean) => void;
+	onRenameSubmit: (_title: string) => void;
+	isProcessing: boolean;
+	error: Error | null;
+	conversationToRename: { id: string; title: string } | null;
+}
+
 export default function RenameConversationModal({
 	open,
 	onOpenChange,
@@ -32,14 +43,14 @@ export default function RenameConversationModal({
 	isProcessing,
 	error,
 	conversationToRename,
-}) {
+}: RenameConversationModalProps) {
 	const {
 		register,
 		handleSubmit,
 		reset,
 		formState: { errors, isValid },
 		setFocus,
-	} = useForm({
+	} = useForm<RenameFormValues>({
 		resolver: zodResolver(renameSchema),
 		mode: 'onChange',
 		defaultValues: { title: '' },
@@ -52,7 +63,7 @@ export default function RenameConversationModal({
 		}
 	}, [conversationToRename, open, reset, setFocus]);
 
-	const onSubmit = data => {
+	const onSubmit = (data: RenameFormValues) => {
 		onRenameSubmit(data.title);
 	};
 

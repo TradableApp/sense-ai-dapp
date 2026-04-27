@@ -81,13 +81,9 @@ export function initPosthog() {
 	// Auto-enable if user previously gave consent
 	try {
 		// Check if consent has been provided previously by the user
-		const consentSettings = loadState('consentSettings') || {};
+		const consentSettings = (loadState('consentSettings') || {}) as Record<string, unknown>;
 
-		const {
-			// ad_storage: marketingStorage,
-			analytics_storage: analyticsStorage,
-			// personalization_storage: personalisationsStorage,
-		} = consentSettings;
+		const analyticsStorage = consentSettings.analytics_storage;
 
 		if (analyticsStorage) {
 			enablePosthogAfterConsent();

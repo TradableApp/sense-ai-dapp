@@ -12,9 +12,9 @@ import useCompare from './useCompare';
 interface FirestoreDocumentListenerProps {
 	queryFn: () => DocumentSnapshot | Query;
 	queryDeps: (string | number | null | undefined)[] | null;
-	docFn?: (doc: any) => any;
+	docFn?: (_doc: any) => any;
 	docId?: string;
-	dataFn: (data: any) => void;
+	dataFn: (_data: any) => void;
 	errorFn?: () => void;
 	deps: unknown[];
 	shouldExecute?: boolean;
@@ -42,7 +42,7 @@ export default function useFirestoreDocumentListener({
 	const isMounted = useRef(false);
 
 	useEffect(() => {
-		if (!shouldExecute) return null;
+		if (!shouldExecute) return () => {};
 
 		if (queryDepsCompare && isMounted.current) {
 			dataFn({});
@@ -72,7 +72,7 @@ export default function useFirestoreDocumentListener({
 						}
 					} else {
 						if (isMounted.current) {
-							dataFn(docFn ? docFn(snapshot) : dataFromSnapshot(snapshot, docId));
+							dataFn(docFn ? docFn(snapshot) : dataFromSnapshot(snapshot, docId || ''));
 						}
 
 						dispatch(asyncActionFinish(loadingTag));

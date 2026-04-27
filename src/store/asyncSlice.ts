@@ -1,7 +1,12 @@
 /* eslint-disable no-param-reassign */
 import { createSlice } from '@reduxjs/toolkit';
 
-const initialState = {
+interface AsyncState {
+	loading: Record<string, boolean>;
+	errors: Record<string, unknown>;
+}
+
+const initialState: AsyncState = {
 	loading: {},
 	errors: {},
 };
@@ -10,7 +15,7 @@ const asyncSlice = createSlice({
 	name: 'async',
 	initialState,
 	reducers: {
-		asyncActionStart: (state, action) => {
+		asyncActionStart: (state, action: { payload: string }) => {
 			const type = action.payload;
 			// Clear any previous errors for this action type
 			if (state.errors[type]) {
@@ -18,13 +23,13 @@ const asyncSlice = createSlice({
 			}
 			state.loading[type] = true;
 		},
-		asyncActionFinish: (state, action) => {
+		asyncActionFinish: (state, action: { payload: string }) => {
 			const type = action.payload;
 			if (state.loading[type]) {
 				delete state.loading[type];
 			}
 		},
-		asyncActionError: (state, action) => {
+		asyncActionError: (state, action: { payload: { type: string; error: unknown } }) => {
 			const { type, error } = action.payload;
 			if (state.loading[type]) {
 				delete state.loading[type];

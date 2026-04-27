@@ -1,10 +1,10 @@
-import { useAppSelector } from '@/store/hooks';
 
 import FeedbackModal from '@/features/feedback/FeedbackModal';
 import DisclaimerModal from '@/features/legal/DisclaimerModal';
 import PrivacyModal from '@/features/legal/PrivacyModal';
 import TermsModal from '@/features/legal/TermsModal';
 import SupportModal from '@/features/support/SupportModal';
+import { useAppSelector } from '@/store/hooks';
 
 interface Modal {
 	type: string;
@@ -36,7 +36,9 @@ const renderModal = (modal: Modal | undefined) => {
 };
 
 export default function ModalManager() {
-	const { currentModal, overlayModal, priorityModal } = useAppSelector((state) => state.ui) as UIState;
+	const { currentModal, overlayModal, priorityModal } = useAppSelector(
+		state => state.ui,
+	) as UIState;
 
 	return (
 		<>

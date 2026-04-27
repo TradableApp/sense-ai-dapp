@@ -8,8 +8,8 @@ import {
 	DialogTitle,
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { closeModal } from '@/store/uiSlice';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import { closeModal } from '@/store/uiSlice';
 
 import TermsAndConditionsDoc from './docs/TermsAndConditionsDoc';
 

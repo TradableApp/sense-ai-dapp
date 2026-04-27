@@ -1,7 +1,16 @@
 /* eslint-disable no-param-reassign */
 import { createSlice } from '@reduxjs/toolkit';
 
-const initialState = {
+type AppStatus = 'loading' | 'ready' | 'error';
+
+export interface AppState {
+	status: AppStatus;
+	isThirdwebReady: boolean;
+	isFirebaseReady: boolean;
+	error: string | null;
+}
+
+const initialState: AppState = {
 	status: 'loading', // 'loading', 'ready', 'error'
 	isThirdwebReady: false,
 	isFirebaseReady: false,

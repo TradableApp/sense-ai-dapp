@@ -13,9 +13,9 @@ interface FirestoreCollectionListenerProps {
 	queryFn: () => Query;
 	queryDeps: (string | number | null | undefined)[] | null;
 	continueOnQueryChange?: boolean;
-	docFn?: (doc: any) => any;
+	docFn?: (_doc: any) => any;
 	docId?: string;
-	dataFn: (data: any[]) => void;
+	dataFn: (_data: any[]) => void;
 	errorFn?: () => void;
 	loadingTag?: string;
 	deps: unknown[];
@@ -42,8 +42,6 @@ export default function useFirestoreCollectionListener({
 
 	useEffect(() => {
 		if (queryDepsCompare && !continueOnQueryChange && isMounted.current) {
-			console.log('None loadingTag', loadingTag);
-
 			dataFn([]);
 		}
 
@@ -67,15 +65,12 @@ export default function useFirestoreCollectionListener({
 						);
 
 						if (isMounted.current) {
-							console.log('None loadingTag', loadingTag);
-
 							dataFn([]);
 						}
 					} else {
 						const docs = snapshot.docs.map(doc =>
-							docFn ? docFn(doc) : dataFromSnapshot(doc, docId),
+							docFn ? docFn(doc) : dataFromSnapshot(doc, docId ?? ''),
 						);
-						// console.log('docs', docs);
 
 						if (isMounted.current) {
 							dataFn(docs);
@@ -85,7 +80,6 @@ export default function useFirestoreCollectionListener({
 					}
 				},
 				(error: Error) => {
-					console.log('error', error);
 					if (errorFn && isMounted.current) {
 						errorFn();
 					}
@@ -100,8 +94,6 @@ export default function useFirestoreCollectionListener({
 			};
 		}
 
-		console.log("Some of the queryDeps aren't truthful", queryDeps, loadingTag);
-		console.log('None loadingTag', loadingTag);
 		dataFn([]);
 
 		return () => {};

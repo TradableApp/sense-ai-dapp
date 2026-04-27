@@ -18,10 +18,15 @@ interface UserMessageActionsProps {
 	message?: any;
 	versionInfo?: any;
 	onEdit?: () => void;
-	onNavigate?: (direction: string) => void;
+	onNavigate?: (_direction: string) => void;
 }
 
-export default function UserMessageActions({ message, versionInfo, onEdit, onNavigate }: UserMessageActionsProps) {
+export default function UserMessageActions({
+	message,
+	versionInfo,
+	onEdit,
+	onNavigate,
+}: UserMessageActionsProps) {
 	const [isCopied, setIsCopied] = useState(false);
 
 	const handleCopy = async () => {
@@ -97,7 +102,7 @@ export default function UserMessageActions({ message, versionInfo, onEdit, onNav
 							variant="ghost"
 							size="icon"
 							className="size-7 text-muted-foreground"
-							onClick={onEdit}
+							onClick={() => onEdit?.()}
 						>
 							<PencilIcon className="size-4" />
 						</Button>
@@ -114,7 +119,7 @@ export default function UserMessageActions({ message, versionInfo, onEdit, onNav
 						variant="ghost"
 						size="icon"
 						className="size-5"
-						onClick={() => onNavigate(versionInfo.siblings[versionInfo.currentIndex - 1])}
+						onClick={() => onNavigate?.(versionInfo.siblings[versionInfo.currentIndex - 1])}
 						disabled={versionInfo.currentIndex === 0}
 					>
 						<ChevronLeftIcon className="size-3" />
@@ -126,7 +131,7 @@ export default function UserMessageActions({ message, versionInfo, onEdit, onNav
 						variant="ghost"
 						size="icon"
 						className="size-5"
-						onClick={() => onNavigate(versionInfo.siblings[versionInfo.currentIndex + 1])}
+						onClick={() => onNavigate?.(versionInfo.siblings[versionInfo.currentIndex + 1])}
 						disabled={versionInfo.currentIndex === versionInfo.siblings.length - 1}
 					>
 						<ChevronRightIcon className="size-3" />

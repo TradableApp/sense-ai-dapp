@@ -2,20 +2,20 @@ import { useCallback, useEffect, useRef } from 'react';
 
 import { httpsCallable } from 'firebase/functions';
 
-import type { RootState } from '@/store/store';
-import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { functions } from '@/config/firebase';
 import { wait } from '@/lib/utils';
 import { setLatestIP, setOnline } from '@/store/deviceSlice';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import type { RootState } from '@/store/store';
 
-const getRequestIP = httpsCallable(functions, 'getRequestIP');
+const getRequestIP = functions ? httpsCallable(functions, 'getRequestIP') : null;
 
 export default function useNetwork(): void {
 	const dispatch = useAppDispatch();
 	const isOnline = useAppSelector((state: RootState) => state.device.online);
 	const latestIP = useAppSelector((state: RootState) => state.device.latestIP);
 
-	const webPingRef = useRef<NodeJS.Timeout | null>(null);
+	const webPingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
 	const handleConnectionChange = useCallback(() => {
 		const sendWebPing = async () => {
@@ -36,10 +36,12 @@ export default function useNetwork(): void {
 
 				// Now that we're online, fetch the IP address.
 				try {
-					const ipResponse = await getRequestIP();
-					const newIP = (ipResponse?.data as any)?.ip;
-					if (newIP && newIP !== latestIP) {
-						dispatch(setLatestIP(newIP));
+					if (getRequestIP) {
+						const ipResponse = await getRequestIP();
+						const newIP = (ipResponse?.data as any)?.ip;
+						if (newIP && newIP !== latestIP) {
+							dispatch(setLatestIP(newIP));
+						}
 					}
 				} catch (error) {
 					console.warn('[useNetwork] Could not fetch IP address:', error);

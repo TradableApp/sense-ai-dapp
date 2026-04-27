@@ -9,10 +9,15 @@ import { client, deploymentChain, wallets } from '@/config/thirdweb';
 import senseaiLogo from '@/senseai-logo.svg';
 import senseaiTextLogoBlack from '@/senseai-text-logo-black-purple.svg';
 import senseaiTextLogoWhite from '@/senseai-text-logo-white-purple.svg';
-import { openModal } from '@/store/uiSlice';
 import { useAppDispatch } from '@/store/hooks';
+import { openModal } from '@/store/uiSlice';
 
-function FooterLink({ label, onClick }) {
+interface FooterLinkProps {
+	label: string;
+	onClick: () => void;
+}
+
+function FooterLink({ label, onClick }: FooterLinkProps) {
 	return (
 		<button
 			type="button"

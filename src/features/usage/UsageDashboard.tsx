@@ -42,7 +42,7 @@ export default function UsageDashboard() {
 			className={cn(
 				'min-h-full',
 				// Add a subtle background for the dashboard view
-				plan && 'bg-muted/10 p-4 md:p-8',
+				plan ? 'bg-muted/10 p-4 md:p-8' : undefined,
 			)}
 		>
 			<div

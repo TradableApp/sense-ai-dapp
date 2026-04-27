@@ -1,7 +1,7 @@
-import React, { useRef, ReactNode, RefObject } from 'react';
+import React, { ReactNode, useRef } from 'react';
 
 import { cva } from 'class-variance-authority';
-import { motion, useMotionValue, useSpring, useTransform, MotionValue } from 'motion/react';
+import { motion, MotionValue, useMotionValue, useSpring, useTransform } from 'motion/react';
 
 import { cn } from '@/lib/utils';
 
@@ -42,7 +42,7 @@ function DockIcon({
 	children,
 	...props
 }: DockIconProps) {
-	const ref = useRef(null) as RefObject<HTMLDivElement>;
+	const ref = useRef<HTMLDivElement>(null);
 	const padding = Math.max(6, (size as number) * 0.2);
 	const defaultMouseX = useMotionValue(Infinity);
 
@@ -69,7 +69,7 @@ function DockIcon({
 			style={{ width: scaleSize, height: scaleSize, padding }}
 			className={cn(
 				'flex aspect-square cursor-pointer items-center justify-center rounded-full',
-				className,
+				className || '',
 			)}
 			{...props}
 		>
@@ -108,17 +108,16 @@ const Dock = React.forwardRef<HTMLDivElement, DockProps>(
 				return child;
 			});
 
+		const directionClass =
+			direction === 'top' ? 'items-start' : direction === 'middle' ? 'items-center' : 'items-end';
+
 		return (
 			<motion.div
 				ref={ref}
 				onMouseMove={(e: React.MouseEvent<HTMLDivElement>) => mouseX.set(e.pageX)}
 				onMouseLeave={() => mouseX.set(Infinity)}
 				{...props}
-				className={cn(dockVariants({ className }), {
-					'items-start': direction === 'top',
-					'items-center': direction === 'middle',
-					'items-end': direction === 'bottom',
-				})}
+				className={cn(dockVariants({ className }), directionClass)}
 			>
 				{renderChildren()}
 			</motion.div>

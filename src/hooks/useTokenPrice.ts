@@ -8,7 +8,7 @@ const ASSET_PLATFORM = 'base';
 export default function useTokenPrice() {
 	const activeWallet = useActiveWallet();
 	const chainId = activeWallet?.getChain()?.id;
-	const contractConfig = CONTRACTS[chainId];
+	const contractConfig = chainId ? CONTRACTS[chainId] : undefined;
 	const tokenAddress = contractConfig?.token?.address;
 
 	const isLocalnet = chainId === LOCAL_CHAIN_ID;

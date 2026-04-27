@@ -27,8 +27,8 @@ import AppSidebar from '@/layouts/components/AppSidebar';
 import MobileNav from '@/layouts/components/MobileNav';
 import { cn } from '@/lib/utils';
 import senseaiLogo from '@/senseai-logo.svg';
-import { openModal } from '@/store/uiSlice';
 import { useAppDispatch } from '@/store/hooks';
+import { openModal } from '@/store/uiSlice';
 
 function usePageTitle() {
 	const location = useLocation();

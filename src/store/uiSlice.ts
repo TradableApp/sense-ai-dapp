@@ -1,7 +1,18 @@
 /* eslint-disable no-param-reassign */
 import { createSlice } from '@reduxjs/toolkit';
 
-const initialState = {
+interface ModalState {
+	type: string | null;
+	props: Record<string, unknown>;
+}
+
+export interface UiState {
+	priorityModal: ModalState;
+	overlayModal: ModalState;
+	currentModal: ModalState;
+}
+
+const initialState: UiState = {
 	// A tiered system to manage modal layers.
 	// 'priority' is for critical modals (e.g., re-auth).
 	// 'overlay' can be for secondary modals on top of a primary one.
@@ -21,7 +32,7 @@ export const uiSlice = createSlice({
 		 */
 		openModal: (state, action) => {
 			const { type, props = {}, position = 'current' } = action.payload;
-			const modalKey = `${position}Modal`; // e.g., 'currentModal'
+			const modalKey = `${position}Modal` as keyof UiState; // e.g., 'currentModal'
 			state[modalKey] = { type, props };
 		},
 

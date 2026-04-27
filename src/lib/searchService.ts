@@ -2,16 +2,26 @@
 import Fuse from 'fuse.js';
 import { eng, removeStopwords } from 'stopword';
 
-import type { Conversation, Message, SearchIndex } from './types';
 import { decryptData, encryptData } from './crypto';
 import db from './db';
+import type { Conversation, Message } from './types';
 
 const SEARCH_INDEX_KEY = 'main';
 const POLLING_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
-let fuseInstance: InstanceType<typeof Fuse<{ messageId: string; conversationId: string; contentKeywords: string; titleKeywords: string }>> | null = null;
-let pollingIntervalId: NodeJS.Timeout | null = null;
-let inMemoryRawIndex: { m: Record<string, { cid: string; c: string }>; c: Record<string, { t: string }> } = { m: {}, c: {} };
+let fuseInstance: InstanceType<
+	typeof Fuse<{
+		messageId: string;
+		conversationId: string;
+		contentKeywords: string;
+		titleKeywords: string;
+	}>
+> | null = null;
+let pollingIntervalId: ReturnType<typeof setInterval> | null = null;
+let inMemoryRawIndex: {
+	m: Record<string, { cid: string; c: string }>;
+	c: Record<string, { t: string }>;
+} = { m: {}, c: {} };
 let isSyncing = false;
 
 function generateKeywords(content: string = ''): string {
@@ -31,7 +41,7 @@ const getLastSyncedAt = async (sessionKey: CryptoKey, ownerAddress: string): Pro
 	if (!metadataRecord) return 0;
 	try {
 		const decrypted = await decryptData(sessionKey, metadataRecord.encryptedData);
-		return (decrypted as Record<string, unknown>).searchLastSyncedAt as number || 0;
+		return ((decrypted as Record<string, unknown>).searchLastSyncedAt as number) || 0;
 	} catch (error) {
 		console.error('Could not decrypt user metadata, starting sync from scratch.', error);
 		return 0;
@@ -57,7 +67,10 @@ const setLastSyncedAt = async (
 	await db.userMetadata.put({ ownerAddress, encryptedData: encryptedMetadata });
 };
 
-const initializeFuse = (rawIndex: { m: Record<string, { cid: string; c: string }>; c: Record<string, { t: string }> }): void => {
+const initializeFuse = (rawIndex: {
+	m: Record<string, { cid: string; c: string }>;
+	c: Record<string, { t: string }>;
+}): void => {
 	const searchableMessagesMap = rawIndex.m || {};
 	const conversationTitlesMap = rawIndex.c || {};
 
@@ -88,8 +101,7 @@ const syncSearchIndex = async (sessionKey: CryptoKey, ownerAddress: string): Pro
 	isSyncing = true;
 
 	try {
-		const lastSyncedAt = await getLastSyncedAt(sessionKey, ownerAddress);
-		console.log(`[searchService] Last synced at: ${new Date(lastSyncedAt).toISOString()}`);
+		await getLastSyncedAt(sessionKey, ownerAddress);
 
 		const allEncryptedConvos = await db.conversations.where({ ownerAddress }).toArray();
 		const allEncryptedMessages = await db.messageCache.where({ ownerAddress }).toArray();
@@ -102,19 +114,22 @@ const syncSearchIndex = async (sessionKey: CryptoKey, ownerAddress: string): Pro
 		);
 		const allMessages = allMessagesNested.flat();
 
-		const rawIndex = { m: {}, c: {} };
+		const rawIndex: {
+			m: Record<string, { cid: string; c: string }>;
+			c: Record<string, { t: string }>;
+		} = { m: {}, c: {} };
 
-		allConversations.forEach(convo => {
+		allConversations.forEach((convo: Conversation) => {
 			if (!convo.isDeleted) {
 				rawIndex.c[convo.id] = { t: generateKeywords(convo.title) };
 			}
 		});
 
-		allMessages.forEach(message => {
+		allMessages.forEach((message: Message) => {
 			if (message.role === 'user') {
 				rawIndex.m[message.id] = {
 					cid: message.conversationId,
-					c: generateKeywords(message.content),
+					c: generateKeywords(message.content || ''),
 				};
 			}
 		});
@@ -128,9 +143,6 @@ const syncSearchIndex = async (sessionKey: CryptoKey, ownerAddress: string): Pro
 
 		await setLastSyncedAt(sessionKey, ownerAddress, Date.now());
 
-		console.log(
-			`Search index synced. Built index from ${allConversations.length} conversations and ${allMessages.length} messages.`,
-		);
 		inMemoryRawIndex = rawIndex;
 		initializeFuse(inMemoryRawIndex);
 	} catch (error) {
@@ -152,11 +164,8 @@ export const mergeSearchIndexDeltas = async (
 	deltas: unknown[],
 ): Promise<void> => {
 	if (!deltas || deltas.length === 0) {
-		console.log('[searchService] No search deltas to merge.');
 		return;
 	}
-
-	console.log(`[searchService] Merging ${deltas.length} search index deltas...`);
 
 	try {
 		// 1. Get the current consolidated search index
@@ -183,8 +192,6 @@ export const mergeSearchIndexDeltas = async (
 			encryptedData: newEncryptedIndex,
 		});
 
-		console.log('[searchService] Successfully merged deltas into the search index.');
-
 		// 4. Update the in-memory instance for immediate use
 		inMemoryRawIndex = rawIndex;
 		initializeFuse(inMemoryRawIndex);
@@ -193,7 +200,10 @@ export const mergeSearchIndexDeltas = async (
 	}
 };
 
-export const initializeSearch = async (sessionKey: CryptoKey, ownerAddress: string): Promise<void> => {
+export const initializeSearch = async (
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+): Promise<void> => {
 	if (!sessionKey || !ownerAddress) return;
 	if (pollingIntervalId) clearInterval(pollingIntervalId);
 

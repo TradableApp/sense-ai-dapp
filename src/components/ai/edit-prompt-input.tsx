@@ -1,3 +1,5 @@
+import { type KeyboardEvent } from 'react';
+
 import { zodResolver } from '@hookform/resolvers/zod';
 import { MicIcon } from 'lucide-react';
 import { useForm } from 'react-hook-form';
@@ -18,11 +20,15 @@ const editSchema = z.object({
 
 interface EditPromptInputProps {
 	originalContent: string;
-	onSave: (data: { content: string }) => void;
+	onSave: (_data: { content: string }) => void;
 	onCancel: () => void;
 }
 
-export default function EditPromptInput({ originalContent, onSave, onCancel }: EditPromptInputProps) {
+export default function EditPromptInput({
+	originalContent,
+	onSave,
+	onCancel,
+}: EditPromptInputProps) {
 	const {
 		register,
 		handleSubmit,
@@ -38,7 +44,7 @@ export default function EditPromptInput({ originalContent, onSave, onCancel }: E
 				<PromptInputTextarea
 					{...register('content')}
 					autoFocus
-					onKeyDown={e => {
+					onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
 						if (e.key === 'Enter' && !e.shiftKey) {
 							e.preventDefault();
 							handleSubmit(onSave)();

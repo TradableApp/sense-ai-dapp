@@ -1,10 +1,15 @@
+interface XLogoProps {
+	className?: string;
+	[key: string]: any;
+}
+
 /**
  * A reusable SVG component for the X (formerly Twitter) logo.
  * It uses `fill="currentColor"` to inherit its color from parent CSS text color,
  * allowing it to be styled easily with Tailwind's text color utilities.
  * @param {object} props - Standard React component props (e.g., className).
  */
-export default function XLogo({ className, ...props }) {
+export default function XLogo({ className, ...props }: XLogoProps) {
 	return (
 		<svg
 			xmlns="http://www.w3.org/2000/svg"

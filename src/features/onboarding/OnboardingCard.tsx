@@ -21,7 +21,11 @@ const features = [
 	},
 ];
 
-export default function OnboardingCard({ onGetStarted }) {
+interface OnboardingCardProps {
+	onGetStarted: () => void;
+}
+
+export default function OnboardingCard({ onGetStarted }: OnboardingCardProps) {
 	return (
 		<Card className="m-8 w-full max-w-md rounded-2xl border border-border/40 bg-gradient-to-b from-background via-background/95 to-muted p-4 shadow-lg sm:p-6">
 			<CardHeader className="space-y-2 text-center">

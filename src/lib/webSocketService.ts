@@ -1,11 +1,11 @@
 import type { Dispatch } from '@reduxjs/toolkit';
+
 import { addReasoningStepById, updateMessageContentById } from '@/store/chatSlice';
 
 class WebSocketService {
 	socket: WebSocket | null = null;
-	dispatch: Dispatch | null = null;
 
-	constructor() {}
+	dispatch: Dispatch | null = null;
 
 	/**
 	 * Initializes the service and connects the websocket.
@@ -58,7 +58,7 @@ class WebSocketService {
 
 			switch (message.type) {
 				case 'reasoning_step':
-					this.dispatch(
+					this.dispatch?.(
 						addReasoningStepById({
 							answerMessageId: message.answerMessageId,
 							reasoningStep: message.payload,
@@ -69,7 +69,7 @@ class WebSocketService {
 				case 'final_answer':
 					// This handles the "race condition". It dispatches the final answer,
 					// and if The Graph sync comes later, it will just overwrite the same data.
-					this.dispatch(
+					this.dispatch?.(
 						updateMessageContentById({
 							answerMessageId: message.answerMessageId,
 							...message.payload, // Payload should contain { content, sources, reasoningDuration }

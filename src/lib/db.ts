@@ -1,4 +1,5 @@
 import Dexie from 'dexie';
+
 import type { SenseAIDb } from './types';
 
 const db = new Dexie('SenseAI') as Dexie & SenseAIDb;

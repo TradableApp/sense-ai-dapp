@@ -1,3 +1,5 @@
+import type { HTMLAttributes } from 'react';
+
 import { BarChart2, History, LifeBuoy, MessageCircle, Send } from 'lucide-react';
 
 import { Separator } from '@/components/ui/separator';
@@ -15,13 +17,6 @@ import NavSecondary from '@/layouts/components/nav/NavSecondary';
 import NavUser from '@/layouts/components/nav/NavUser';
 import senseaiLogo from '@/senseai-logo.svg';
 
-interface NavItem {
-	title: string;
-	url: string;
-	icon: React.ComponentType<{ className?: string }>;
-	hasChildren?: boolean;
-}
-
 const navData = {
 	main: [
 		{ title: 'Dashboard', url: '/', icon: BarChart2 },
@@ -34,7 +29,7 @@ const navData = {
 	],
 };
 
-interface AppSidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
+interface AppSidebarProps extends HTMLAttributes<HTMLDivElement> {}
 
 export default function AppSidebar(props: AppSidebarProps) {
 	return (

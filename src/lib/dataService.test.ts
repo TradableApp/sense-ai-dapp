@@ -29,7 +29,7 @@ const ENTROPY = 'test-sig-0xdeadbeef';
 const OWNER = '0xabc123def456abc123def456abc123def456abc1';
 
 describe('fetchAndCacheConversations', () => {
-	let sessionKey;
+	let sessionKey: CryptoKey;
 
 	beforeEach(async () => {
 		sessionKey = await deriveKeyFromEntropy(ENTROPY, OWNER);

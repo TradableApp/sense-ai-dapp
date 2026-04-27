@@ -11,13 +11,11 @@ interface MessageProps {
 	from?: string;
 	status?: string;
 	children?: ReactNode;
-	[key: string]: any;
 }
 
 interface MessageContentProps {
 	children?: ReactNode;
 	className?: string;
-	[key: string]: any;
 }
 
 interface MessageAvatarProps {
@@ -25,7 +23,6 @@ interface MessageAvatarProps {
 	name?: string;
 	address?: string;
 	className?: string;
-	[key: string]: any;
 }
 
 export function Message({ className, from, status, ...props }: MessageProps) {

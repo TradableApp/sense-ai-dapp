@@ -27,8 +27,18 @@ import Input from '@/components/ui/input';
 import Label from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
+interface ManageLimitDialogPlan {
+	allowance: number;
+	expiresAt: Date | null;
+	pendingEscrowCount: number;
+}
+
+interface ManageLimitDialogProps {
+	plan: ManageLimitDialogPlan;
+}
+
 // Helper to calculate days remaining for the default value
-const getDaysRemaining = expiryDate => {
+const getDaysRemaining = (expiryDate: Date | null): number => {
 	if (!expiryDate) return 30; // Default to 30 days if none is set
 	const now = new Date();
 	const differenceInMs = expiryDate.getTime() - now.getTime();
@@ -36,7 +46,7 @@ const getDaysRemaining = expiryDate => {
 	return Math.ceil(differenceInMs / (1000 * 60 * 60 * 24));
 };
 
-export default function ManageLimitDialog({ plan }) {
+export default function ManageLimitDialog({ plan }: ManageLimitDialogProps) {
 	const [isOpen, setIsOpen] = useState(false);
 	const { allowance, expiresAt, pendingEscrowCount } = plan;
 	const hasPendingPrompts = pendingEscrowCount > 0;

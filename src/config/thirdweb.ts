@@ -15,30 +15,28 @@ export const client = createThirdwebClient({
 
 // Determine the Chain ID from environment
 const envChainId = Number(import.meta.env.VITE_CHAIN_ID);
-console.log('envChainId', envChainId);
 
 // Define the chain configuration
 export const deploymentChain = defineChain({
 	id: envChainId,
-	name: import.meta.env.VITE_CHAIN_NAME || 'Base',
-	// The slug is important for some Thirdweb internal routing
-	slug: (import.meta.env.VITE_CHAIN_SLUG || 'base') as string,
+	name: (import.meta.env.VITE_CHAIN_NAME || 'Base') as string,
 	rpc: import.meta.env.VITE_CHAIN_RPC_URL as string,
 	nativeCurrency: {
-		name: import.meta.env.VITE_CHAIN_NATIVE_CURRENCY_NAME || 'Ether',
-		symbol: import.meta.env.VITE_CHAIN_NATIVE_CURRENCY_SYMBOL || 'ETH',
+		name: (import.meta.env.VITE_CHAIN_NATIVE_CURRENCY_NAME || 'Ether') as string,
+		symbol: (import.meta.env.VITE_CHAIN_NATIVE_CURRENCY_SYMBOL || 'ETH') as string,
 		decimals: Number(import.meta.env.VITE_CHAIN_NATIVE_CURRENCY_DECIMALS) || 18,
 	},
 	blockExplorers: [
 		{
-			name: import.meta.env.VITE_BLOCK_EXPLORER_NAME || 'Explorer',
+			name: (import.meta.env.VITE_BLOCK_EXPLORER_NAME || 'Explorer') as string,
 			url: import.meta.env.VITE_BLOCK_EXPLORER_URL as string,
-			// The API URL is optional but recommended for contract verification status
 			apiUrl: (import.meta.env.VITE_BLOCK_EXPLORER_API_URL || undefined) as string | undefined,
 		},
 	],
-	testnet: envChainId === LOCAL_CHAIN_ID || envChainId === TESTNET_CHAIN_ID,
-} as any);
+	...(envChainId === LOCAL_CHAIN_ID || envChainId === TESTNET_CHAIN_ID
+		? { testnet: true as const }
+		: {}),
+});
 
 // This is our curated, production-ready list of wallet options.
 export const wallets = [

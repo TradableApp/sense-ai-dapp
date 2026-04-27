@@ -5,18 +5,19 @@ import remarkRehype from 'remark-rehype';
 import strip from 'strip-markdown';
 import { twMerge } from 'tailwind-merge';
 
-export function cn(...inputs) {
-	return twMerge(clsx(inputs));
+export function cn(...inputs: (string | undefined | false)[]): string {
+	return twMerge(clsx(...inputs));
 }
 
-export const wait = ms =>
+export const wait = (ms: number): Promise<void> =>
 	new Promise(resolve => {
 		setTimeout(resolve, ms);
 	});
 
-export const isObject = variable => Object.prototype.toString.call(variable) === '[object Object]';
+export const isObject = (variable: unknown): variable is object =>
+	Object.prototype.toString.call(variable) === '[object Object]';
 
-export function markdownToPlainText(markdown) {
+export function markdownToPlainText(markdown: string): string {
 	if (!markdown) return '';
 	let result = '';
 	remark()
@@ -32,7 +33,7 @@ export function markdownToPlainText(markdown) {
 }
 
 // Function to copy markdown as both rich text and plain text ---
-export async function copyMarkdownToClipboard(markdown) {
+export async function copyMarkdownToClipboard(markdown: string): Promise<boolean> {
 	try {
 		// Generate Plain Text Version
 		const plainText = String(await remark().use(strip).process(markdown)).trim();

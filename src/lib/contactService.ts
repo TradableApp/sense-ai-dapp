@@ -1,13 +1,27 @@
-import { httpsCallable } from 'firebase/functions';
+import { Functions, httpsCallable } from 'firebase/functions';
 
 import { functions } from '@/config/firebase';
 import store from '@/store/store';
+
+interface FeedbackData {
+	email: string;
+	feedback: string;
+}
+
+interface ContactResponse {
+	success: boolean;
+	message: string;
+}
 
 /**
  * Sends feedback to the 'fireSendGridEmail' cloud function.
  * @returns {Promise<{success: boolean, message: string}>}
  */
-export async function sendFeedback(data, userAddress, displayName) {
+export async function sendFeedback(
+	data: FeedbackData,
+	userAddress: string,
+	displayName: string,
+): Promise<ContactResponse> {
 	const { device } = store.getState();
 	const payload = {
 		templateName: 'd-bd111474dbf34fdb8e2bff7b166f36e3',
@@ -26,21 +40,33 @@ export async function sendFeedback(data, userAddress, displayName) {
 	};
 
 	try {
-		const fireSendGridEmail = httpsCallable(functions, 'fireSendGridEmail');
+		if (!functions) throw new Error('Firebase Functions not initialized');
+		const fireSendGridEmail = httpsCallable(functions as Functions, 'fireSendGridEmail');
 		await fireSendGridEmail(payload);
 		return { success: true, message: 'Feedback sent successfully!' };
-	} catch (error) {
+	} catch (error: unknown) {
 		console.error('[contactService] Error calling fireSendGridEmail for feedback:', error);
-		const errorMessage = error.message || 'An unknown error occurred.';
+		const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
 		return { success: false, message: `Failed to send feedback: ${errorMessage}` };
 	}
+}
+
+interface SupportRequestData {
+	email: string;
+	topic: string;
+	subject: string;
+	request: string;
 }
 
 /**
  * Sends a support request to the 'fireSendGridEmail' cloud function.
  * @returns {Promise<{success: boolean, message: string}>}
  */
-export async function sendSupportRequest(data, userAddress, displayName) {
+export async function sendSupportRequest(
+	data: SupportRequestData,
+	userAddress: string,
+	displayName: string,
+): Promise<ContactResponse> {
 	const { device } = store.getState();
 	const payload = {
 		templateName: 'd-9bd340d5ca244acc84e18f25a0c70584',
@@ -61,12 +87,13 @@ export async function sendSupportRequest(data, userAddress, displayName) {
 	};
 
 	try {
-		const fireSendGridEmail = httpsCallable(functions, 'fireSendGridEmail');
+		if (!functions) throw new Error('Firebase Functions not initialized');
+		const fireSendGridEmail = httpsCallable(functions as Functions, 'fireSendGridEmail');
 		await fireSendGridEmail(payload);
 		return { success: true, message: 'Support request sent successfully!' };
-	} catch (error) {
+	} catch (error: unknown) {
 		console.error('[contactService] Error calling fireSendGridEmail for support:', error);
-		const errorMessage = error.message || 'An unknown error occurred.';
+		const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
 		return { success: false, message: `Failed to send support request: ${errorMessage}` };
 	}
 }

@@ -1,5 +1,5 @@
 /* eslint-disable react/no-array-index-key */
-import React, { useCallback, useMemo, ReactNode, CSSProperties } from 'react';
+import React, { CSSProperties, ReactNode, useCallback, useMemo } from 'react';
 
 import { clsx } from 'clsx';
 import { motion } from 'motion/react';
@@ -36,12 +36,14 @@ function Beam({ width, x, delay, duration }: BeamProps) {
 
 	return (
 		<motion.div
-			style={{
-				'--x': `${x}`,
-				'--width': `${width}`,
-				'--aspect-ratio': `${ar}`,
-				'--background': `linear-gradient(hsl(${hue} 80% 60%), transparent)`,
-			} as CSSProperties}
+			style={
+				{
+					'--x': `${x}`,
+					'--width': `${width}`,
+					'--aspect-ratio': `${ar}`,
+					'--background': `linear-gradient(hsl(${hue} 80% 60%), transparent)`,
+				} as CSSProperties
+			}
 			className="absolute left-[var(--x)] top-0 [aspect-ratio:1/var(--aspect-ratio)] [background:var(--background)] [width:var(--width)]"
 			initial={{ y: '100cqmax', x: '-50%' }}
 			animate={{ y: '-100%', x: '-50%' }}
@@ -88,11 +90,13 @@ export default function WarpBackground({
 	return (
 		<div className={cn('relative size-full', className)} {...props}>
 			<div
-				style={{
-					'--perspective': `${perspective}px`,
-					'--grid-color': gridColor,
-					'--beam-size': `${beamSize}%`,
-				} as CSSProperties}
+				style={
+					{
+						'--perspective': `${perspective}px`,
+						'--grid-color': gridColor,
+						'--beam-size': `${beamSize}%`,
+					} as CSSProperties
+				}
 				className="pointer-events-none absolute left-0 top-0 size-full overflow-hidden [clip-path:inset(0)] [container-type:size] [perspective:var(--perspective)] [transform-style:preserve-3d]"
 			>
 				{/* top side */}

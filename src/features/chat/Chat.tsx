@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type FC, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -6,7 +6,6 @@ import { collection, query, where } from 'firebase/firestore';
 import { Loader2, MicIcon, RotateCcwIcon, Split } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import ReactMarkdown from 'react-markdown';
-import { useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
@@ -52,6 +51,7 @@ import {
 } from '@/lib/dataService';
 import senseaiLogo from '@/senseai-logo.svg';
 import {
+	type ActiveMessage,
 	appendLiveMessages,
 	clearActiveConversation,
 	setActiveConversationId,
@@ -61,12 +61,21 @@ import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
 import ActivatePlanCTA from './ActivatePlanCTA';
 
-function MarkdownParagraph({ children }) {
+interface MarkdownParagraphProps {
+	children: ReactNode;
+}
+
+function MarkdownParagraph({ children }: MarkdownParagraphProps) {
 	return <p className="inline">{children}</p>;
 }
-const markdownComponents = { p: MarkdownParagraph };
+const markdownComponents: Record<string, FC<any>> = { p: MarkdownParagraph };
 
-function BranchInfo({ originalConversationId, onNavigate }) {
+interface BranchInfoProps {
+	originalConversationId: string | number;
+	onNavigate: (_id: string | number) => void;
+}
+
+function BranchInfo({ originalConversationId, onNavigate }: BranchInfoProps) {
 	const { data: conversations } = useConversations();
 	const originalConversation = conversations?.find(c => c.id === originalConversationId);
 
@@ -94,7 +103,7 @@ function BranchInfo({ originalConversationId, onNavigate }) {
  * @param {Array} queryMessages The array from `messagesFromQuery`.
  * @returns {boolean} True if the query data is ahead.
  */
-function isQueryAhead(reduxMessages, queryMessages) {
+function isQueryAhead(reduxMessages: ActiveMessage[], queryMessages: ActiveMessage[]): boolean {
 	if (!queryMessages || queryMessages.length === 0) {
 		return false;
 	}
@@ -104,13 +113,19 @@ function isQueryAhead(reduxMessages, queryMessages) {
 	const latestReduxMsg = reduxMessages.at(-1);
 	const latestQueryMsg = queryMessages.at(-1);
 
+	if (!latestReduxMsg || !latestQueryMsg) {
+		return false;
+	}
+
 	// 1. Check if we have a newer message ID
-	if (latestQueryMsg.id > latestReduxMsg.id) {
+	const queryId = latestQueryMsg.id ?? 0;
+	const reduxId = latestReduxMsg.id ?? 0;
+	if (queryId > reduxId) {
 		return true;
 	}
 
 	// 2. If IDs are the same, check for data updates
-	if (latestQueryMsg.id === latestReduxMsg.id) {
+	if (queryId === reduxId) {
 		// Check for status change (e.g. 'pending' -> 'cancelled')
 		if (latestQueryMsg.status !== latestReduxMsg.status) {
 			return true;
@@ -155,16 +170,16 @@ export default function Chat() {
 		processRefundMutation,
 	} = useChatMutations();
 
-	const [animatedContents, setAnimatedContents] = useState({});
-	const activeTimersRef = useRef({});
-	const prevMessagesRef = useRef([]);
-	const [activeMessageId, setActiveMessageId] = useState(null);
-	const [editingMessageId, setEditingMessageId] = useState(null);
+	const [animatedContents, setAnimatedContents] = useState<Record<string, string>>({});
+	const activeTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+	const prevMessagesRef = useRef<ActiveMessage[]>([]);
+	const [activeMessageId, setActiveMessageId] = useState<string | number | null>(null);
+	const [editingMessageId, setEditingMessageId] = useState<string | number | null>(null);
 	const prevMessageCountRef = useRef(0);
-	const [feedbackData, setFeedbackData] = useState({});
-	const [cancelDeadline, setCancelDeadline] = useState(null);
+	const [feedbackData, setFeedbackData] = useState<Record<string, number>>({});
+	const [cancelDeadline, setCancelDeadline] = useState<number | null>(null);
 	const [cancelSecondsLeft, setCancelSecondsLeft] = useState(0);
-	const [refundSecondsLeft, setRefundSecondsLeft] = useState(null);
+	const [refundSecondsLeft, setRefundSecondsLeft] = useState<number | null>(null);
 
 	const {
 		register,
@@ -182,7 +197,10 @@ export default function Chat() {
 
 	const { data: activeConversationMetadata } = useQuery({
 		queryKey: ['conversations', 'metadata', activeConversationId, sessionKey, ownerAddress],
-		queryFn: () => getConversation(sessionKey, ownerAddress, activeConversationId),
+		queryFn: () => {
+			if (!sessionKey || !ownerAddress || !activeConversationId) return null;
+			return getConversation(sessionKey, ownerAddress, activeConversationId);
+		},
 		enabled: !!activeConversationId && !!sessionKey && !!ownerAddress,
 		// We want this to be fresh, so we don't cache it for long
 		staleTime: 0,
@@ -194,9 +212,9 @@ export default function Chat() {
 		isSuccess,
 		isFetching,
 	} = useQuery({
-		queryKey: ['messages', activeConversationId, sessionKey, ownerAddress],
+		queryKey: ['messages', activeConversationId, ownerAddress],
 		queryFn: () => {
-			if (!activeConversationId) return [];
+			if (!activeConversationId || !sessionKey || !ownerAddress) return [];
 			return getMessagesForConversation(sessionKey, ownerAddress, activeConversationId);
 		},
 		enabled: !!activeConversationId && !!sessionKey && !!ownerAddress,
@@ -206,14 +224,13 @@ export default function Chat() {
 
 	useEffect(() => {
 		if (!isFetching && isSuccess && messagesFromQuery) {
-			const shouldHydrate = isQueryAhead(activeConversationMessages, messagesFromQuery);
+			const shouldHydrate = isQueryAhead(
+				activeConversationMessages,
+				messagesFromQuery as unknown as ActiveMessage[],
+			);
 
 			if (shouldHydrate) {
-				console.log(
-					'%c[Chat.jsx-Hydrate] IndexedDB is ahead of Redux. Hydrating state.',
-					'color: green; font-weight: bold;',
-				);
-				dispatch(setActiveConversationMessages(messagesFromQuery));
+				dispatch(setActiveConversationMessages(messagesFromQuery as unknown as ActiveMessage[]));
 			}
 		}
 	}, [isFetching, isSuccess, messagesFromQuery, activeConversationMessages, dispatch]);
@@ -225,39 +242,56 @@ export default function Chat() {
 			return { messagesToDisplay: [], versionInfo: {} };
 		}
 
-		const messageMap = new Map(allMessages.map(m => [m.id, m]));
+		const messageMap = new Map(allMessages.map(m => [String(m.id ?? ''), m]));
 		const parentToChildrenMap = allMessages.reduce((acc, msg) => {
-			const parentKey = String(msg.parentId);
+			const parentKey = String(msg.parentId ?? '');
 			if (!acc[parentKey]) acc[parentKey] = [];
 			acc[parentKey].push(msg);
 			return acc;
-		}, {});
+		}, {} as Record<string, ActiveMessage[]>);
 
-		const versions = {};
+		const versions: Record<
+			string,
+			{ siblings: (string | number | undefined)[]; currentIndex: number }
+		> = {};
 		Object.keys(parentToChildrenMap).forEach(parentId => {
 			const children = parentToChildrenMap[parentId];
 			if (children.length > 1) {
-				const siblings = children.sort((a, b) => a.createdAt - b.createdAt);
+				const siblings = children.sort((a, b) => {
+					const aTime = a.createdAt ?? 0;
+					const bTime = b.createdAt ?? 0;
+					return aTime - bTime;
+				});
 				siblings.forEach((msg, index) => {
-					versions[msg.id] = { siblings: siblings.map(s => s.id), currentIndex: index };
+					const msgId = String(msg.id ?? '');
+					if (msgId) {
+						versions[msgId] = { siblings: siblings.map(s => s.id), currentIndex: index };
+					}
 				});
 			}
 		});
 
-		const displayPath = [];
+		const displayPath: ActiveMessage[] = [];
 
 		// If activeMessageId is set but doesn't exist in the map (e.g. it was just deleted),
 		// fall back to the latest message in the list.
-		let currentId = activeMessageId;
+		let currentId: string | undefined = activeMessageId
+			? String(activeMessageId)
+			: String(allMessages.at(-1)?.id ?? '');
 		if (!currentId || !messageMap.has(currentId)) {
-			currentId = allMessages.at(-1)?.id;
+			const lastMsg = allMessages.at(-1);
+			currentId = lastMsg ? String(lastMsg.id) : undefined;
 		}
 
 		// Trace path backwards
 		while (currentId && messageMap.has(currentId)) {
 			const message = messageMap.get(currentId);
-			displayPath.unshift(message);
-			currentId = message.parentId;
+			if (message) {
+				displayPath.unshift(message);
+				currentId = message.parentId ? String(message.parentId) : undefined;
+			} else {
+				break;
+			}
 		}
 
 		return { messagesToDisplay: displayPath, versionInfo: versions };
@@ -270,10 +304,12 @@ export default function Chat() {
 		prevMessagesRef.current = [];
 	}, [activeConversationId]);
 
-	const handleReset = useCallback(() => {
+	const handleReset = useCallback((): void => {
 		dispatch(clearActiveConversation());
 		setAnimatedContents({});
-		Object.values(activeTimersRef.current).forEach(clearInterval);
+		Object.values(activeTimersRef.current).forEach(timer => {
+			clearInterval(timer);
+		});
 		activeTimersRef.current = {};
 		prevMessagesRef.current = [];
 		setActiveMessageId(null);
@@ -294,59 +330,69 @@ export default function Chat() {
 			activeConversationMessages &&
 			activeConversationMessages.length > prevMessageCountRef.current
 		) {
-			setActiveMessageId(activeConversationMessages.at(-1).id);
+			setActiveMessageId(activeConversationMessages.at(-1)?.id ?? null);
 		} else if (!activeMessageId && activeConversationMessages?.length) {
-			setActiveMessageId(activeConversationMessages.at(-1).id);
+			setActiveMessageId(activeConversationMessages.at(-1)?.id ?? null);
 		}
 		prevMessageCountRef.current = activeConversationMessages?.length || 0;
 	}, [activeMessageId, activeConversationMessages]);
 
-	useEffect(() => () => Object.values(activeTimersRef.current).forEach(clearInterval), []);
+	useEffect(
+		() => () => {
+			Object.values(activeTimersRef.current).forEach(timer => {
+				clearInterval(timer);
+			});
+		},
+		[],
+	);
 
-	const handleRegenerate = (aiMessageToRegenerate, mode = 'default') => {
+	const handleRegenerate = (aiMessageToRegenerate: ActiveMessage, mode: string = 'default') => {
 		const userPrompt = activeConversationMessages.find(
 			m => m.id === aiMessageToRegenerate.parentId,
 		);
 		if (!userPrompt) return;
 
 		// Map UI modes to natural language instructions
-		const instructionMap = {
+		const instructionMap: Record<string, string> = {
 			default: 'better',
 			detailed: 'more detailed',
 			concise: 'more concise',
 		};
 		const instructions = instructionMap[mode] || 'better';
 
+		if (!sessionKey || !activeConversationId) return;
+
 		regenerateMutation.mutate(
 			{
 				conversationId: activeConversationId,
-				promptMessageId: userPrompt.id,
-				originalAnswerMessageId: aiMessageToRegenerate.id,
+				promptMessageId: userPrompt.id ?? 0,
+				promptMessageCID: userPrompt.messageCID ?? '',
+				originalAnswerMessageId: aiMessageToRegenerate.id ?? 0,
 				instructions,
 				sessionKey,
-				promptMessageCID: userPrompt.messageCID,
-				originalAnswerMessageCID: aiMessageToRegenerate.messageCID,
+				originalAnswerMessageCID: aiMessageToRegenerate.messageCID ?? '',
 			},
 			{
 				onSuccess: async ({ newAnswerMessageId }) => {
+					if (!ownerAddress) return;
 					const { finalAiMessage } = await regenerateAssistantResponse(
 						sessionKey,
 						ownerAddress,
 						activeConversationId,
-						userPrompt.id,
-						userPrompt.content,
+						String(userPrompt.id ?? ''),
+						userPrompt.content ?? '',
 						mode,
 						newAnswerMessageId,
 						queryClient,
 					);
-					dispatch(appendLiveMessages([finalAiMessage]));
+					dispatch(appendLiveMessages([finalAiMessage as unknown as ActiveMessage]));
 				},
 				// onError: () => {},
 			},
 		);
 	};
 
-	const handleSaveEdit = data => {
+	const handleSaveEdit = (data: { content: string }) => {
 		const originalMessage = activeConversationMessages.find(m => m.id === editingMessageId);
 
 		if (!originalMessage) {
@@ -356,27 +402,36 @@ export default function Chat() {
 		// Find parent to get CID for context reconstruction
 		const parentMessage = activeConversationMessages.find(m => m.id === originalMessage.parentId);
 
+		if (!sessionKey || !activeConversationId) return;
+
 		initiatePromptMutation.mutate(
 			{
 				conversationId: activeConversationId,
 				promptText: data.content,
 				sessionKey,
-				parentId: originalMessage.parentId,
-				parentCID: parentMessage?.messageCID || null,
+				parentId: originalMessage.parentId ?? null,
+				parentCID: parentMessage?.messageCID ?? null,
 			},
 			{
 				onSuccess: async newIds => {
+					if (!ownerAddress) return;
+					const parentId = originalMessage.parentId ?? 0;
 					const { finalUserMessage, finalAiMessage } = await editUserMessage(
 						sessionKey,
 						ownerAddress,
 						activeConversationId,
-						originalMessage.parentId,
+						String(parentId ?? ''),
 						data.content,
 						newIds.promptMessageId,
 						newIds.answerMessageId,
 						queryClient,
 					);
-					dispatch(appendLiveMessages([finalUserMessage, finalAiMessage]));
+					dispatch(
+						appendLiveMessages([
+							finalUserMessage as unknown as ActiveMessage,
+							finalAiMessage as unknown as ActiveMessage,
+						]),
+					);
 					setEditingMessageId(null);
 				},
 				// onError: () => {},
@@ -384,61 +439,73 @@ export default function Chat() {
 		);
 	};
 
-	const handleNavigate = targetBranchRootId => {
+	const handleNavigate = (targetBranchRootId: string | number) => {
 		const allMessages = activeConversationMessages;
 		if (!allMessages) {
 			return;
 		}
 
-		const messageMap = new Map(allMessages.map(m => [m.id, m]));
+		const messageMap = new Map(allMessages.map(m => [String(m.id), m]));
 
 		const parentToChildrenMap = allMessages.reduce((acc, msg) => {
-			const parentKey = String(msg.parentId);
+			const parentKey = String(msg.parentId ?? '');
 			if (!acc[parentKey]) acc[parentKey] = [];
 			acc[parentKey].push(msg);
 			return acc;
-		}, {});
+		}, {} as Record<string, ActiveMessage[]>);
 
-		let latestMessageInBranch = messageMap.get(targetBranchRootId);
+		let latestMessageInBranch = messageMap.get(String(targetBranchRootId));
 
-		const queue = [latestMessageInBranch];
+		if (!latestMessageInBranch) return;
+
+		const queue: ActiveMessage[] = [latestMessageInBranch];
 		while (queue.length > 0) {
 			const [currentNode] = queue.splice(0, 1);
 
-			if (currentNode.createdAt > latestMessageInBranch.createdAt) {
-				latestMessageInBranch = currentNode;
-			}
+			if (currentNode && latestMessageInBranch) {
+				const currentTime = currentNode.createdAt ?? 0;
+				const latestTime = latestMessageInBranch.createdAt ?? 0;
+				if (currentTime > latestTime) {
+					latestMessageInBranch = currentNode;
+				}
 
-			const children = parentToChildrenMap[String(currentNode.id)];
+				const children = parentToChildrenMap[String(currentNode.id ?? '')];
 
-			if (children) {
-				queue.push(...children);
+				if (children) {
+					queue.push(...children);
+				}
 			}
 		}
 
-		setActiveMessageId(latestMessageInBranch.id);
+		if (latestMessageInBranch?.id !== undefined) {
+			setActiveMessageId(latestMessageInBranch.id);
+		}
 	};
 
-	const handleBranch = messageToBranchFrom => {
+	const handleBranch = (messageToBranchFrom: ActiveMessage) => {
+		if (!conversations) return;
 		const conversation = conversations.find(c => c.id === activeConversationId);
 		if (!conversation) {
 			return;
 		}
 
+		if (!sessionKey || !activeConversationId) return;
+
 		branchConversationMutation.mutate(
 			{
 				originalConversationId: activeConversationId,
-				branchPointMessageId: messageToBranchFrom.id,
+				branchPointMessageId: messageToBranchFrom.id ?? 0,
 				originalTitle: conversation.title,
 				sessionKey,
 			},
 			{
 				onSuccess: async ({ newConversationId }) => {
+					if (!ownerAddress) return;
 					await branchConversation(
 						sessionKey,
 						ownerAddress,
 						activeConversationId,
-						messageToBranchFrom.id,
+						String(messageToBranchFrom.id ?? 0),
 						newConversationId,
 						queryClient,
 					);
@@ -457,29 +524,32 @@ export default function Chat() {
 		);
 	};
 
-	const simulateTyping = message => {
+	const simulateTyping = (message: ActiveMessage) => {
 		const targetContent = message.content;
+		const msgId = String(message.id ?? '');
+		if (!targetContent || !msgId) return;
+
 		const streamFn = STREAM_BY_WORD
-			? (content, i) =>
+			? (content: string, i: number) =>
 					content
 						.split(' ')
 						.slice(0, i + 1)
 						.join(' ')
-			: (content, i) => content.slice(0, i + 1);
+			: (content: string, i: number) => content.slice(0, i + 1);
 		const interval = STREAM_BY_WORD ? 120 : 50;
 		let index = 0;
-		setAnimatedContents(prev => ({ ...prev, [message.id]: '' }));
-		if (activeTimersRef.current[message.id]) clearInterval(activeTimersRef.current[message.id]);
+		setAnimatedContents(prev => ({ ...prev, [msgId]: '' }));
+		if (activeTimersRef.current[msgId]) clearInterval(activeTimersRef.current[msgId]);
 		const timer = setInterval(() => {
 			const currentContent = streamFn(targetContent, index);
 			index += 1;
-			setAnimatedContents(prev => ({ ...prev, [message.id]: currentContent }));
+			setAnimatedContents(prev => ({ ...prev, [msgId]: currentContent }));
 			if (currentContent.length >= targetContent.length) {
 				clearInterval(timer);
-				delete activeTimersRef.current[message.id];
+				delete activeTimersRef.current[msgId];
 			}
 		}, interval);
-		activeTimersRef.current[message.id] = timer;
+		activeTimersRef.current[msgId] = timer;
 	};
 
 	useEffect(() => {
@@ -500,19 +570,24 @@ export default function Chat() {
 	}, [messagesToDisplay]);
 
 	useFirestoreCollectionListener({
-		queryFn:
-			ownerAddress &&
-			activeConversationId &&
-			(() =>
-				query(
-					collection(db, 'senseai_feedback'),
-					where('ownerAddress', '==', ownerAddress),
-					where('conversationId', '==', activeConversationId),
-				)),
+		queryFn: () => {
+			if (!ownerAddress || !activeConversationId || !db) {
+				// Return a query that returns empty result
+				return query(
+					collection(db!, 'senseai_feedback'),
+					where('__name__' as any, '==' as any, '__invalid__' as any),
+				);
+			}
+			return query(
+				collection(db, 'senseai_feedback'),
+				where('ownerAddress' as any, '==' as any, ownerAddress as any),
+				where('conversationId' as any, '==' as any, activeConversationId as any),
+			);
+		},
 		queryDeps: [ownerAddress, activeConversationId],
-		dataFn: docs => {
-			const feedbackMap = {};
-			docs.forEach(doc => {
+		dataFn: (docs: any[]) => {
+			const feedbackMap: Record<string, number> = {};
+			docs.forEach((doc: any) => {
 				feedbackMap[doc.id] = doc.feedbackValue;
 			});
 			setFeedbackData(feedbackMap);
@@ -568,51 +643,57 @@ export default function Chat() {
 	}, [isAiThinking, submittedAt]);
 
 	const handleCancelPrompt = () => {
-		if (lastMessage?.id) {
-			cancelPromptMutation.mutate(
-				{ answerMessageId: lastMessage.id },
-				{
-					onSuccess: async () => {
-						setCancelDeadline(null);
+		if (!sessionKey || !ownerAddress || !activeConversationId || !lastMessage?.id) return;
 
-						try {
-							// 1. Clean up IndexedDB so it doesn't reappear on refresh
-							await deleteMessageFromConversation(
-								sessionKey,
-								ownerAddress,
-								activeConversationId,
-								lastMessage.id,
-								queryClient,
-							);
-						} catch (error) {
-							console.error('Failed to cleanup cancelled message from DB:', error);
-						}
+		cancelPromptMutation.mutate(
+			{ answerMessageId: lastMessage.id },
+			{
+				onSuccess: async () => {
+					setCancelDeadline(null);
 
-						// 2. Update Redux to reflect change immediately
-						const newMessages = activeConversationMessages.filter(m => m.id !== lastMessage.id);
-						dispatch(setActiveConversationMessages(newMessages));
+					try {
+						// 1. Clean up IndexedDB so it doesn't reappear on refresh
+						await deleteMessageFromConversation(
+							sessionKey,
+							ownerAddress,
+							activeConversationId,
+							String(lastMessage.id ?? ''),
+							queryClient,
+						);
+					} catch (error) {
+						console.error('Failed to cleanup cancelled message from DB:', error);
+					}
 
-						// This ensures the UI renders the previous history instead of looking for the deleted ID.
-						const newLastMessage = newMessages.at(-1);
-						if (newLastMessage) {
-							setActiveMessageId(newLastMessage.id);
-						} else {
-							setActiveMessageId(null); // Conversation is empty
-						}
-					},
+					// 2. Update Redux to reflect change immediately
+					const newMessages = activeConversationMessages.filter(m => m.id !== lastMessage.id);
+					dispatch(setActiveConversationMessages(newMessages));
+
+					// This ensures the UI renders the previous history instead of looking for the deleted ID.
+					const newLastMessage = newMessages.at(-1);
+					if (newLastMessage?.id) {
+						setActiveMessageId(newLastMessage.id);
+					} else {
+						setActiveMessageId(null); // Conversation is empty
+					}
 				},
-			);
-		}
+			},
+		);
 	};
 
-	const onSubmit = data => {
+	const onSubmit = (data: { prompt: string }) => {
+		if (!sessionKey) return;
+
+		const parentIdValue = messagesToDisplay?.at(-1)?.id ?? null;
+		const parentId = typeof parentIdValue === 'number' ? parentIdValue : null;
+		const parentCID = messagesToDisplay?.at(-1)?.messageCID ?? null;
+
 		initiatePromptMutation.mutate(
 			{
-				conversationId: activeConversationId,
+				conversationId: activeConversationId ?? 0,
 				promptText: data.prompt,
 				sessionKey,
-				parentId: messagesToDisplay?.at(-1)?.id,
-				parentCID: messagesToDisplay?.at(-1)?.messageCID || null,
+				parentId,
+				parentCID,
 			},
 			{
 				onSuccess: async newIds => {
@@ -622,31 +703,44 @@ export default function Chat() {
 						answerMessageId,
 					} = newIds;
 
+					if (!ownerAddress) return;
+
 					if (activeConversationId) {
+						const parentMsgId = messagesToDisplay?.at(-1)?.id ?? 0;
 						const { finalUserMessage, finalAiMessage } = await addMessageToConversation(
 							sessionKey,
 							ownerAddress,
 							activeConversationId,
-							messagesToDisplay?.at(-1)?.id,
+							String(parentMsgId),
 							data.prompt,
-							promptMessageId,
-							answerMessageId,
+							String(promptMessageId),
+							String(answerMessageId),
 							queryClient,
 						);
-						dispatch(appendLiveMessages([finalUserMessage, finalAiMessage]));
+						dispatch(
+							appendLiveMessages([
+								finalUserMessage as unknown as ActiveMessage,
+								finalAiMessage as unknown as ActiveMessage,
+							]),
+						);
 					} else {
 						const { newConversation, finalUserMessage, finalAiMessage } =
 							await createNewConversation(
 								sessionKey,
 								ownerAddress,
 								data.prompt,
-								onChainConversationId,
-								promptMessageId,
-								answerMessageId,
+								String(onChainConversationId),
+								String(promptMessageId),
+								String(answerMessageId),
 								queryClient,
 							);
 						dispatch(setActiveConversationId(newConversation.id));
-						dispatch(setActiveConversationMessages([finalUserMessage, finalAiMessage]));
+						dispatch(
+							setActiveConversationMessages([
+								finalUserMessage as unknown as ActiveMessage,
+								finalAiMessage as unknown as ActiveMessage,
+							]),
+						);
 					}
 					setCancelDeadline(Date.now() + CANCELLATION_TIMEOUT_MS);
 					reset();
@@ -725,7 +819,7 @@ export default function Chat() {
 							return (
 								<div key={message.id} className="space-y-3">
 									<EditPromptInput
-										originalContent={message.content}
+										originalContent={message.content ?? ''}
 										onSave={handleSaveEdit}
 										onCancel={() => setEditingMessageId(null)}
 									/>
@@ -737,25 +831,41 @@ export default function Chat() {
 						const isThinking = isAssistant && !message.content;
 
 						if (isAssistant) {
-							const animatedContent = animatedContents[message.id];
+							const msgIdStr = String(message.id ?? '');
+							const animatedContent = animatedContents[msgIdStr];
 							const isTyping =
 								animatedContent != null && animatedContent.length < (message.content?.length ?? 0);
 							const hasReasoning = message.reasoning && message.reasoning.length > 0;
 
 							return (
-								<div key={message.id || message.answerMessageId} className="space-y-3">
+								<div
+									key={String(message.id ?? message.answerMessageId ?? '')}
+									className="space-y-3"
+								>
 									<div className="ml-10">
 										<Reasoning
 											isStreaming={isThinking}
 											defaultOpen={false}
 											reasoningDuration={message.reasoningDuration}
-											reasoningSteps={message.reasoning}
+											reasoningSteps={
+												message.reasoning && Array.isArray(message.reasoning)
+													? (message.reasoning as any)
+													: undefined
+											}
 										>
 											<ReasoningTrigger hidden={!hasReasoning} />
 											<ReasoningContent
 												hidden={!hasReasoning}
-												reasoningSteps={message.reasoning}
-												sources={message.sources}
+												reasoningSteps={
+													message.reasoning && Array.isArray(message.reasoning)
+														? (message.reasoning as any)
+														: undefined
+												}
+												sources={
+													message.sources && Array.isArray(message.sources)
+														? (message.sources as any)
+														: undefined
+												}
 											/>
 										</Reasoning>
 									</div>
@@ -776,30 +886,35 @@ export default function Chat() {
 											</Message>
 											<MessageActions
 												message={message}
-												versionInfo={versionInfo[message.id]}
+												versionInfo={versionInfo[msgIdStr]}
 												onRegenerate={mode => handleRegenerate(message, mode)}
 												onNavigate={handleNavigate}
-												onBranch={() => handleBranch(message)}
-												initialFeedback={feedbackData[message.id] || null}
+												onBranch={() => handleBranch(message as unknown as ActiveMessage)}
+												initialFeedback={
+													feedbackData[msgIdStr] ? String(feedbackData[msgIdStr]) : null
+												}
 											/>
 										</>
 									)}
 
-									{message.id === currentConversation?.branchedAtMessageId && (
-										<BranchInfo
-											originalConversationId={currentConversation.branchedFromConversationId}
-											onNavigate={originalId => {
-												dispatch(setActiveConversationId(originalId));
-												navigate('/chat');
-											}}
-										/>
-									)}
+									{message.id &&
+										currentConversation?.branchedAtMessageId === message.id &&
+										currentConversation?.branchedFromConversationId && (
+											<BranchInfo
+												originalConversationId={currentConversation.branchedFromConversationId}
+												onNavigate={originalId => {
+													dispatch(setActiveConversationId(originalId));
+													navigate('/chat');
+												}}
+											/>
+										)}
 								</div>
 							);
 						}
 
+						const msgIdStr = String(message.id ?? '');
 						return (
-							<div key={message.id} className="group space-y-1">
+							<div key={msgIdStr} className="group space-y-1">
 								<Message from={message.role} className="items-start">
 									<MessageContent>
 										<div className="prose inherit-color prose-sm dark:prose-invert max-w-none">
@@ -808,26 +923,28 @@ export default function Chat() {
 											</ReactMarkdown>
 										</div>
 									</MessageContent>
-									<MessageAvatar address={ownerAddress} name="ME" />
+									<MessageAvatar address={ownerAddress ?? ''} name="ME" />
 								</Message>
 								<div className="opacity-0 group-hover:opacity-100 transition-opacity">
 									<UserMessageActions
 										message={message}
-										versionInfo={versionInfo[message.id]}
-										onEdit={() => setEditingMessageId(message.id)}
+										versionInfo={versionInfo[msgIdStr]}
+										onEdit={() => setEditingMessageId(message.id ?? null)}
 										onNavigate={handleNavigate}
 									/>
 								</div>
 
-								{message.id === currentConversation?.branchedAtMessageId && (
-									<BranchInfo
-										originalConversationId={currentConversation.branchedFromConversationId}
-										onNavigate={originalId => {
-											dispatch(setActiveConversationId(originalId));
-											navigate('/chat');
-										}}
-									/>
-								)}
+								{message.id &&
+									currentConversation?.branchedAtMessageId === message.id &&
+									currentConversation?.branchedFromConversationId && (
+										<BranchInfo
+											originalConversationId={currentConversation.branchedFromConversationId}
+											onNavigate={originalId => {
+												dispatch(setActiveConversationId(originalId));
+												navigate('/chat');
+											}}
+										/>
+									)}
 							</div>
 						);
 					})}

@@ -43,9 +43,12 @@ export default function useStuckRequests() {
 
 				// 2. Verify against Contract State (Double Check)
 				// This filters out "Zombie" graph entities that are actually complete on-chain
+				if (!chainId) {
+					return [];
+				}
 				const contractConfig = CONTRACTS[chainId];
 
-				if (!contractConfig?.escrow) {
+				if (!contractConfig?.escrow || !chain) {
 					return [];
 				}
 

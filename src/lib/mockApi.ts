@@ -13,11 +13,18 @@ const MOCK_FAILURE_RATE = 0.1; // 10% chance of a simulated AI error
  * @param {string} [regenerationMode] - Optional mode to alter the response (e.g., 'concise').
  */
 const simulateOracleProcess = async (
-	userQuery,
-	answerMessageId,
-	onReasoningStep,
-	onFinalAnswer,
-	regenerationMode,
+	userQuery: string,
+	answerMessageId: string,
+	onReasoningStep: (_messageId: string, _step: { title: string; description: string }) => void,
+	onFinalAnswer: (
+		_messageId: string,
+		_answer: {
+			content: string;
+			sources: { title: string; url: string }[];
+			reasoningDuration: number;
+		},
+	) => void,
+	regenerationMode?: string,
 ) => {
 	console.log(
 		`%c[mockApi] Starting AI simulation for query: "${userQuery}" (answerMessageId: ${answerMessageId}, mode: ${regenerationMode})`,

@@ -10,7 +10,11 @@ import senseaiLogo from '@/senseai-logo.svg';
 
 import { useSession } from './SessionProvider';
 
-export default function SignatureScreen({ onRetry }) {
+interface SignatureScreenProps {
+	onRetry: () => void;
+}
+
+export default function SignatureScreen({ onRetry }: SignatureScreenProps) {
 	const { status } = useSession();
 
 	const isLoading = status === 'deriving';

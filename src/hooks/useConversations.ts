@@ -25,6 +25,9 @@ export default function useConversations() {
 		queryFn: async () => {
 			// Step 1: Sync with remote sources (The Graph, Arweave).
 			// This will fetch updates and store them in IndexedDB.
+			if (!sessionKey) throw new Error('Session key is required');
+			if (!ownerAddress) throw new Error('Owner address is required');
+
 			await syncWithRemote(sessionKey, ownerAddress);
 
 			// Step 2: Read the complete, up-to-date list from the local cache.
