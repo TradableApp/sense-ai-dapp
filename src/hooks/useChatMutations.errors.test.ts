@@ -45,7 +45,7 @@ vi.mock('@/lib/faucetService', () => ({ default: vi.fn() }));
 vi.mock('@/lib/utils', () => ({ wait: vi.fn() }));
 vi.mock('@/lib/crypto', () => ({ encryptData: vi.fn() }));
 vi.mock('@/lib/ecies', () => ({
-	eciesEncrypt: vi.fn(async () => new Uint8Array([1, 2, 3, 4])),
+	default: vi.fn(async () => new Uint8Array([1, 2, 3, 4])),
 }));
 
 import { buildErrorHandler } from './useChatMutations';

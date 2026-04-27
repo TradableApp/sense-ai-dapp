@@ -5,7 +5,7 @@ vi.mock('thirdweb', () => ({}));
 vi.mock('thirdweb/react', () => ({}));
 vi.mock('thirdweb/wallets', () => ({}));
 vi.mock('@/lib/ecies', () => ({
-	eciesEncrypt: vi.fn(async () => new Uint8Array([1, 2, 3, 4])),
+	default: vi.fn(async () => new Uint8Array([1, 2, 3, 4])),
 }));
 vi.mock('@/lib/crypto', () => ({
 	encryptData: vi.fn(async () => 'iv.cipher'),

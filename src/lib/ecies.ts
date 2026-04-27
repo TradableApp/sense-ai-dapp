@@ -10,7 +10,7 @@ function stripHexPrefix(hex: string): string {
 
 function normPubKeyBytes(pubKeyHex: string): Uint8Array {
 	const stripped = stripHexPrefix(pubKeyHex);
-	const full = stripped.length === 128 ? '04' + stripped : stripped;
+	const full = stripped.length === 128 ? `04${stripped}` : stripped;
 	return new Uint8Array(Buffer.from(full, 'hex'));
 }
 
@@ -18,7 +18,10 @@ function normPubKeyBytes(pubKeyHex: string): Uint8Array {
  * ECIES encrypt using secp256k1 + SHA-256 KDF + AES-256-GCM.
  * Wire format: 0x01 | ephemPubKey(65B) | nonce(12B) | GCM(ciphertext + 16B tag)
  */
-export async function eciesEncrypt(recipientPubKeyHex: string, plaintext: Uint8Array): Promise<Uint8Array> {
+export default async function eciesEncrypt(
+	recipientPubKeyHex: string,
+	plaintext: Uint8Array,
+): Promise<Uint8Array> {
 	const pubKeyBytes = normPubKeyBytes(recipientPubKeyHex);
 
 	const ephemPrivKey = secp256k1.utils.randomSecretKey();

@@ -1,7 +1,6 @@
 import React from 'react';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { eciesEncrypt } from '@/lib/ecies';
 import { toast } from 'sonner';
 import { getContract, prepareContractCall, sendAndConfirmTransaction } from 'thirdweb';
 import { useActiveAccount, useActiveWallet } from 'thirdweb/react';
@@ -24,6 +23,7 @@ import AbleTokenABI from '@/lib/abi/AbleToken.json';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 import { encryptData } from '@/lib/crypto';
+import eciesEncrypt from '@/lib/ecies';
 import requestTestTokens from '@/lib/faucetService';
 import { wait } from '@/lib/utils';
 

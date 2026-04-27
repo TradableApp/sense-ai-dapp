@@ -1,12 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { secp256k1 } from '@noble/curves/secp256k1.js';
+import { describe, expect, it } from 'vitest';
 
-import { eciesEncrypt } from './ecies';
+import eciesEncrypt from './ecies';
 
 // Valid 32-byte secp256k1 private key (for deriving a test public key)
 const PRIV_1 = '11'.repeat(32);
-
-// Derive the corresponding public key using @noble/curves
-import { secp256k1 } from '@noble/curves/secp256k1.js';
 
 function privToUncompressedHex(privHex: string): string {
 	const pubBytes = secp256k1.getPublicKey(Buffer.from(privHex, 'hex'), false);
@@ -48,21 +46,21 @@ describe('eciesEncrypt', () => {
 	});
 
 	it('accepts a public key with 0x04 prefix', async () => {
-		const pubWith0x04 = '04' + PUB_1.slice(2); // PUB_1 already starts with 04
+		const pubWith0x04 = `04${PUB_1.slice(2)}`; // PUB_1 already starts with 04
 		const result = await eciesEncrypt(pubWith0x04, new Uint8Array([9]));
 		expect(result).toBeInstanceOf(Uint8Array);
 		expect(result[0]).toBe(0x01);
 	});
 
 	it('accepts a public key with 0x prefix', async () => {
-		const pubWith0x = '0x' + PUB_1;
+		const pubWith0x = `0x${PUB_1}`;
 		const result = await eciesEncrypt(pubWith0x, new Uint8Array([9]));
 		expect(result).toBeInstanceOf(Uint8Array);
 		expect(result[0]).toBe(0x01);
 	});
 
 	it('accepts a public key with 0x04 prefix (full 0x04 prefixed form)', async () => {
-		const pubFull = '0x04' + PUB_1.slice(2);
+		const pubFull = `0x04${PUB_1.slice(2)}`;
 		const result = await eciesEncrypt(pubFull, new Uint8Array([9]));
 		expect(result).toBeInstanceOf(Uint8Array);
 	});
