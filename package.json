@@ -42,6 +42,7 @@
     "sync-contracts": "cp ../tokenized-ai-agent/artifacts/contracts/EVMAIAgent.sol/EVMAIAgent.json ./src/lib/abi/ && cp ../tokenized-ai-agent/artifacts/contracts/EVMAIAgentEscrow.sol/EVMAIAgentEscrow.json ./src/lib/abi/ && cp ../able-contracts/artifacts/contracts/AbleToken.sol/AbleToken.json ./src/lib/abi/",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "pretypecheck": "bun run codegen",
     "typecheck": "tsc --noEmit",
     "codegen": "graphql-codegen --config codegen.ts"
   },
