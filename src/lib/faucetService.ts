@@ -29,7 +29,7 @@ const requestTestTokens = async (walletAddress: string): Promise<FaucetResponse>
 	} catch (error) {
 		console.error('[faucetService] Error:', error);
 		// Handle specific rate limit messages nicely
-		if ((error as Error).message.includes('rate limit')) {
+		if (error instanceof Error && error.message.includes('rate limit')) {
 			toast.error('Rate Limit Exceeded', {
 				description: 'You can only request tokens once every 24 hours.',
 			});
