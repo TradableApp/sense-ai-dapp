@@ -1,5 +1,6 @@
 import path from 'path';
 
+import { sentryVitePlugin } from '@sentry/vite-plugin';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
@@ -105,7 +106,17 @@ export default defineConfig(({ mode }) => {
 					process: true,
 				},
 				protocolImports: true,
+				exclude: ['vm'],
 			}),
+			...(isProduction && process.env.SENTRY_AUTH_TOKEN
+				? [
+						sentryVitePlugin({
+							org: process.env.SENTRY_ORG,
+							project: process.env.SENTRY_PROJECT,
+							authToken: process.env.SENTRY_AUTH_TOKEN,
+						}),
+					]
+				: []),
 		],
 		resolve: {
 			alias: {
@@ -113,6 +124,7 @@ export default defineConfig(({ mode }) => {
 			},
 		},
 		build: {
+			sourcemap: isProduction ? 'hidden' : false,
 			// Adjust the warning limit to silence the cosmetic warning for the large vendor chunks.
 			chunkSizeWarningLimit: 2500,
 			minify: 'terser',

@@ -1,5 +1,6 @@
 import React, { Component, ReactNode } from 'react';
 
+import * as Sentry from '@sentry/react';
 import { Link } from 'react-router-dom';
 import type { useLocation, useNavigate } from 'react-router-dom';
 
@@ -52,6 +53,10 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 	static getDerivedStateFromError(error: Error): ErrorBoundaryState {
 		console.error('ErrorBoundary caught an error:', error);
 		return { hasError: true };
+	}
+
+	componentDidCatch(error: Error, { componentStack }: React.ErrorInfo) {
+		Sentry.captureException(error, { contexts: { react: { componentStack } } });
 	}
 
 	componentDidUpdate(prevProps: ErrorBoundaryProps) {

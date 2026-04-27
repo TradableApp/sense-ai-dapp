@@ -32,6 +32,8 @@ interface ImportMetaEnv {
 	readonly VITE_PUBLIC_POSTHOG_HOST: string;
 	readonly VITE_PUBLIC_POSTHOG_KEY: string;
 	readonly VITE_RECAPTCHA_SITE_KEY: string;
+	readonly VITE_SENTRY_DSN: string | undefined;
+	readonly VITE_SENTRY_ENVIRONMENT: string | undefined;
 	readonly VITE_STORAGE_BUCKET: string;
 	readonly VITE_THE_GRAPH_API_URL: string;
 	readonly VITE_THIRDWEB_CLIENT_ID: string;
