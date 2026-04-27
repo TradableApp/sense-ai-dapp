@@ -106,7 +106,6 @@ export default defineConfig(({ mode }) => {
 					process: true,
 				},
 				protocolImports: true,
-				exclude: ['vm'],
 			}),
 			...(isProduction && process.env.SENTRY_AUTH_TOKEN
 				? [
