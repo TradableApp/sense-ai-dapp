@@ -32,6 +32,7 @@ import { createEncryptedPayloads } from './useChatMutations';
 describe('createEncryptedPayloads', () => {
 	beforeEach(() => {
 		vi.spyOn(window.crypto.subtle, 'exportKey').mockResolvedValue(new ArrayBuffer(32));
+		// @ts-expect-error intentionally removing env var to test missing-key path
 		delete import.meta.env.VITE_ORACLE_PUBLIC_KEY;
 	});
 
