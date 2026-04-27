@@ -8,7 +8,7 @@ import errorBotIllustration from '@/assets/react.svg'; // Placeholder illustrati
 import { Button } from '@/components/ui/button';
 
 // This is the UI for the 418 "Crash" screen
-function CrashDisplay() {
+export function CrashDisplay() {
 	return (
 		<main className="min-h-screen flex items-center justify-center p-4 bg-background">
 			<div className="grid md:grid-cols-2 gap-8 items-center max-w-4xl mx-auto">

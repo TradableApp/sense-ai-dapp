@@ -9,6 +9,7 @@ import { Provider } from 'react-redux';
 import { BrowserRouter } from 'react-router-dom';
 import { ThirdwebProvider } from 'thirdweb/react';
 
+import { CrashDisplay } from '@/components/ErrorBoundary';
 import PostHogPageViewTracker from '@/components/PostHogPageViewTracker';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { Toaster } from '@/components/ui/sonner';
@@ -30,7 +31,7 @@ const queryClient = new QueryClient();
 
 createRoot(document.getElementById('root')!).render(
 	<StrictMode>
-		<Sentry.ErrorBoundary>
+		<Sentry.ErrorBoundary fallback={<CrashDisplay />}>
 			<BrowserRouter>
 				<ThirdwebProvider>
 					<Provider store={store}>

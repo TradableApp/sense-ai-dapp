@@ -3,9 +3,7 @@ import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
 function stripHexPrefix(hex: string): string {
-	if (hex.startsWith('0x04')) return hex.slice(2);
-	if (hex.startsWith('0x')) return hex.slice(2);
-	return hex;
+	return hex.startsWith('0x') ? hex.slice(2) : hex;
 }
 
 function normPubKeyBytes(pubKeyHex: string): Uint8Array {
@@ -27,7 +25,7 @@ export default async function eciesEncrypt(
 	const ephemPrivKey = secp256k1.utils.randomSecretKey();
 	const ephemPubKey = secp256k1.getPublicKey(ephemPrivKey, false);
 
-	const sharedSecret = secp256k1.getSharedSecret(ephemPrivKey, pubKeyBytes, false);
+	const sharedSecret = secp256k1.getSharedSecret(ephemPrivKey, pubKeyBytes, true);
 	const symmetricKey = sha256(sharedSecret.slice(1, 33));
 
 	const nonce = crypto.getRandomValues(new Uint8Array(12));

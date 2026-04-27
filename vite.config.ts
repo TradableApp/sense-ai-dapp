@@ -11,6 +11,11 @@ import svgr from 'vite-plugin-svgr';
 export default defineConfig(({ mode }) => {
 	// Check if we are building for production (mainnet/testnet builds)
 	const isProduction = mode === 'mainnet' || mode === 'testnet' || mode === 'production';
+	const sentryActive =
+		isProduction &&
+		Boolean(
+			process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT,
+		);
 
 	return {
 		plugins: [
@@ -107,12 +112,13 @@ export default defineConfig(({ mode }) => {
 				},
 				protocolImports: true,
 			}),
-			...(isProduction && process.env.SENTRY_AUTH_TOKEN
+			...(sentryActive
 				? [
 						sentryVitePlugin({
-							org: process.env.SENTRY_ORG,
-							project: process.env.SENTRY_PROJECT,
-							authToken: process.env.SENTRY_AUTH_TOKEN,
+							org: process.env.SENTRY_ORG!,
+							project: process.env.SENTRY_PROJECT!,
+							authToken: process.env.SENTRY_AUTH_TOKEN!,
+							sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] },
 						}),
 				  ]
 				: []),
@@ -123,7 +129,7 @@ export default defineConfig(({ mode }) => {
 			},
 		},
 		build: {
-			sourcemap: isProduction ? 'hidden' : false,
+			sourcemap: sentryActive ? 'hidden' : false,
 			// Adjust the warning limit to silence the cosmetic warning for the large vendor chunks.
 			chunkSizeWarningLimit: 2500,
 			minify: 'terser',

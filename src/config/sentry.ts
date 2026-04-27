@@ -24,14 +24,9 @@ export function initSentry() {
 	Sentry.init({
 		dsn,
 		environment,
-		integrations: [
-			Sentry.browserTracingIntegration(),
-			Sentry.replayIntegration({ block: ['[data-sentry-block]'] }),
-		],
+		integrations: [Sentry.browserTracingIntegration()],
 		tracesSampleRate,
 		sampleRate,
-		replaysSessionSampleRate: 0,
-		replaysOnErrorSampleRate: 0,
 		beforeSend(event) {
 			// Strip request body — may contain encrypted payloads; not useful for debugging
 			// eslint-disable-next-line no-param-reassign
