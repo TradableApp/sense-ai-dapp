@@ -13,9 +13,7 @@ export default defineConfig(({ mode }) => {
 	const isProduction = mode === 'mainnet' || mode === 'testnet' || mode === 'production';
 	const sentryActive =
 		isProduction &&
-		Boolean(
-			process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT,
-		);
+		Boolean(process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT);
 
 	return {
 		plugins: [
