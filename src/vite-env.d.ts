@@ -1,7 +1,5 @@
 /// <reference types="vite/client" />
 
-import type { FunctionComponent, SVGProps } from 'react';
-
 interface ImportMetaEnv {
 	readonly VITE_AGENT_CONTRACT_ADDRESS: string;
 	readonly VITE_API_KEY: string;
@@ -32,6 +30,8 @@ interface ImportMetaEnv {
 	readonly VITE_PUBLIC_POSTHOG_HOST: string;
 	readonly VITE_PUBLIC_POSTHOG_KEY: string;
 	readonly VITE_RECAPTCHA_SITE_KEY: string;
+	readonly VITE_SENTRY_DSN: string | undefined;
+	readonly VITE_SENTRY_ENVIRONMENT: string | undefined;
 	readonly VITE_STORAGE_BUCKET: string;
 	readonly VITE_THE_GRAPH_API_URL: string;
 	readonly VITE_THIRDWEB_CLIENT_ID: string;
@@ -49,21 +49,8 @@ declare module '*.css' {
 }
 
 declare module '*.svg?react' {
-	const content: FunctionComponent<SVGProps<SVGSVGElement> & { title?: string }>;
-	export default content;
-}
+	import type { FunctionComponent, SVGProps } from 'react';
 
-declare module '@/assets/tradable-logo-mono.svg?react' {
-	const content: FunctionComponent<SVGProps<SVGSVGElement> & { title?: string }>;
-	export default content;
-}
-
-declare module '@/assets/tradable-logo.svg?react' {
-	const content: FunctionComponent<SVGProps<SVGSVGElement> & { title?: string }>;
-	export default content;
-}
-
-declare module '@/assets/able-token-logo.svg?react' {
 	const content: FunctionComponent<SVGProps<SVGSVGElement> & { title?: string }>;
 	export default content;
 }

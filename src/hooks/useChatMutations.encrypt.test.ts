@@ -4,34 +4,22 @@ vi.mock('@/config/thirdweb', () => ({ client: {} }));
 vi.mock('thirdweb', () => ({}));
 vi.mock('thirdweb/react', () => ({}));
 vi.mock('thirdweb/wallets', () => ({}));
-vi.mock('ethers', () => ({
-	ethers: {
-		toUtf8Bytes: vi.fn(() => new Uint8Array([1, 2, 3])),
-		hexlify: vi.fn(() => '0xdeadbeef'),
-	},
-}));
-vi.mock('eth-crypto', () => ({
-	default: {
-		encryptWithPublicKey: vi.fn(async () => ({
-			iv: 'iv',
-			ephemPublicKey: 'epk',
-			ciphertext: 'ct',
-			mac: 'mac',
-		})),
-		cipher: { stringify: vi.fn(() => 'stringified') },
-	},
+vi.mock('@/lib/ecies', () => ({
+	default: vi.fn(async () => new Uint8Array([1, 2, 3, 4])),
 }));
 vi.mock('@/lib/crypto', () => ({
 	encryptData: vi.fn(async () => 'iv.cipher'),
 	decryptData: vi.fn(),
 	deriveKeyFromEntropy: vi.fn(),
 }));
+vi.mock('@/lib/faucetService', () => ({ default: vi.fn() }));
 
 import { createEncryptedPayloads } from './useChatMutations';
 
 describe('createEncryptedPayloads', () => {
 	beforeEach(() => {
 		vi.spyOn(window.crypto.subtle, 'exportKey').mockResolvedValue(new ArrayBuffer(32));
+		// @ts-expect-error intentionally removing env var to test missing-key path
 		delete import.meta.env.VITE_ORACLE_PUBLIC_KEY;
 	});
 

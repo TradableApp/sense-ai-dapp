@@ -1,13 +1,13 @@
 import React, { Component, ReactNode } from 'react';
 
-import { Link } from 'react-router-dom';
+import * as Sentry from '@sentry/react';
 import type { useLocation, useNavigate } from 'react-router-dom';
 
 import errorBotIllustration from '@/assets/react.svg'; // Placeholder illustration
 import { Button } from '@/components/ui/button';
 
 // This is the UI for the 418 "Crash" screen
-function CrashDisplay() {
+export function CrashDisplay() {
 	return (
 		<main className="min-h-screen flex items-center justify-center p-4 bg-background">
 			<div className="grid md:grid-cols-2 gap-8 items-center max-w-4xl mx-auto">
@@ -24,9 +24,9 @@ function CrashDisplay() {
 						Our team has been notified of the issue. The application is still running and your funds
 						remain secure. Please try refreshing or returning home.
 					</p>
-					<Link to="/">
+					<a href="/">
 						<Button>Go Back Home</Button>
-					</Link>
+					</a>
 				</div>
 			</div>
 		</main>
@@ -62,6 +62,10 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 		if (hasError && prevProps.location?.pathname !== location?.pathname) {
 			this.setState({ hasError: false });
 		}
+	}
+
+	componentDidCatch(error: Error, { componentStack }: React.ErrorInfo) {
+		Sentry.captureException(error, { contexts: { react: { componentStack } } });
 	}
 
 	render() {

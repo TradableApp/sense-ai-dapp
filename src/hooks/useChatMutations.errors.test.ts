@@ -44,8 +44,8 @@ vi.mock('@/components/ui/button', () => ({ Button: () => null }));
 vi.mock('@/lib/faucetService', () => ({ default: vi.fn() }));
 vi.mock('@/lib/utils', () => ({ wait: vi.fn() }));
 vi.mock('@/lib/crypto', () => ({ encryptData: vi.fn() }));
-vi.mock('eth-crypto', () => ({
-	default: { encryptWithPublicKey: vi.fn(), cipher: { stringify: vi.fn() } },
+vi.mock('@/lib/ecies', () => ({
+	default: vi.fn(async () => new Uint8Array([1, 2, 3, 4])),
 }));
 
 import { buildErrorHandler } from './useChatMutations';

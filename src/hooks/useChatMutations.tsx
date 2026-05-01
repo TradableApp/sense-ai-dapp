@@ -1,7 +1,6 @@
 import React from 'react';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import ethCrypto from 'eth-crypto';
 import { toast } from 'sonner';
 import { getContract, prepareContractCall, sendAndConfirmTransaction } from 'thirdweb';
 import { useActiveAccount, useActiveWallet } from 'thirdweb/react';
@@ -24,6 +23,7 @@ import AbleTokenABI from '@/lib/abi/AbleToken.json';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 import { encryptData } from '@/lib/crypto';
+import eciesEncrypt from '@/lib/ecies';
 import requestTestTokens from '@/lib/faucetService';
 import { wait } from '@/lib/utils';
 
@@ -35,59 +35,23 @@ type EvmLog = {
 	data: `0x${string}`;
 };
 
-/**
- * A helper to remove the '0x' and '04' prefixes from an uncompressed public key,
- * preparing it for use with the eth-crypto library.
- * @param {string} publicKey - The public key string.
- * @returns {string} The cleaned, raw public key.
- */
-function cleanPublicKey(publicKey: string): string {
-	if (publicKey.startsWith('0x04')) {
-		return publicKey.slice(4);
-	}
-	if (publicKey.startsWith('04')) {
-		return publicKey.slice(2);
-	}
-	return publicKey;
-}
-
-/**
- * Creates the encrypted payloads required by the smart contract.
- * This is a core utility for all mutations that send data to the TEE.
- * @param {CryptoKey} sessionKey The user's extractable session key.
- * @param {object} payload The plaintext JavaScript object to encrypt for the TEE.
- * @returns {Promise<{encryptedPayload: string, roflEncryptedKey: string}>}
- */
 export async function createEncryptedPayloads(
 	sessionKey: CryptoKey,
 	payload: Record<string, unknown>,
 ): Promise<{ encryptedPayload: string; roflEncryptedKey: string }> {
-	// 1. Symmetrically encrypt the main payload for the TEE using the user's session key.
 	const encryptedPayloadString = await encryptData(sessionKey, payload);
 	const encryptedPayloadBytes = new TextEncoder().encode(encryptedPayloadString);
-
-	// 2. Convert the Uint8Array to a hex string
 	const encryptedPayload = toHex(encryptedPayloadBytes);
 
-	// 3. Export the raw session key material from the CryptoKey object.
 	const rawSessionKey = await window.crypto.subtle.exportKey('raw', sessionKey);
 
-	// 4. Asymmetrically encrypt the raw session key for the TEE oracle using its public key.
 	const oraclePublicKey = import.meta.env.VITE_ORACLE_PUBLIC_KEY;
-
 	if (!oraclePublicKey) {
 		throw new Error('VITE_ORACLE_PUBLIC_KEY is not set in .env');
 	}
 
-	const encryptedKeyForOracle = await ethCrypto.encryptWithPublicKey(
-		cleanPublicKey(oraclePublicKey),
-		Buffer.from(rawSessionKey).toString('hex'),
-	);
-	const roflEncryptedKeyString = ethCrypto.cipher.stringify(encryptedKeyForOracle);
-	const roflEncryptedKeyBytes = new TextEncoder().encode(roflEncryptedKeyString);
-
-	// Convert the Uint8Array to a hex string
-	const roflEncryptedKey = toHex(roflEncryptedKeyBytes);
+	const cipherBlob = await eciesEncrypt(oraclePublicKey, new Uint8Array(rawSessionKey));
+	const roflEncryptedKey = toHex(cipherBlob);
 
 	return { encryptedPayload, roflEncryptedKey };
 }
