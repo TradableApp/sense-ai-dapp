@@ -2,22 +2,19 @@ import path from 'path';
 
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 import react from '@vitejs/plugin-react';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import { VitePWA } from 'vite-plugin-pwa';
 import svgr from 'vite-plugin-svgr';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-	// Load all env vars (including non-VITE_ ones) for use in this config file.
-	// They are NOT injected into the client bundle — only VITE_* vars reach import.meta.env.
-	const env = loadEnv(mode, process.cwd(), '');
-
-	// Check if we are building for production (mainnet/testnet builds)
 	const isProduction = mode === 'mainnet' || mode === 'testnet' || mode === 'production';
 	const sentryActive =
 		isProduction &&
-		Boolean(env.SENTRY_AUTH_TOKEN && env.SENTRY_ORG && env.SENTRY_PROJECT);
+		Boolean(
+			process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT,
+		);
 
 	return {
 		plugins: [
@@ -114,31 +111,26 @@ export default defineConfig(({ mode }) => {
 				},
 				protocolImports: true,
 			}),
-			...(sentryActive
-				? [
-						sentryVitePlugin({
-							org: env.SENTRY_ORG,
-							project: env.SENTRY_PROJECT,
-							authToken: env.SENTRY_AUTH_TOKEN,
-							sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] },
-						}),
-				  ]
-				: []),
+			sentryActive
+				? sentryVitePlugin({
+						org: process.env.SENTRY_ORG,
+						project: process.env.SENTRY_PROJECT,
+						authToken: process.env.SENTRY_AUTH_TOKEN,
+						sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] },
+						telemetry: false,
+					})
+				: undefined,
 		],
 		resolve: {
-			alias: {
-				'@': path.resolve(__dirname, './src'),
-			},
+			alias: { '@': path.resolve(__dirname, './src') },
 		},
 		build: {
 			sourcemap: sentryActive ? 'hidden' : false,
-			// Adjust the warning limit to silence the cosmetic warning for the large vendor chunks.
 			chunkSizeWarningLimit: 2500,
 			minify: 'terser',
 			terserOptions: {
 				compress: {
-					// This removes console.log, console.info, console.debug
-					// But KEEPS console.error and console.warn for production error tracking
+					// Strips console.log/info/debug in production but keeps console.error/warn
 					pure_funcs: isProduction
 						? ['console.log', 'console.info', 'console.debug', 'console.table']
 						: [],
