@@ -1,10 +1,14 @@
-import { type Page, expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 /**
  * Page Object Model for ManagePlanModal.
  */
 export class PlanModal {
-	constructor(private page: Page) {}
+	private readonly page: Page;
+
+	constructor(page: Page) {
+		this.page = page;
+	}
 
 	// ── Locators ──────────────────────────────────────────────────────────────
 
@@ -13,21 +17,26 @@ export class PlanModal {
 	}
 
 	get limitInput() {
-		return this.modal.getByRole('spinbutton', { name: /limit|amount/i }).or(
-			this.modal.getByPlaceholder(/e\.g\.|amount|limit/i),
-		).first();
+		return this.modal
+			.getByRole('spinbutton', { name: /limit|amount/i })
+			.or(this.modal.getByPlaceholder(/e\.g\.|amount|limit/i))
+			.first();
 	}
 
 	get daysInput() {
-		return this.modal.getByRole('spinbutton', { name: /days|duration/i }).or(
-			this.modal.getByPlaceholder(/days|duration/i),
-		).first();
+		return this.modal
+			.getByRole('spinbutton', { name: /days|duration/i })
+			.or(this.modal.getByPlaceholder(/days|duration/i))
+			.first();
 	}
 
 	get submitButton() {
-		return this.modal.getByRole('button', { name: /set plan|activate|confirm|save/i }).filter({
-			hasNot: this.modal.locator('[disabled]'),
-		}).first();
+		return this.modal
+			.getByRole('button', { name: /set plan|activate|confirm|save/i })
+			.filter({
+				hasNot: this.modal.locator('[disabled]'),
+			})
+			.first();
 	}
 
 	get cancelButton() {
@@ -63,7 +72,9 @@ export class PlanModal {
 	/** Waits for the loading spinner to appear then disappear (tx in progress) */
 	async waitForTxCompletion(timeoutMs = 60_000) {
 		// Wait for spinner to show
-		await expect(this.loadingSpinner).toBeVisible({ timeout: 5_000 }).catch(() => {});
+		await expect(this.loadingSpinner)
+			.toBeVisible({ timeout: 5_000 })
+			.catch(() => {});
 		// Wait for spinner to disappear (tx mined)
 		await expect(this.loadingSpinner).not.toBeVisible({ timeout: timeoutMs });
 	}

@@ -1,17 +1,22 @@
-import { type Page, expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 /**
  * Page Object Model for the History page (/history).
  */
 export class HistoryPage {
-	constructor(private page: Page) {}
+	private readonly page: Page;
+
+	constructor(page: Page) {
+		this.page = page;
+	}
 
 	// ── Locators ──────────────────────────────────────────────────────────────
 
 	get searchInput() {
-		return this.page.getByRole('searchbox').or(
-			this.page.getByPlaceholder(/search/i),
-		).first();
+		return this.page
+			.getByRole('searchbox')
+			.or(this.page.getByPlaceholder(/search/i))
+			.first();
 	}
 
 	get conversationList() {
@@ -63,7 +68,10 @@ export class HistoryPage {
 		await this.openConversationMenu(index);
 		await this.page.getByRole('menuitem', { name: /delete/i }).click();
 		// Confirm the alert dialog
-		await this.page.getByRole('button', { name: /delete|confirm/i }).last().click();
+		await this.page
+			.getByRole('button', { name: /delete|confirm/i })
+			.last()
+			.click();
 	}
 
 	async clickConversation(index: number) {

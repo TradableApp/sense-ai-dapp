@@ -1,27 +1,24 @@
-import { fileURLToPath } from 'url';
-import path from 'path';
-
 import { test as base, type BrowserContext, type Page } from '@playwright/test';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
+import { injectMockWalletIntoContext } from './mock-wallet';
 import { AuthPage } from '../pages/AuthPage';
 import { ChatPage } from '../pages/ChatPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { HistoryPage } from '../pages/HistoryPage';
 import { PlanModal } from '../pages/PlanModal';
-import { injectMockWalletIntoContext } from './mock-wallet';
 
-/** Path where authenticated browser storage state is saved */
-export const AUTH_STATE_PATH = path.join(__dirname, '../.auth/user.json');
+/**
+ * Path where authenticated browser storage state is saved between test runs.
+ * Using import.meta.url keeps this portable without __dirname in ESM.
+ */
+export const AUTH_STATE_PATH = new URL('../.auth/user.json', import.meta.url).pathname;
 
 // ── Custom fixture types ───────────────────────────────────────────────────
 
 interface SenseAIFixtures {
 	/** Context with mock wallet injected — no auth performed yet */
 	walletContext: BrowserContext;
-	/** Page from walletContext */
+	/** Page from walletContext — for tests that exercise the auth flow itself */
 	walletPage: Page;
 	/** Page that is already authenticated (wallet connected + session signed) */
 	authenticatedPage: Page;
@@ -50,7 +47,7 @@ export const test = base.extend<SenseAIFixtures>({
 
 	/**
 	 * A page from walletContext — has the mock wallet but is not authenticated.
-	 * Use this for T-AUTH tests that test the connection flow itself.
+	 * Use this for T-AUTH tests that exercise the connection flow itself.
 	 */
 	walletPage: async ({ walletContext }, use) => {
 		const page = await walletContext.newPage();
@@ -61,21 +58,19 @@ export const test = base.extend<SenseAIFixtures>({
 	/**
 	 * A page that has completed the full auth flow (wallet connect + signature).
 	 *
-	 * On the first run, performs the live auth flow and saves storageState.
-	 * On subsequent runs (same worker), reuses the saved state — no re-signing.
+	 * On first run, performs the live flow and saves storageState so subsequent
+	 * tests in the same run skip the connect/sign step entirely.
 	 *
-	 * NOTE: storageState caches localStorage/sessionStorage but NOT IndexedDB.
-	 * In-app session keys are derived fresh each time from the saved wallet state.
+	 * NOTE: storageState persists localStorage/sessionStorage but NOT IndexedDB.
+	 * Session keys are re-derived on each run from the saved ThirdWeb wallet state.
 	 */
 	authenticatedPage: async ({ browser }, use) => {
 		let context: BrowserContext;
 
 		try {
-			// Try to reuse saved auth state (fast path)
 			context = await browser.newContext({ storageState: AUTH_STATE_PATH });
 			await injectMockWalletIntoContext(context);
 		} catch {
-			// No saved state yet — perform full auth
 			context = await browser.newContext();
 			await injectMockWalletIntoContext(context);
 		}
@@ -83,11 +78,9 @@ export const test = base.extend<SenseAIFixtures>({
 		const page = await context.newPage();
 		await page.goto('/');
 
-		// If redirected to /auth, the saved state didn't work — do the full flow
 		if (page.url().includes('/auth')) {
 			const authPage = new AuthPage(page);
 			await authPage.connectAndSign();
-			// Save state for subsequent tests
 			await context.storageState({ path: AUTH_STATE_PATH });
 		}
 

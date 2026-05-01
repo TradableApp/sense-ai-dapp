@@ -5,7 +5,7 @@
  * If any of these fail, stop and investigate before proceeding.
  */
 
-import { expect, test as base } from '@playwright/test';
+import { test as base, expect } from '@playwright/test';
 
 import { injectMockWallet } from '../fixtures/mock-wallet';
 import { isGraphRunning } from '../helpers/graph';
@@ -22,7 +22,10 @@ test.describe('Infrastructure pre-flight', () => {
 
 	test('T-INIT-SMOKE-02: Local Graph node is reachable at port 8000', async () => {
 		const running = await isGraphRunning();
-		expect(running, 'Graph node must be running. Start with: docker-compose up in sense-ai-subgraph').toBe(true);
+		expect(
+			running,
+			'Graph node must be running. Start with: docker-compose up in sense-ai-subgraph',
+		).toBe(true);
 	});
 });
 
@@ -47,21 +50,17 @@ test.describe('App initialisation (T-INIT)', () => {
 		await expect(page).toHaveTitle(/SenseAI|Tradable/i, { timeout: 10_000 });
 	});
 
-	test('T-INIT-06: Sentry session envelope fires within 3s of page load', async ({ page }) => {
-		const sentryRequests: string[] = [];
-		page.on('request', req => {
-			if (req.url().includes('sentry.io') || req.url().includes('ingest')) {
-				sentryRequests.push(req.url());
-			}
-		});
-
+	test('T-INIT-06: Sentry session envelope fires within 5s of page load', async ({ page }) => {
 		await injectMockWallet(page);
+
+		// waitForRequest is the correct Playwright pattern — no arbitrary sleeps
+		const sentryRequest = page.waitForRequest(
+			req => req.url().includes('sentry.io') || req.url().includes('ingest'),
+			{ timeout: 10_000 },
+		);
+
 		await page.goto('/');
-
-		// Give Sentry up to 5s to fire the session envelope
-		await page.waitForTimeout(5_000);
-
-		expect(sentryRequests.length, 'Expected at least one Sentry request').toBeGreaterThan(0);
+		await sentryRequest; // throws if not received within timeout
 	});
 
 	test('T-INIT-07: No unhandled JavaScript errors during page load', async ({ page }) => {
@@ -75,8 +74,7 @@ test.describe('App initialisation (T-INIT)', () => {
 		// Filter out known benign noise
 		const meaningful = errors.filter(
 			e =>
-				!e.message.includes('ResizeObserver') &&
-				!e.message.includes('Non-Error promise rejection'),
+				!e.message.includes('ResizeObserver') && !e.message.includes('Non-Error promise rejection'),
 		);
 		expect(meaningful).toHaveLength(0);
 	});
@@ -102,12 +100,13 @@ test.describe('App initialisation (T-INIT)', () => {
 		await context.setOffline(true);
 
 		// The offline message component should appear
-		await expect(
-			page.getByText(/offline|no connection|internet/i),
-		).toBeVisible({ timeout: 5_000 });
+		await expect(page.getByText(/offline|no connection|internet/i)).toBeVisible({ timeout: 5_000 });
 	});
 
-	test('T-INIT-10: Offline overlay disappears when network is restored', async ({ page, context }) => {
+	test('T-INIT-10: Offline overlay disappears when network is restored', async ({
+		page,
+		context,
+	}) => {
 		await injectMockWallet(page);
 		await page.goto('/');
 		await page.waitForLoadState('networkidle');
@@ -142,8 +141,8 @@ test.describe('Routing and access control (T-AUTH)', () => {
 	test('T-AUTH-02: Auth page renders the ThirdWeb ConnectButton', async ({ page }) => {
 		await injectMockWallet(page);
 		await page.goto('/auth');
-		await expect(
-			page.getByRole('button', { name: /connect wallet/i }),
-		).toBeVisible({ timeout: 10_000 });
+		await expect(page.getByRole('button', { name: /connect wallet/i })).toBeVisible({
+			timeout: 10_000,
+		});
 	});
 });

@@ -3,6 +3,6 @@
  * Tests will be implemented here as the suite is built out.
  */
 
-import { test } from '../fixtures';
+import { test } from '@playwright/test';
 
-test.todo('suite tests to be implemented — see E2E_TEST_PLAN.md');
+test.describe('suite', () => {});

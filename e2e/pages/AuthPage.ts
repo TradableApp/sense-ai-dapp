@@ -1,10 +1,14 @@
-import { type Page, expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 /**
  * Page Object Model for the /auth route and the ThirdWeb connect flow.
  */
 export class AuthPage {
-	constructor(private page: Page) {}
+	private readonly page: Page;
+
+	constructor(page: Page) {
+		this.page = page;
+	}
 
 	// ── Locators ──────────────────────────────────────────────────────────────
 
@@ -31,9 +35,7 @@ export class AuthPage {
 
 	/** The session key signature screen shown after wallet connect */
 	get signatureScreen() {
-		return this.page.getByText(/login to senseai/i).or(
-			this.page.getByText(/encrypt and decrypt/i),
-		);
+		return this.page.getByText(/login to senseai/i).or(this.page.getByText(/encrypt and decrypt/i));
 	}
 
 	/** The "Sign" or "Confirm" button on the signature screen */
@@ -46,9 +48,9 @@ export class AuthPage {
 
 	/** Spinner / loading state during key derivation */
 	get derivingSpinner() {
-		return this.page.getByRole('img', { name: /loading/i }).or(
-			this.page.locator('[data-testid="spinner"], .animate-spin').first(),
-		);
+		return this.page
+			.getByRole('img', { name: /loading/i })
+			.or(this.page.locator('[data-testid="spinner"], .animate-spin').first());
 	}
 
 	/** Rejection / error state after declining signature */

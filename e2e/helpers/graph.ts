@@ -38,10 +38,7 @@ export async function getIndexedBlockNumber(): Promise<number> {
  * Polls the Graph node until it has indexed up to `targetBlock`.
  * Useful for waiting after a transaction is mined.
  */
-export async function waitForIndexing(
-	targetBlock: number,
-	timeoutMs = 30_000,
-): Promise<void> {
+export async function waitForIndexing(targetBlock: number, timeoutMs = 30_000): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
 		const current = await getIndexedBlockNumber();

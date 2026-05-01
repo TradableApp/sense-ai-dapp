@@ -1,17 +1,21 @@
-import { type Page, expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 /**
  * Page Object Model for the Chat page (/chat).
  */
 export class ChatPage {
-	constructor(private page: Page) {}
+	private readonly page: Page;
+
+	constructor(page: Page) {
+		this.page = page;
+	}
 
 	// ── Locators ──────────────────────────────────────────────────────────────
 
 	get promptTextarea() {
-		return this.page.getByRole('textbox', { name: /message|prompt|ask/i }).or(
-			this.page.locator('textarea[placeholder]').first(),
-		);
+		return this.page
+			.getByRole('textbox', { name: /message|prompt|ask/i })
+			.or(this.page.locator('textarea[placeholder]').first());
 	}
 
 	get submitButton() {

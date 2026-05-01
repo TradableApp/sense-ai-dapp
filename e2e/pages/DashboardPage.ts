@@ -1,10 +1,14 @@
-import { type Page, expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 /**
  * Page Object Model for the Usage Dashboard (/).
  */
 export class DashboardPage {
-	constructor(private page: Page) {}
+	private readonly page: Page;
+
+	constructor(page: Page) {
+		this.page = page;
+	}
 
 	// ── Locators ──────────────────────────────────────────────────────────────
 
@@ -25,9 +29,9 @@ export class DashboardPage {
 
 	/** Allowance value displayed in the plan card */
 	get allowanceValue() {
-		return this.page.getByTestId('plan-allowance').or(
-			this.page.getByText(/able/i).filter({ hasText: /\d/ }).first(),
-		);
+		return this.page
+			.getByTestId('plan-allowance')
+			.or(this.page.getByText(/able/i).filter({ hasText: /\d/ }).first());
 	}
 
 	/** "Manage Plan" button */

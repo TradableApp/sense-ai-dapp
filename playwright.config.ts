@@ -1,35 +1,53 @@
 import { defineConfig, devices } from '@playwright/test';
 
-/**
- * Base URL of the locally running dApp.
- * Start it with `bun run dev` before running Playwright.
- */
 const BASE_URL = 'http://localhost:3002';
 
 export default defineConfig({
 	testDir: './e2e/specs',
-	/* Run tests in parallel within a file */
-	fullyParallel: false,
-	/* Fail the build on CI if you accidentally left test.only */
+
+	/**
+	 * Run tests in parallel within a file. Each test gets its own browser context
+	 * so there is no shared state between tests.
+	 */
+	fullyParallel: true,
+
+	/** Fail the build on CI if you accidentally left test.only in */
 	forbidOnly: !!process.env.CI,
-	/* Retry once on CI to reduce flakiness */
+
+	/** Retry once on CI to absorb transient flakiness */
 	retries: process.env.CI ? 1 : 0,
-	/* Reporter */
-	reporter: [['html', { outputFolder: 'playwright-report' }], ['list']],
+
+	/** Cap workers on CI to avoid overwhelming the Hardhat node */
+	workers: process.env.CI ? 2 : undefined,
+
+	reporter: [['html', { outputFolder: 'playwright-report', open: 'never' }], ['list']],
 
 	use: {
 		baseURL: BASE_URL,
-		/* Collect trace on retry */
+		/** Default assertion timeout — tight enough to catch regressions */
+		actionTimeout: 15_000,
+		navigationTimeout: 30_000,
 		trace: 'on-first-retry',
-		/* Screenshot on failure */
 		screenshot: 'only-on-failure',
-		/* Viewport */
 		viewport: { width: 1280, height: 800 },
+	},
+
+	/**
+	 * Automatically start the dApp dev server if it isn't already running.
+	 * In CI the server is always started fresh; locally an existing server is reused.
+	 * The Hardhat node, oracle, and Graph node must be started manually — see
+	 * docs/LOCALNET_SETUP.md.
+	 */
+	webServer: {
+		command: 'bun run dev',
+		url: BASE_URL,
+		reuseExistingServer: !process.env.CI,
+		timeout: 60_000,
 	},
 
 	projects: [
 		/**
-		 * smoke — ~10 P0 sanity checks.
+		 * smoke — infrastructure pre-flight + P0 sanity checks.
 		 * Run on every commit. Should complete in < 3 minutes.
 		 */
 		{
@@ -59,7 +77,7 @@ export default defineConfig({
 		},
 
 		/**
-		 * chat — prompt submission, oracle response, cancel.
+		 * chat — prompt submission, oracle response, cancellation.
 		 * Run when touching useChatMutations, ECIES, or oracle.
 		 */
 		{
@@ -88,7 +106,7 @@ export default defineConfig({
 		},
 
 		/**
-		 * security — ECIES encryption, no plaintext leaks, no key in storage.
+		 * security — ECIES encryption correctness, no plaintext leaks, no keys in storage.
 		 * Run when touching ecies.ts, crypto.ts, or contract calldata.
 		 */
 		{
@@ -117,7 +135,6 @@ export default defineConfig({
 
 		/**
 		 * regression — full suite. Run on all PRs and before testnet deployment.
-		 * Excludes specs tagged @skip-localnet.
 		 */
 		{
 			name: 'regression',

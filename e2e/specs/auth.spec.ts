@@ -54,21 +54,22 @@ test.describe('Wallet connection (T-AUTH)', () => {
 		authenticatedPage,
 	}) => {
 		// The NavUser component should display the connected wallet address
-		const shortAddress =
-			TEST_ACCOUNT.address.slice(0, 6) + '...' + TEST_ACCOUNT.address.slice(-4);
+		const shortAddress = `${TEST_ACCOUNT.address.slice(0, 6)}...${TEST_ACCOUNT.address.slice(-4)}`;
 
-		await expect(
-			authenticatedPage.getByText(new RegExp(shortAddress, 'i')),
-		).toBeVisible({ timeout: 10_000 });
+		await expect(authenticatedPage.getByText(new RegExp(shortAddress, 'i'))).toBeVisible({
+			timeout: 10_000,
+		});
 	});
 
 	test('T-AUTH-12: Disconnecting wallet resets session and redirects to /auth', async ({
 		authenticatedPage,
 	}) => {
 		// Find the disconnect option — usually in a user menu / nav
-		const userMenu = authenticatedPage.getByRole('button', {
-			name: new RegExp(TEST_ACCOUNT.address.slice(0, 6), 'i'),
-		}).or(authenticatedPage.getByTestId('nav-user'));
+		const userMenu = authenticatedPage
+			.getByRole('button', {
+				name: new RegExp(TEST_ACCOUNT.address.slice(0, 6), 'i'),
+			})
+			.or(authenticatedPage.getByTestId('nav-user'));
 
 		await userMenu.click();
 
@@ -82,7 +83,6 @@ test.describe('Wallet connection (T-AUTH)', () => {
 	});
 
 	test('T-AUTH-11: Page reload with same wallet does not re-prompt for signature', async ({
-		browser,
 		walletContext,
 	}) => {
 		// Perform initial auth
@@ -143,11 +143,7 @@ test.describe('Session key derivation security (T-SIGN)', () => {
 		await expect(authPage.retryButton).toBeVisible({ timeout: 5_000 });
 	});
 
-	test('T-AUTH-10: Clicking retry re-triggers the signature request', async ({
-		walletPage,
-	}) => {
-		// First rejection
-		let callCount = 0;
+	test('T-AUTH-10: Clicking retry re-triggers the signature request', async ({ walletPage }) => {
 		await walletPage.addInitScript(`
       window.__mockSignRejectOnce = true;
     `);
@@ -173,9 +169,9 @@ test.describe('Consent banner (T-INIT)', () => {
     `);
 		await walletPage.goto('/auth');
 
-		await expect(
-			walletPage.getByText(/cookie|consent|analytics|privacy/i).first(),
-		).toBeVisible({ timeout: 10_000 });
+		await expect(walletPage.getByText(/cookie|consent|analytics|privacy/i).first()).toBeVisible({
+			timeout: 10_000,
+		});
 	});
 
 	test('T-INIT-04: Accepting consent dismisses the banner', async ({ walletPage }) => {
@@ -186,8 +182,8 @@ test.describe('Consent banner (T-INIT)', () => {
 		await expect(acceptButton).toBeVisible({ timeout: 5_000 });
 		await acceptButton.click();
 
-		await expect(
-			walletPage.getByText(/cookie|consent/i).first(),
-		).not.toBeVisible({ timeout: 5_000 });
+		await expect(walletPage.getByText(/cookie|consent/i).first()).not.toBeVisible({
+			timeout: 5_000,
+		});
 	});
 });
