@@ -12,6 +12,7 @@ vi.mock('@/lib/crypto', () => ({
 	decryptData: vi.fn(),
 	deriveKeyFromEntropy: vi.fn(),
 }));
+vi.mock('@/lib/faucetService', () => ({ default: vi.fn() }));
 
 import { createEncryptedPayloads } from './useChatMutations';
 
