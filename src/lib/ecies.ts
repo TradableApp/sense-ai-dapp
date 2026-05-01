@@ -1,6 +1,7 @@
 import { gcm } from '@noble/ciphers/aes.js';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha2.js';
+import { hexToBytes } from '@noble/hashes/utils.js';
 
 function stripHexPrefix(hex: string): string {
 	return hex.startsWith('0x') ? hex.slice(2) : hex;
@@ -9,7 +10,7 @@ function stripHexPrefix(hex: string): string {
 function normPubKeyBytes(pubKeyHex: string): Uint8Array {
 	const stripped = stripHexPrefix(pubKeyHex);
 	const full = stripped.length === 128 ? `04${stripped}` : stripped;
-	return new Uint8Array(Buffer.from(full, 'hex'));
+	return hexToBytes(full);
 }
 
 /**

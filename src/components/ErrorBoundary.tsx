@@ -1,7 +1,6 @@
 import React, { Component, ReactNode } from 'react';
 
 import * as Sentry from '@sentry/react';
-import { Link } from 'react-router-dom';
 import type { useLocation, useNavigate } from 'react-router-dom';
 
 import errorBotIllustration from '@/assets/react.svg'; // Placeholder illustration
@@ -25,9 +24,9 @@ export function CrashDisplay() {
 						Our team has been notified of the issue. The application is still running and your funds
 						remain secure. Please try refreshing or returning home.
 					</p>
-					<Link to="/">
+					<a href="/">
 						<Button>Go Back Home</Button>
-					</Link>
+					</a>
 				</div>
 			</div>
 		</main>

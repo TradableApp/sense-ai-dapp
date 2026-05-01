@@ -51,16 +51,16 @@ test.describe('App initialisation (T-INIT)', () => {
 	});
 
 	test('T-INIT-06: Sentry session envelope fires within 5s of page load', async ({ page }) => {
-		await injectMockWallet(page);
+		test.skip(!process.env.VITE_SENTRY_DSN, 'Skipped: VITE_SENTRY_DSN not configured');
 
-		// waitForRequest is the correct Playwright pattern — no arbitrary sleeps
 		const sentryRequest = page.waitForRequest(
 			req => req.url().includes('sentry.io') || req.url().includes('ingest'),
 			{ timeout: 10_000 },
 		);
 
+		await injectMockWallet(page);
 		await page.goto('/');
-		await sentryRequest; // throws if not received within timeout
+		await sentryRequest;
 	});
 
 	test('T-INIT-07: No unhandled JavaScript errors during page load', async ({ page }) => {

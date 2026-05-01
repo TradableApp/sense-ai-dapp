@@ -1,4 +1,5 @@
 import { secp256k1 } from '@noble/curves/secp256k1.js';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { describe, expect, it } from 'vitest';
 
 import eciesEncrypt from './ecies';
@@ -7,8 +8,8 @@ import eciesEncrypt from './ecies';
 const PRIV_1 = '11'.repeat(32);
 
 function privToUncompressedHex(privHex: string): string {
-	const pubBytes = secp256k1.getPublicKey(Buffer.from(privHex, 'hex'), false);
-	return Buffer.from(pubBytes).toString('hex');
+	const pubBytes = secp256k1.getPublicKey(hexToBytes(privHex), false);
+	return bytesToHex(pubBytes);
 }
 
 const PUB_1 = privToUncompressedHex(PRIV_1);
@@ -42,7 +43,7 @@ describe('eciesEncrypt', () => {
 		const plaintext = new Uint8Array([1, 2, 3]);
 		const a = await eciesEncrypt(PUB_1, plaintext);
 		const b = await eciesEncrypt(PUB_1, plaintext);
-		expect(Buffer.from(a).toString('hex')).not.toBe(Buffer.from(b).toString('hex'));
+		expect(bytesToHex(a)).not.toBe(bytesToHex(b));
 	});
 
 	it('accepts a public key with 0x04 prefix', async () => {
