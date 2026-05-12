@@ -1,5 +1,6 @@
 import path from 'path';
 
+import { sentryVitePlugin } from '@sentry/vite-plugin';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
@@ -8,8 +9,12 @@ import svgr from 'vite-plugin-svgr';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-	// Check if we are building for production (mainnet/testnet builds)
 	const isProduction = mode === 'mainnet' || mode === 'testnet' || mode === 'production';
+	const sentryActive =
+		isProduction &&
+		Boolean(
+			process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT,
+		);
 
 	return {
 		plugins: [
@@ -106,20 +111,26 @@ export default defineConfig(({ mode }) => {
 				},
 				protocolImports: true,
 			}),
+			sentryActive
+				? sentryVitePlugin({
+						org: process.env.SENTRY_ORG,
+						project: process.env.SENTRY_PROJECT,
+						authToken: process.env.SENTRY_AUTH_TOKEN,
+						sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] },
+						telemetry: false,
+					})
+				: undefined,
 		],
 		resolve: {
-			alias: {
-				'@': path.resolve(__dirname, './src'),
-			},
+			alias: { '@': path.resolve(__dirname, './src') },
 		},
 		build: {
-			// Adjust the warning limit to silence the cosmetic warning for the large vendor chunks.
+			sourcemap: sentryActive ? 'hidden' : false,
 			chunkSizeWarningLimit: 2500,
 			minify: 'terser',
 			terserOptions: {
 				compress: {
-					// This removes console.log, console.info, console.debug
-					// But KEEPS console.error and console.warn for production error tracking
+					// Strips console.log/info/debug in production but keeps console.error/warn
 					pure_funcs: isProduction
 						? ['console.log', 'console.info', 'console.debug', 'console.table']
 						: [],

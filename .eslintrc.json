@@ -104,6 +104,25 @@
 				"import/no-extraneous-dependencies": ["error", { "devDependencies": true }],
 				"import/first": "off"
 			}
+		},
+		{
+			"files": ["e2e/**/*.ts", "playwright.config.ts"],
+			"env": { "browser": false, "node": true },
+			"rules": {
+				"import/no-extraneous-dependencies": ["error", { "devDependencies": true }],
+				"import/prefer-default-export": "off",
+				"import/first": "off",
+				"no-underscore-dangle": "off",
+				"no-useless-constructor": "off",
+				"no-empty-function": "off",
+				"no-await-in-loop": "off",
+				"no-promise-executor-return": "off",
+				"no-plusplus": "off",
+				"no-restricted-syntax": "off",
+				"class-methods-use-this": "off",
+				"react-hooks/rules-of-hooks": "off",
+				"react-hooks/exhaustive-deps": "off"
+			}
 		}
 	],
 	"globals": {

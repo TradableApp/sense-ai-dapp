@@ -17,8 +17,7 @@
     "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@/assets/*.svg?react": ["src/assets/*.svg?react"]
+      "@/*": ["src/*"]
     }
   },
   "include": ["src", "vite.config.ts"]
