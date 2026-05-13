@@ -24,10 +24,10 @@
 import {
 	createPublicClient,
 	createWalletClient,
-	http,
-	parseEther,
 	formatEther,
+	http,
 	isAddress,
+	parseEther,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
