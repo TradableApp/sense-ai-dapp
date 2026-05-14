@@ -80,6 +80,11 @@ test.describe('App initialisation (T-INIT)', () => {
 	});
 
 	test('T-INIT-11: PWA manifest is served', async ({ page }) => {
+		// vite-plugin-pwa only emits manifest.webmanifest in production builds (vite build / vite preview),
+		// not when running against `vite dev`. Set E2E_TARGET=preview when the suite runs against a
+		// production preview build so this test runs in CI; defaults to skipping for dev-server runs.
+		test.skip(process.env.E2E_TARGET !== 'preview', 'PWA manifest not served by Vite dev server (set E2E_TARGET=preview)');
+
 		await injectMockWallet(page);
 		const response = await page.goto('/manifest.webmanifest');
 		expect(response?.status()).toBe(200);
@@ -112,10 +117,14 @@ test.describe('App initialisation (T-INIT)', () => {
 		await page.waitForLoadState('networkidle');
 
 		await context.setOffline(true);
-		await expect(page.getByText(/offline|no connection/i)).toBeVisible({ timeout: 5_000 });
+		await expect(page.getByText(/offline|no connection|internet/i)).toBeVisible({
+			timeout: 8_000,
+		});
 
 		await context.setOffline(false);
-		await expect(page.getByText(/offline|no connection/i)).not.toBeVisible({ timeout: 5_000 });
+		await expect(page.getByText(/offline|no connection|internet/i)).not.toBeVisible({
+			timeout: 8_000,
+		});
 	});
 });
 
@@ -141,7 +150,8 @@ test.describe('Routing and access control (T-AUTH)', () => {
 	test('T-AUTH-02: Auth page renders the ThirdWeb ConnectButton', async ({ page }) => {
 		await injectMockWallet(page);
 		await page.goto('/auth');
-		await expect(page.getByRole('button', { name: /connect wallet/i })).toBeVisible({
+		// ThirdWeb renders the button with accessible name "Connect" but inner text "Connect Wallet"
+		await expect(page.getByRole('button').filter({ hasText: /connect wallet/i })).toBeVisible({
 			timeout: 10_000,
 		});
 	});

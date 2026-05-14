@@ -55,6 +55,7 @@ hosting.*.cache
 # Claude Code — local only
 .claude/settings.local.json
 .claude/memory/
+.claude/PRPs/
 .mcp.json
 
 # GraphQL codegen output
