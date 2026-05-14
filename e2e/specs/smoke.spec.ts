@@ -80,9 +80,10 @@ test.describe('App initialisation (T-INIT)', () => {
 	});
 
 	test('T-INIT-11: PWA manifest is served', async ({ page }) => {
-		// vite-plugin-pwa only serves manifest.webmanifest in production builds.
-		// Skip in dev mode (VITE_DEV_SERVER=true or no build mode set to production).
-		test.skip(process.env.NODE_ENV !== 'production', 'PWA manifest not served by Vite dev server');
+		// vite-plugin-pwa only emits manifest.webmanifest in production builds (vite build / vite preview),
+		// not when running against `vite dev`. Set E2E_TARGET=preview when the suite runs against a
+		// production preview build so this test runs in CI; defaults to skipping for dev-server runs.
+		test.skip(process.env.E2E_TARGET !== 'preview', 'PWA manifest not served by Vite dev server (set E2E_TARGET=preview)');
 
 		await injectMockWallet(page);
 		const response = await page.goto('/manifest.webmanifest');

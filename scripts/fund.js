@@ -14,6 +14,7 @@
  *
  * Optional:
  *   FUND_AMOUNT                  — amount in ABLE (default: 100)
+ *   FUND_NETWORK                 — chain name surfaced to viem (default: "chain-{chainId}")
  *
  * Localnet defaults (Hardhat Account #0 key is publicly known — safe to use here):
  *   FUND_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
@@ -24,14 +25,14 @@
 import {
 	createPublicClient,
 	createWalletClient,
-	formatEther,
+	formatUnits,
 	http,
 	isAddress,
-	parseEther,
+	parseUnits,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
-// Minimal ABI — only the two ERC-20 functions we need.
+// Minimal ABI — `decimals` is read so the script handles non-18-decimal tokens correctly.
 const ERC20_ABI = [
 	{
 		name: 'transfer',
@@ -49,6 +50,13 @@ const ERC20_ABI = [
 		stateMutability: 'view',
 		inputs: [{ name: 'account', type: 'address' }],
 		outputs: [{ name: '', type: 'uint256' }],
+	},
+	{
+		name: 'decimals',
+		type: 'function',
+		stateMutability: 'view',
+		inputs: [],
+		outputs: [{ name: '', type: 'uint8' }],
 	},
 ];
 
@@ -84,6 +92,8 @@ async function main() {
 
 	const readArgs = { address: tokenAddress, abi: ERC20_ABI };
 
+	const decimals = await publicClient.readContract({ ...readArgs, functionName: 'decimals' });
+
 	const senderBefore = await publicClient.readContract({
 		...readArgs,
 		functionName: 'balanceOf',
@@ -95,13 +105,13 @@ async function main() {
 		args: [recipient],
 	});
 
-	console.log(`\n  Sender balance before:    ${formatEther(senderBefore)} ABLE`);
-	console.log(`  Recipient balance before: ${formatEther(recipientBefore)} ABLE`);
+	console.log(`\n  Sender balance before:    ${formatUnits(senderBefore, decimals)} ABLE`);
+	console.log(`  Recipient balance before: ${formatUnits(recipientBefore, decimals)} ABLE`);
 
-	const amountWei = parseEther(amount);
+	const amountWei = parseUnits(amount, decimals);
 	if (senderBefore < amountWei) {
 		throw new Error(
-			`Insufficient balance. Sender has ${formatEther(senderBefore)} ABLE, needs ${amount}.`,
+			`Insufficient balance. Sender has ${formatUnits(senderBefore, decimals)} ABLE, needs ${amount}.`,
 		);
 	}
 
@@ -113,7 +123,7 @@ async function main() {
 		args: [recipient, amountWei],
 		chain: {
 			id: chainId,
-			name: 'localnet',
+			name: process.env.FUND_NETWORK || `chain-${chainId}`,
 			nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
 			rpcUrls: { default: { http: [rpcUrl] } },
 		},
@@ -128,7 +138,7 @@ async function main() {
 	});
 
 	console.log(`\n✅ Transfer complete.  tx: ${hash}`);
-	console.log(`  Recipient balance after: ${formatEther(recipientAfter)} ABLE`);
+	console.log(`  Recipient balance after: ${formatUnits(recipientAfter, decimals)} ABLE`);
 }
 
 main().catch(e => {
