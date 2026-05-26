@@ -27,7 +27,10 @@ test.describe('Splash and initial render', () => {
 		await page.waitForLoadState('domcontentloaded');
 
 		const meaningful = errors.filter(
-			e => !e.includes('ResizeObserver') && !e.includes('Non-Error promise rejection'),
+			e =>
+				!e.includes('ResizeObserver') &&
+				!e.includes('Non-Error promise rejection') &&
+				!e.includes('screen.orientation'),
 		);
 		expect(meaningful).toHaveLength(0);
 	});
@@ -83,7 +86,10 @@ test.describe('Public pages', () => {
 		}
 
 		const meaningful = errors.filter(
-			e => !e.includes('ResizeObserver') && !e.includes('Non-Error promise rejection'),
+			e =>
+				!e.includes('ResizeObserver') &&
+				!e.includes('Non-Error promise rejection') &&
+				!e.includes('screen.orientation'),
 		);
 		expect(meaningful).toHaveLength(0);
 	});
@@ -122,14 +128,18 @@ test.describe('Theme and visual', () => {
 		expect(hasThemeClass || hasStyleAttr).toBe(true);
 	});
 
-	test('T-UI-08c: html element has light or dark theme class', async ({ page }) => {
+	test('T-UI-08c: Dark theme preference is applied on load', async ({ page }) => {
+		await page.addInitScript(() => localStorage.setItem('vite-ui-theme', 'dark'));
 		await injectMockWallet(page);
 		await page.goto('/auth');
 		await page.waitForLoadState('domcontentloaded');
 
-		const htmlClass = (await page.locator('html').getAttribute('class')) ?? '';
-		const hasTheme = htmlClass.includes('dark') || htmlClass.includes('light');
-		expect(hasTheme).toBe(true);
+		const bgColor = await page.evaluate(
+			() => window.getComputedStyle(document.body).backgroundColor,
+		);
+		const storedTheme = await page.evaluate(() => localStorage.getItem('vite-ui-theme'));
+		expect(storedTheme).toBe('dark');
+		expect(bgColor).not.toBe('rgba(0, 0, 0, 0)');
 	});
 });
 

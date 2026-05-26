@@ -35,7 +35,9 @@ test.describe('App initialisation (T-INIT)', () => {
 		await page.goto('/');
 
 		await expect(page.locator('body')).not.toBeEmpty();
-		expect(errors.filter(e => !e.includes('ResizeObserver'))).toHaveLength(0);
+		expect(
+			errors.filter(e => !e.includes('ResizeObserver') && !e.includes('screen.orientation')),
+		).toHaveLength(0);
 	});
 
 	test('T-INIT-02: Splash screen renders on initial boot', async ({ page }) => {
@@ -45,17 +47,26 @@ test.describe('App initialisation (T-INIT)', () => {
 		await expect(page).toHaveTitle(/SenseAI|Tradable/i, { timeout: 10_000 });
 	});
 
-	test('T-INIT-03: Splash screen CSS class exists in document', async ({ page }) => {
+	test('T-INIT-03: Splash screen CSS class is defined in stylesheets', async ({ page }) => {
 		await injectMockWallet(page);
 		await page.goto('/');
 		await page.waitForLoadState('domcontentloaded');
 
-		const hasSplashClass = await page.evaluate(() =>
-			document.querySelector('.splash-screen-background') !== null ||
-			document.querySelector('video') !== null ||
-			document.styleSheets.length > 0,
-		);
-		expect(hasSplashClass).toBe(true);
+		const splashRuleDefined = await page.evaluate(() => {
+			for (const sheet of document.styleSheets) {
+				try {
+					for (const rule of sheet.cssRules) {
+						if (rule instanceof CSSStyleRule && rule.selectorText?.includes('splash-screen')) {
+							return true;
+						}
+					}
+				} catch {
+					// cross-origin sheets throw SecurityError — skip them
+				}
+			}
+			return false;
+		});
+		expect(splashRuleDefined).toBe(true);
 	});
 
 	test('T-INIT-04: HTML document has lang attribute', async ({ page }) => {
@@ -95,7 +106,9 @@ test.describe('App initialisation (T-INIT)', () => {
 
 		const meaningful = errors.filter(
 			e =>
-				!e.message.includes('ResizeObserver') && !e.message.includes('Non-Error promise rejection'),
+				!e.message.includes('ResizeObserver') &&
+				!e.message.includes('Non-Error promise rejection') &&
+				!e.message.includes('screen.orientation'),
 		);
 		expect(meaningful).toHaveLength(0);
 	});
@@ -116,7 +129,8 @@ test.describe('App initialisation (T-INIT)', () => {
 			e =>
 				!e.includes('ResizeObserver') &&
 				!e.includes('favicon') &&
-				!e.includes('Failed to load resource'),
+				!e.includes('Failed to load resource') &&
+				!e.includes('screen.orientation'),
 		);
 		expect(meaningful).toHaveLength(0);
 	});

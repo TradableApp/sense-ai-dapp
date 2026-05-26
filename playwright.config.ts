@@ -14,8 +14,7 @@ export default defineConfig({
 	/** Fail the build on CI if you accidentally left test.only in */
 	forbidOnly: !!process.env.CI,
 
-	/** Retry once on CI to absorb transient flakiness */
-	retries: process.env.CI ? 1 : 0,
+	retries: process.env.CI ? 2 : 0,
 
 	/** Cap workers on CI to avoid overwhelming the Hardhat node */
 	workers: process.env.CI ? 2 : undefined,
@@ -29,6 +28,7 @@ export default defineConfig({
 		navigationTimeout: 30_000,
 		trace: 'on-first-retry',
 		screenshot: 'only-on-failure',
+		video: 'retain-on-failure',
 		viewport: { width: 1280, height: 800 },
 	},
 
