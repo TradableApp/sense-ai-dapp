@@ -112,12 +112,16 @@ test.describe('Error handling', () => {
 	test('T-UI-11: Invalid route renders 404 page or redirects to /auth', async ({ page }) => {
 		await injectMockWallet(page);
 		await page.goto('/nonexistent-route-that-does-not-exist');
-		await page.waitForLoadState('domcontentloaded');
 
-		// Either the app redirects to /auth OR renders a 404 component
-		const redirected = page.url().includes('/auth');
-		const has404Content = await page.getByText(/404|not found|wrong galaxy/i).first().isVisible();
-		expect(redirected || has404Content).toBe(true);
+		// Wait for either: redirect to /auth completes OR 404 component renders
+		const authRedirect = page.waitForURL(/\/auth/, { timeout: 10_000 }).then(() => 'redirect');
+		const notFoundPage = page
+			.getByText(/404|not found|wrong galaxy/i)
+			.first()
+			.waitFor({ state: 'visible', timeout: 10_000 })
+			.then(() => '404');
+		const result = await Promise.race([authRedirect, notFoundPage]);
+		expect(['redirect', '404']).toContain(result);
 	});
 });
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { cn, isObject, markdownToPlainText, wait } from './utils';
 
@@ -26,15 +26,24 @@ describe('cn', () => {
 });
 
 describe('wait', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
 	it('resolves after the specified delay', async () => {
-		const start = Date.now();
-		await wait(50);
-		const elapsed = Date.now() - start;
-		expect(elapsed).toBeGreaterThanOrEqual(40);
+		const promise = wait(1000);
+		await vi.advanceTimersByTimeAsync(1000);
+		await expect(promise).resolves.toBeUndefined();
 	});
 
 	it('returns a Promise<void>', async () => {
-		const result = await wait(1);
+		const promise = wait(1);
+		await vi.advanceTimersByTimeAsync(1);
+		const result = await promise;
 		expect(result).toBeUndefined();
 	});
 });
