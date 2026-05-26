@@ -270,7 +270,6 @@ test.describe('Consent banner', () => {
 		const context = await browser.newContext();
 		const page = await context.newPage();
 
-		// Clear localStorage once before the first navigation
 		await page.addInitScript(() => {
 			if (!window.__consentTestInitDone) {
 				localStorage.clear();
@@ -284,7 +283,6 @@ test.describe('Consent banner', () => {
 		await expect(acceptButton).toBeVisible({ timeout: 10_000 });
 		await acceptButton.click();
 
-		// Open a fresh page in the same context (localStorage is shared)
 		const page2 = await context.newPage();
 		await injectMockWallet(page2);
 		await page2.goto('/auth');
@@ -353,9 +351,7 @@ test.describe('Performance basics', () => {
 		await page.goto('/auth');
 		await page.waitForLoadState('networkidle');
 
-		const nodeCount = await page.evaluate(
-			() => document.querySelectorAll('*').length,
-		);
+		const nodeCount = await page.evaluate(() => document.querySelectorAll('*').length);
 		expect(nodeCount).toBeLessThan(3000);
 	});
 });
