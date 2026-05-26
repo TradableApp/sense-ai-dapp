@@ -1,8 +1,3 @@
-/**
- * Hardhat JSON-RPC helpers for use in Playwright tests.
- * These run in Node.js (not the browser), calling the Hardhat node directly.
- */
-
 const RPC_URL = 'http://127.0.0.1:8545';
 let reqId = 1;
 
@@ -17,40 +12,33 @@ async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
 	return json.result;
 }
 
-/** Returns the current block number */
 export async function getBlockNumber(): Promise<number> {
 	const hex = (await rpc('eth_blockNumber')) as string;
 	return parseInt(hex, 16);
 }
 
-/** Returns the ETH balance of an address in wei (as BigInt) */
 export async function getBalance(address: string): Promise<bigint> {
 	const hex = (await rpc('eth_getBalance', [address, 'latest'])) as string;
 	return BigInt(hex);
 }
 
-/** Mines a given number of empty blocks instantly */
 export async function mineBlocks(count: number): Promise<void> {
 	await rpc('hardhat_mine', [`0x${count.toString(16)}`]);
 }
 
-/** Increases the EVM clock by `seconds` without mining a block */
 export async function increaseTime(seconds: number): Promise<void> {
 	await rpc('evm_increaseTime', [seconds]);
 	await rpc('evm_mine', []);
 }
 
-/** Takes an EVM snapshot and returns the snapshot ID */
 export async function takeSnapshot(): Promise<string> {
 	return (await rpc('evm_snapshot')) as string;
 }
 
-/** Reverts to a previously taken EVM snapshot */
 export async function revertToSnapshot(snapshotId: string): Promise<void> {
 	await rpc('evm_revert', [snapshotId]);
 }
 
-/** Returns true if the Hardhat node is reachable */
 export async function isHardhatRunning(): Promise<boolean> {
 	try {
 		await getBlockNumber();
@@ -58,4 +46,53 @@ export async function isHardhatRunning(): Promise<boolean> {
 	} catch {
 		return false;
 	}
+}
+
+export async function getCurrentBlock(): Promise<number> {
+	return getBlockNumber();
+}
+
+export async function advanceTime(seconds: number): Promise<void> {
+	return increaseTime(seconds);
+}
+
+// ERC-20 ABI function selectors
+const BALANCE_OF_SELECTOR = '0x70a08231';
+const ALLOWANCE_SELECTOR = '0xdd62ed3e';
+
+function padAddress(address: string): string {
+	return '0x' + address.replace('0x', '').toLowerCase().padStart(64, '0');
+}
+
+async function callContract(contractAddress: string, data: string): Promise<string> {
+	return (await rpc('eth_call', [{ to: contractAddress, data }, 'latest'])) as string;
+}
+
+export async function getABLEBalance(
+	tokenAddress: string,
+	accountAddress: string,
+): Promise<bigint> {
+	const data = BALANCE_OF_SELECTOR + padAddress(accountAddress).slice(2);
+	const result = await callContract(tokenAddress, data);
+	return BigInt(result);
+}
+
+export async function getEscrowBalance(
+	tokenAddress: string,
+	escrowAddress: string,
+): Promise<bigint> {
+	const data = BALANCE_OF_SELECTOR + padAddress(escrowAddress).slice(2);
+	const result = await callContract(tokenAddress, data);
+	return BigInt(result);
+}
+
+export async function getAllowance(
+	tokenAddress: string,
+	ownerAddress: string,
+	spenderAddress: string,
+): Promise<bigint> {
+	const data =
+		ALLOWANCE_SELECTOR + padAddress(ownerAddress).slice(2) + padAddress(spenderAddress).slice(2);
+	const result = await callContract(tokenAddress, data);
+	return BigInt(result);
 }

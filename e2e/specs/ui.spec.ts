@@ -117,15 +117,16 @@ test.describe('Theme and visual', () => {
 		expect(fontFamily.length).toBeGreaterThan(0);
 	});
 
-	test('T-UI-08b: Theme class is applied to html or body element', async ({ page }) => {
+	test('T-UI-08b: Theme class (light or dark) is applied to html element', async ({ page }) => {
 		await injectMockWallet(page);
 		await page.goto('/auth');
 		await page.waitForLoadState('domcontentloaded');
 
-		const htmlClass = await page.locator('html').getAttribute('class');
-		const hasThemeClass = (htmlClass ?? '').includes('dark') || (htmlClass ?? '').includes('light');
-		const hasStyleAttr = (await page.locator('html').getAttribute('style')) !== null;
-		expect(hasThemeClass || hasStyleAttr).toBe(true);
+		const htmlClass = (await page.locator('html').getAttribute('class')) ?? '';
+		expect(
+			htmlClass.includes('dark') || htmlClass.includes('light'),
+			`Expected html class to contain 'dark' or 'light', got: "${htmlClass}"`,
+		).toBe(true);
 	});
 
 	test('T-UI-08c: Dark theme preference is applied on load', async ({ page }) => {
@@ -240,15 +241,25 @@ test.describe('Accessibility basics', () => {
 		}
 	});
 
-	test('T-UI-15: ConnectButton is keyboard-focusable', async ({ page }) => {
+	test('T-UI-15: Interactive elements are keyboard-focusable', async ({ page }) => {
 		await injectMockWallet(page);
 		await page.goto('/auth');
 		await page.waitForLoadState('networkidle');
 
-		await page.keyboard.press('Tab');
-
-		const focusedTag = await page.evaluate(() => document.activeElement?.tagName);
-		expect(focusedTag).toBeTruthy();
+		// Tab through focusable elements — at least one should be a BUTTON or A
+		const focusedTags: string[] = [];
+		for (let i = 0; i < 10; i++) {
+			await page.keyboard.press('Tab');
+			const tag = await page.evaluate(() => document.activeElement?.tagName ?? '');
+			if (tag && tag !== 'BODY') focusedTags.push(tag);
+		}
+		expect(focusedTags.length, 'Expected at least one non-body focusable element').toBeGreaterThan(
+			0,
+		);
+		expect(
+			focusedTags.some(t => t === 'BUTTON' || t === 'A' || t === 'INPUT'),
+			`Expected a BUTTON, A, or INPUT among focused elements, got: ${focusedTags.join(', ')}`,
+		).toBe(true);
 	});
 });
 
