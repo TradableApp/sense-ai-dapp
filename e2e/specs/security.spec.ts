@@ -9,23 +9,17 @@ const SKIP_REASON =
 test.describe('Security — route protection (T-SEC-ROUTE)', () => {
 	const unauthTest = base;
 
-	unauthTest(
-		'T-SEC-01: /chat redirects to /auth without connected wallet',
-		async ({ page }) => {
-			await injectMockWallet(page);
-			await page.goto('/chat');
-			await expect(page).toHaveURL(/\/auth/, { timeout: 10_000 });
-		},
-	);
+	unauthTest('T-SEC-01: /chat redirects to /auth without connected wallet', async ({ page }) => {
+		await injectMockWallet(page);
+		await page.goto('/chat');
+		await expect(page).toHaveURL(/\/auth/, { timeout: 10_000 });
+	});
 
-	unauthTest(
-		'T-SEC-02: /history redirects to /auth without connected wallet',
-		async ({ page }) => {
-			await injectMockWallet(page);
-			await page.goto('/history');
-			await expect(page).toHaveURL(/\/auth/, { timeout: 10_000 });
-		},
-	);
+	unauthTest('T-SEC-02: /history redirects to /auth without connected wallet', async ({ page }) => {
+		await injectMockWallet(page);
+		await page.goto('/history');
+		await expect(page).toHaveURL(/\/auth/, { timeout: 10_000 });
+	});
 
 	unauthTest(
 		'T-SEC-03: / (dashboard) redirects to /auth without connected wallet',
@@ -78,38 +72,42 @@ test.describe('Security — session and storage (T-SEC-SESSION)', () => {
 	});
 
 	test('T-SEC-06: No plaintext prompts in IndexedDB', async ({ chatPage, authenticatedPage }) => {
-		const testPrompt = 'SEC_TEST_PLAINTEXT_MARKER_' + Date.now();
+		const testPrompt = `SEC_TEST_PLAINTEXT_MARKER_${  Date.now()}`;
 		await chatPage.goto();
 		await chatPage.sendPromptAndWaitForResponse(testPrompt);
 
-		// Scan IndexedDB for the plaintext prompt marker
 		const foundPlaintext = await authenticatedPage.evaluate(async (marker: string) => {
-			const dbs = await indexedDB.databases();
-			for (const dbInfo of dbs) {
-				if (!dbInfo.name) continue;
-				try {
-					const db = await new Promise<IDBDatabase>((resolve, reject) => {
-						const req = indexedDB.open(dbInfo.name!);
-						req.onsuccess = () => resolve(req.result);
-						req.onerror = () => reject(req.error);
-					});
-					for (const storeName of db.objectStoreNames) {
-						const tx = db.transaction(storeName, 'readonly');
-						const store = tx.objectStore(storeName);
-						const all = await new Promise<unknown[]>((resolve, reject) => {
-							const req = store.getAll();
-							req.onsuccess = () => resolve(req.result as unknown[]);
+			const idb = window.indexedDB;
+			const dbs = await idb.databases();
+			for (let i = 0; i < dbs.length; i++) {
+				const dbInfo = dbs[i];
+				if (!dbInfo.name) {
+					// skip unnamed databases
+				} else {
+					try {
+						const db = await new Promise<ReturnType<typeof idb.open>['result']>((resolve, reject) => {
+							const req = idb.open(dbInfo.name!);
+							req.onsuccess = () => resolve(req.result);
 							req.onerror = () => reject(req.error);
 						});
-						const stringified = JSON.stringify(all);
-						if (stringified.includes(marker)) {
-							db.close();
-							return true;
+						for (const storeName of db.objectStoreNames) {
+							const tx = db.transaction(storeName, 'readonly');
+							const store = tx.objectStore(storeName);
+							const all: unknown[] = await new Promise((resolve, reject) => {
+								const req = store.getAll();
+								req.onsuccess = () => resolve(req.result as unknown[]);
+								req.onerror = () => reject(req.error);
+							});
+							const stringified = JSON.stringify(all);
+							if (stringified.includes(marker)) {
+								db.close();
+								return true;
+							}
 						}
+						db.close();
+					} catch {
+						// skip inaccessible databases
 					}
-					db.close();
-				} catch {
-					// skip inaccessible databases
 				}
 			}
 			return false;
@@ -135,7 +133,7 @@ test.describe('Security — ECIES encryption (T-SEC-ECIES)', () => {
 		chatPage,
 		authenticatedPage,
 	}) => {
-		const testPrompt = 'ECIES_PLAINTEXT_CHECK_' + Date.now();
+		const testPrompt = `ECIES_PLAINTEXT_CHECK_${  Date.now()}`;
 
 		// Intercept the eth_sendTransaction RPC call to inspect calldata
 		const txDataPromise = new Promise<string>(resolve => {

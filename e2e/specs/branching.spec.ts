@@ -1,5 +1,5 @@
 import { expect, test } from '../fixtures';
-import { takeSnapshot, revertToSnapshot } from '../helpers/hardhat';
+import { revertToSnapshot, takeSnapshot } from '../helpers/hardhat';
 
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle for multi-turn conversations (set E2E_LOCAL_SERVICES=1)';
@@ -23,10 +23,7 @@ test.describe('Branching — conversation branch/split (T-BRANCH)', () => {
 		await expect(chatPage.branchButton).toBeVisible({ timeout: 5_000 });
 	});
 
-	test('T-BRANCH-02: Clicking branch creates a new conversation', async ({
-		chatPage,
-		historyPage,
-	}) => {
+	test('T-BRANCH-02: Clicking branch creates a new conversation', async ({ chatPage }) => {
 		await chatPage.goto();
 		await chatPage.sendPromptAndWaitForResponse('Original conversation for branching');
 

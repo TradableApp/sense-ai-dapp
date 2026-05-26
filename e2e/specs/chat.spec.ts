@@ -1,14 +1,13 @@
 import { expect, test } from '../fixtures';
-import { getABLEBalance, takeSnapshot, revertToSnapshot } from '../helpers/hardhat';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
+import { getABLEBalance, revertToSnapshot, takeSnapshot } from '../helpers/hardhat';
 
 const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
-const SKIP_ENV =
-	!TOKEN_ADDRESS
-		? 'Skipped: VITE_TOKEN_CONTRACT_ADDRESS not set (load .env.localnet or set manually)'
-		: '';
+const SKIP_ENV = !TOKEN_ADDRESS
+	? 'Skipped: VITE_TOKEN_CONTRACT_ADDRESS not set (load .env.localnet or set manually)'
+	: '';
 
 test.describe('Chat — prompt input (T-CHAT)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
@@ -65,10 +64,7 @@ test.describe('Chat — submission and response (T-CHAT-TX)', () => {
 		await expect(chatPage.thinkingIndicator).toBeVisible({ timeout: 15_000 });
 	});
 
-	test('T-CHAT-07: Submitted prompt appears as user message', async ({
-		chatPage,
-		authenticatedPage,
-	}) => {
+	test('T-CHAT-07: Submitted prompt appears as user message', async ({ chatPage }) => {
 		await chatPage.goto();
 		await chatPage.sendPrompt('Test user message visibility');
 		await expect(chatPage.userMessages.last()).toContainText('Test user message visibility', {

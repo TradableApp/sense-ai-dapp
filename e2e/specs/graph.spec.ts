@@ -1,7 +1,7 @@
 import { expect, test } from '../fixtures';
-import { getCurrentBlock, takeSnapshot, revertToSnapshot } from '../helpers/hardhat';
-import { getConversations, waitForIndexing, getPendingPayments } from '../helpers/graph';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
+import { getConversations, getPendingPayments, waitForIndexing } from '../helpers/graph';
+import { getCurrentBlock, revertToSnapshot, takeSnapshot } from '../helpers/hardhat';
 
 const SKIP_REASON = 'Skipped: requires local Graph node + Hardhat node (set E2E_LOCAL_SERVICES=1)';
 

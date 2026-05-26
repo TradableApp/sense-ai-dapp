@@ -1,5 +1,5 @@
 import { expect, test } from '../fixtures';
-import { takeSnapshot, revertToSnapshot } from '../helpers/hardhat';
+import { revertToSnapshot, takeSnapshot } from '../helpers/hardhat';
 
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + Graph node for conversation data (set E2E_LOCAL_SERVICES=1)';

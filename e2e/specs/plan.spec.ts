@@ -1,13 +1,13 @@
 import { expect, test } from '../fixtures';
+import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 import {
 	advanceTime,
 	getABLEBalance,
 	getAllowance,
 	getEscrowBalance,
-	takeSnapshot,
 	revertToSnapshot,
+	takeSnapshot,
 } from '../helpers/hardhat';
-import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 
 const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
 const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';

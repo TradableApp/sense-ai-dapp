@@ -61,7 +61,7 @@ const BALANCE_OF_SELECTOR = '0x70a08231';
 const ALLOWANCE_SELECTOR = '0xdd62ed3e';
 
 function padAddress(address: string): string {
-	return '0x' + address.replace('0x', '').toLowerCase().padStart(64, '0');
+	return `0x${  address.replace('0x', '').toLowerCase().padStart(64, '0')}`;
 }
 
 async function callContract(contractAddress: string, data: string): Promise<string> {

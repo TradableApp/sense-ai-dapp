@@ -56,8 +56,11 @@ test.describe('App initialisation (T-INIT)', () => {
 			for (const sheet of document.styleSheets) {
 				try {
 					for (const rule of sheet.cssRules) {
-						if (rule instanceof CSSStyleRule && rule.selectorText?.includes('splash-screen')) {
-							return true;
+						if ('selectorText' in rule) {
+							const sr = rule as { selectorText?: string };
+							if (sr.selectorText?.includes('splash-screen')) {
+								return true;
+							}
 						}
 					}
 				} catch {

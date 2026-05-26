@@ -1,6 +1,6 @@
 import { expect, test } from '../fixtures';
-import { advanceTime, getABLEBalance, takeSnapshot, revertToSnapshot } from '../helpers/hardhat';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
+import { advanceTime, getABLEBalance, revertToSnapshot, takeSnapshot } from '../helpers/hardhat';
 
 const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
 const REFUND_TIMEOUT_S = 3600; // 1 hour — matches EVMAIAgentEscrow constant
