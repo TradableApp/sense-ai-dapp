@@ -65,4 +65,37 @@ describe('encryptData / decryptData round-trip', () => {
 			'Invalid encrypted data format. Expected "iv.encryptedData".',
 		);
 	});
+
+	it('decryptData throws when using a different key', async () => {
+		const key1 = await deriveKeyFromEntropy(ENTROPY, OWNER);
+		const key2 = await deriveKeyFromEntropy('different-entropy-value', OWNER);
+
+		const encrypted = await encryptData(key1, { secret: 'data' });
+
+		await expect(decryptData(key2, encrypted)).rejects.toThrow();
+	});
+
+	it('decryptData throws on corrupted ciphertext', async () => {
+		const key = await deriveKeyFromEntropy(ENTROPY, OWNER);
+		const encrypted = await encryptData(key, { hello: 'world' });
+
+		// Corrupt the ciphertext portion (after the dot)
+		const [iv, cipher] = encrypted.split('.');
+		const corruptedCipher = `${cipher.slice(0, -4)}XXXX`;
+		const corrupted = `${iv}.${corruptedCipher}`;
+
+		await expect(decryptData(key, corrupted)).rejects.toThrow();
+	});
+
+	it('decryptData throws on corrupted IV', async () => {
+		const key = await deriveKeyFromEntropy(ENTROPY, OWNER);
+		const encrypted = await encryptData(key, { test: true });
+
+		const [, cipher] = encrypted.split('.');
+		// Replace IV with a different valid base64 string
+		const badIv = btoa(String.fromCharCode(...new Uint8Array(12).fill(0xff)));
+		const corrupted = `${badIv}.${cipher}`;
+
+		await expect(decryptData(key, corrupted)).rejects.toThrow();
+	});
 });

@@ -10,6 +10,11 @@ import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 import { AuthPage } from '../pages/AuthPage';
 
 test.describe('Wallet connection (T-AUTH)', () => {
+	test.skip(
+		process.env.E2E_LOCAL_SERVICES !== '1',
+		'Skipped: requires local Hardhat node for wallet mock RPC delegation (set E2E_LOCAL_SERVICES=1)',
+	);
+
 	test('T-AUTH-03: Mock injected wallet surfaces in ThirdWeb connect modal', async ({
 		walletPage,
 	}) => {
@@ -105,6 +110,11 @@ test.describe('Wallet connection (T-AUTH)', () => {
 });
 
 test.describe('Session key derivation security (T-SIGN)', () => {
+	test.skip(
+		process.env.E2E_LOCAL_SERVICES !== '1',
+		'Skipped: requires local Hardhat node for wallet signing (set E2E_LOCAL_SERVICES=1)',
+	);
+
 	test('T-AUTH-05b: Session key is derived after signature (status becomes ready)', async ({
 		walletPage,
 	}) => {

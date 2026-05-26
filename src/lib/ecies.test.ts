@@ -76,4 +76,15 @@ describe('eciesEncrypt', () => {
 		const result = await eciesEncrypt(PUB_1, sessionKey);
 		expect(result.length).toBe(1 + 65 + 12 + 32 + 16);
 	});
+
+	it('throws on invalid public key (too short)', async () => {
+		const shortKey = 'abcd';
+		await expect(eciesEncrypt(shortKey, new Uint8Array([1]))).rejects.toThrow();
+	});
+
+	it('throws on invalid public key (not on curve)', async () => {
+		// Valid length (65 bytes uncompressed) but not a real point on secp256k1
+		const invalidPoint = `04${'ff'.repeat(64)}`;
+		await expect(eciesEncrypt(invalidPoint, new Uint8Array([1]))).rejects.toThrow();
+	});
 });
