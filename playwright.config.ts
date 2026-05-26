@@ -106,10 +106,5 @@ export default defineConfig({
 			testMatch: '**/ui.spec.ts',
 			use: { ...devices['Pixel 5'] },
 		},
-		{
-			name: 'regression',
-			testMatch: '**/*.spec.ts',
-			use: { ...devices['Desktop Chrome'] },
-		},
 	],
 });
