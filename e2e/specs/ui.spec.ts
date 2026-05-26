@@ -25,7 +25,7 @@ test.describe('Splash and initial render', () => {
 		await expect(page).toHaveTitle(/SenseAI|Tradable/i, { timeout: 10_000 });
 	});
 
-	test('T-UI-03: No console errors during auth page load', async ({ page }) => {
+	test('T-UI-03: No unhandled exceptions during auth page load', async ({ page }) => {
 		const errors: string[] = [];
 		page.on('pageerror', err => errors.push(err.message));
 
@@ -66,7 +66,9 @@ test.describe('Theme and visual', () => {
 		await page.goto('/auth');
 		await page.waitForLoadState('domcontentloaded');
 
-		const bgColor = await page.evaluate(() => window.getComputedStyle(document.body).backgroundColor);
+		const bgColor = await page.evaluate(
+			() => window.getComputedStyle(document.body).backgroundColor,
+		);
 		// Should not be transparent or pure default white
 		expect(bgColor).not.toBe('');
 		expect(bgColor).not.toBe('rgba(0, 0, 0, 0)');
@@ -107,17 +109,15 @@ test.describe('Responsive viewport', () => {
 });
 
 test.describe('Error handling', () => {
-	test('T-UI-11: Invalid route shows error page or redirects', async ({ page }) => {
+	test('T-UI-11: Invalid route renders 404 page or redirects to /auth', async ({ page }) => {
 		await injectMockWallet(page);
 		await page.goto('/nonexistent-route-that-does-not-exist');
-
-		// Should redirect to /auth or /error — not crash with a blank page
 		await page.waitForLoadState('domcontentloaded');
-		const url = page.url();
-		const body = await page.locator('body').textContent();
-		expect(body?.length).toBeGreaterThan(0);
-		// Should redirect away from the invalid route or show content
-		expect(url.includes('nonexistent-route') || (body && body.length > 10)).toBeTruthy();
+
+		// Either the app redirects to /auth OR renders a 404 component
+		const redirected = page.url().includes('/auth');
+		const has404Content = await page.getByText(/404|not found|wrong galaxy/i).first().isVisible();
+		expect(redirected || has404Content).toBe(true);
 	});
 });
 

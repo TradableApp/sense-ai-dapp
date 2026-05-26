@@ -11,7 +11,7 @@ import { AuthPage } from '../pages/AuthPage';
 
 test.describe('Wallet connection (T-AUTH)', () => {
 	test.skip(
-		!process.env.E2E_LOCAL_SERVICES,
+		process.env.E2E_LOCAL_SERVICES !== '1',
 		'Skipped: requires local Hardhat node for wallet mock RPC delegation (set E2E_LOCAL_SERVICES=1)',
 	);
 
@@ -111,7 +111,7 @@ test.describe('Wallet connection (T-AUTH)', () => {
 
 test.describe('Session key derivation security (T-SIGN)', () => {
 	test.skip(
-		!process.env.E2E_LOCAL_SERVICES,
+		process.env.E2E_LOCAL_SERVICES !== '1',
 		'Skipped: requires local Hardhat node for wallet signing (set E2E_LOCAL_SERVICES=1)',
 	);
 

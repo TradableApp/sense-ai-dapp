@@ -16,7 +16,7 @@ const test = base;
 
 test.describe('Infrastructure pre-flight', () => {
 	test.skip(
-		!process.env.E2E_LOCAL_SERVICES,
+		process.env.E2E_LOCAL_SERVICES !== '1',
 		'Skipped: requires local Hardhat node (set E2E_LOCAL_SERVICES=1)',
 	);
 
