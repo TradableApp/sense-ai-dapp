@@ -293,9 +293,10 @@ test.describe('Consent banner', () => {
 			const page = await context.newPage();
 
 			await page.addInitScript(() => {
-				if (!window.__consentTestInitDone) {
+				const w = window as unknown as { __consentTestInitDone?: boolean };
+				if (!w.__consentTestInitDone) {
 					localStorage.clear();
-					window.__consentTestInitDone = true;
+					w.__consentTestInitDone = true;
 				}
 			});
 			await injectMockWallet(page);

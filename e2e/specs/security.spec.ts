@@ -10,7 +10,7 @@ test.describe('Security — route protection (T-SEC-ROUTE)', () => {
 	const unauthTest = base;
 
 	unauthTest(
-		'T-SEC-01: Cannot access /chat without wallet — redirects to /auth',
+		'T-SEC-01: /chat redirects to /auth without connected wallet',
 		async ({ page }) => {
 			await injectMockWallet(page);
 			await page.goto('/chat');
@@ -19,7 +19,7 @@ test.describe('Security — route protection (T-SEC-ROUTE)', () => {
 	);
 
 	unauthTest(
-		'T-SEC-02: Cannot access /history without wallet — redirects to /auth',
+		'T-SEC-02: /history redirects to /auth without connected wallet',
 		async ({ page }) => {
 			await injectMockWallet(page);
 			await page.goto('/history');
@@ -28,7 +28,7 @@ test.describe('Security — route protection (T-SEC-ROUTE)', () => {
 	);
 
 	unauthTest(
-		'T-SEC-03: Cannot access / (dashboard) without wallet — redirects to /auth',
+		'T-SEC-03: / (dashboard) redirects to /auth without connected wallet',
 		async ({ page }) => {
 			await injectMockWallet(page);
 			await page.goto('/');
@@ -120,9 +120,7 @@ test.describe('Security — session and storage (T-SEC-SESSION)', () => {
 		);
 	});
 
-	test('T-SEC-07: Different wallet sees different conversation history', async ({
-		chatPage,
-	}) => {
+	test('T-SEC-07: Different wallet sees different conversation history', async ({ chatPage }) => {
 		test.fixme(true, 'Needs second Hardhat account fixture for multi-wallet isolation test');
 
 		await chatPage.goto();
