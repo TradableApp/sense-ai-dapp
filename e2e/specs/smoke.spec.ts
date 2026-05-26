@@ -15,6 +15,11 @@ import { isHardhatRunning } from '../helpers/hardhat';
 const test = base;
 
 test.describe('Infrastructure pre-flight', () => {
+	test.skip(
+		!process.env.E2E_LOCAL_SERVICES,
+		'Skipped: requires local Hardhat node (set E2E_LOCAL_SERVICES=1)',
+	);
+
 	test('T-INIT-SMOKE-01: Hardhat node is reachable at port 8545', async () => {
 		const running = await isHardhatRunning();
 		expect(running, 'Hardhat node must be running. Start with: npx hardhat node').toBe(true);
@@ -83,7 +88,10 @@ test.describe('App initialisation (T-INIT)', () => {
 		// vite-plugin-pwa only emits manifest.webmanifest in production builds (vite build / vite preview),
 		// not when running against `vite dev`. Set E2E_TARGET=preview when the suite runs against a
 		// production preview build so this test runs in CI; defaults to skipping for dev-server runs.
-		test.skip(process.env.E2E_TARGET !== 'preview', 'PWA manifest not served by Vite dev server (set E2E_TARGET=preview)');
+		test.skip(
+			process.env.E2E_TARGET !== 'preview',
+			'PWA manifest not served by Vite dev server (set E2E_TARGET=preview)',
+		);
 
 		await injectMockWallet(page);
 		const response = await page.goto('/manifest.webmanifest');
@@ -101,11 +109,13 @@ test.describe('App initialisation (T-INIT)', () => {
 		await page.goto('/');
 		await page.waitForLoadState('networkidle');
 
-		// Go offline
+		// Go offline — the app detects via a 5s-debounced ping to an external resource
 		await context.setOffline(true);
 
-		// The offline message component should appear
-		await expect(page.getByText(/offline|no connection|internet/i)).toBeVisible({ timeout: 5_000 });
+		// Allow time for the 5s debounce + ping failure cycle
+		await expect(page.getByText(/offline|no connection|internet/i)).toBeVisible({
+			timeout: 15_000,
+		});
 	});
 
 	test('T-INIT-10: Offline overlay disappears when network is restored', async ({
@@ -118,12 +128,14 @@ test.describe('App initialisation (T-INIT)', () => {
 
 		await context.setOffline(true);
 		await expect(page.getByText(/offline|no connection|internet/i)).toBeVisible({
-			timeout: 8_000,
+			timeout: 15_000,
 		});
 
 		await context.setOffline(false);
+		// Trigger the browser 'online' event which starts the re-detection
+		await page.evaluate(() => window.dispatchEvent(new Event('online')));
 		await expect(page.getByText(/offline|no connection|internet/i)).not.toBeVisible({
-			timeout: 8_000,
+			timeout: 15_000,
 		});
 	});
 });
