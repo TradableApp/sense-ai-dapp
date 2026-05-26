@@ -1,8 +1,19 @@
-/**
- * Suite — see docs/E2E_TEST_PLAN.md for the full test list.
- * Tests will be implemented here as the suite is built out.
- */
+import { test } from '../fixtures';
 
-import { test } from '@playwright/test';
+test.describe('Refunds — stuck payments and cancellation (T-REFUND)', () => {
+	test.skip(
+		process.env.E2E_LOCAL_SERVICES !== '1',
+		'Skipped: requires Hardhat node + escrow contract + oracle (set E2E_LOCAL_SERVICES=1)',
+	);
 
-test.describe('suite', () => {});
+	test('T-REFUND-01: Stuck request older than 1hr shows refund button', async ({
+		authenticatedPage,
+	}) => {
+		// Requires: submit prompt → advance EVM time by 1hr → check refund UI
+		test.fixme(true, 'Pending: needs EVM time manipulation helper in test');
+	});
+
+	test('T-REFUND-02: Claiming a refund returns tokens to user', async ({ authenticatedPage }) => {
+		test.fixme(true, 'Pending: needs full oracle + time manipulation flow');
+	});
+});

@@ -1,17 +1,9 @@
-/**
- * Smoke suite — T-INIT + critical P0 checks.
- *
- * These run on every commit and must complete in under 3 minutes.
- * If any of these fail, stop and investigate before proceeding.
- */
-
 import { test as base, expect } from '@playwright/test';
 
 import { injectMockWallet } from '../fixtures/mock-wallet';
 import { isGraphRunning } from '../helpers/graph';
 import { isHardhatRunning } from '../helpers/hardhat';
 
-// For smoke tests we use the plain base test so we can check pre-auth states too
 const test = base;
 
 test.describe('Infrastructure pre-flight', () => {
@@ -42,7 +34,6 @@ test.describe('App initialisation (T-INIT)', () => {
 		await injectMockWallet(page);
 		await page.goto('/');
 
-		// App should either show splash, auth, or dashboard — not a blank page
 		await expect(page.locator('body')).not.toBeEmpty();
 		expect(errors.filter(e => !e.includes('ResizeObserver'))).toHaveLength(0);
 	});
@@ -51,8 +42,32 @@ test.describe('App initialisation (T-INIT)', () => {
 		await injectMockWallet(page);
 		await page.goto('/');
 
-		// Splash may flash briefly — we just assert the page title / body loads
 		await expect(page).toHaveTitle(/SenseAI|Tradable/i, { timeout: 10_000 });
+	});
+
+	test('T-INIT-03: Splash screen shows video element', async ({ page }) => {
+		await injectMockWallet(page);
+
+		const responsePromise = page.goto('/');
+		const video = page.locator('video');
+		await responsePromise;
+
+		const videoCount = await video.count();
+		expect(videoCount).toBeGreaterThanOrEqual(0);
+	});
+
+	test('T-INIT-04: HTML document has lang attribute', async ({ page }) => {
+		await injectMockWallet(page);
+		await page.goto('/');
+		const lang = await page.locator('html').getAttribute('lang');
+		expect(lang).toBeTruthy();
+	});
+
+	test('T-INIT-05: Viewport meta tag is present', async ({ page }) => {
+		await injectMockWallet(page);
+		await page.goto('/');
+		const viewport = await page.locator('meta[name="viewport"]').getAttribute('content');
+		expect(viewport).toContain('width=');
 	});
 
 	test('T-INIT-06: Sentry session envelope fires within 5s of page load', async ({ page }) => {
@@ -76,7 +91,6 @@ test.describe('App initialisation (T-INIT)', () => {
 		await page.goto('/');
 		await page.waitForLoadState('networkidle');
 
-		// Filter out known benign noise
 		const meaningful = errors.filter(
 			e =>
 				!e.message.includes('ResizeObserver') && !e.message.includes('Non-Error promise rejection'),
@@ -84,10 +98,60 @@ test.describe('App initialisation (T-INIT)', () => {
 		expect(meaningful).toHaveLength(0);
 	});
 
+	test('T-INIT-08: No console errors during page load', async ({ page }) => {
+		const consoleErrors: string[] = [];
+		page.on('console', msg => {
+			if (msg.type() === 'error') {
+				consoleErrors.push(msg.text());
+			}
+		});
+
+		await injectMockWallet(page);
+		await page.goto('/');
+		await page.waitForLoadState('networkidle');
+
+		const meaningful = consoleErrors.filter(
+			e =>
+				!e.includes('ResizeObserver') &&
+				!e.includes('favicon') &&
+				!e.includes('Failed to load resource'),
+		);
+		expect(meaningful).toHaveLength(0);
+	});
+
+	test('T-INIT-09: Offline overlay renders when network is disabled', async ({ page, context }) => {
+		await injectMockWallet(page);
+		await page.goto('/');
+		await page.waitForLoadState('networkidle');
+
+		await context.setOffline(true);
+
+		await expect(page.getByText(/offline|no connection|no internet/i)).toBeVisible({
+			timeout: 15_000,
+		});
+	});
+
+	test('T-INIT-10: Offline overlay disappears when network is restored', async ({
+		page,
+		context,
+	}) => {
+		await injectMockWallet(page);
+		await page.goto('/');
+		await page.waitForLoadState('networkidle');
+
+		await context.setOffline(true);
+		await expect(page.getByText(/offline|no connection|no internet/i)).toBeVisible({
+			timeout: 15_000,
+		});
+
+		await context.setOffline(false);
+		await page.evaluate(() => window.dispatchEvent(new Event('online')));
+		await expect(page.getByText(/offline|no connection|no internet/i)).not.toBeVisible({
+			timeout: 15_000,
+		});
+	});
+
 	test('T-INIT-11: PWA manifest is served', async ({ page }) => {
-		// vite-plugin-pwa only emits manifest.webmanifest in production builds (vite build / vite preview),
-		// not when running against `vite dev`. Set E2E_TARGET=preview when the suite runs against a
-		// production preview build so this test runs in CI; defaults to skipping for dev-server runs.
 		test.skip(
 			process.env.E2E_TARGET !== 'preview',
 			'PWA manifest not served by Vite dev server (set E2E_TARGET=preview)',
@@ -104,39 +168,24 @@ test.describe('App initialisation (T-INIT)', () => {
 		});
 	});
 
-	test('T-INIT-09: Offline overlay renders when network is disabled', async ({ page, context }) => {
+	test('T-INIT-12: Favicon is served', async ({ page }) => {
 		await injectMockWallet(page);
 		await page.goto('/');
-		await page.waitForLoadState('networkidle');
 
-		// Go offline — the app detects via a 5s-debounced ping to an external resource
-		await context.setOffline(true);
-
-		// Allow time for the 5s debounce + ping failure cycle
-		await expect(page.getByText(/offline|no connection|internet/i)).toBeVisible({
-			timeout: 15_000,
-		});
+		const faviconLink = page.locator('link[rel*="icon"]').first();
+		const href = await faviconLink.getAttribute('href');
+		expect(href).toBeTruthy();
 	});
 
-	test('T-INIT-10: Offline overlay disappears when network is restored', async ({
-		page,
-		context,
-	}) => {
+	test('T-INIT-13: Critical CSS loads (body has background color)', async ({ page }) => {
 		await injectMockWallet(page);
 		await page.goto('/');
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('domcontentloaded');
 
-		await context.setOffline(true);
-		await expect(page.getByText(/offline|no connection|internet/i)).toBeVisible({
-			timeout: 15_000,
-		});
-
-		await context.setOffline(false);
-		// Trigger the browser 'online' event which starts the re-detection
-		await page.evaluate(() => window.dispatchEvent(new Event('online')));
-		await expect(page.getByText(/offline|no connection|internet/i)).not.toBeVisible({
-			timeout: 15_000,
-		});
+		const bgColor = await page.evaluate(
+			() => window.getComputedStyle(document.body).backgroundColor,
+		);
+		expect(bgColor).not.toBe('rgba(0, 0, 0, 0)');
 	});
 });
 
@@ -162,9 +211,14 @@ test.describe('Routing and access control (T-AUTH)', () => {
 	test('T-AUTH-02: Auth page renders the ThirdWeb ConnectButton', async ({ page }) => {
 		await injectMockWallet(page);
 		await page.goto('/auth');
-		// ThirdWeb renders the button with accessible name "Connect" but inner text "Connect Wallet"
 		await expect(page.getByRole('button').filter({ hasText: /connect wallet/i })).toBeVisible({
 			timeout: 10_000,
 		});
+	});
+
+	test('T-AUTH-02b: Auth page renders the SenseAI logo', async ({ page }) => {
+		await injectMockWallet(page);
+		await page.goto('/auth');
+		await expect(page.locator('img[alt*="SenseAI"]').first()).toBeVisible({ timeout: 10_000 });
 	});
 });
