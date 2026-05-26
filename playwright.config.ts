@@ -64,21 +64,25 @@ export default defineConfig({
 		{
 			name: 'plan',
 			testMatch: '**/plan.spec.ts',
+			fullyParallel: false,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
 			name: 'chat',
 			testMatch: '**/chat.spec.ts',
+			fullyParallel: false,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
 			name: 'history',
 			testMatch: '**/history.spec.ts',
+			fullyParallel: false,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
 			name: 'refunds',
 			testMatch: '**/refunds.spec.ts',
+			fullyParallel: false,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
@@ -89,6 +93,7 @@ export default defineConfig({
 		{
 			name: 'graph',
 			testMatch: '**/graph.spec.ts',
+			fullyParallel: false,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
@@ -99,6 +104,7 @@ export default defineConfig({
 		{
 			name: 'branching',
 			testMatch: '**/branching.spec.ts',
+			fullyParallel: false,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{

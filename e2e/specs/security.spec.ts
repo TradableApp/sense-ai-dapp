@@ -40,9 +40,7 @@ test.describe('Security — route protection (T-SEC-ROUTE)', () => {
 test.describe('Security — session and storage (T-SEC-SESSION)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 
-	test('T-SEC-04: Session key is not persisted to localStorage', async ({
-		authenticatedPage,
-	}) => {
+	test('T-SEC-04: Session key is not persisted to localStorage', async ({ authenticatedPage }) => {
 		const hasSessionKey = await authenticatedPage.evaluate(() => {
 			for (let i = 0; i < localStorage.length; i++) {
 				const key = localStorage.key(i) ?? '';
@@ -70,10 +68,7 @@ test.describe('Security — session and storage (T-SEC-SESSION)', () => {
 		const hasSessionKey = await authenticatedPage.evaluate(() => {
 			for (let i = 0; i < sessionStorage.length; i++) {
 				const key = sessionStorage.key(i) ?? '';
-				if (
-					key.toLowerCase().includes('sessionkey') ||
-					key.toLowerCase().includes('cryptokey')
-				) {
+				if (key.toLowerCase().includes('sessionkey') || key.toLowerCase().includes('cryptokey')) {
 					return true;
 				}
 			}
@@ -82,10 +77,7 @@ test.describe('Security — session and storage (T-SEC-SESSION)', () => {
 		expect(hasSessionKey).toBe(false);
 	});
 
-	test('T-SEC-06: No plaintext prompts in IndexedDB', async ({
-		chatPage,
-		authenticatedPage,
-	}) => {
+	test('T-SEC-06: No plaintext prompts in IndexedDB', async ({ chatPage, authenticatedPage }) => {
 		const testPrompt = 'SEC_TEST_PLAINTEXT_MARKER_' + Date.now();
 		await chatPage.goto();
 		await chatPage.sendPromptAndWaitForResponse(testPrompt);
@@ -130,17 +122,11 @@ test.describe('Security — session and storage (T-SEC-SESSION)', () => {
 
 	test('T-SEC-07: Different wallet sees different conversation history', async ({
 		chatPage,
-		authenticatedPage,
 	}) => {
+		test.fixme(true, 'Needs second Hardhat account fixture for multi-wallet isolation test');
+
 		await chatPage.goto();
 		await chatPage.sendPromptAndWaitForResponse('Wallet A exclusive message');
-
-		const userMsgCountWalletA = await chatPage.userMessages.count();
-		expect(userMsgCountWalletA).toBeGreaterThan(0);
-
-		// TODO: Connect with a different wallet account and verify the history is empty
-		// This requires a second Hardhat account fixture — leaving as a placeholder
-		// for when multi-account fixtures are implemented
 	});
 });
 
@@ -174,13 +160,13 @@ test.describe('Security — ECIES encryption (T-SEC-ECIES)', () => {
 
 		const txData = await Promise.race([
 			txDataPromise,
-			new Promise<string>(resolve => setTimeout(() => resolve(''), 30_000)),
+			new Promise<string>((_, reject) =>
+				setTimeout(() => reject(new Error('No eth_sendTransaction observed within 30s')), 30_000),
+			),
 		]);
 
-		if (txData) {
-			// The calldata should NOT contain the plaintext prompt as a hex-encoded string
-			const hexPrompt = Buffer.from(testPrompt).toString('hex');
-			expect(txData.toLowerCase()).not.toContain(hexPrompt.toLowerCase());
-		}
+		expect(txData.length, 'Transaction calldata should not be empty').toBeGreaterThan(0);
+		const hexPrompt = Buffer.from(testPrompt).toString('hex');
+		expect(txData.toLowerCase()).not.toContain(hexPrompt.toLowerCase());
 	});
 });

@@ -3,8 +3,7 @@ import { getCurrentBlock, takeSnapshot, revertToSnapshot } from '../helpers/hard
 import { getConversations, waitForIndexing, getPendingPayments } from '../helpers/graph';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 
-const SKIP_REASON =
-	'Skipped: requires local Graph node + Hardhat node (set E2E_LOCAL_SERVICES=1)';
+const SKIP_REASON = 'Skipped: requires local Graph node + Hardhat node (set E2E_LOCAL_SERVICES=1)';
 
 test.describe('Graph — subgraph data layer (T-GRAPH)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
@@ -40,8 +39,7 @@ test.describe('Graph — subgraph data layer (T-GRAPH)', () => {
 		await waitForIndexing(block);
 
 		const payments = await getPendingPayments(TEST_ACCOUNT.address);
-		// After a prompt is answered, payments should exist (may be settled)
-		expect(payments).toBeDefined();
+		expect(payments.length).toBeGreaterThan(0);
 	});
 
 	test('T-GRAPH-03: Subgraph data matches UI conversation list', async ({

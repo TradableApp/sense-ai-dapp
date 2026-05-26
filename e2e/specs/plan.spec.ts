@@ -16,6 +16,7 @@ const SKIP_REASON =
 
 test.describe('Spending plan management (T-PLAN)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	let snapshotId: string;
 
@@ -146,6 +147,7 @@ test.describe('Spending plan management (T-PLAN)', () => {
 
 test.describe('Plan modal validation (T-PLAN-EDGE)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	let snapshotId: string;
 

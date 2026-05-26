@@ -57,9 +57,13 @@ test.describe('Branching — conversation branch/split (T-BRANCH)', () => {
 		await chatPage.branchButton.click();
 		await chatPage.sendPromptAndWaitForResponse('Message in branched conversation');
 
-		// Go back to history and open the original conversation
+		// Reopen the original conversation from history and verify message count unchanged
 		await historyPage.goto();
 		await historyPage.assertHasConversations();
+		// The original conversation should be at index 1 (branched is most recent at 0)
+		await historyPage.clickConversation(1);
+		const reopenedMsgCount = await chatPage.userMessages.count();
+		expect(reopenedMsgCount).toBe(originalMsgCount);
 	});
 
 	test('T-BRANCH-05: Branched conversation appears in history', async ({

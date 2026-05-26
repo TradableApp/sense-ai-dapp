@@ -289,31 +289,31 @@ test.describe('Consent banner', () => {
 
 	test('T-UI-18: Consent persists after page reload', async ({ browser }) => {
 		const context = await browser.newContext();
-		const page = await context.newPage();
+		try {
+			const page = await context.newPage();
 
-		await page.addInitScript(() => {
-			if (!window.__consentTestInitDone) {
-				localStorage.clear();
-				window.__consentTestInitDone = true;
-			}
-		});
-		await injectMockWallet(page);
-		await page.goto('/auth');
+			await page.addInitScript(() => {
+				if (!window.__consentTestInitDone) {
+					localStorage.clear();
+					window.__consentTestInitDone = true;
+				}
+			});
+			await injectMockWallet(page);
+			await page.goto('/auth');
 
-		const acceptButton = page.getByRole('button', { name: /accept all/i });
-		await expect(acceptButton).toBeVisible({ timeout: 10_000 });
-		await acceptButton.click();
+			const acceptButton = page.getByRole('button', { name: /accept all/i });
+			await expect(acceptButton).toBeVisible({ timeout: 10_000 });
+			await acceptButton.click();
 
-		const page2 = await context.newPage();
-		await injectMockWallet(page2);
-		await page2.goto('/auth');
-		await page2.waitForLoadState('domcontentloaded');
+			const page2 = await context.newPage();
+			await injectMockWallet(page2);
+			await page2.goto('/auth');
+			await page2.waitForLoadState('domcontentloaded');
 
-		await expect(page2.getByText('Cookie Settings')).not.toBeVisible({ timeout: 5_000 });
-
-		await page2.close();
-		await page.close();
-		await context.close();
+			await expect(page2.getByText('Cookie Settings')).not.toBeVisible({ timeout: 5_000 });
+		} finally {
+			await context.close();
+		}
 	});
 });
 

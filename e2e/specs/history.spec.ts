@@ -77,9 +77,8 @@ test.describe('History — with conversations (T-HIST-DATA)', () => {
 		await historyPage.assertHasConversations();
 		await historyPage.searchFor('alpha');
 
-		// Should show filtered results
 		const count = await historyPage.conversationItems.count();
-		expect(count).toBeGreaterThanOrEqual(0);
+		expect(count).toBeGreaterThanOrEqual(1);
 	});
 
 	test('T-HIST-07: Search with no results shows empty state', async ({ historyPage }) => {

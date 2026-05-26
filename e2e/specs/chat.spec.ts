@@ -5,6 +5,10 @@ import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
+const SKIP_ENV =
+	!TOKEN_ADDRESS
+		? 'Skipped: VITE_TOKEN_CONTRACT_ADDRESS not set (load .env.localnet or set manually)'
+		: '';
 
 test.describe('Chat — prompt input (T-CHAT)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
@@ -91,6 +95,7 @@ test.describe('Chat — submission and response (T-CHAT-TX)', () => {
 	});
 
 	test('T-CHAT-11: Escrow balance decreases after query', async ({ chatPage }) => {
+		test.skip(!TOKEN_ADDRESS, SKIP_ENV);
 		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
 
 		await chatPage.goto();

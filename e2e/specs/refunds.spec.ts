@@ -9,6 +9,7 @@ const SKIP_REASON =
 
 test.describe('Refunds — cancellation flow (T-REFUND)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!TOKEN_ADDRESS, 'Skipped: VITE_TOKEN_CONTRACT_ADDRESS not set');
 
 	let snapshotId: string;
 
