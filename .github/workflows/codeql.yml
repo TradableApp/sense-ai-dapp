@@ -1,0 +1,32 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 0 * * 0'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: github/codeql-action/init@9d674b486eb13e31685b8ac78c6e721771141505 # v3.26.11
+        with:
+          languages: 'javascript-typescript'
+
+      - uses: github/codeql-action/autobuild@9d674b486eb13e31685b8ac78c6e721771141505 # v3.26.11
+
+      - uses: github/codeql-action/analyze@9d674b486eb13e31685b8ac78c6e721771141505 # v3.26.11
