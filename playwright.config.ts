@@ -6,6 +6,13 @@ export default defineConfig({
 	testDir: './e2e/specs',
 
 	/**
+	 * Global setup runs before any tests. When E2E_LOCAL_SERVICES=1 is set,
+	 * it verifies that Hardhat, Graph node, and the subgraph endpoint are reachable.
+	 * If any are down, it fails fast with a clear error instead of confusing timeouts.
+	 */
+	globalSetup: require.resolve('./e2e/global-setup.ts'),
+
+	/**
 	 * Run tests in parallel within a file. Each test gets its own browser context
 	 * so there is no shared state between tests.
 	 */
