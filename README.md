@@ -24,8 +24,8 @@ To get a local copy of just the frontend UI running (connected to public testnet
 
 ### Prerequisites
 
-- Node.js (v18 or later)
-- npm
+- Bun (1.3.14+)
+- Node.js (v18 or later, for toolchain binaries)
 
 ### Installation
 
@@ -39,7 +39,7 @@ To get a local copy of just the frontend UI running (connected to public testnet
 2.  **Install Dependencies:**
 
     ```sh
-    npm install
+    bun install
     ```
 
 3.  **Environment Setup:**
@@ -57,9 +57,9 @@ To get a local copy of just the frontend UI running (connected to public testnet
 
 4.  **Run Development Server:**
     ```sh
-    npm run dev:testnet
+    bun run dev:testnet
     ```
-    _Note: We use `dev:testnet` here so you can interact with the app immediately using Base Sepolia. The standard `npm run dev` command requires a local blockchain node (see below)._
+    _Note: We use `dev:testnet` here so you can interact with the app immediately using Base Sepolia. The standard `bun run dev` command requires a local blockchain node (see below)._
 
 ---
 
@@ -83,7 +83,7 @@ This guide explains how to set up the complete local environment. This is requir
 1.  Navigate to `tokenized-ai-agent`.
 2.  Start the Hardhat node:
     ```sh
-    npx hardhat node
+    bunx hardhat node
     ```
     This will start a local blockchain at `http://127.0.0.1:8545` and provide a list of 20 pre-funded test accounts. **Leave this terminal window running.**
 
@@ -105,14 +105,14 @@ For security, **never** import publicly-known private keys (like the ones from H
 **Deploy Token:**
 
 1.  Open a new terminal in `able-contracts`.
-2.  Run: `npm run deploy:localnet`
+2.  Run: `bun run deploy:localnet`
 3.  **Copy** the deployed `AbleToken` address.
 
 **Deploy Agent:**
 
 1.  Navigate to `tokenized-ai-agent`.
 2.  Open `.env.base-localnet` (or create it). Set `TOKEN_CONTRACT_ADDRESS` to the address you just copied.
-3.  Run: `npm run deploy:base-localnet`
+3.  Run: `bun run deploy:base-localnet`
 4.  **Copy** the `EVMAIAgent` and `EVMAIAgentEscrow` addresses from the output.
 
 ### 5. Configure the dApp
@@ -121,7 +121,7 @@ For security, **never** import publicly-known private keys (like the ones from H
 2.  **Sync ABIs:**
     Run the sync script to copy the latest compiled contract artifacts from the sibling directories:
     ```sh
-    npm run sync-contracts
+    bun run sync-contracts
     ```
 3.  **Update Addresses:**
     Open `src/config/contracts.js`. Update the `[LOCAL_CHAIN_ID]` section with the new addresses you copied in Step 4.
@@ -129,7 +129,7 @@ For security, **never** import publicly-known private keys (like the ones from H
 4.  **Run Localnet Mode:**
     Start the app pointing to your local hardhat node:
     ```sh
-    npm run dev:localnet
+    bun run dev:localnet
     ```
 
 ---
@@ -138,19 +138,19 @@ For security, **never** import publicly-known private keys (like the ones from H
 
 ### Development
 
-- `npm run dev`: Alias for `dev:localnet`.
-- `npm run dev:localnet`: Starts Vite in localnet mode (Chain ID 31337).
-- `npm run dev:testnet`: Starts Vite in testnet mode (Base Sepolia).
+- `bun run dev`: Alias for `dev:localnet`.
+- `bun run dev:localnet`: Starts Vite in localnet mode (Chain ID 31337).
+- `bun run dev:testnet`: Starts Vite in testnet mode (Base Sepolia).
 
 ### Production Build
 
-- `npm run build`: Alias for `build:mainnet`.
-- `npm run build:localnet`: Builds for local environment.
-- `npm run build:testnet`: Builds for Base Sepolia.
-- `npm run build:mainnet`: Builds for Base Mainnet.
+- `bun run build`: Alias for `build:mainnet`.
+- `bun run build:localnet`: Builds for local environment.
+- `bun run build:testnet`: Builds for Base Sepolia.
+- `bun run build:mainnet`: Builds for Base Mainnet.
 
 ### Utilities
 
-- `npm run lint`: Runs ESLint.
-- `npm run format`: Formats code with Prettier.
-- `npm run sync-contracts`: Copies the latest `EVMAIAgent.json`, `EVMAIAgentEscrow.json`, and `AbleToken.json` artifacts from the sibling repositories into `src/lib/abi/`.
+- `bun run lint`: Runs ESLint.
+- `bun run format`: Formats code with Prettier.
+- `bun run sync-contracts`: Copies the latest `EVMAIAgent.json`, `EVMAIAgentEscrow.json`, and `AbleToken.json` artifacts from the sibling repositories into `src/lib/abi/`.

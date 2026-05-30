@@ -10,15 +10,15 @@ Frontend dApp for SenseAI — the AI Agent providing sentiment and fundamental o
 
 | Command | Purpose |
 |---------|---------|
-| `npm run dev` | Start dev server on port 3002 (localnet mode) |
-| `npm run dev:testnet` | Dev server against Base Sepolia testnet |
-| `npm run build` | Production build (mainnet) |
-| `npm run build:testnet` | Build against testnet |
-| `npm run lint` / `npm run lint:fix` | ESLint |
-| `npm run format` | Prettier |
-| `npm run sync-contracts` | Copy ABI files from `able-contracts` and `tokenized-ai-agent` repos |
+| `bun run dev` | Start dev server on port 3002 (localnet mode) |
+| `bun run dev:testnet` | Dev server against Base Sepolia testnet |
+| `bun run build` | Production build (mainnet) |
+| `bun run build:testnet` | Build against testnet |
+| `bun run lint` / `bun run lint:fix` | ESLint |
+| `bun run format` | Prettier |
+| `bun run sync-contracts` | Copy ABI files from `able-contracts` and `tokenized-ai-agent` repos |
 
-No test suite configured — validate via `npm run build` and browser testing.
+No test suite configured — validate via `bun run build` and browser testing.
 
 ## Architecture
 
@@ -116,11 +116,11 @@ ABIs in `src/lib/abi/` are not hand-maintained — they are synced from compiled
 
 ```bash
 # 1. Compile contracts in their repos (required first)
-cd ../able-contracts && npm run compile
-cd ../tokenized-ai-agent && npm run compile
+cd ../able-contracts && bun run compile
+cd ../tokenized-ai-agent && bun run compile
 
 # 2. Sync ABIs into this repo
-npm run sync-contracts
+bun run sync-contracts
 ```
 
 Run this whenever contracts change. Stale ABIs produce silent parse failures when reading on-chain events.
@@ -157,7 +157,7 @@ The following changes are planned for `sense-ai-dapp` after Phase 2 is merged:
 
 | Change | Detail |
 |--------|--------|
-| **Bun** | Replace `npm` with Bun. Update lockfile and scripts. |
+| **Bun** | ✅ Done — `npm` replaced with Bun (`bun.lock` committed, CI runs on Bun 1.3.14). |
 | **viem** | Add as explicit direct dependency (ThirdWeb v5 exposes viem's ABI utils; explicit dep makes tree-shaking clear and allows direct use). |
 | **Remove ethers.js** | Remove `ethers` from `package.json` and all import sites. Replace with ThirdWeb v5 / viem equivalents. |
 | **TypeScript migration** | Migrate from `.jsx`/`.js` to `.tsx`/`.ts`. Add `tsconfig.json`. |
