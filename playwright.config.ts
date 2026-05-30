@@ -1,5 +1,9 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
+
 import { defineConfig, devices } from '@playwright/test';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE_URL = 'http://localhost:3002';
 
 export default defineConfig({
@@ -10,7 +14,7 @@ export default defineConfig({
 	 * it verifies that Hardhat, Graph node, and the subgraph endpoint are reachable.
 	 * If any are down, it fails fast with a clear error instead of confusing timeouts.
 	 */
-	globalSetup: require.resolve('./e2e/global-setup.ts'),
+	globalSetup: path.resolve(__dirname, './e2e/global-setup.ts'),
 
 	/**
 	 * Run tests in parallel within a file. Each test gets its own browser context
