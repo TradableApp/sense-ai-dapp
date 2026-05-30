@@ -14,7 +14,7 @@ test.describe('Infrastructure pre-flight', () => {
 
 	test('T-INIT-SMOKE-01: Hardhat node is reachable at port 8545', async () => {
 		const running = await isHardhatRunning();
-		expect(running, 'Hardhat node must be running. Start with: npx hardhat node').toBe(true);
+		expect(running, 'Hardhat node must be running. Start with: bunx hardhat node').toBe(true);
 	});
 
 	test('T-INIT-SMOKE-02: Local Graph node is reachable at port 8000', async () => {
