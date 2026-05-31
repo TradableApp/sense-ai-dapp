@@ -17,6 +17,26 @@ const SUBGRAPH_URL =
 const HEALTH_CHECK_TIMEOUT_MS = 5_000;
 
 /**
+ * Bounds a health check so a hung connection (e.g. a TCP connect that neither
+ * resolves nor refuses) can't stall the whole suite — a probe that doesn't
+ * settle within HEALTH_CHECK_TIMEOUT_MS is treated as unhealthy. This keeps the
+ * "fail fast" guarantee even when the underlying fetch has no timeout of its own.
+ */
+async function withTimeout(check: () => Promise<boolean>): Promise<boolean> {
+	let timeoutId: ReturnType<typeof setTimeout> | undefined;
+	const timeout = new Promise<boolean>(resolve => {
+		timeoutId = setTimeout(() => resolve(false), HEALTH_CHECK_TIMEOUT_MS);
+	});
+	try {
+		return await Promise.race([check(), timeout]);
+	} catch {
+		return false;
+	} finally {
+		if (timeoutId) clearTimeout(timeoutId);
+	}
+}
+
+/**
  * Checks if the subgraph endpoint is reachable by making a simple GraphQL query.
  */
 async function isSubgraphReachable(): Promise<boolean> {
@@ -77,7 +97,9 @@ export async function globalSetup(): Promise<void> {
 		},
 	];
 
-	const results = await Promise.all(checks.map(async c => ({ ...c, healthy: await c.check() })));
+	const results = await Promise.all(
+		checks.map(async c => ({ ...c, healthy: await withTimeout(c.check) })),
+	);
 
 	const unhealthyServices = results.filter(r => !r.healthy);
 
