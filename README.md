@@ -1,5 +1,6 @@
 # SenseAI dApp
 
+[![CI](https://img.shields.io/github/actions/workflow/status/TradableApp/sense-ai-dapp/ci.yml?branch=main&label=CI)](https://github.com/TradableApp/sense-ai-dapp/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/TradableApp/sense-ai-dapp.svg)](./LICENSE)
 
 This repository contains the source code for the SenseAI dApp, the primary frontend interface for the SenseAI tokenized AI agent. It is designed to be accessible both as a standalone web application and as a Telegram Mini App.
