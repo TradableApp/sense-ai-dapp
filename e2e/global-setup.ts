@@ -9,7 +9,7 @@
  * the local service stack (start-e2e.sh).
  */
 
-import { GRAPH_URL, isGraphRunning } from './helpers/graph';
+import { GRAPH_NODE_ORIGIN, GRAPH_URL, isGraphRunning } from './helpers/graph';
 import { isHardhatRunning } from './helpers/hardhat';
 
 // Reuse GRAPH_URL from the graph helpers so the health check can never pass/fail
@@ -80,7 +80,7 @@ export default async function globalSetup(): Promise<void> {
 	// start commands would be redundant (and easy to let go stale).
 	const checks = [
 		{ name: 'Hardhat Node (http://127.0.0.1:8545)', check: isHardhatRunning },
-		{ name: 'Graph Node (http://localhost:8000)', check: isGraphRunning },
+		{ name: `Graph Node (${GRAPH_NODE_ORIGIN})`, check: isGraphRunning },
 		{ name: `Subgraph Endpoint (${GRAPH_URL})`, check: isSubgraphReachable },
 	];
 
@@ -104,8 +104,8 @@ export default async function globalSetup(): Promise<void> {
 			`  bash start-e2e.sh\n\n` +
 			`This starts:\n` +
 			`  • Hardhat local node (http://127.0.0.1:8545)\n` +
-			`  • The Graph node (http://localhost:8000)\n` +
-			`  • Subgraph indexing for sense-ai\n\n` +
+			`  • The Graph node (${GRAPH_NODE_ORIGIN})\n` +
+			`  • Subgraph indexing at ${GRAPH_URL}\n\n` +
 			`Then retry your tests:\n\n` +
 			`  E2E_LOCAL_SERVICES=1 npm run test:e2e\n`,
 	);

@@ -10,7 +10,24 @@ export const GRAPH_URL =
 // Origin of the Graph node HTTP server (e.g. http://localhost:8000) — lets us
 // probe that the node process itself is up, independently of whether the
 // subgraph is deployed/indexed (which is what a `_meta` query verifies).
-const GRAPH_NODE_ORIGIN = new URL(GRAPH_URL).origin;
+// Parsed once at load; a malformed VITE_THE_GRAPH_API_URL fails loudly with an
+// actionable message instead of an opaque `Invalid URL` at import time.
+export const GRAPH_NODE_ORIGIN = ((): string => {
+	try {
+		const url = new URL(GRAPH_URL);
+		// A missing scheme (e.g. "localhost:8000") parses without throwing but
+		// yields a useless origin of "null", so check the protocol explicitly.
+		if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+			throw new Error('protocol must be http(s)');
+		}
+		return url.origin;
+	} catch {
+		throw new Error(
+			`Invalid Graph endpoint "${GRAPH_URL}". Set VITE_THE_GRAPH_API_URL to an absolute ` +
+				`http(s) URL including the scheme, e.g. http://localhost:8000/subgraphs/name/sense-ai.`,
+		);
+	}
+})();
 const GRAPH_PROBE_TIMEOUT_MS = 5_000;
 
 async function graphQuery<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
