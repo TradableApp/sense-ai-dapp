@@ -9,11 +9,11 @@
  * the local service stack (start-e2e.sh).
  */
 
-import { isGraphRunning } from './helpers/graph';
+import { GRAPH_URL, isGraphRunning } from './helpers/graph';
 import { isHardhatRunning } from './helpers/hardhat';
 
-const SUBGRAPH_URL =
-	process.env.VITE_THE_GRAPH_API_URL || 'http://localhost:8000/subgraphs/name/sense-ai';
+// Reuse GRAPH_URL from the graph helpers so the health check can never pass/fail
+// against a different endpoint than the tests actually query.
 const HEALTH_CHECK_TIMEOUT_MS = 5_000;
 
 /**
@@ -40,11 +40,10 @@ async function withTimeout(check: () => Promise<boolean>): Promise<boolean> {
  * Checks if the subgraph endpoint is reachable by making a simple GraphQL query.
  */
 async function isSubgraphReachable(): Promise<boolean> {
+	const controller = new AbortController();
+	const timeoutId = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
 	try {
-		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
-
-		const response = await fetch(SUBGRAPH_URL, {
+		const response = await fetch(GRAPH_URL, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -53,14 +52,14 @@ async function isSubgraphReachable(): Promise<boolean> {
 			signal: controller.signal,
 		});
 
-		clearTimeout(timeoutId);
-
 		if (!response.ok) return false;
 
 		const data = (await response.json()) as { data?: unknown; errors?: Array<{ message: string }> };
 		return !data.errors || data.errors.length === 0;
 	} catch {
 		return false;
+	} finally {
+		clearTimeout(timeoutId);
 	}
 }
 
@@ -68,7 +67,7 @@ async function isSubgraphReachable(): Promise<boolean> {
  * Global setup function that runs once before all tests.
  * Only executes when E2E_LOCAL_SERVICES=1.
  */
-export async function globalSetup(): Promise<void> {
+export default async function globalSetup(): Promise<void> {
 	// Skip setup if not running local services
 	if (process.env.E2E_LOCAL_SERVICES !== '1') {
 		return;
@@ -92,7 +91,7 @@ export async function globalSetup(): Promise<void> {
 		{
 			name: 'Subgraph Endpoint',
 			check: isSubgraphReachable,
-			startCommand: `GraphQL endpoint at ${SUBGRAPH_URL}`,
+			startCommand: `GraphQL endpoint at ${GRAPH_URL}`,
 			docs: 'See sense-ai-e2e repo: start-e2e.sh',
 		},
 	];

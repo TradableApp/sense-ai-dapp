@@ -2,7 +2,10 @@
  * Local Graph node helpers for use in Playwright tests.
  */
 
-const GRAPH_URL = 'http://localhost:8000/subgraphs/name/sense-ai';
+// Single source of truth for the subgraph endpoint, env-aware so the health
+// check (global-setup) and the test queries always target the same URL.
+export const GRAPH_URL =
+	process.env.VITE_THE_GRAPH_API_URL || 'http://localhost:8000/subgraphs/name/sense-ai';
 
 async function graphQuery<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
 	const res = await fetch(GRAPH_URL, {
