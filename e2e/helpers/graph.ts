@@ -2,7 +2,33 @@
  * Local Graph node helpers for use in Playwright tests.
  */
 
-const GRAPH_URL = 'http://localhost:8000/subgraphs/name/sense-ai';
+// Single source of truth for the subgraph endpoint, env-aware so the health
+// check (global-setup) and the test queries always target the same URL.
+export const GRAPH_URL =
+	process.env.VITE_THE_GRAPH_API_URL || 'http://localhost:8000/subgraphs/name/sense-ai';
+
+// Origin of the Graph node HTTP server (e.g. http://localhost:8000) — lets us
+// probe that the node process itself is up, independently of whether the
+// subgraph is deployed/indexed (which is what a `_meta` query verifies).
+// Parsed once at load; a malformed VITE_THE_GRAPH_API_URL fails loudly with an
+// actionable message instead of an opaque `Invalid URL` at import time.
+export const GRAPH_NODE_ORIGIN = ((): string => {
+	try {
+		const url = new URL(GRAPH_URL);
+		// A missing scheme (e.g. "localhost:8000") parses without throwing but
+		// yields a useless origin of "null", so check the protocol explicitly.
+		if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+			throw new Error('protocol must be http(s)');
+		}
+		return url.origin;
+	} catch {
+		throw new Error(
+			`Invalid Graph endpoint "${GRAPH_URL}". Set VITE_THE_GRAPH_API_URL to an absolute ` +
+				`http(s) URL including the scheme, e.g. http://localhost:8000/subgraphs/name/sense-ai.`,
+		);
+	}
+})();
+const GRAPH_PROBE_TIMEOUT_MS = 5_000;
 
 async function graphQuery<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
 	const res = await fetch(GRAPH_URL, {
@@ -16,10 +42,15 @@ async function graphQuery<T>(query: string, variables: Record<string, unknown> =
 	return json.data;
 }
 
-/** Returns true if the local Graph node is reachable */
+/**
+ * Returns true if the local Graph node HTTP server is reachable at its origin.
+ * Deliberately independent of subgraph deployment: any HTTP response (even 4xx)
+ * proves the server answered; only a connection/timeout error means it's down.
+ * Subgraph deployment/indexing is checked separately via a `_meta` query.
+ */
 export async function isGraphRunning(): Promise<boolean> {
 	try {
-		await graphQuery('{ _meta { block { number } } }');
+		await fetch(GRAPH_NODE_ORIGIN, { signal: AbortSignal.timeout(GRAPH_PROBE_TIMEOUT_MS) });
 		return true;
 	} catch {
 		return false;

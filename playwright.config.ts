@@ -1,9 +1,20 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
+
 import { defineConfig, devices } from '@playwright/test';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE_URL = 'http://localhost:3002';
 
 export default defineConfig({
 	testDir: './e2e/specs',
+
+	/**
+	 * Global setup runs before any tests. When E2E_LOCAL_SERVICES=1 is set,
+	 * it verifies that Hardhat, Graph node, and the subgraph endpoint are reachable.
+	 * If any are down, it fails fast with a clear error instead of confusing timeouts.
+	 */
+	globalSetup: path.resolve(__dirname, './e2e/global-setup.ts'),
 
 	/**
 	 * Run tests in parallel within a file. Each test gets its own browser context
