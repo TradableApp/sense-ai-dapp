@@ -9,11 +9,11 @@
  * the local service stack (start-e2e.sh).
  */
 
+// GRAPH_URL / GRAPH_NODE_ORIGIN are imported (not re-derived) so the health
+// check can never pass/fail against a different endpoint than the tests query.
 import { GRAPH_NODE_ORIGIN, GRAPH_URL, isGraphRunning } from './helpers/graph';
 import { isHardhatRunning } from './helpers/hardhat';
 
-// Reuse GRAPH_URL from the graph helpers so the health check can never pass/fail
-// against a different endpoint than the tests actually query.
 const HEALTH_CHECK_TIMEOUT_MS = 5_000;
 
 /**
@@ -107,6 +107,6 @@ export default async function globalSetup(): Promise<void> {
 			`  • The Graph node (${GRAPH_NODE_ORIGIN})\n` +
 			`  • Subgraph indexing at ${GRAPH_URL}\n\n` +
 			`Then retry your tests:\n\n` +
-			`  E2E_LOCAL_SERVICES=1 npm run test:e2e\n`,
+			`  E2E_LOCAL_SERVICES=1 bun run test:e2e\n`,
 	);
 }
