@@ -7,6 +7,12 @@
 export const GRAPH_URL =
 	process.env.VITE_THE_GRAPH_API_URL || 'http://localhost:8000/subgraphs/name/sense-ai';
 
+// Origin of the Graph node HTTP server (e.g. http://localhost:8000) — lets us
+// probe that the node process itself is up, independently of whether the
+// subgraph is deployed/indexed (which is what a `_meta` query verifies).
+const GRAPH_NODE_ORIGIN = new URL(GRAPH_URL).origin;
+const GRAPH_PROBE_TIMEOUT_MS = 5_000;
+
 async function graphQuery<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
 	const res = await fetch(GRAPH_URL, {
 		method: 'POST',
@@ -19,10 +25,15 @@ async function graphQuery<T>(query: string, variables: Record<string, unknown> =
 	return json.data;
 }
 
-/** Returns true if the local Graph node is reachable */
+/**
+ * Returns true if the local Graph node HTTP server is reachable at its origin.
+ * Deliberately independent of subgraph deployment: any HTTP response (even 4xx)
+ * proves the server answered; only a connection/timeout error means it's down.
+ * Subgraph deployment/indexing is checked separately via a `_meta` query.
+ */
 export async function isGraphRunning(): Promise<boolean> {
 	try {
-		await graphQuery('{ _meta { block { number } } }');
+		await fetch(GRAPH_NODE_ORIGIN, { signal: AbortSignal.timeout(GRAPH_PROBE_TIMEOUT_MS) });
 		return true;
 	} catch {
 		return false;

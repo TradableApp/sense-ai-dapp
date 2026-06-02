@@ -75,25 +75,13 @@ export default async function globalSetup(): Promise<void> {
 
 	console.log('\n📋 Checking local service dependencies for E2E_LOCAL_SERVICES=1...\n');
 
+	// Endpoint context lives in `name` because that's what the error prints; the
+	// single start-e2e.sh remediation below covers all three, so per-service
+	// start commands would be redundant (and easy to let go stale).
 	const checks = [
-		{
-			name: 'Hardhat Node',
-			check: isHardhatRunning,
-			startCommand: 'npm run dev',
-			docs: 'See sense-ai-e2e repo: start-e2e.sh',
-		},
-		{
-			name: 'Graph Node',
-			check: isGraphRunning,
-			startCommand: 'Graph indexing service (see docker-compose.yml)',
-			docs: 'See sense-ai-e2e repo: start-e2e.sh',
-		},
-		{
-			name: 'Subgraph Endpoint',
-			check: isSubgraphReachable,
-			startCommand: `GraphQL endpoint at ${GRAPH_URL}`,
-			docs: 'See sense-ai-e2e repo: start-e2e.sh',
-		},
+		{ name: 'Hardhat Node (http://127.0.0.1:8545)', check: isHardhatRunning },
+		{ name: 'Graph Node (http://localhost:8000)', check: isGraphRunning },
+		{ name: `Subgraph Endpoint (${GRAPH_URL})`, check: isSubgraphReachable },
 	];
 
 	const results = await Promise.all(
