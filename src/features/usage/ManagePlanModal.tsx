@@ -36,6 +36,7 @@ import Input from '@/components/ui/input';
 import Label from '@/components/ui/label';
 import { CONTRACTS, LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
 import { client } from '@/config/thirdweb';
+import useFaucetConfig from '@/hooks/useFaucetConfig';
 import useTokenBalance, { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
 import useTokenPrice from '@/hooks/useTokenPrice';
 import requestTestTokens, { FAUCET_AMOUNT_ABLE } from '@/lib/faucetService';
@@ -102,6 +103,11 @@ export default function ManagePlanModal({
 	const chainId = activeWallet?.getChain()?.id;
 	const isLocalnet = chainId === LOCAL_CHAIN_ID;
 	const isTestnet = chainId === TESTNET_CHAIN_ID;
+
+	// Live faucet amount (adjustable via Firestore general/sense_ai); falls back to
+	// the default until the config loads.
+	const { data: faucetConfig } = useFaucetConfig();
+	const faucetAmount = faucetConfig?.amount ?? FAUCET_AMOUNT_ABLE;
 
 	// Use the confirmation-aware hook
 	const { mutateAsync: sendAndConfirm } = useSendAndConfirmTransaction();
@@ -334,7 +340,8 @@ export default function ManagePlanModal({
 		setIsRequestingTokens(true);
 
 		const address = activeWallet?.getAccount()?.address ?? '';
-		const { success, txHash } = await requestTestTokens(address);
+		const { success, txHash, amount } = await requestTestTokens(address);
+		const dispensed = amount ?? faucetAmount;
 
 		if (success && txHash) {
 			// 1. Show initial Toast. On testnet, offer an explorer link; localnet
@@ -346,10 +353,9 @@ export default function ManagePlanModal({
 					: {
 							action: {
 								label: 'View on Explorer',
-								onClick: () =>
-									window.open(`https://sepolia.basescan.org/tx/${txHash}`, '_blank'),
+								onClick: () => window.open(`https://sepolia.basescan.org/tx/${txHash}`, '_blank'),
 							},
-						}),
+					  }),
 				duration: 10000,
 			});
 
@@ -373,7 +379,7 @@ export default function ManagePlanModal({
 
 						if (receipt) {
 							toast.success('Tokens Received', {
-								description: `${FAUCET_AMOUNT_ABLE} ABLE tokens have been added to your wallet.`,
+								description: `${dispensed} ABLE tokens have been added to your wallet.`,
 							});
 
 							// Refresh balance
@@ -523,7 +529,7 @@ export default function ManagePlanModal({
 												<Loader2 className="mr-2 h-3 w-3 animate-spin" /> Sending Tokens...
 											</>
 										) : (
-											`Get ${FAUCET_AMOUNT_ABLE} ${isLocalnet ? 'Localnet' : 'Testnet'} ABLE`
+											`Get ${faucetAmount} ${isLocalnet ? 'Localnet' : 'Testnet'} ABLE`
 										)}
 									</Button>
 								)}

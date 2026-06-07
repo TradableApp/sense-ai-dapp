@@ -52,7 +52,7 @@ import { buildErrorHandler } from './useChatMutations';
 
 // Helper that creates a pre-built handler with test defaults (no faucet network)
 function makeHandler() {
-	return buildErrorHandler(false, false, vi.fn());
+	return buildErrorHandler(false, false, 100, vi.fn());
 }
 
 describe('buildErrorHandler — Token errors', () => {
@@ -178,7 +178,7 @@ describe('buildErrorHandler — Generic fallbacks', () => {
 
 	it('isTestnet=true renders faucet button in ERC20InsufficientBalance toast', () => {
 		(toast.error as any).mockClear();
-		const handler = buildErrorHandler(true, false, vi.fn());
+		const handler = buildErrorHandler(true, false, 100, vi.fn());
 		handler({ message: 'ERC20InsufficientBalance' }, 'send message');
 		const [, options] = (toast.error as any).mock.calls[0];
 		// duration should be Infinity on testnet so the button stays visible
@@ -187,7 +187,7 @@ describe('buildErrorHandler — Generic fallbacks', () => {
 
 	it('isLocalnet=true also renders the faucet button (persistent toast)', () => {
 		(toast.error as any).mockClear();
-		const handler = buildErrorHandler(false, true, vi.fn());
+		const handler = buildErrorHandler(false, true, 100, vi.fn());
 		handler({ message: 'ERC20InsufficientBalance' }, 'send message');
 		const [, options] = (toast.error as any).mock.calls[0];
 		expect(options.duration).toBe(Infinity);
@@ -195,7 +195,7 @@ describe('buildErrorHandler — Generic fallbacks', () => {
 
 	it('neither network → no faucet button (default 4s toast)', () => {
 		(toast.error as any).mockClear();
-		const handler = buildErrorHandler(false, false, vi.fn());
+		const handler = buildErrorHandler(false, false, 100, vi.fn());
 		handler({ message: 'ERC20InsufficientBalance' }, 'send message');
 		const [, options] = (toast.error as any).mock.calls[0];
 		expect(options.duration).toBe(4000);

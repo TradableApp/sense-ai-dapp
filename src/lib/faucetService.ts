@@ -1,16 +1,18 @@
+import { doc, getDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { toast } from 'sonner';
 import { encodeFunctionData, erc20Abi, parseUnits } from 'viem';
 
 import { LOCAL_CHAIN_ID } from '@/config/contracts';
-import { functions } from '@/config/firebase';
+import { db, functions } from '@/config/firebase';
 
-import type { FaucetResponse } from './types';
+import type { FaucetConfig, FaucetResponse } from './types';
 
 interface FaucetCallableResult {
 	success: boolean;
 	txHash?: string;
 	message?: string;
+	amount?: number;
 }
 
 // Localnet "treasury": Hardhat account #0 holds the full ABLE supply and is
@@ -18,25 +20,51 @@ interface FaucetCallableResult {
 // the localnet equivalent of the testnet faucet — on localnet we NEVER call the
 // Firebase cloud function (which dispenses Base Sepolia tokens).
 const HARDHAT_DEPLOYER = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
-/** Amount of ABLE the faucet dispenses per request (testnet + localnet). */
+/** Default ABLE per request when the Firestore config is unavailable. */
 export const FAUCET_AMOUNT_ABLE = 100;
+const DEFAULT_RATE_LIMIT_HOURS = 24;
 
 const isLocalnet = (): boolean => Number(import.meta.env.VITE_CHAIN_ID) === LOCAL_CHAIN_ID;
 
 /**
+ * Read the live faucet config from Firestore (general/sense_ai.faucet). The amount
+ * and rate limit are adjustable without a redeploy so dispensing can be throttled
+ * when the testnet is busy; falls back to defaults if the doc/fields are absent.
+ */
+export const getFaucetConfig = async (): Promise<FaucetConfig> => {
+	const defaults: FaucetConfig = {
+		amount: FAUCET_AMOUNT_ABLE,
+		rateLimitHours: DEFAULT_RATE_LIMIT_HOURS,
+	};
+	if (!db) return defaults;
+	try {
+		const snap = await getDoc(doc(db, 'general', 'sense_ai'));
+		const faucet = (snap.exists() ? snap.data()?.faucet : null) ?? {};
+		return {
+			amount: Number(faucet.amount ?? FAUCET_AMOUNT_ABLE),
+			rateLimitHours: Number(faucet.rateLimitHours ?? DEFAULT_RATE_LIMIT_HOURS),
+		};
+	} catch (error) {
+		console.error('[faucetService] Failed to read faucet config:', error);
+		return defaults;
+	}
+};
+
+/**
  * Fund the user by transferring ABLE from the unlocked Hardhat deployer directly
  * over JSON-RPC. No cloud function, no signature — returns the same
- * { success, txHash } shape as the testnet faucet so the caller's receipt-polling
- * works unchanged.
+ * { success, txHash, amount } shape as the testnet faucet so the caller's
+ * receipt-polling and display work unchanged.
  */
 const fundFromLocalnetTreasury = async (walletAddress: string): Promise<FaucetResponse> => {
 	const rpcUrl = import.meta.env.VITE_CHAIN_RPC_URL as string;
 	const tokenAddress = import.meta.env.VITE_TOKEN_CONTRACT_ADDRESS as string;
+	const { amount } = await getFaucetConfig();
 
 	const data = encodeFunctionData({
 		abi: erc20Abi,
 		functionName: 'transfer',
-		args: [walletAddress as `0x${string}`, parseUnits(String(FAUCET_AMOUNT_ABLE), 18)],
+		args: [walletAddress as `0x${string}`, parseUnits(String(amount), 18)],
 	});
 
 	const response = await fetch(rpcUrl, {
@@ -54,7 +82,7 @@ const fundFromLocalnetTreasury = async (walletAddress: string): Promise<FaucetRe
 	if (json.error) throw new Error(json.error.message);
 	if (!json.result) throw new Error('Localnet faucet returned no transaction hash');
 
-	return { success: true, txHash: json.result };
+	return { success: true, txHash: json.result, amount };
 };
 
 const requestTestTokens = async (walletAddress: string): Promise<FaucetResponse> => {
@@ -72,9 +100,9 @@ const requestTestTokens = async (walletAddress: string): Promise<FaucetResponse>
 		const data = result.data as FaucetCallableResult;
 
 		if (data.success) {
-			// We handle the "Success" toast in the component now,
-			// so we can add the Explorer Link and Loading state there.
-			return { success: true, txHash: data.txHash };
+			// The cloud function reports the amount it dispensed; surface it so the
+			// UI shows the real value (it is adjustable via general/sense_ai.faucet).
+			return { success: true, txHash: data.txHash, amount: data.amount };
 		}
 
 		throw new Error(data.message || 'Faucet failed');
