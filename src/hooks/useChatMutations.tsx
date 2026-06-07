@@ -237,7 +237,9 @@ export default function useChatMutations() {
 	const handleFaucetRequest = async () => {
 		toast.dismiss();
 
-		const loadingToastId = toast.loading('Requesting Testnet Tokens...');
+		const loadingToastId = toast.loading(
+			isLocalnet ? 'Requesting Localnet Tokens...' : 'Requesting Testnet Tokens...',
+		);
 
 		const address = activeWallet?.getAccount()?.address ?? '';
 		const { success, txHash, amount } = await requestTestTokens(address);
@@ -322,7 +324,12 @@ export default function useChatMutations() {
 		});
 	};
 
-	const genericOnError = buildErrorHandler(isTestnet, isLocalnet, faucetAmount, handleFaucetRequest);
+	const genericOnError = buildErrorHandler(
+		isTestnet,
+		isLocalnet,
+		faucetAmount,
+		handleFaucetRequest,
+	);
 
 	// --- MUTATIONS ---
 

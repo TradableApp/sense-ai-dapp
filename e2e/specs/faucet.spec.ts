@@ -3,7 +3,6 @@ import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 import { getABLEBalance, revertToSnapshot, takeSnapshot } from '../helpers/hardhat';
 
 const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + deployed contracts (set E2E_LOCAL_SERVICES=1)';
 
@@ -11,7 +10,7 @@ const ABLE = (n: bigint) => 10n ** 18n * n;
 
 test.describe('Localnet faucet (T-FAUCET)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
-	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
+	test.skip(!TOKEN_ADDRESS, 'Skipped: VITE_TOKEN_CONTRACT_ADDRESS not set');
 
 	let snapshotId: string;
 
@@ -54,13 +53,20 @@ test.describe('Localnet faucet (T-FAUCET)', () => {
 
 		await planModal.faucetButton.click();
 
-		// The component polls the receipt then shows "Tokens Received".
+		// The component polls the receipt then shows "Tokens Received" with the
+		// dispensed amount in the description (adjustable via Firestore config, so we
+		// read it rather than hardcoding it).
 		await expect(authenticatedPage.getByText(/tokens received/i)).toBeVisible({
 			timeout: 30_000,
 		});
+		const receivedText =
+			(await authenticatedPage.getByText(/ABLE tokens have been added/i).textContent()) ?? '';
+		const reported = BigInt(receivedText.match(/(\d+)\s+ABLE/i)?.[1] ?? '0');
+		expect(reported).toBeGreaterThan(0n);
 
+		// On-chain truth: the balance rose by exactly what the UI reported.
 		const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
-		expect(balanceAfter).toBe(balanceBefore + ABLE(100n));
+		expect(balanceAfter - balanceBefore).toBe(ABLE(reported));
 		expect(cloudFnHit).toBe(false);
 	});
 });
