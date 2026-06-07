@@ -49,6 +49,18 @@ describe('getFaucetConfig', () => {
 		stubFaucetConfig(null);
 		await expect(getFaucetConfig()).resolves.toEqual({ amount: 100, rateLimitHours: 24 });
 	});
+
+	it('sanitises a 0 / negative amount or rateLimit back to the default', async () => {
+		stubFaucetConfig({ amount: 0, rateLimitHours: -5 });
+		await expect(getFaucetConfig()).resolves.toEqual({ amount: 100, rateLimitHours: 24 });
+	});
+
+	it('sanitises a non-numeric or over-max amount back to the default', async () => {
+		stubFaucetConfig({ amount: 'abc', rateLimitHours: 24 });
+		await expect(getFaucetConfig()).resolves.toMatchObject({ amount: 100 });
+		stubFaucetConfig({ amount: 999999, rateLimitHours: 24 });
+		await expect(getFaucetConfig()).resolves.toMatchObject({ amount: 100 });
+	});
 });
 
 describe('requestTestTokens — localnet (deployer transfer, no cloud function)', () => {

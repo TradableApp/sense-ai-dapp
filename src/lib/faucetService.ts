@@ -23,6 +23,19 @@ const HARDHAT_DEPLOYER = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 /** Default ABLE per request when the Firestore config is unavailable. */
 export const FAUCET_AMOUNT_ABLE = 100;
 const DEFAULT_RATE_LIMIT_HOURS = 24;
+// Mirror the cloud function's circuit breaker so the displayed/transferred amount
+// matches what the server will actually dispense.
+const MAX_FAUCET_AMOUNT = 10_000;
+
+/**
+ * Coerce a config value to a sane positive number; fall back to `fallback` for
+ * 0 / negative / NaN / non-numeric / out-of-range (the `??` operator only guards
+ * null/undefined, so a fat-fingered 0 or "abc" would otherwise slip through).
+ */
+const sanitizePositive = (raw: unknown, fallback: number, max = Number.POSITIVE_INFINITY): number => {
+	const n = Number(raw);
+	return Number.isFinite(n) && n > 0 && n <= max ? n : fallback;
+};
 
 const isLocalnet = (): boolean => Number(import.meta.env.VITE_CHAIN_ID) === LOCAL_CHAIN_ID;
 
@@ -41,8 +54,8 @@ export const getFaucetConfig = async (): Promise<FaucetConfig> => {
 		const snap = await getDoc(doc(db, 'general', 'sense_ai'));
 		const faucet = (snap.exists() ? snap.data()?.faucet : null) ?? {};
 		return {
-			amount: Number(faucet.amount ?? FAUCET_AMOUNT_ABLE),
-			rateLimitHours: Number(faucet.rateLimitHours ?? DEFAULT_RATE_LIMIT_HOURS),
+			amount: sanitizePositive(faucet.amount, FAUCET_AMOUNT_ABLE, MAX_FAUCET_AMOUNT),
+			rateLimitHours: sanitizePositive(faucet.rateLimitHours, DEFAULT_RATE_LIMIT_HOURS),
 		};
 	} catch (error) {
 		console.error('[faucetService] Failed to read faucet config:', error);
