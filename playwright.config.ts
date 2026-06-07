@@ -2,9 +2,15 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { defineConfig, devices } from '@playwright/test';
+import dotenv from 'dotenv';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE_URL = 'http://localhost:3002';
+
+// Load the generated localnet env so Node-side specs/helpers see the same
+// contract addresses (VITE_*_CONTRACT_ADDRESS) the dApp uses. Without this the
+// stateful specs that gate on those addresses silently skip (see #26).
+dotenv.config({ path: path.resolve(__dirname, '.env.localnet') });
 
 export default defineConfig({
 	testDir: './e2e/specs',

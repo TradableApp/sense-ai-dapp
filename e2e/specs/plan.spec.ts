@@ -2,6 +2,7 @@ import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 import {
 	advanceTime,
+	fundABLE,
 	getABLEBalance,
 	getAllowance,
 	getEscrowBalance,
@@ -22,6 +23,9 @@ test.describe('Spending plan management (T-PLAN)', () => {
 
 	test.beforeEach(async () => {
 		snapshotId = await takeSnapshot();
+		// Fund the user via the localnet "treasury" (deployer transfer) so plan
+		// activation can move real ABLE to escrow — there is no faucet on localnet.
+		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, 10n ** 18n * 100n);
 	});
 
 	test.afterEach(async () => {
