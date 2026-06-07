@@ -37,6 +37,18 @@ export const MOCK_WALLET_SCRIPT = `
   let _reqId = 1;
   let _listeners = {};
 
+  // Pre-seed cookie consent so the consent dialog (shown when
+  // localStorage.consentSettings === null) never appears and gates the page /
+  // blocks the ThirdWeb connect modal during E2E.
+  try {
+    if (window.localStorage.getItem('consentSettings') === null) {
+      window.localStorage.setItem(
+        'consentSettings',
+        JSON.stringify({ analytics_storage: true, ad_storage: true, personalization_storage: true }),
+      );
+    }
+  } catch (e) {}
+
   async function rpc(method, params) {
     const res = await fetch(RPC_URL, {
       method: 'POST',
@@ -129,11 +141,14 @@ export const MOCK_WALLET_SCRIPT = `
   // EIP-6963 announcement for ThirdWeb v5 wallet detection
   const announceEvent = new CustomEvent('eip6963:announceProvider', {
     detail: Object.freeze({
+      // Impersonate MetaMask so the dApp's configured createWallet('io.metamask')
+      // detects this mock as an installed injected wallet and connects to it.
+      // (ThirdWeb v5 only surfaces EIP-6963 wallets whose rdns is configured.)
       info: {
         uuid: 'hardhat-mock-wallet',
-        name: 'Hardhat Test Wallet',
+        name: 'MetaMask',
         icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>',
-        rdns: 'io.hardhat.mock',
+        rdns: 'io.metamask',
       },
       provider,
     }),
