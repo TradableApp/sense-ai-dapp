@@ -85,6 +85,12 @@ export default defineConfig({
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
+			name: 'faucet',
+			testMatch: '**/faucet.spec.ts',
+			fullyParallel: false,
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
 			name: 'chat',
 			testMatch: '**/chat.spec.ts',
 			fullyParallel: false,

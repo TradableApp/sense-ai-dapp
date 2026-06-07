@@ -54,7 +54,12 @@ export class PlanModal {
 	}
 
 	get faucetButton() {
-		return this.modal.getByRole('button', { name: /request.*token|faucet/i });
+		// Label is "Get 100 Localnet ABLE" / "Get 100 Testnet ABLE" (or "Sending
+		// Tokens…" while in flight); it only renders when the entered limit exceeds
+		// the wallet balance.
+		return this.modal.getByRole('button', {
+			name: /get \d+ (localnet|testnet) able|sending tokens/i,
+		});
 	}
 
 	/** "Confirm Revoke" button in the "Are you sure?" confirmation dialog */
