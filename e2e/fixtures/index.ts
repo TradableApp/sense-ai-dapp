@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'url';
+
 import { test as base, type BrowserContext, type Page } from '@playwright/test';
 
 import { injectMockWalletIntoContext } from './mock-wallet';
@@ -9,9 +11,12 @@ import { PlanModal } from '../pages/PlanModal';
 
 /**
  * Path where authenticated browser storage state is saved between test runs.
- * Using import.meta.url keeps this portable without __dirname in ESM.
+ * Using import.meta.url keeps this portable without __dirname in ESM. Decode via
+ * fileURLToPath (not `.pathname`, which leaves spaces percent-encoded and would
+ * write to a literal "…/Web%20and%20App%20Development/…" directory on paths with
+ * spaces).
  */
-export const AUTH_STATE_PATH = new URL('../.auth/user.json', import.meta.url).pathname;
+export const AUTH_STATE_PATH = fileURLToPath(new URL('../.auth/user.json', import.meta.url));
 
 // ── Custom fixture types ───────────────────────────────────────────────────
 
