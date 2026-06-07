@@ -14,7 +14,12 @@ export class AuthPage {
 
 	/** The top-level ThirdWeb ConnectButton rendered on the auth screen */
 	get connectButton() {
-		return this.page.getByRole('button', { name: /connect wallet/i });
+		// ThirdWeb v5 renders the label as text content, not the button's
+		// accessible name, so getByRole({name}) matches 0 — filter by text.
+		return this.page
+			.getByRole('button')
+			.filter({ hasText: /connect wallet/i })
+			.first();
 	}
 
 	/** ThirdWeb's wallet selection modal */
@@ -24,12 +29,22 @@ export class AuthPage {
 		});
 	}
 
+	/** The "Connect a Wallet" button that reveals the external/injected wallet
+	 *  list (v5 opens the modal to a "Sign in" view first). */
+	get connectAWalletButton() {
+		return this.page
+			.getByRole('button')
+			.filter({ hasText: /connect a wallet/i })
+			.first();
+	}
+
 	/** The injected wallet option inside the ThirdWeb modal */
 	get injectedWalletOption() {
-		// ThirdWeb v5 surfaces injected wallets by their announced name.
-		// Our mock announces as "Hardhat Test Wallet"; fallback to "MetaMask" label.
+		// Our mock announces as MetaMask via EIP-6963. Match by text content, not
+		// accessible name (ThirdWeb's list items expose the label as text).
 		return this.page
-			.getByRole('button', { name: /hardhat test wallet|metamask|injected/i })
+			.getByRole('button')
+			.filter({ hasText: /metamask|hardhat test wallet|injected/i })
 			.first();
 	}
 
@@ -78,21 +93,29 @@ export class AuthPage {
 	 * 5. Waits for redirect to /
 	 */
 	async connectAndSign() {
-		// Open the connect modal
+		// Open the ThirdWeb modal.
 		await this.connectButton.click();
 
-		// Select the injected wallet option
+		// v5 opens to a "Sign in" view (socials / email / passkey). Click
+		// "Connect a Wallet" to reveal the external/injected wallet list.
+		await this.connectAWalletButton.click();
+
+		// Select the injected wallet (our mock announces as MetaMask via EIP-6963).
 		await expect(this.injectedWalletOption).toBeVisible({ timeout: 10_000 });
 		await this.injectedWalletOption.click();
 
-		// Wait for the signature screen — ThirdWeb redirects here after connection
-		await expect(this.signatureScreen).toBeVisible({ timeout: 10_000 });
+		// The dApp derives the session key by signing a fixed message. The mock
+		// wallet signs automatically via Hardhat (no manual prompt), so the sign
+		// screen often never appears — only click Sign when it actually shows.
+		// Guarding on visibility (instead of swallowing every click error) lets a
+		// genuine sign-step failure surface here rather than as a cryptic
+		// navigation timeout 20 s later.
+		if (await this.signatureScreen.isVisible({ timeout: 5_000 }).catch(() => false)) {
+			await this.signButton.click();
+		}
 
-		// Click sign — the mock wallet handles personal_sign via Hardhat
-		await this.signButton.click();
-
-		// Wait for redirect to the dashboard (/)
-		await this.page.waitForURL('/', { timeout: 15_000 });
+		// Authenticated → redirected to the dashboard.
+		await this.page.waitForURL('/', { timeout: 20_000 });
 	}
 
 	// ── Assertions ────────────────────────────────────────────────────────────

@@ -96,3 +96,41 @@ export async function getAllowance(
 	const result = await callContract(tokenAddress, data);
 	return BigInt(result);
 }
+
+// ── Funding (the localnet "treasury": there is no faucet on localnet) ─────────
+const TRANSFER_SELECTOR = '0xa9059cbb'; // transfer(address,uint256)
+// Hardhat account 0 — deployer/treasury; holds the full ABLE supply and is
+// unlocked on the node, so eth_sendTransaction needs no signing key.
+const DEPLOYER_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
+
+function padUint(value: bigint): string {
+	return value.toString(16).padStart(64, '0');
+}
+
+async function waitForReceipt(txHash: string, timeoutMs = 30_000): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		const receipt = await rpc('eth_getTransactionReceipt', [txHash]);
+		if (receipt) return;
+		await new Promise(resolve => setTimeout(resolve, 250));
+	}
+	throw new Error(`Transaction ${txHash} not mined within ${timeoutMs}ms`);
+}
+
+/**
+ * Fund a user with ABLE by transferring from the deployer/treasury (account 0).
+ * This is the localnet equivalent of the testnet faucet — on localnet the full
+ * supply is minted to the deployer at deploy time, so users start with 0 ABLE.
+ * @param amount Amount in base units (wei-scale, 18 decimals).
+ */
+export async function fundABLE(
+	tokenAddress: string,
+	toAddress: string,
+	amount: bigint,
+): Promise<void> {
+	const data = TRANSFER_SELECTOR + padAddress(toAddress).slice(2) + padUint(amount);
+	const txHash = (await rpc('eth_sendTransaction', [
+		{ from: DEPLOYER_ADDRESS, to: tokenAddress, data },
+	])) as string;
+	await waitForReceipt(txHash);
+}

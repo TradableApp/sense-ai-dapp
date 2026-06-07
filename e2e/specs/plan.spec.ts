@@ -2,6 +2,7 @@ import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 import {
 	advanceTime,
+	fundABLE,
 	getABLEBalance,
 	getAllowance,
 	getEscrowBalance,
@@ -22,6 +23,9 @@ test.describe('Spending plan management (T-PLAN)', () => {
 
 	test.beforeEach(async () => {
 		snapshotId = await takeSnapshot();
+		// Fund the user via the localnet "treasury" (deployer transfer) so plan
+		// activation can move real ABLE to escrow — there is no faucet on localnet.
+		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, 10n ** 18n * 100n);
 	});
 
 	test.afterEach(async () => {
@@ -58,7 +62,10 @@ test.describe('Spending plan management (T-PLAN)', () => {
 		expect(displayedBalance).toBeTruthy();
 	});
 
-	test('T-PLAN-05: Setting a plan moves tokens to escrow', async ({ dashboardPage, planModal }) => {
+	test('T-PLAN-05: Setting a plan authorizes an allowance without moving tokens', async ({
+		dashboardPage,
+		planModal,
+	}) => {
 		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
 
 		await dashboardPage.goto();
@@ -66,12 +73,14 @@ test.describe('Spending plan management (T-PLAN)', () => {
 		await planModal.fillAndSubmit(10, 30);
 		await planModal.waitForTxCompletion();
 
+		// Allowance model: activation sets an ERC-20 allowance + spending limit but
+		// does NOT move ABLE — tokens are escrowed per-prompt (initiatePrompt).
 		const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
-		expect(balanceAfter).toBeLessThan(balanceBefore);
+		expect(balanceAfter).toBe(balanceBefore);
 		await dashboardPage.assertHasPlan();
 	});
 
-	test('T-PLAN-06: Escrow holds correct amount after plan set', async ({
+	test('T-PLAN-06: Escrow holds no extra tokens until a prompt is sent', async ({
 		dashboardPage,
 		planModal,
 	}) => {
@@ -82,8 +91,10 @@ test.describe('Spending plan management (T-PLAN)', () => {
 		await planModal.fillAndSubmit(10, 30);
 		await planModal.waitForTxCompletion();
 
+		// Allowance model: no upfront escrow at activation — the escrow balance only
+		// changes when a prompt is initiated.
 		const escrowAfter = await getEscrowBalance(TOKEN_ADDRESS, ESCROW_ADDRESS);
-		expect(escrowAfter).toBeGreaterThan(escrowBefore);
+		expect(escrowAfter).toBe(escrowBefore);
 	});
 
 	test('T-PLAN-07: ERC-20 allowance is set after plan activation', async ({
@@ -109,7 +120,7 @@ test.describe('Spending plan management (T-PLAN)', () => {
 		await planModal.assertOpen();
 	});
 
-	test('T-PLAN-09: Cancel plan returns tokens from escrow', async ({
+	test('T-PLAN-09: Cancelling a plan leaves balance unchanged (no escrowed tokens to return)', async ({
 		dashboardPage,
 		planModal,
 	}) => {
@@ -121,11 +132,12 @@ test.describe('Spending plan management (T-PLAN)', () => {
 		const balanceBeforeCancel = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
 
 		await dashboardPage.managePlanButton.click();
-		await planModal.cancelButton.click();
-		await planModal.waitForTxCompletion();
+		await planModal.revoke();
 
+		// Allowance model: nothing was escrowed at activation, so cancelling only
+		// clears the spending limit — the user's ABLE balance is unchanged.
 		const balanceAfterCancel = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
-		expect(balanceAfterCancel).toBeGreaterThan(balanceBeforeCancel);
+		expect(balanceAfterCancel).toBe(balanceBeforeCancel);
 	});
 
 	test('T-PLAN-10: Cancel plan reverts dashboard to onboarding', async ({
@@ -138,9 +150,11 @@ test.describe('Spending plan management (T-PLAN)', () => {
 		await planModal.waitForTxCompletion();
 
 		await dashboardPage.managePlanButton.click();
-		await planModal.cancelButton.click();
-		await planModal.waitForTxCompletion();
+		await planModal.revoke();
 
+		// The revoke's onSuccess invalidates ['usagePlan'] and closes the modal, so
+		// the dashboard reverts to onboarding on its own (no reload — that would drop
+		// the in-memory session key and bounce to /auth).
 		await dashboardPage.assertNoPlan();
 	});
 });
@@ -191,6 +205,11 @@ test.describe('Plan modal validation (T-PLAN-EDGE)', () => {
 	});
 
 	test('T-PLAN-13: Plan expiry after duration elapses', async ({ dashboardPage, planModal }) => {
+		// Unlike T-PLAN-11/12 (which intentionally start at 0 ABLE to exercise the
+		// zero/exceed guards), this test must actually activate a plan to observe it
+		// expire — so it needs funding. The EDGE describe's beforeEach only snapshots.
+		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, 10n ** 18n * 100n);
+
 		await dashboardPage.goto();
 		await dashboardPage.getStartedButton.click();
 		await planModal.fillAndSubmit(10, 1);

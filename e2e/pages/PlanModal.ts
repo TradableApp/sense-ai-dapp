@@ -40,7 +40,9 @@ export class PlanModal {
 	}
 
 	get cancelButton() {
-		return this.modal.getByRole('button', { name: /cancel plan|remove plan|cancel spending/i });
+		// "Revoke" removes the spending limit; the modal's plain "Cancel" only
+		// closes it without changes, so match Revoke specifically.
+		return this.modal.getByRole('button', { name: /revoke|remove plan|cancel spending/i });
 	}
 
 	get loadingSpinner() {
@@ -55,7 +57,20 @@ export class PlanModal {
 		return this.modal.getByRole('button', { name: /request.*token|faucet/i });
 	}
 
+	/** "Confirm Revoke" button in the "Are you sure?" confirmation dialog */
+	get confirmRevokeButton() {
+		return this.page.getByRole('button', { name: /confirm revoke/i });
+	}
+
 	// ── Actions ───────────────────────────────────────────────────────────────
+
+	/** Revoke the spending limit: click Revoke → confirm in the "Are you sure?"
+	 *  dialog → wait for the cancelSpendingLimit tx to complete. */
+	async revoke() {
+		await this.cancelButton.click();
+		await this.confirmRevokeButton.click();
+		await this.waitForTxCompletion();
+	}
 
 	async fillAndSubmit(limitAble: number, days: number) {
 		await expect(this.modal).toBeVisible({ timeout: 5_000 });
