@@ -47,7 +47,13 @@ export const MOCK_WALLET_SCRIPT = `
         JSON.stringify({ analytics_storage: true, ad_storage: true, personalization_storage: true }),
       );
     }
-  } catch (e) {}
+  } catch (e) {
+    // localStorage can be unavailable under restrictive CSP / storage partitioning
+    // in some CI sandboxes. Surface it in Playwright's browser-console capture
+    // rather than swallowing — a silent failure here lets the consent dialog
+    // reappear and mysteriously block the ThirdWeb connect modal downstream.
+    console.warn('[mock-wallet] Could not pre-seed consentSettings:', e);
+  }
 
   async function rpc(method, params) {
     const res = await fetch(RPC_URL, {

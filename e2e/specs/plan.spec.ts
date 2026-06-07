@@ -205,6 +205,11 @@ test.describe('Plan modal validation (T-PLAN-EDGE)', () => {
 	});
 
 	test('T-PLAN-13: Plan expiry after duration elapses', async ({ dashboardPage, planModal }) => {
+		// Unlike T-PLAN-11/12 (which intentionally start at 0 ABLE to exercise the
+		// zero/exceed guards), this test must actually activate a plan to observe it
+		// expire — so it needs funding. The EDGE describe's beforeEach only snapshots.
+		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, 10n ** 18n * 100n);
+
 		await dashboardPage.goto();
 		await dashboardPage.getStartedButton.click();
 		await planModal.fillAndSubmit(10, 1);
