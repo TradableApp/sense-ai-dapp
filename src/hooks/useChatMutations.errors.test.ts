@@ -41,7 +41,7 @@ vi.mock('@/config/contracts', () => ({
 	TESTNET_CHAIN_ID: 84532,
 }));
 vi.mock('@/components/ui/button', () => ({ Button: () => null }));
-vi.mock('@/lib/faucetService', () => ({ default: vi.fn() }));
+vi.mock('@/lib/faucetService', () => ({ default: vi.fn(), FAUCET_AMOUNT_ABLE: 100 }));
 vi.mock('@/lib/utils', () => ({ wait: vi.fn() }));
 vi.mock('@/lib/crypto', () => ({ encryptData: vi.fn() }));
 vi.mock('@/lib/ecies', () => ({
@@ -50,9 +50,9 @@ vi.mock('@/lib/ecies', () => ({
 
 import { buildErrorHandler } from './useChatMutations';
 
-// Helper that creates a pre-built handler with test defaults
+// Helper that creates a pre-built handler with test defaults (no faucet network)
 function makeHandler() {
-	return buildErrorHandler(false, vi.fn());
+	return buildErrorHandler(false, false, 100, vi.fn());
 }
 
 describe('buildErrorHandler — Token errors', () => {
@@ -178,10 +178,26 @@ describe('buildErrorHandler — Generic fallbacks', () => {
 
 	it('isTestnet=true renders faucet button in ERC20InsufficientBalance toast', () => {
 		(toast.error as any).mockClear();
-		const handler = buildErrorHandler(true, vi.fn());
+		const handler = buildErrorHandler(true, false, 100, vi.fn());
 		handler({ message: 'ERC20InsufficientBalance' }, 'send message');
 		const [, options] = (toast.error as any).mock.calls[0];
 		// duration should be Infinity on testnet so the button stays visible
 		expect(options.duration).toBe(Infinity);
+	});
+
+	it('isLocalnet=true also renders the faucet button (persistent toast)', () => {
+		(toast.error as any).mockClear();
+		const handler = buildErrorHandler(false, true, 100, vi.fn());
+		handler({ message: 'ERC20InsufficientBalance' }, 'send message');
+		const [, options] = (toast.error as any).mock.calls[0];
+		expect(options.duration).toBe(Infinity);
+	});
+
+	it('neither network → no faucet button (default 4s toast)', () => {
+		(toast.error as any).mockClear();
+		const handler = buildErrorHandler(false, false, 100, vi.fn());
+		handler({ message: 'ERC20InsufficientBalance' }, 'send message');
+		const [, options] = (toast.error as any).mock.calls[0];
+		expect(options.duration).toBe(4000);
 	});
 });

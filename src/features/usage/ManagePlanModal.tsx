@@ -36,9 +36,10 @@ import Input from '@/components/ui/input';
 import Label from '@/components/ui/label';
 import { CONTRACTS, LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
 import { client } from '@/config/thirdweb';
+import useFaucetConfig from '@/hooks/useFaucetConfig';
 import useTokenBalance, { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
 import useTokenPrice from '@/hooks/useTokenPrice';
-import requestTestTokens from '@/lib/faucetService';
+import requestTestTokens, { FAUCET_AMOUNT_ABLE } from '@/lib/faucetService';
 import { wait } from '@/lib/utils';
 
 const managePlanSchema = z.object({
@@ -102,6 +103,11 @@ export default function ManagePlanModal({
 	const chainId = activeWallet?.getChain()?.id;
 	const isLocalnet = chainId === LOCAL_CHAIN_ID;
 	const isTestnet = chainId === TESTNET_CHAIN_ID;
+
+	// Live faucet amount (adjustable via Firestore general/sense_ai); falls back to
+	// the default until the config loads.
+	const { data: faucetConfig } = useFaucetConfig();
+	const faucetAmount = faucetConfig?.amount ?? FAUCET_AMOUNT_ABLE;
 
 	// Use the confirmation-aware hook
 	const { mutateAsync: sendAndConfirm } = useSendAndConfirmTransaction();
@@ -334,16 +340,22 @@ export default function ManagePlanModal({
 		setIsRequestingTokens(true);
 
 		const address = activeWallet?.getAccount()?.address ?? '';
-		const { success, txHash } = await requestTestTokens(address);
+		const { success, txHash, amount } = await requestTestTokens(address, faucetAmount);
+		const dispensed = amount ?? faucetAmount;
 
 		if (success && txHash) {
-			// 1. Show initial Toast with Explorer Link
+			// 1. Show initial Toast. On testnet, offer an explorer link; localnet
+			// (Hardhat) has no block explorer, so omit the action there.
 			toast.info('Tokens Sent', {
 				description: 'Waiting for network confirmation...',
-				action: {
-					label: 'View on Explorer',
-					onClick: () => window.open(`https://sepolia.basescan.org/tx/${txHash}`, '_blank'),
-				},
+				...(isLocalnet
+					? {}
+					: {
+							action: {
+								label: 'View on Explorer',
+								onClick: () => window.open(`https://sepolia.basescan.org/tx/${txHash}`, '_blank'),
+							},
+					  }),
 				duration: 10000,
 			});
 
@@ -367,7 +379,7 @@ export default function ManagePlanModal({
 
 						if (receipt) {
 							toast.success('Tokens Received', {
-								description: '100 ABLE tokens have been added to your wallet.',
+								description: `${dispensed} ABLE tokens have been added to your wallet.`,
 							});
 
 							// Refresh balance
@@ -503,7 +515,7 @@ export default function ManagePlanModal({
 									{currentLimit}.
 								</p>
 
-								{isTestnet && (
+								{(isTestnet || isLocalnet) && (
 									<Button
 										type="button"
 										size="sm"
@@ -517,7 +529,7 @@ export default function ManagePlanModal({
 												<Loader2 className="mr-2 h-3 w-3 animate-spin" /> Sending Tokens...
 											</>
 										) : (
-											'Get 100 Testnet ABLE'
+											`Get ${faucetAmount} ${isLocalnet ? 'Localnet' : 'Testnet'} ABLE`
 										)}
 									</Button>
 								)}

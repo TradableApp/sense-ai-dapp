@@ -17,14 +17,15 @@ import {
 } from 'viem';
 
 import { Button } from '@/components/ui/button';
-import { CONTRACTS, TESTNET_CHAIN_ID } from '@/config/contracts';
+import { CONTRACTS, LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
 import { client } from '@/config/thirdweb';
+import useFaucetConfig from '@/hooks/useFaucetConfig';
 import AbleTokenABI from '@/lib/abi/AbleToken.json';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 import { encryptData } from '@/lib/crypto';
 import eciesEncrypt from '@/lib/ecies';
-import requestTestTokens from '@/lib/faucetService';
+import requestTestTokens, { FAUCET_AMOUNT_ABLE } from '@/lib/faucetService';
 import { wait } from '@/lib/utils';
 
 import { getTokenBalanceQueryKey } from './useTokenBalance';
@@ -59,11 +60,15 @@ export async function createEncryptedPayloads(
 /**
  * Builds the centralized contract-error handler. Exported for testability.
  * @param {boolean} isTestnet
+ * @param {boolean} isLocalnet
+ * @param {number} faucetAmount
  * @param {Function} handleFaucetRequest
  * @returns {(error: unknown, action: string) => void}
  */
 export function buildErrorHandler(
 	isTestnet: boolean,
+	isLocalnet: boolean,
+	faucetAmount: number,
 	handleFaucetRequest: () => Promise<void>,
 ): (_error: unknown, _action: string) => void {
 	return function genericOnError(error: unknown, action: string): void {
@@ -90,20 +95,21 @@ export function buildErrorHandler(
 				description: (
 					<div className="flex flex-col gap-3 mt-1">
 						<p>You need more ABLE tokens to pay for this action.</p>
-						{isTestnet && (
+						{(isTestnet || isLocalnet) && (
 							<Button
 								size="sm"
 								variant="outline"
 								className="w-full border-primary/20 bg-primary/10 hover:bg-primary/20 text-primary"
 								onClick={handleFaucetRequest as React.MouseEventHandler<HTMLButtonElement>}
 							>
-								Get 100 Testnet ABLE
+								{`Get ${faucetAmount} ${isLocalnet ? 'Localnet' : 'Testnet'} ABLE`}
 							</Button>
 						)}
 					</div>
 				),
-				// Persist on testnet so they see the button, otherwise use sonner toast default 4s
-				duration: isTestnet ? Infinity : 4000,
+				// Persist when a faucet is available (testnet/localnet) so the button
+				// stays visible; otherwise use the sonner toast default 4s.
+				duration: isTestnet || isLocalnet ? Infinity : 4000,
 			});
 			return;
 		}
@@ -223,15 +229,21 @@ export default function useChatMutations() {
 	const activeWallet = useActiveWallet();
 	const chainId = activeWallet?.getChain()?.id;
 	const isTestnet = chainId === TESTNET_CHAIN_ID;
+	const isLocalnet = chainId === LOCAL_CHAIN_ID;
+	const { data: faucetConfig } = useFaucetConfig();
+	const faucetAmount = faucetConfig?.amount ?? FAUCET_AMOUNT_ABLE;
 	const queryClient = useQueryClient();
 
 	const handleFaucetRequest = async () => {
 		toast.dismiss();
 
-		const loadingToastId = toast.loading('Requesting Testnet Tokens...');
+		const loadingToastId = toast.loading(
+			isLocalnet ? 'Requesting Localnet Tokens...' : 'Requesting Testnet Tokens...',
+		);
 
 		const address = activeWallet?.getAccount()?.address ?? '';
-		const { success, txHash } = await requestTestTokens(address);
+		const { success, txHash, amount } = await requestTestTokens(address, faucetAmount);
+		const dispensed = amount ?? faucetAmount;
 
 		toast.dismiss(loadingToastId);
 
@@ -239,10 +251,15 @@ export default function useChatMutations() {
 			// 1. Show initial Toast with Explorer Link
 			const sentToastId = toast.info('Tokens Sent', {
 				description: 'Waiting for network confirmation...',
-				action: {
-					label: 'View on Explorer',
-					onClick: () => window.open(`https://sepolia.basescan.org/tx/${txHash}`, '_blank'),
-				},
+				// Localnet (Hardhat) has no block explorer; only offer the link on testnet.
+				...(isLocalnet
+					? {}
+					: {
+							action: {
+								label: 'View on Explorer',
+								onClick: () => window.open(`https://sepolia.basescan.org/tx/${txHash}`, '_blank'),
+							},
+					  }),
 				duration: 10000,
 			});
 
@@ -267,7 +284,7 @@ export default function useChatMutations() {
 						if (receipt) {
 							toast.dismiss(sentToastId); // Dismiss the "Tokens Sent" info toast
 							toast.success('Tokens Received', {
-								description: '100 ABLE tokens have been added to your wallet.',
+								description: `${dispensed} ABLE tokens have been added to your wallet.`,
 							});
 
 							// Refresh balance
@@ -307,7 +324,12 @@ export default function useChatMutations() {
 		});
 	};
 
-	const genericOnError = buildErrorHandler(isTestnet, handleFaucetRequest);
+	const genericOnError = buildErrorHandler(
+		isTestnet,
+		isLocalnet,
+		faucetAmount,
+		handleFaucetRequest,
+	);
 
 	// --- MUTATIONS ---
 
