@@ -171,6 +171,7 @@ export default function MessageActions({
 			{showPagination && (
 				<div className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
 					<Button
+						aria-label="Previous version"
 						variant="ghost"
 						size="icon"
 						className="size-5"
@@ -183,6 +184,7 @@ export default function MessageActions({
 						{versionInfo.currentIndex + 1} / {versionInfo.siblings.length}
 					</span>
 					<Button
+						aria-label="Next version"
 						variant="ghost"
 						size="icon"
 						className="size-5"
@@ -201,6 +203,7 @@ export default function MessageActions({
 							variant="ghost"
 							size="icon"
 							className="size-7 text-muted-foreground shrink-0"
+							aria-label={isCopied ? 'Copied' : 'Copy'}
 							onClick={handleCopy}
 						>
 							{isCopied ? (
@@ -224,6 +227,7 @@ export default function MessageActions({
 								variant="ghost"
 								size="icon"
 								className="size-7 text-muted-foreground shrink-0"
+								aria-label="Good response"
 								onClick={() => handleFeedback('like')}
 								disabled={!canGiveFeedback || isSubmitting}
 							>
@@ -250,6 +254,7 @@ export default function MessageActions({
 								variant="ghost"
 								size="icon"
 								className="size-7 text-muted-foreground shrink-0"
+								aria-label="Bad response"
 								onClick={() => handleFeedback('dislike')}
 								disabled={!canGiveFeedback || isSubmitting}
 							>

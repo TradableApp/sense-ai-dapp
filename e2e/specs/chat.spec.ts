@@ -12,9 +12,6 @@ const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
 const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
-const SKIP_ENV = !TOKEN_ADDRESS
-	? 'Skipped: VITE_TOKEN_CONTRACT_ADDRESS not set (load .env.localnet or set manually)'
-	: '';
 
 // Precondition for sending a real prompt: fund the user and activate a plan so
 // the escrow has an allowance to debit per-prompt. Done programmatically (both
@@ -139,9 +136,9 @@ test.describe('Chat — submission and response (T-CHAT-TX)', () => {
 	test('T-CHAT-11: Escrow balance decreases after query', async ({ chatPage }) => {
 		// The escrow debit happens at submission, but this asserts it *after* the
 		// answer round-trip — gated on the same answer-content display. The
-		// debit-equals-fee path is covered directly in contract-cost.spec.
+		// debit-equals-fee path is covered directly in contract-cost.spec. The
+		// describe-level skip already guards missing contract addresses.
 		test.fixme(true, ANSWER_DISPLAY_BLOCKED);
-		test.skip(!TOKEN_ADDRESS, SKIP_ENV);
 		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
 
 		await chatPage.goto();

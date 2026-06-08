@@ -161,6 +161,7 @@ export function PromptInputSubmit({
 		label = 'Stop';
 	} else if (status === 'editting') {
 		Icon = <SendHorizontalIcon className="size-4" />;
+		label = 'Update';
 	} else if (status === 'error') {
 		Icon = <XIcon className="size-4" />;
 		label = 'Retry';
