@@ -152,17 +152,24 @@ export function PromptInputSubmit({
 	...props
 }: PromptInputSubmitProps) {
 	let Icon = <SendIcon className="size-4" />;
+	let label = 'Send';
 	if (status === 'submitted') {
 		Icon = <Loader2Icon className="size-4 animate-spin" />;
+		label = 'Sending';
 	} else if (status === 'streaming') {
 		Icon = <SquareIcon className="size-4" />;
+		label = 'Stop';
 	} else if (status === 'editting') {
 		Icon = <SendHorizontalIcon className="size-4" />;
 	} else if (status === 'error') {
 		Icon = <XIcon className="size-4" />;
+		label = 'Retry';
 	}
 	return (
+		// Icon-only submit needs an accessible name; only label when there is no
+		// text child (a caller-provided aria-label still wins via {...props}).
 		<Button
+			aria-label={children ? undefined : label}
 			className={cn('gap-1.5 rounded-lg', className)}
 			size={size}
 			type="submit"
@@ -184,6 +191,7 @@ export function PromptInputCancel({
 }: PromptInputCancelProps) {
 	return (
 		<Button
+			aria-label={children ? undefined : 'Cancel'}
 			className={cn('gap-1.5 rounded-lg', className)}
 			size={size}
 			type="button" // Explicitly prevents form submission

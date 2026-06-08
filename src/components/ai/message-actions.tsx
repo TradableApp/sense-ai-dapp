@@ -57,6 +57,7 @@ function ActionButton({ label, icon, onClick }: ActionButtonProps) {
 			<Tooltip delayDuration={100}>
 				<TooltipTrigger asChild>
 					<Button
+						aria-label={label}
 						variant="ghost"
 						size="icon"
 						className="size-7 text-muted-foreground shrink-0"
@@ -89,7 +90,12 @@ function DropdownAction({ label, icon, children, align }: DropdownActionProps) {
 				<Tooltip open={isTooltipOpen} onOpenChange={setIsTooltipOpen} delayDuration={100}>
 					<TooltipTrigger asChild>
 						<DropdownMenuTrigger asChild>
-							<Button variant="ghost" size="icon" className="size-7 text-muted-foreground shrink-0">
+							<Button
+								aria-label={label}
+								variant="ghost"
+								size="icon"
+								className="size-7 text-muted-foreground shrink-0"
+							>
 								<Icon className="size-4" />
 							</Button>
 						</DropdownMenuTrigger>

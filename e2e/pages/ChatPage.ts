@@ -19,29 +19,31 @@ export class ChatPage {
 	}
 
 	get submitButton() {
-		return this.page
-			.getByRole('button', { name: /send/i })
-			.filter({ hasNot: this.page.locator('[disabled]') })
-			.first();
+		// The composer's submit button. Its accessible label is status-dependent
+		// (Send → Retry on a validation error, Sending while in flight), so match the
+		// stable type="submit" rather than the name; assert enabled/disabled in tests.
+		return this.page.locator('form button[type="submit"]').last();
 	}
 
 	get cancelButton() {
 		return this.page.getByRole('button', { name: /cancel/i }).first();
 	}
 
-	/** Loading / thinking indicator while awaiting oracle response */
+	/** Loading / thinking indicator while awaiting oracle response. The assistant
+	 *  message renders a Reasoning block ("Thinking…") while content is empty. */
 	get thinkingIndicator() {
-		return this.page.locator('[data-testid="thinking"], .animate-pulse, [class*="loader"]').first();
+		return this.page.getByText(/thinking/i).first();
 	}
 
-	/** The last AI response message in the conversation */
+	/** The last AI response message. Message bubbles carry an `.is-assistant`
+	 *  class (see components/ai/message.tsx); user bubbles carry `.is-user`. */
 	get latestAiMessage() {
-		return this.page.locator('[data-testid="ai-message"], [class*="assistant-message"]').last();
+		return this.page.locator('.is-assistant').last();
 	}
 
 	/** All user messages in the conversation */
 	get userMessages() {
-		return this.page.locator('[data-testid="user-message"], [class*="user-message"]');
+		return this.page.locator('.is-user');
 	}
 
 	/** "No active plan" CTA shown when user has no spending limit */
@@ -49,9 +51,10 @@ export class ChatPage {
 		return this.page.getByText(/activate.*plan|set.*limit|get started/i).first();
 	}
 
-	/** The regenerate button on AI messages */
+	/** The regenerate affordance on AI messages — a "Try again" dropdown trigger
+	 *  (see components/ai/message-actions.tsx) that opens regenerate options. */
 	get regenerateButton() {
-		return this.page.getByRole('button', { name: /regenerate|retry/i }).first();
+		return this.page.getByRole('button', { name: /try again/i }).first();
 	}
 
 	/** The branch/split button on AI messages */
@@ -68,6 +71,9 @@ export class ChatPage {
 	async sendPrompt(text: string) {
 		await expect(this.promptTextarea).toBeVisible({ timeout: 5_000 });
 		await this.promptTextarea.fill(text);
+		// Validity (react-hook-form, onChange) enables the submit once the prompt is
+		// non-empty — wait for that rather than clicking a still-disabled button.
+		await expect(this.submitButton).toBeEnabled({ timeout: 5_000 });
 		await this.submitButton.click();
 	}
 

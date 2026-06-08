@@ -1,3 +1,5 @@
+import { encodeFunctionData, parseAbi } from 'viem';
+
 const RPC_URL = 'http://127.0.0.1:8545';
 let reqId = 1;
 
@@ -61,7 +63,7 @@ const BALANCE_OF_SELECTOR = '0x70a08231';
 const ALLOWANCE_SELECTOR = '0xdd62ed3e';
 
 function padAddress(address: string): string {
-	return `0x${  address.replace('0x', '').toLowerCase().padStart(64, '0')}`;
+	return `0x${address.replace('0x', '').toLowerCase().padStart(64, '0')}`;
 }
 
 async function callContract(contractAddress: string, data: string): Promise<string> {
@@ -133,4 +135,87 @@ export async function fundABLE(
 		{ from: DEPLOYER_ADDRESS, to: tokenAddress, data },
 	])) as string;
 	await waitForReceipt(txHash);
+}
+
+// ── Plan activation + fee control (programmatic, no UI) ───────────────────────
+// The test user (Hardhat account 1) and the deployer/owner (account 0) are both
+// unlocked on the local node, so eth_sendTransaction is authorized without a
+// signature. Calldata is viem-encoded so selectors are exact (these calls take
+// address/bytes args that are fiddly to hand-roll). Mirrors the on-chain writes
+// the dApp makes via ManagePlanModal (approve → setSpendingLimit) and the
+// owner-only setPromptFee used to change the per-prompt cost.
+const ESCROW_ABI = parseAbi([
+	'function setSpendingLimit(uint256 _allowance, uint256 _expiresAt)',
+	'function setPromptFee(uint256 _newFee)',
+	'function promptFee() view returns (uint256)',
+]);
+const ERC20_APPROVE_ABI = parseAbi(['function approve(address spender, uint256 amount)']);
+
+async function getLatestBlockTimestamp(): Promise<number> {
+	const block = (await rpc('eth_getBlockByNumber', ['latest', false])) as { timestamp: string };
+	return parseInt(block.timestamp, 16);
+}
+
+async function sendFrom(from: string, to: string, data: string): Promise<void> {
+	const txHash = (await rpc('eth_sendTransaction', [{ from, to, data }])) as string;
+	await waitForReceipt(txHash);
+}
+
+/** ERC-20 approve(spender, amount) sent by `ownerAddress` (an unlocked account). */
+export async function approveABLE(
+	tokenAddress: string,
+	ownerAddress: string,
+	spenderAddress: string,
+	amount: bigint,
+): Promise<void> {
+	const data = encodeFunctionData({
+		abi: ERC20_APPROVE_ABI,
+		functionName: 'approve',
+		args: [spenderAddress as `0x${string}`, amount],
+	});
+	await sendFrom(ownerAddress, tokenAddress, data);
+}
+
+/**
+ * Activate a spending plan for `userAddress` exactly as the dApp does, but
+ * programmatically: ERC-20 approve(escrow, allowance) → setSpendingLimit(
+ * allowance, now + durationSec). The allowance model escrows tokens per-prompt
+ * (no upfront move), so this is the precondition for sending a real prompt.
+ * @param allowance Spending limit in base units (wei-scale, 18 decimals).
+ */
+export async function activatePlan(
+	tokenAddress: string,
+	escrowAddress: string,
+	userAddress: string,
+	allowance: bigint,
+	durationSec = 30 * 24 * 60 * 60,
+): Promise<void> {
+	await approveABLE(tokenAddress, userAddress, escrowAddress, allowance);
+	const expiresAt = (await getLatestBlockTimestamp()) + durationSec;
+	const data = encodeFunctionData({
+		abi: ESCROW_ABI,
+		functionName: 'setSpendingLimit',
+		args: [allowance, BigInt(expiresAt)],
+	});
+	await sendFrom(userAddress, escrowAddress, data);
+}
+
+/** Read the current per-prompt fee (wei-scale) from the escrow. */
+export async function getPromptFee(escrowAddress: string): Promise<bigint> {
+	const data = encodeFunctionData({ abi: ESCROW_ABI, functionName: 'promptFee', args: [] });
+	const result = await callContract(escrowAddress, data);
+	return BigInt(result);
+}
+
+/**
+ * Set the per-prompt fee (owner-only). Sent by the deployer (account 0), which
+ * is the contract owner on localnet. @param newFee in base units (wei-scale).
+ */
+export async function setPromptFee(escrowAddress: string, newFee: bigint): Promise<void> {
+	const data = encodeFunctionData({
+		abi: ESCROW_ABI,
+		functionName: 'setPromptFee',
+		args: [newFee],
+	});
+	await sendFrom(DEPLOYER_ADDRESS, escrowAddress, data);
 }

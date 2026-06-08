@@ -1,16 +1,58 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
-import { getABLEBalance, revertToSnapshot, takeSnapshot } from '../helpers/hardhat';
+import {
+	activatePlan,
+	fundABLE,
+	getABLEBalance,
+	revertToSnapshot,
+	takeSnapshot,
+} from '../helpers/hardhat';
 
 const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
+const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
 const SKIP_ENV = !TOKEN_ADDRESS
 	? 'Skipped: VITE_TOKEN_CONTRACT_ADDRESS not set (load .env.localnet or set manually)'
 	: '';
 
+// Precondition for sending a real prompt: fund the user and activate a plan so
+// the escrow has an allowance to debit per-prompt. Done programmatically (both
+// accounts are Hardhat-unlocked) so chat tests don't re-drive the plan UI.
+const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
+
+async function fundAndActivatePlan(): Promise<void> {
+	await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, PLAN_ALLOWANCE);
+	await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, TEST_ACCOUNT.address, PLAN_ALLOWANCE);
+}
+
+// Displaying the answer *content* is blocked on localnet: the oracle (mock mode)
+// stores answers in an in-memory map and returns `mock_…` CIDs, while the dApp
+// hydrates answer content from public Autonomys/Irys gateways (syncService) —
+// which reject the mock CID format. The full submit→oracle→on-chain-answer loop
+// works (verified via the oracle tx), but the AI bubble never renders content.
+// Tracked as a follow-up: "Localnet answer-content retrieval" (see zippy plan).
+const ANSWER_DISPLAY_BLOCKED =
+	'Blocked on localnet answer-content retrieval — oracle mock storage (mock_* CIDs) ↔ ' +
+	'dApp public-gateway fetch mismatch. See the "Localnet answer-content retrieval" follow-up plan.';
+
 test.describe('Chat — prompt input (T-CHAT)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
+
+	// The composer (textarea + send) only renders for a user with an active plan;
+	// without one the chat shows the activate-plan CTA (see T-CHAT-13). So even the
+	// input-only tests need the funded + activated precondition.
+	let snapshotId: string;
+
+	test.beforeEach(async () => {
+		snapshotId = await takeSnapshot();
+		await fundAndActivatePlan();
+	});
+
+	test.afterEach(async () => {
+		await revertToSnapshot(snapshotId);
+	});
 
 	test('T-CHAT-01: Chat page renders prompt textarea', async ({ chatPage }) => {
 		await chatPage.goto();
@@ -47,11 +89,13 @@ test.describe('Chat — prompt input (T-CHAT)', () => {
 
 test.describe('Chat — submission and response (T-CHAT-TX)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	let snapshotId: string;
 
 	test.beforeEach(async () => {
 		snapshotId = await takeSnapshot();
+		await fundAndActivatePlan();
 	});
 
 	test.afterEach(async () => {
@@ -73,6 +117,7 @@ test.describe('Chat — submission and response (T-CHAT-TX)', () => {
 	});
 
 	test('T-CHAT-08: Oracle response appears as AI message', async ({ chatPage }) => {
+		test.fixme(true, ANSWER_DISPLAY_BLOCKED);
 		await chatPage.goto();
 		const response = await chatPage.sendPromptAndWaitForResponse('Hello SenseAI');
 		expect(response?.length).toBeGreaterThan(0);
@@ -85,12 +130,17 @@ test.describe('Chat — submission and response (T-CHAT-TX)', () => {
 	});
 
 	test('T-CHAT-10: Regenerate button appears on AI response', async ({ chatPage }) => {
+		test.fixme(true, ANSWER_DISPLAY_BLOCKED);
 		await chatPage.goto();
 		await chatPage.sendPromptAndWaitForResponse('Test regeneration flow');
 		await expect(chatPage.regenerateButton).toBeVisible({ timeout: 5_000 });
 	});
 
 	test('T-CHAT-11: Escrow balance decreases after query', async ({ chatPage }) => {
+		// The escrow debit happens at submission, but this asserts it *after* the
+		// answer round-trip — gated on the same answer-content display. The
+		// debit-equals-fee path is covered directly in contract-cost.spec.
+		test.fixme(true, ANSWER_DISPLAY_BLOCKED);
 		test.skip(!TOKEN_ADDRESS, SKIP_ENV);
 		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
 
@@ -102,6 +152,7 @@ test.describe('Chat — submission and response (T-CHAT-TX)', () => {
 	});
 
 	test('T-CHAT-12: Multiple prompts in same conversation', async ({ chatPage }) => {
+		test.fixme(true, ANSWER_DISPLAY_BLOCKED);
 		await chatPage.goto();
 		await chatPage.sendPromptAndWaitForResponse('First message');
 		await chatPage.sendPromptAndWaitForResponse('Second message');
@@ -122,11 +173,15 @@ test.describe('Chat — no active plan (T-CHAT-NOPLAN)', () => {
 
 test.describe('Chat — error states (T-CHAT-ERR)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	let snapshotId: string;
 
 	test.beforeEach(async () => {
 		snapshotId = await takeSnapshot();
+		// Error tests still need a funded + active plan so submission reaches the
+		// transaction (otherwise the UI blocks at the no-plan CTA before erroring).
+		await fundAndActivatePlan();
 	});
 
 	test.afterEach(async () => {
