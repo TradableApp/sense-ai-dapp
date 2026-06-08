@@ -340,7 +340,7 @@ export default function ManagePlanModal({
 		setIsRequestingTokens(true);
 
 		const address = activeWallet?.getAccount()?.address ?? '';
-		const { success, txHash, amount } = await requestTestTokens(address);
+		const { success, txHash, amount } = await requestTestTokens(address, faucetAmount);
 		const dispensed = amount ?? faucetAmount;
 
 		if (success && txHash) {

@@ -61,6 +61,11 @@ describe('getFaucetConfig', () => {
 		stubFaucetConfig({ amount: 999999, rateLimitHours: 24 });
 		await expect(getFaucetConfig()).resolves.toMatchObject({ amount: 100 });
 	});
+
+	it('floors a fractional amount to whole ABLE', async () => {
+		stubFaucetConfig({ amount: 50.9, rateLimitHours: 24 });
+		await expect(getFaucetConfig()).resolves.toMatchObject({ amount: 50 });
+	});
 });
 
 describe('requestTestTokens — localnet (deployer transfer, no cloud function)', () => {
@@ -105,6 +110,23 @@ describe('requestTestTokens — localnet (deployer transfer, no cloud function)'
 
 		expect(result.success).toBe(false);
 		expect(httpsCallable).not.toHaveBeenCalled();
+	});
+
+	it('uses a caller-provided amount and skips the fresh config read', async () => {
+		const fetchMock = vi.fn().mockResolvedValue({
+			json: async () => ({ jsonrpc: '2.0', id: 1, result: '0xabc' }),
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		const result = await requestTestTokens(USER, 30);
+
+		expect(result).toEqual({ success: true, txHash: '0xabc', amount: 30 });
+		expect(getDoc).not.toHaveBeenCalled(); // no second Firestore round-trip
+		const decoded = decodeFunctionData({
+			abi: erc20Abi,
+			data: JSON.parse(fetchMock.mock.calls[0][1].body).params[0].data,
+		});
+		expect(decoded.args[1]).toBe(parseUnits('30', 18));
 	});
 });
 

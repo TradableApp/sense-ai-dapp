@@ -30,8 +30,10 @@ test.describe('Localnet faucet (T-FAUCET)', () => {
 		authenticatedPage,
 	}) => {
 		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
-		// This test asserts the faucet ADDS 100 ABLE, so require an under-funded start.
-		expect(balanceBefore).toBeLessThan(ABLE(100n));
+		// The user must start unfunded so the faucet button appears and the delta below
+		// reflects exactly what the faucet dispensed — independent of the (adjustable)
+		// configured amount.
+		expect(balanceBefore).toBe(0n);
 
 		// Reveal the faucet: open the plan modal and request a limit above balance.
 		await dashboardPage.goto();

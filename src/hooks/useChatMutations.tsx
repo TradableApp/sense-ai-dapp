@@ -242,7 +242,7 @@ export default function useChatMutations() {
 		);
 
 		const address = activeWallet?.getAccount()?.address ?? '';
-		const { success, txHash, amount } = await requestTestTokens(address);
+		const { success, txHash, amount } = await requestTestTokens(address, faucetAmount);
 		const dispensed = amount ?? faucetAmount;
 
 		toast.dismiss(loadingToastId);

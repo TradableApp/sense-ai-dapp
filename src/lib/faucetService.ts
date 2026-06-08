@@ -37,6 +37,15 @@ const sanitizePositive = (raw: unknown, fallback: number, max = Number.POSITIVE_
 	return Number.isFinite(n) && n > 0 && n <= max ? n : fallback;
 };
 
+/**
+ * Like sanitizePositive but floored to a whole number — the faucet dispenses whole
+ * ABLE, and keeping the amount integer keeps the UI/on-chain figures exact.
+ */
+const sanitizeWholeAmount = (raw: unknown, fallback: number, max: number): number => {
+	const n = Math.floor(Number(raw));
+	return Number.isFinite(n) && n > 0 && n <= max ? n : fallback;
+};
+
 const isLocalnet = (): boolean => Number(import.meta.env.VITE_CHAIN_ID) === LOCAL_CHAIN_ID;
 
 /**
@@ -54,7 +63,7 @@ export const getFaucetConfig = async (): Promise<FaucetConfig> => {
 		const snap = await getDoc(doc(db, 'general', 'sense_ai'));
 		const faucet = (snap.exists() ? snap.data()?.faucet : null) ?? {};
 		return {
-			amount: sanitizePositive(faucet.amount, FAUCET_AMOUNT_ABLE, MAX_FAUCET_AMOUNT),
+			amount: sanitizeWholeAmount(faucet.amount, FAUCET_AMOUNT_ABLE, MAX_FAUCET_AMOUNT),
 			rateLimitHours: sanitizePositive(faucet.rateLimitHours, DEFAULT_RATE_LIMIT_HOURS),
 		};
 	} catch (error) {
@@ -69,10 +78,12 @@ export const getFaucetConfig = async (): Promise<FaucetConfig> => {
  * { success, txHash, amount } shape as the testnet faucet so the caller's
  * receipt-polling and display work unchanged.
  */
-const fundFromLocalnetTreasury = async (walletAddress: string): Promise<FaucetResponse> => {
+const fundFromLocalnetTreasury = async (
+	walletAddress: string,
+	amount: number,
+): Promise<FaucetResponse> => {
 	const rpcUrl = import.meta.env.VITE_CHAIN_RPC_URL as string;
 	const tokenAddress = import.meta.env.VITE_TOKEN_CONTRACT_ADDRESS as string;
-	const { amount } = await getFaucetConfig();
 
 	const data = encodeFunctionData({
 		abi: erc20Abi,
@@ -87,7 +98,10 @@ const fundFromLocalnetTreasury = async (walletAddress: string): Promise<FaucetRe
 			jsonrpc: '2.0',
 			id: 1,
 			method: 'eth_sendTransaction',
-			params: [{ from: HARDHAT_DEPLOYER, to: tokenAddress, data }],
+			// Explicit gas (200k — ample for an ERC-20 transfer) skips eth_estimateGas
+			// so a revert surfaces as a mined receipt with a reason rather than an
+			// opaque estimation error swallowed by the catch below.
+			params: [{ from: HARDHAT_DEPLOYER, to: tokenAddress, data, gas: '0x30D40' }],
 		}),
 	});
 
@@ -98,12 +112,18 @@ const fundFromLocalnetTreasury = async (walletAddress: string): Promise<FaucetRe
 	return { success: true, txHash: json.result, amount };
 };
 
-const requestTestTokens = async (walletAddress: string): Promise<FaucetResponse> => {
+const requestTestTokens = async (
+	walletAddress: string,
+	configuredAmount?: number,
+): Promise<FaucetResponse> => {
 	try {
 		// On localnet the "faucet" is a direct deployer transfer; on testnet it is
 		// the Firebase cloud function. Mainnet has no faucet (treasury-funded).
 		if (isLocalnet()) {
-			return await fundFromLocalnetTreasury(walletAddress);
+			// Prefer the caller's already-resolved (cached) amount so the button label
+			// and the transfer use one value; fall back to a fresh read if not passed.
+			const amount = configuredAmount ?? (await getFaucetConfig()).amount;
+			return await fundFromLocalnetTreasury(walletAddress, amount);
 		}
 
 		if (!functions) throw new Error('Firebase functions not initialized');
