@@ -1,7 +1,28 @@
 /* eslint-disable no-param-reassign */
 import { createSlice } from '@reduxjs/toolkit';
 
-const initialState = {
+export interface DeviceScreen {
+	orientation: string | null;
+	width: number | null;
+	height: number | null;
+	touch: boolean;
+}
+
+export interface DeviceState {
+	pwa: boolean;
+	screen: DeviceScreen;
+	client: Record<string, unknown>;
+	os: Record<string, unknown>;
+	device: Record<string, unknown>;
+	bot: Record<string, unknown> | null;
+	online: boolean;
+	latestIP: string;
+	fingerprint: Record<string, unknown>;
+}
+
+// Annotated so the screen/bot fields are nullable rather than inferred as `null`
+// literals (which would make the state type reject real string/number values).
+const initialState: DeviceState = {
 	pwa: false,
 	screen: {
 		orientation: null,

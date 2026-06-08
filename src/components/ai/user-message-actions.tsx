@@ -80,6 +80,7 @@ export default function UserMessageActions({
 							variant="ghost"
 							size="icon"
 							className="size-7 text-muted-foreground"
+							aria-label={isCopied ? 'Copied' : 'Copy'}
 							onClick={handleCopy}
 						>
 							{isCopied ? (
@@ -102,6 +103,7 @@ export default function UserMessageActions({
 							variant="ghost"
 							size="icon"
 							className="size-7 text-muted-foreground"
+							aria-label="Edit message"
 							onClick={() => onEdit?.()}
 						>
 							<PencilIcon className="size-4" />
@@ -119,6 +121,7 @@ export default function UserMessageActions({
 						variant="ghost"
 						size="icon"
 						className="size-5"
+						aria-label="Previous version"
 						onClick={() => onNavigate?.(versionInfo.siblings[versionInfo.currentIndex - 1])}
 						disabled={versionInfo.currentIndex === 0}
 					>
@@ -131,6 +134,7 @@ export default function UserMessageActions({
 						variant="ghost"
 						size="icon"
 						className="size-5"
+						aria-label="Next version"
 						onClick={() => onNavigate?.(versionInfo.siblings[versionInfo.currentIndex + 1])}
 						disabled={versionInfo.currentIndex === versionInfo.siblings.length - 1}
 					>
