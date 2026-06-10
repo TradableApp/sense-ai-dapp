@@ -42,6 +42,18 @@ describe('mergeMessages', () => {
 		expect(mergeMessages(existing, incoming)[0].content).toBe('the answer');
 	});
 
+	it('takes the incoming message when both sides are content-less (no false preserve)', () => {
+		// The conditional boundary the fix guards: prev exists, incoming is content-less,
+		// but existing is ALSO content-less → the preserve branch must NOT fire (nothing
+		// to preserve), so the incoming (with its fresh status/metadata) wins.
+		const existing = [msg({ id: 'm1', content: null })];
+		const incoming = [msg({ id: 'm1', content: '', parentId: 'p9' })];
+
+		const merged = mergeMessages(existing, incoming)[0];
+		expect(merged.content).toBe('');
+		expect(merged.parentId).toBe('p9');
+	});
+
 	it('keeps the incoming non-content fields while preserving existing content', () => {
 		const existing = [msg({ id: 'm1', content: 'the answer', parentId: undefined })];
 		const incoming = [msg({ id: 'm1', content: '', parentId: 'p9' })];

@@ -464,13 +464,19 @@ export default async function syncWithRemote(
 
 						// Merge by id, keyed so The Graph is authority for status/metadata —
 						// but an un-hydrated (content-less) incoming message must NOT clobber
-						// content we already delivered. See mergeMessages.
-						if (Array.isArray(existingMessages)) {
-							finalMessages = mergeMessages(
-								existingMessages as Message[],
-								item.messages as unknown as Message[],
-							);
-						}
+						// content we already delivered. See mergeMessages. A corrupt cache that
+						// decrypts to a non-array is treated as empty, so the result is still
+						// sorted/deduped (previously the non-array path left messages unsorted).
+						//
+						// item.messages is the post-hydration `allMessages` (decrypted
+						// MessageFiles + prompt requests) — both carry id/content/createdAt, so
+						// the Message shape holds at runtime; the cast only bridges its loose
+						// `unknown[]` upstream typing. mergeMessages keys content off `content`,
+						// which is present on both.
+						finalMessages = mergeMessages(
+							Array.isArray(existingMessages) ? (existingMessages as Message[]) : [],
+							item.messages as unknown as Message[],
+						);
 					}
 				} catch (err) {
 					console.warn(
