@@ -15,7 +15,9 @@ import { decryptData, encryptData } from './crypto';
 import db from './db';
 import { GET_USER_UPDATES_QUERY } from './graph/queries';
 import type { GetUserUpdatesQuery, GetUserUpdatesQueryVariables } from './graph/query-types';
+import mergeMessages from './mergeMessages';
 import { mergeSearchIndexDeltas } from './searchService';
+import type { Message } from './types';
 
 // The Graph endpoint is configured via environment variables for flexibility between environments.
 const THE_GRAPH_API_URL = import.meta.env.VITE_THE_GRAPH_API_URL;
@@ -460,30 +462,21 @@ export default async function syncWithRemote(
 					if (existingRecord) {
 						const existingMessages = await decryptData(sessionKey, existingRecord.encryptedData);
 
-						// Create a Map by ID to deduplicate
-						const msgMap = new Map();
-
-						// 1. Add existing messages
-						if (Array.isArray(existingMessages)) {
-							existingMessages.forEach((m: unknown) => {
-								const msgObj = m as Record<string, unknown>;
-								msgMap.set(msgObj.id, m);
-							});
-						}
-
-						// 2. Add/Overwrite with new messages from Graph
-						// We use the new messages as authority for the same IDs (updates status, content etc)
-						item.messages.forEach((m: unknown) => {
-							const msgObj = m as Record<string, unknown>;
-							msgMap.set(msgObj.id, m);
-						});
-
-						// 3. Convert back to array and sort by creation time
-						finalMessages = Array.from(msgMap.values()).sort((a: unknown, b: unknown) => {
-							const aObj = a as Record<string, number>;
-							const bObj = b as Record<string, number>;
-							return aObj.createdAt - bObj.createdAt;
-						});
+						// Merge by id, keyed so The Graph is authority for status/metadata —
+						// but an un-hydrated (content-less) incoming message must NOT clobber
+						// content we already delivered. See mergeMessages. A corrupt cache that
+						// decrypts to a non-array is treated as empty, so the result is still
+						// sorted/deduped (previously the non-array path left messages unsorted).
+						//
+						// item.messages is the post-hydration `allMessages` (decrypted
+						// MessageFiles + prompt requests) — both carry id/content/createdAt, so
+						// the Message shape holds at runtime; the cast only bridges its loose
+						// `unknown[]` upstream typing. mergeMessages keys content off `content`,
+						// which is present on both.
+						finalMessages = mergeMessages(
+							Array.isArray(existingMessages) ? (existingMessages as Message[]) : [],
+							item.messages as unknown as Message[],
+						);
 					}
 				} catch (err) {
 					console.warn(
