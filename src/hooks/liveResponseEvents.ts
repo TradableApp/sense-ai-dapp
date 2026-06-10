@@ -34,6 +34,13 @@ export function deriveEvents(abi: Abi, eventNames: readonly string[]) {
 	eventNames.forEach(name => {
 		const item = getAbiItem({ abi, name });
 		if (!item) return; // not in this ABI — skip
+		// getAbiItem can return a function/error sharing the name; only events are valid
+		// here. Guard before casting so a future same-named non-event isn't formatted as
+		// `event function Name(...)` and silently dropped by the catch below.
+		if (item.type !== 'event') {
+			console.warn(`[useLiveResponse] ABI item "${name}" is not an event (type: ${item.type}).`);
+			return;
+		}
 		try {
 			// thirdweb's prepareEvent needs a full `event Name(...)` signature; viem's
 			// formatAbiItem returns the bare `Name(...)`, so prepend the keyword.

@@ -170,6 +170,34 @@ describe('getMessagesForConversation', () => {
 		expect(assistant?.content).toBe('the answer');
 	});
 
+	it('collapses duplicate ids regardless of order — placeholder appended first', async () => {
+		// The actual production order: the optimistic content-less placeholder is written
+		// first, then the hydrated answer arrives later. Locks in that ordering too.
+		const messages = [
+			{ id: 'm2', conversationId: 'c1', role: 'assistant', content: '', createdAt: 2000 },
+			{ id: 'm2', conversationId: 'c1', role: 'assistant', content: 'the answer', createdAt: 2000 },
+			{ id: 'm1', conversationId: 'c1', role: 'user', content: 'hello', createdAt: 1000 },
+		];
+
+		const encrypted = await encryptData(sessionKey, messages);
+		mockDb.messageCache.get.mockResolvedValue({
+			ownerAddress: OWNER,
+			conversationId: 'c1',
+			encryptedData: encrypted,
+		});
+		mockDb.messageCache.update.mockResolvedValue(undefined);
+
+		const result = await getMessagesForConversation(sessionKey, OWNER, 'c1');
+
+		expect(result).toHaveLength(2);
+		expect(result.find(m => m.id === 'm2')?.content).toBe('the answer');
+		// Cache-heal fired (a duplicate was collapsed): the deduped blob was written back.
+		expect(mockDb.messageCache.update).toHaveBeenCalledWith(
+			[OWNER, 'c1'],
+			expect.objectContaining({ encryptedData: expect.any(String) }),
+		);
+	});
+
 	it('returns empty array on cache miss', async () => {
 		mockDb.messageCache.get.mockResolvedValue(null);
 
@@ -302,9 +330,9 @@ describe('deleteConversation', () => {
 	it('throws when conversation not found', async () => {
 		mockDb.conversations.get.mockResolvedValue(null);
 
-		await expect(
-			deleteConversation(sessionKey, OWNER, 'missing', mockQueryClient),
-		).rejects.toThrow('Conversation with ID "missing" not found.');
+		await expect(deleteConversation(sessionKey, OWNER, 'missing', mockQueryClient)).rejects.toThrow(
+			'Conversation with ID "missing" not found.',
+		);
 	});
 });
 

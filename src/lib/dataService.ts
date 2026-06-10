@@ -116,6 +116,15 @@ export const getMessagesForConversation = async (
 		const sortedMessages = Array.from(byId.values()).sort(
 			(a: Message, b: Message) => a.createdAt - b.createdAt,
 		);
+
+		// Heal the cache when duplicates were actually collapsed, so the dirty blob
+		// isn't re-deduped on every subsequent read and isn't seen by paths that read
+		// messageCache directly. Consistent with the lastAccessedAt write above.
+		if (byId.size < decryptedData.length) {
+			const reEncrypted = await encryptData(sessionKey, sortedMessages);
+			await db.messageCache.update([ownerAddress, conversationId], { encryptedData: reEncrypted });
+		}
+
 		return sortedMessages;
 	}
 
