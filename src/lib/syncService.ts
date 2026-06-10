@@ -41,10 +41,13 @@ const STORAGE_GATEWAY_URL =
  * @returns {object} The appropriate storage utility module.
  */
 function getStorageProvider(cid: string): 'ipfs' | 'autonomys' | 'arweave' {
-	// Autonomys Auto Drive CID validation — checked FIRST: its CIDs (`bafkr6i…`,
-	// all base32) are a subset of the broad IPFS pattern below, so the localnet
-	// branch must not shadow them (it would route Autonomys CIDs to the local
-	// gateway and 404). Format: CIDv1 base32, 'bafkr6i' prefix, charset a-z2-7.
+	// ORDERING CONTRACT: the specific Autonomys/Arweave checks MUST come before the
+	// broad IPFS catch-all — its CIDs (`bafkr6i…`, all base32) are a subset of the
+	// IPFS pattern, so checking IPFS first would shadow them (route to the localnet
+	// gateway → 404). Any new CID scheme added here goes BEFORE the IPFS branch.
+	// Mirrors the oracle's getProviderFromCID (tokenized-ai-agent storage.js).
+	//
+	// Autonomys Auto Drive CID validation — CIDv1 base32, 'bafkr6i' prefix, a-z2-7.
 	if (cid && /^bafkr6i[a-z2-7]{52}$/.test(cid)) {
 		return 'autonomys';
 	}
