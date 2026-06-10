@@ -21,6 +21,12 @@ import { mergeSearchIndexDeltas } from './searchService';
 const THE_GRAPH_API_URL = import.meta.env.VITE_THE_GRAPH_API_URL;
 const graphQLClient = new GraphQLClient(THE_GRAPH_API_URL);
 
+// Localnet only: when set, answer content lives in the local IPFS node (the e2e
+// stack's Kubo) and is fetched by CID from this gateway base, instead of the
+// public Autonomys/Irys gateways. Unset on testnet/mainnet — those paths are
+// unchanged. See sense-ai-e2e/scripts/sync-config.sh.
+const STORAGE_GATEWAY_URL = import.meta.env.VITE_STORAGE_GATEWAY_URL;
+
 // --- Internal Helper Functions ---
 
 /**
@@ -29,7 +35,15 @@ const graphQLClient = new GraphQLClient(THE_GRAPH_API_URL);
  * @param {string} cid The Content ID.
  * @returns {object} The appropriate storage utility module.
  */
-function getStorageProvider(cid: string): 'autonomys' | 'arweave' {
+function getStorageProvider(cid: string): 'ipfs' | 'autonomys' | 'arweave' {
+	// Localnet only: a configured gateway means content lives in the local IPFS
+	// node. Our localnet CIDs are IPFS CIDv1 (base32, `bafy…`/`bafk…`); route them
+	// to the gateway. Gated on STORAGE_GATEWAY_URL so testnet/mainnet are untouched
+	// (there this branch never runs and Autonomys/Arweave detection is unchanged).
+	if (STORAGE_GATEWAY_URL && cid && /^baf[ky][a-z2-7]{20,}$/.test(cid)) {
+		return 'ipfs';
+	}
+
 	// Autonomys Auto Drive CID validation
 	// Format: CIDv1 with base32 encoding
 	// Starts with 'bafkr6i' (base32 prefix + CIDv1 identifier)
@@ -59,7 +73,10 @@ async function fetchFromStorage(cid: string): Promise<string | null> {
 	const provider = getStorageProvider(cid);
 
 	let url;
-	if (provider === 'autonomys') {
+	if (provider === 'ipfs') {
+		// STORAGE_GATEWAY_URL already ends in `…/ipfs/` (localnet only).
+		url = `${STORAGE_GATEWAY_URL}${cid}`;
+	} else if (provider === 'autonomys') {
 		// Use the Autonomys Astral Gateway (or standard IPFS gateway if bridged)
 		// const envNetwork = import.meta.env.VITE_AUTONOMYS_NETWORK || 'testnet';
 
@@ -464,7 +481,10 @@ export default async function syncWithRemote(
 					);
 				}
 
-				const encryptedMessages = await encryptData(sessionKey, JSON.stringify(finalMessages));
+				// encryptData JSON-stringifies internally, so pass the array directly —
+				// pre-stringifying here double-encodes it, and getMessages() then decrypts
+				// to a string and crashes on `.sort` (matches dataService's usage).
+				const encryptedMessages = await encryptData(sessionKey, finalMessages);
 
 				return {
 					ownerAddress,

@@ -99,14 +99,11 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 	test('T-COST-03: two different fees debit their respective amounts across prompts', async ({
 		chatPage,
 	}) => {
-		// Sending a SECOND prompt requires the first to finish (isAiThinking clears
-		// when the answer content arrives). On localnet that's blocked by the
-		// answer-content retrieval gap (#27) — the assistant message never gets
-		// content, so the composer stays disabled. Un-fixme this together with the
-		// chat T-CHAT-08/10/11/12 specs once #27 lands; it proves the fee change is
-		// dynamic across sequential prompts, not just a one-shot.
-		test.fixme(true, 'Blocked on localnet answer-content retrieval (#27) — see chat.spec fixmes.');
-
+		// Sending a SECOND prompt requires the first to finish (isAiThinking clears when
+		// the answer renders). The answer doesn't render yet — blocked on the same
+		// pre-existing dApp answer-detection bug as the chat specs (useLiveResponse
+		// UnknownSignatureError, CU-86d39wcfn). Un-fixme alongside T-CHAT-08/10/11/12.
+		test.fixme(true, 'Blocked on dApp answer-render bug (CU-86d39wcfn) — see chat.spec.');
 		const feeA = ABLE(3);
 		const feeB = ABLE(8);
 
@@ -119,7 +116,7 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 		expect(before1 - after1).toBe(feeA);
 
 		await setPromptFee(ESCROW_ADDRESS, feeB);
-		// Once #27 is fixed the answer arrives and thinking clears, re-enabling the
+		// The answer arrives (local IPFS) and thinking clears, re-enabling the
 		// composer for the second prompt.
 		await expect(chatPage.thinkingIndicator).toBeHidden({ timeout: 90_000 });
 		const before2 = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);

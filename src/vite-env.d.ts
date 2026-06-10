@@ -33,6 +33,10 @@ interface ImportMetaEnv {
 	readonly VITE_SENTRY_DSN: string | undefined;
 	readonly VITE_SENTRY_ENVIRONMENT: string | undefined;
 	readonly VITE_STORAGE_BUCKET: string;
+	/** Localnet only: IPFS gateway base (e.g. http://127.0.0.1:8080/ipfs/) the dApp
+	 *  fetches answer content from instead of the public Autonomys/Irys gateways.
+	 *  Unset on testnet/mainnet — see src/lib/syncService.ts. */
+	readonly VITE_STORAGE_GATEWAY_URL: string | undefined;
 	readonly VITE_THE_GRAPH_API_URL: string;
 	readonly VITE_THIRDWEB_CLIENT_ID: string;
 	readonly VITE_TOKEN_CONTRACT_ADDRESS: string;
