@@ -23,15 +23,15 @@ async function fundAndActivatePlan(): Promise<void> {
 	await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, TEST_ACCOUNT.address, PLAN_ALLOWANCE);
 }
 
-// Displaying the answer *content* is blocked on localnet: the oracle (mock mode)
-// stores answers in an in-memory map and returns `mock_…` CIDs, while the dApp
-// hydrates answer content from public Autonomys/Irys gateways (syncService) —
-// which reject the mock CID format. The full submit→oracle→on-chain-answer loop
-// works (verified via the oracle tx), but the AI bubble never renders content.
-// Tracked as a follow-up: "Localnet answer-content retrieval" (see zippy plan).
+// Answer *content* now retrieves + decrypts end-to-end on localnet (oracle → local
+// IPFS → gateway → dApp fetch/decrypt/cache, all verified). But the answer bubble
+// still doesn't RENDER: useLiveResponse can't derive its event watchers
+// (UnknownSignatureError), so the dApp never detects AnswerMessageAdded and never
+// merges the fetched content — the message stays "Thinking…". This is a pre-existing
+// dApp answer-detection bug, NOT storage. Tracked: ClickUp 86d39wcfn.
 const ANSWER_DISPLAY_BLOCKED =
-	'Blocked on localnet answer-content retrieval — oracle mock storage (mock_* CIDs) ↔ ' +
-	'dApp public-gateway fetch mismatch. See the "Localnet answer-content retrieval" follow-up plan.';
+	'Blocked on a pre-existing dApp answer-detection bug (useLiveResponse UnknownSignatureError, ' +
+	'CU-86d39wcfn) — answer content retrieves+decrypts but the bubble never renders. Not a storage issue.';
 
 test.describe('Chat — prompt input (T-CHAT)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
@@ -134,10 +134,8 @@ test.describe('Chat — submission and response (T-CHAT-TX)', () => {
 	});
 
 	test('T-CHAT-11: Escrow balance decreases after query', async ({ chatPage }) => {
-		// The escrow debit happens at submission, but this asserts it *after* the
-		// answer round-trip — gated on the same answer-content display. The
-		// debit-equals-fee path is covered directly in contract-cost.spec. The
-		// describe-level skip already guards missing contract addresses.
+		// Waits for the answer round-trip, so it's gated on the same answer-render bug.
+		// The debit-equals-fee path is covered directly in contract-cost.spec.
 		test.fixme(true, ANSWER_DISPLAY_BLOCKED);
 		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
 
