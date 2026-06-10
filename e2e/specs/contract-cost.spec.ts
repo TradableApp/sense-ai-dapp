@@ -92,4 +92,37 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 		await dashboardPage.assertHasPlan();
 		await expect(dashboardPage.spentValue).toHaveText(/\b7\b.*ABLE/, { timeout: 20_000 });
 	});
+
+	test('T-COST-03: two different fees debit their respective amounts across prompts', async ({
+		chatPage,
+	}) => {
+		// Sending a SECOND prompt requires the first to finish (isAiThinking clears
+		// when the answer content arrives). On localnet that's blocked by the
+		// answer-content retrieval gap (#27) — the assistant message never gets
+		// content, so the composer stays disabled. Un-fixme this together with the
+		// chat T-CHAT-08/10/11/12 specs once #27 lands; it proves the fee change is
+		// dynamic across sequential prompts, not just a one-shot.
+		test.fixme(true, 'Blocked on localnet answer-content retrieval (#27) — see chat.spec fixmes.');
+
+		const feeA = ABLE(3);
+		const feeB = ABLE(8);
+
+		await setPromptFee(ESCROW_ADDRESS, feeA);
+		const before1 = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
+		await chatPage.goto();
+		await chatPage.sendPrompt('First prompt at fee A');
+		await expect(chatPage.thinkingIndicator).toBeVisible({ timeout: 20_000 });
+		const after1 = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
+		expect(before1 - after1).toBe(feeA);
+
+		await setPromptFee(ESCROW_ADDRESS, feeB);
+		// Once #27 is fixed the answer arrives and thinking clears, re-enabling the
+		// composer for the second prompt.
+		await expect(chatPage.thinkingIndicator).toBeHidden({ timeout: 90_000 });
+		const before2 = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
+		await chatPage.sendPrompt('Second prompt at fee B');
+		await expect(chatPage.thinkingIndicator).toBeVisible({ timeout: 20_000 });
+		const after2 = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
+		expect(before2 - after2).toBe(feeB);
+	});
 });
