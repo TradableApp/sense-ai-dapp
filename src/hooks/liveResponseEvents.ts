@@ -26,19 +26,24 @@ type Abi = Parameters<typeof getAbiItem>[0]['abi'];
 
 /**
  * Build thirdweb event watchers for the given event names that exist in `abi`.
+ * Names absent from the ABI are skipped; a signature that can't be prepared is
+ * skipped (warned) without aborting the rest.
  */
 export function deriveEvents(abi: Abi, eventNames: readonly string[]) {
 	const events: ReturnType<typeof prepareEvent>[] = [];
-	try {
-		eventNames.forEach(name => {
-			const item = getAbiItem({ abi, name });
-			if (item) {
-				const signature = formatAbiItem(item as AbiEvent);
-				events.push(prepareEvent({ signature: signature as `event ${string}` }));
-			}
-		});
-	} catch (error) {
-		console.error('[useLiveResponse] Failed to derive events:', error);
-	}
+	eventNames.forEach(name => {
+		const item = getAbiItem({ abi, name });
+		if (!item) return; // not in this ABI — skip
+		try {
+			// thirdweb's prepareEvent needs a full `event Name(...)` signature; viem's
+			// formatAbiItem returns the bare `Name(...)`, so prepend the keyword.
+			// (Without this it throws UnknownSignatureError — the CU-86d39wcfn bug.)
+			const signature = `event ${formatAbiItem(item as AbiEvent)}` as `event ${string}`;
+			events.push(prepareEvent({ signature }));
+		} catch (error) {
+			// Per-event try: one unpreparable signature must not drop the others.
+			console.warn(`[useLiveResponse] Could not prepare event "${name}":`, error);
+		}
+	});
 	return events;
 }

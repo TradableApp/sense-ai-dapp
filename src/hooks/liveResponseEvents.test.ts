@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 
-import { AGENT_EVENT_NAMES, ESCROW_EVENT_NAMES, deriveEvents } from './liveResponseEvents';
+import { AGENT_EVENT_NAMES, deriveEvents, ESCROW_EVENT_NAMES } from './liveResponseEvents';
 
 type Abi = Parameters<typeof deriveEvents>[0];
 

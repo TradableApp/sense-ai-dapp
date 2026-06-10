@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { useQueryClient } from '@tanstack/react-query';
-import { getContract, prepareEvent } from 'thirdweb';
+import { getContract } from 'thirdweb';
 import { useActiveWallet, useContractEvents } from 'thirdweb/react';
-import type { AbiEvent } from 'viem';
-import { getAbiItem } from 'viem';
-import { formatAbiItem } from 'viem/utils';
 
 import { CONTRACTS } from '@/config/contracts';
 import { client, deploymentChain } from '@/config/thirdweb';
@@ -13,6 +10,8 @@ import { useSession } from '@/features/auth/SessionProvider';
 import { wait } from '@/lib/utils';
 import { useAppSelector } from '@/store/hooks';
 import type { RootState } from '@/store/store';
+
+import { AGENT_EVENT_NAMES, deriveEvents, ESCROW_EVENT_NAMES } from './liveResponseEvents';
 
 interface AgentEventArgs {
 	user?: `0x${string}`;
@@ -89,56 +88,22 @@ export default function useLiveResponse() {
 	}, [contractConfig, targetChain]);
 
 	// --- 1. Prepare Events ---
-	const agentEvents = useMemo(() => {
-		const events: ReturnType<typeof prepareEvent>[] = [];
-		if (contractConfig?.agent?.abi) {
-			try {
-				const eventsToWatch = [
-					'PromptSubmitted',
-					'AnswerMessageAdded',
-					'RegenerationRequested',
-					'BranchRequested',
-					'ConversationBranched',
-					'MetadataUpdateRequested',
-					'ConversationMetadataUpdated',
-				];
-				eventsToWatch.forEach(name => {
-					const item = getAbiItem({ abi: contractConfig.agent.abi, name });
-					if (item) {
-						const signature = formatAbiItem(item as AbiEvent);
-						events.push(prepareEvent({ signature: signature as `event ${string}` }));
-					}
-				});
-			} catch (error) {
-				console.error('[useLiveResponse] Failed to derive Agent events:', error);
-			}
-		}
-		return events;
-	}, [contractConfig?.agent?.abi]);
+	// deriveEvents builds the watchers (see liveResponseEvents.ts). It prepends the
+	// `event ` keyword the bare viem signature lacks — without it thirdweb's
+	// prepareEvent threw UnknownSignatureError and no events were watched at all.
+	const agentEvents = useMemo(
+		() =>
+			contractConfig?.agent?.abi ? deriveEvents(contractConfig.agent.abi, AGENT_EVENT_NAMES) : [],
+		[contractConfig?.agent?.abi],
+	);
 
-	const escrowEvents = useMemo(() => {
-		const events: ReturnType<typeof prepareEvent>[] = [];
-		if (contractConfig?.escrow?.abi) {
-			try {
-				const eventsToWatch = [
-					'PromptCancelled',
-					'PaymentRefunded',
-					'SpendingLimitSet',
-					'SpendingLimitCancelled',
-				];
-				eventsToWatch.forEach(name => {
-					const item = getAbiItem({ abi: contractConfig.escrow.abi, name });
-					if (item) {
-						const signature = formatAbiItem(item as AbiEvent);
-						events.push(prepareEvent({ signature: signature as `event ${string}` }));
-					}
-				});
-			} catch (error) {
-				console.error('[useLiveResponse] Failed to derive Escrow events:', error);
-			}
-		}
-		return events;
-	}, [contractConfig?.escrow?.abi]);
+	const escrowEvents = useMemo(
+		() =>
+			contractConfig?.escrow?.abi
+				? deriveEvents(contractConfig.escrow.abi, ESCROW_EVENT_NAMES)
+				: [],
+		[contractConfig?.escrow?.abi],
+	);
 
 	// --- 2. Listeners ---
 	const { data: agentLog, isLoading: isAgentLoading } = useContractEvents({
