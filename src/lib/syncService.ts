@@ -24,8 +24,13 @@ const graphQLClient = new GraphQLClient(THE_GRAPH_API_URL);
 // Localnet only: when set, answer content lives in the local IPFS node (the e2e
 // stack's Kubo) and is fetched by CID from this gateway base, instead of the
 // public Autonomys/Irys gateways. Unset on testnet/mainnet — those paths are
-// unchanged. See sense-ai-e2e/scripts/sync-config.sh.
-const STORAGE_GATEWAY_URL = import.meta.env.VITE_STORAGE_GATEWAY_URL;
+// unchanged. See sense-ai-e2e/scripts/sync-config.sh. Normalised to a trailing
+// slash so `${base}${cid}` is well-formed even if configured without one.
+const RAW_STORAGE_GATEWAY_URL = import.meta.env.VITE_STORAGE_GATEWAY_URL;
+const STORAGE_GATEWAY_URL =
+	RAW_STORAGE_GATEWAY_URL && !RAW_STORAGE_GATEWAY_URL.endsWith('/')
+		? `${RAW_STORAGE_GATEWAY_URL}/`
+		: RAW_STORAGE_GATEWAY_URL;
 
 // --- Internal Helper Functions ---
 
@@ -36,20 +41,20 @@ const STORAGE_GATEWAY_URL = import.meta.env.VITE_STORAGE_GATEWAY_URL;
  * @returns {object} The appropriate storage utility module.
  */
 function getStorageProvider(cid: string): 'ipfs' | 'autonomys' | 'arweave' {
+	// Autonomys Auto Drive CID validation — checked FIRST: its CIDs (`bafkr6i…`,
+	// all base32) are a subset of the broad IPFS pattern below, so the localnet
+	// branch must not shadow them (it would route Autonomys CIDs to the local
+	// gateway and 404). Format: CIDv1 base32, 'bafkr6i' prefix, charset a-z2-7.
+	if (cid && /^bafkr6i[a-z2-7]{52}$/.test(cid)) {
+		return 'autonomys';
+	}
+
 	// Localnet only: a configured gateway means content lives in the local IPFS
 	// node. Our localnet CIDs are IPFS CIDv1 (base32, `bafy…`/`bafk…`); route them
 	// to the gateway. Gated on STORAGE_GATEWAY_URL so testnet/mainnet are untouched
 	// (there this branch never runs and Autonomys/Arweave detection is unchanged).
 	if (STORAGE_GATEWAY_URL && cid && /^baf[ky][a-z2-7]{20,}$/.test(cid)) {
 		return 'ipfs';
-	}
-
-	// Autonomys Auto Drive CID validation
-	// Format: CIDv1 with base32 encoding
-	// Starts with 'bafkr6i' (base32 prefix + CIDv1 identifier)
-	// Uses base32 character set: a-z, 2-7
-	if (cid && /^bafkr6i[a-z2-7]{52}$/.test(cid)) {
-		return 'autonomys';
 	}
 
 	// Heuristic for Arweave/Irys: Base64URL (check second - less specific)
@@ -74,7 +79,7 @@ async function fetchFromStorage(cid: string): Promise<string | null> {
 
 	let url;
 	if (provider === 'ipfs') {
-		// STORAGE_GATEWAY_URL already ends in `…/ipfs/` (localnet only).
+		// STORAGE_GATEWAY_URL is the localnet gateway base (normalised to end in `/`).
 		url = `${STORAGE_GATEWAY_URL}${cid}`;
 	} else if (provider === 'autonomys') {
 		// Use the Autonomys Astral Gateway (or standard IPFS gateway if bridged)
@@ -149,7 +154,10 @@ async function setLastSyncedAt(
 		}
 	}
 	metadata.conversationsLastSyncedAt = timestamp;
-	const encryptedMetadata = await encryptData(sessionKey, JSON.stringify(metadata));
+	// encryptData JSON-stringifies internally — pass the object directly. Pre-
+	// stringifying double-encodes it, so getLastSyncedAt() decrypts to a string,
+	// reads `undefined`, and returns 0 → every sync becomes a full re-sync.
+	const encryptedMetadata = await encryptData(sessionKey, metadata);
 	await db.userMetadata.put({ ownerAddress, encryptedData: encryptedMetadata });
 }
 
