@@ -98,17 +98,43 @@ export const getMessagesForConversation = async (
 			'color: green',
 		);
 		await db.messageCache.update([ownerAddress, conversationId], { lastAccessedAt: Date.now() });
-		const decryptedData = await decryptData(sessionKey, cachedRecord.encryptedData);
+		const decryptedData = (await decryptData(sessionKey, cachedRecord.encryptedData)) as Message[];
 
-		// Sort messages by timestamp immediately after decryption
-		const sortedMessages = decryptedData.sort(
+		// Collapse duplicate ids, keeping the richest version of each. The cache can
+		// briefly hold two entries for the same message — an optimistic, content-less
+		// "pending" placeholder and the synced/hydrated version with the delivered
+		// content. Without this, a content-less duplicate landing last leaves the chat
+		// stuck "Thinking…" even though the answer has arrived.
+		const byId = new Map<string, Message>();
+		decryptedData.forEach(m => {
+			const prev = byId.get(m.id);
+			if (!prev) {
+				byId.set(m.id, m);
+				return;
+			}
+			const curLen = (m.content || '').length;
+			const prevLen = (prev.content || '').length;
+			// Prefer the richest content; on equal length prefer the latest write, so a
+			// differing same-length duplicate is resolved deterministically rather than
+			// silently dropped.
+			if (curLen > prevLen || (curLen === prevLen && m.createdAt > prev.createdAt)) {
+				byId.set(m.id, m);
+			}
+		});
+
+		// Sort messages by timestamp
+		const sortedMessages = Array.from(byId.values()).sort(
 			(a: Message, b: Message) => a.createdAt - b.createdAt,
 		);
-		console.log(
-			`%c[dataService-LOG] Returning ${sortedMessages.length} decrypted and sorted messages from cache.`,
-			'color: green',
-			sortedMessages,
-		);
+
+		// Heal the cache when duplicates were actually collapsed, so the dirty blob
+		// isn't re-deduped on every subsequent read and isn't seen by paths that read
+		// messageCache directly. Consistent with the lastAccessedAt write above.
+		if (byId.size < decryptedData.length) {
+			const reEncrypted = await encryptData(sessionKey, sortedMessages);
+			await db.messageCache.update([ownerAddress, conversationId], { encryptedData: reEncrypted });
+		}
+
 		return sortedMessages;
 	}
 

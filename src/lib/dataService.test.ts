@@ -144,6 +144,82 @@ describe('getMessagesForConversation', () => {
 		expect(result[1].createdAt).toBe(2000);
 	});
 
+	it('collapses duplicate ids, keeping the content-bearing version', async () => {
+		// Repro for the stuck-"Thinking…" bug (CU-86d39wcfn): the cache can hold two
+		// entries with the same id — a content-less placeholder and the hydrated answer.
+		// Without dedup, the content-less one can render last and leave isAiThinking stuck.
+		// getMessagesForConversation must collapse them to the richest-content version.
+		const messages = [
+			{ id: 'm1', conversationId: 'c1', role: 'user', content: 'hello', createdAt: 1000 },
+			{ id: 'm2', conversationId: 'c1', role: 'assistant', content: 'the answer', createdAt: 2000 },
+			{ id: 'm2', conversationId: 'c1', role: 'assistant', content: '', createdAt: 2000 },
+		];
+
+		const encrypted = await encryptData(sessionKey, messages);
+		mockDb.messageCache.get.mockResolvedValue({
+			ownerAddress: OWNER,
+			conversationId: 'c1',
+			encryptedData: encrypted,
+		});
+		mockDb.messageCache.update.mockResolvedValue(undefined);
+
+		const result = await getMessagesForConversation(sessionKey, OWNER, 'c1');
+
+		expect(result).toHaveLength(2);
+		const assistant = result.find(m => m.id === 'm2');
+		expect(assistant?.content).toBe('the answer');
+	});
+
+	it('collapses duplicate ids regardless of order — placeholder appended first', async () => {
+		// The actual production order: the optimistic content-less placeholder is written
+		// first, then the hydrated answer arrives later. Locks in that ordering too.
+		const messages = [
+			{ id: 'm2', conversationId: 'c1', role: 'assistant', content: '', createdAt: 2000 },
+			{ id: 'm2', conversationId: 'c1', role: 'assistant', content: 'the answer', createdAt: 2000 },
+			{ id: 'm1', conversationId: 'c1', role: 'user', content: 'hello', createdAt: 1000 },
+		];
+
+		const encrypted = await encryptData(sessionKey, messages);
+		mockDb.messageCache.get.mockResolvedValue({
+			ownerAddress: OWNER,
+			conversationId: 'c1',
+			encryptedData: encrypted,
+		});
+		mockDb.messageCache.update.mockResolvedValue(undefined);
+
+		const result = await getMessagesForConversation(sessionKey, OWNER, 'c1');
+
+		expect(result).toHaveLength(2);
+		expect(result.find(m => m.id === 'm2')?.content).toBe('the answer');
+		// Cache-heal fired (a duplicate was collapsed): the deduped blob was written back.
+		expect(mockDb.messageCache.update).toHaveBeenCalledWith(
+			[OWNER, 'c1'],
+			expect.objectContaining({ encryptedData: expect.any(String) }),
+		);
+	});
+
+	it('resolves equal-length different-content duplicates to the latest write', async () => {
+		// Tiebreaker: when two entries share an id and have equal-length but different
+		// content, the later createdAt wins rather than one being silently dropped.
+		const messages = [
+			{ id: 'm1', conversationId: 'c1', role: 'assistant', content: 'aaaaa', createdAt: 1000 },
+			{ id: 'm1', conversationId: 'c1', role: 'assistant', content: 'bbbbb', createdAt: 1001 },
+		];
+
+		const encrypted = await encryptData(sessionKey, messages);
+		mockDb.messageCache.get.mockResolvedValue({
+			ownerAddress: OWNER,
+			conversationId: 'c1',
+			encryptedData: encrypted,
+		});
+		mockDb.messageCache.update.mockResolvedValue(undefined);
+
+		const result = await getMessagesForConversation(sessionKey, OWNER, 'c1');
+
+		expect(result).toHaveLength(1);
+		expect(result[0].content).toBe('bbbbb');
+	});
+
 	it('returns empty array on cache miss', async () => {
 		mockDb.messageCache.get.mockResolvedValue(null);
 
@@ -276,9 +352,9 @@ describe('deleteConversation', () => {
 	it('throws when conversation not found', async () => {
 		mockDb.conversations.get.mockResolvedValue(null);
 
-		await expect(
-			deleteConversation(sessionKey, OWNER, 'missing', mockQueryClient),
-		).rejects.toThrow('Conversation with ID "missing" not found.');
+		await expect(deleteConversation(sessionKey, OWNER, 'missing', mockQueryClient)).rejects.toThrow(
+			'Conversation with ID "missing" not found.',
+		);
 	});
 });
 

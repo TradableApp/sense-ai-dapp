@@ -23,15 +23,19 @@ async function fundAndActivatePlan(): Promise<void> {
 	await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, TEST_ACCOUNT.address, PLAN_ALLOWANCE);
 }
 
-// Answer *content* now retrieves + decrypts end-to-end on localnet (oracle → local
-// IPFS → gateway → dApp fetch/decrypt/cache, all verified). But the answer bubble
-// still doesn't RENDER: useLiveResponse can't derive its event watchers
-// (UnknownSignatureError), so the dApp never detects AnswerMessageAdded and never
-// merges the fetched content — the message stays "Thinking…". This is a pre-existing
-// dApp answer-detection bug, NOT storage. Tracked: ClickUp 86d39wcfn.
+// The full answer round-trip (oracle → local IPFS → subgraph → dApp render) is FIXED
+// and verified working end-to-end: T-CHAT-08 passes in isolation (~3.5s), and the
+// useLiveResponse event-derivation bug (UnknownSignatureError) + the duplicate-id
+// stuck-render bug are both fixed on this branch (CU-86d39wcfn). These specs stay
+// fixme only because they can't run green IN THE FULL SUITE yet: per-test isolation
+// fights the live oracle + graph-node + dApp sync. snapshot/revert reads as a chain
+// reorg the indexer can't track across consecutive answer round-trips; forward-only
+// makes each fresh-context test re-sync all accumulating conversations past the
+// timeout (and persists the plan, breaking T-CHAT-13). The fix is per-test isolated
+// Hardhat accounts — tracked in CU-86d3a04rr. Un-fixme once that lands.
 const ANSWER_DISPLAY_BLOCKED =
-	'Blocked on a pre-existing dApp answer-detection bug (useLiveResponse UnknownSignatureError, ' +
-	'CU-86d39wcfn) — answer content retrieves+decrypts but the bubble never renders. Not a storage issue.';
+	'Answer pipeline fixed + verified in isolation (CU-86d39wcfn); fixme in-suite only — ' +
+	'per-test isolation vs the live oracle/indexer/dApp re-sync needs the harness refactor in CU-86d3a04rr.';
 
 test.describe('Chat — prompt input (T-CHAT)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
