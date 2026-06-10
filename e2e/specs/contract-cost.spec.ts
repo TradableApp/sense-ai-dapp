@@ -99,11 +99,15 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 	test('T-COST-03: two different fees debit their respective amounts across prompts', async ({
 		chatPage,
 	}) => {
-		// Sending a SECOND prompt requires the first to finish (isAiThinking clears when
-		// the answer renders). The answer doesn't render yet — blocked on the same
-		// pre-existing dApp answer-detection bug as the chat specs (useLiveResponse
-		// UnknownSignatureError, CU-86d39wcfn). Un-fixme alongside T-CHAT-08/10/11/12.
-		test.fixme(true, 'Blocked on dApp answer-render bug (CU-86d39wcfn) — see chat.spec.');
+		// Sending a SECOND prompt requires the first answer to render (isAiThinking
+		// clears). That pipeline is fixed + verified in isolation (CU-86d39wcfn); this
+		// spec stays fixme in-suite only because per-test isolation fights the live
+		// oracle/indexer/dApp re-sync — harness refactor tracked in CU-86d3a04rr.
+		// Un-fixme alongside T-CHAT-08/10/11/12.
+		test.fixme(
+			true,
+			'Answer pipeline fixed; fixme in-suite pending harness refactor (CU-86d3a04rr).',
+		);
 		const feeA = ABLE(3);
 		const feeB = ABLE(8);
 
