@@ -108,8 +108,18 @@ export const getMessagesForConversation = async (
 		const byId = new Map<string, Message>();
 		decryptedData.forEach(m => {
 			const prev = byId.get(m.id);
-			const prevLen = prev ? (prev.content || '').length : -1;
-			if (!prev || (m.content || '').length > prevLen) byId.set(m.id, m);
+			if (!prev) {
+				byId.set(m.id, m);
+				return;
+			}
+			const curLen = (m.content || '').length;
+			const prevLen = (prev.content || '').length;
+			// Prefer the richest content; on equal length prefer the latest write, so a
+			// differing same-length duplicate is resolved deterministically rather than
+			// silently dropped.
+			if (curLen > prevLen || (curLen === prevLen && m.createdAt > prev.createdAt)) {
+				byId.set(m.id, m);
+			}
 		});
 
 		// Sort messages by timestamp

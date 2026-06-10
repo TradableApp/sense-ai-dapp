@@ -198,6 +198,28 @@ describe('getMessagesForConversation', () => {
 		);
 	});
 
+	it('resolves equal-length different-content duplicates to the latest write', async () => {
+		// Tiebreaker: when two entries share an id and have equal-length but different
+		// content, the later createdAt wins rather than one being silently dropped.
+		const messages = [
+			{ id: 'm1', conversationId: 'c1', role: 'assistant', content: 'aaaaa', createdAt: 1000 },
+			{ id: 'm1', conversationId: 'c1', role: 'assistant', content: 'bbbbb', createdAt: 1001 },
+		];
+
+		const encrypted = await encryptData(sessionKey, messages);
+		mockDb.messageCache.get.mockResolvedValue({
+			ownerAddress: OWNER,
+			conversationId: 'c1',
+			encryptedData: encrypted,
+		});
+		mockDb.messageCache.update.mockResolvedValue(undefined);
+
+		const result = await getMessagesForConversation(sessionKey, OWNER, 'c1');
+
+		expect(result).toHaveLength(1);
+		expect(result[0].content).toBe('bbbbb');
+	});
+
 	it('returns empty array on cache miss', async () => {
 		mockDb.messageCache.get.mockResolvedValue(null);
 
