@@ -156,7 +156,9 @@ export default function PlanStatusCard({ plan }: { plan: Plan }) {
 									<span className="text-muted-foreground text-xs uppercase tracking-wider">
 										Spent
 									</span>
-									<span className="font-semibold">{formattedSpentAmount} ABLE</span>
+									<span className="font-semibold" data-testid="plan-spent-value">
+										{formattedSpentAmount} ABLE
+									</span>
 								</div>
 
 								{/* Show Available explicitly if there is a gap */}
@@ -175,7 +177,9 @@ export default function PlanStatusCard({ plan }: { plan: Plan }) {
 									<span className="text-muted-foreground text-xs uppercase tracking-wider">
 										Limit
 									</span>
-									<span className="font-semibold">{formattedAllowance} ABLE</span>
+									<span className="font-semibold" data-testid="plan-allowance">
+										{formattedAllowance} ABLE
+									</span>
 								</div>
 							</div>
 

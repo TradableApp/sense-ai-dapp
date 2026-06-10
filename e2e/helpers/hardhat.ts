@@ -236,10 +236,13 @@ export async function getSpendingLimit(
 		args: [userAddress as `0x${string}`],
 	});
 	const result = await callContract(escrowAddress, data);
+	// No cast: decodeFunctionResult infers the tuple from the parseAbi types, so a
+	// future change to the spendingLimits struct surfaces as a type error here
+	// rather than being silently truncated.
 	const [allowance, spentAmount, expiresAt] = decodeFunctionResult({
 		abi: ESCROW_ABI,
 		functionName: 'spendingLimits',
 		data: result as `0x${string}`,
-	}) as [bigint, bigint, bigint];
+	});
 	return { allowance, spentAmount, expiresAt };
 }

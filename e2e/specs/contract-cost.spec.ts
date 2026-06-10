@@ -85,9 +85,12 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 		await chatPage.sendPrompt('Reflect the new cost in my usage');
 		await expect(chatPage.thinkingIndicator).toBeVisible({ timeout: 20_000 });
 
-		// useLiveResponse invalidates ['usagePlan'] for any token-costing action, so
-		// the dashboard re-reads spendingLimits.spentAmount without a reload. After
-		// one prompt at the new fee, "Spent" shows 7 ABLE.
+		// useLiveResponse invalidates ['usagePlan'] on any token-costing action;
+		// invalidateQueries refetches the active observer, so the mounted dashboard
+		// re-reads spendingLimits.spentAmount within the assertion window (the stale
+		// mark also survives the chat→dashboard unmount, covering a mount-time
+		// refetch — useUsagePlan's 60s staleTime is bypassed by the invalidation, not
+		// relied upon). No reload needed. After one prompt at the new fee, Spent = 7.
 		await dashboardPage.goto();
 		await dashboardPage.assertHasPlan();
 		await expect(dashboardPage.spentValue).toHaveText(/\b7\b.*ABLE/, { timeout: 20_000 });

@@ -39,11 +39,13 @@ export class DashboardPage {
 		return this.page.getByRole('button', { name: /manage plan|manage/i });
 	}
 
-	/** The "Spent" value in PlanStatusCard ("<n> ABLE"), beneath the "Spent" label.
-	 *  Sourced from useUsagePlan → spendingLimits.spentAmount, so it reflects the
-	 *  per-prompt cost actually debited. */
+	/** The "Spent" value in PlanStatusCard ("<n> ABLE"). Sourced from useUsagePlan →
+	 *  spendingLimits.spentAmount, so it reflects the per-prompt cost actually
+	 *  debited. Testid-first (matching `allowanceValue`), with a text fallback. */
 	get spentValue() {
-		return this.page.getByText('Spent', { exact: true }).locator('..').getByText(/ABLE/).first();
+		return this.page
+			.getByTestId('plan-spent-value')
+			.or(this.page.getByText('Spent', { exact: true }).locator('..').getByText(/ABLE/).first());
 	}
 
 	/** RecentActivityCard */
