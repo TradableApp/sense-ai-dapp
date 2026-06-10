@@ -89,4 +89,15 @@ describe('mergeMessages', () => {
 
 		expect(mergeMessages(existing, incoming).map(m => m.createdAt)).toEqual([1000, 2000]);
 	});
+
+	it('collapses duplicate ids within the incoming batch (last wins)', () => {
+		const incoming = [
+			msg({ id: 'm1', content: 'first', createdAt: 1000 }),
+			msg({ id: 'm1', content: 'second', createdAt: 1000 }),
+		];
+
+		const result = mergeMessages([], incoming);
+		expect(result).toHaveLength(1);
+		expect(result[0].content).toBe('second');
+	});
 });

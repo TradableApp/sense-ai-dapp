@@ -15,6 +15,9 @@ function hasContent(message: Message): boolean {
  * take the incoming message's fields but retain the existing content. Messages present
  * only in the cache (older history the Graph didn't return) are preserved. The result
  * is sorted by createdAt.
+ *
+ * The preserve decision keys off the `content` field, so callers must pass messages
+ * that carry it (both cached messages and the post-hydration sync set do).
  */
 export default function mergeMessages(existing: Message[], incoming: Message[]): Message[] {
 	const byId = new Map<string, Message>();
