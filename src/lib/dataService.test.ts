@@ -144,6 +144,32 @@ describe('getMessagesForConversation', () => {
 		expect(result[1].createdAt).toBe(2000);
 	});
 
+	it('collapses duplicate ids, keeping the content-bearing version', async () => {
+		// Repro for the stuck-"Thinking…" bug (CU-86d39wcfn): the cache can hold two
+		// entries with the same id — a content-less placeholder and the hydrated answer.
+		// Without dedup, the content-less one can render last and leave isAiThinking stuck.
+		// getMessagesForConversation must collapse them to the richest-content version.
+		const messages = [
+			{ id: 'm1', conversationId: 'c1', role: 'user', content: 'hello', createdAt: 1000 },
+			{ id: 'm2', conversationId: 'c1', role: 'assistant', content: 'the answer', createdAt: 2000 },
+			{ id: 'm2', conversationId: 'c1', role: 'assistant', content: '', createdAt: 2000 },
+		];
+
+		const encrypted = await encryptData(sessionKey, messages);
+		mockDb.messageCache.get.mockResolvedValue({
+			ownerAddress: OWNER,
+			conversationId: 'c1',
+			encryptedData: encrypted,
+		});
+		mockDb.messageCache.update.mockResolvedValue(undefined);
+
+		const result = await getMessagesForConversation(sessionKey, OWNER, 'c1');
+
+		expect(result).toHaveLength(2);
+		const assistant = result.find(m => m.id === 'm2');
+		expect(assistant?.content).toBe('the answer');
+	});
+
 	it('returns empty array on cache miss', async () => {
 		mockDb.messageCache.get.mockResolvedValue(null);
 

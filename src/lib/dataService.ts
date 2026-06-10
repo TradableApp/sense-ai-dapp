@@ -98,16 +98,23 @@ export const getMessagesForConversation = async (
 			'color: green',
 		);
 		await db.messageCache.update([ownerAddress, conversationId], { lastAccessedAt: Date.now() });
-		const decryptedData = await decryptData(sessionKey, cachedRecord.encryptedData);
+		const decryptedData = (await decryptData(sessionKey, cachedRecord.encryptedData)) as Message[];
 
-		// Sort messages by timestamp immediately after decryption
-		const sortedMessages = decryptedData.sort(
+		// Collapse duplicate ids, keeping the richest version of each. The cache can
+		// briefly hold two entries for the same message — an optimistic, content-less
+		// "pending" placeholder and the synced/hydrated version with the delivered
+		// content. Without this, a content-less duplicate landing last leaves the chat
+		// stuck "Thinking…" even though the answer has arrived.
+		const byId = new Map<string, Message>();
+		decryptedData.forEach(m => {
+			const prev = byId.get(m.id);
+			const prevLen = prev ? (prev.content || '').length : -1;
+			if (!prev || (m.content || '').length > prevLen) byId.set(m.id, m);
+		});
+
+		// Sort messages by timestamp
+		const sortedMessages = Array.from(byId.values()).sort(
 			(a: Message, b: Message) => a.createdAt - b.createdAt,
-		);
-		console.log(
-			`%c[dataService-LOG] Returning ${sortedMessages.length} decrypted and sorted messages from cache.`,
-			'color: green',
-			sortedMessages,
 		);
 		return sortedMessages;
 	}
