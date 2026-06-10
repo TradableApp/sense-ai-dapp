@@ -97,6 +97,12 @@ export default defineConfig({
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
+			name: 'cost',
+			testMatch: '**/contract-cost.spec.ts',
+			fullyParallel: false,
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
 			name: 'history',
 			testMatch: '**/history.spec.ts',
 			fullyParallel: false,

@@ -39,6 +39,13 @@ export class DashboardPage {
 		return this.page.getByRole('button', { name: /manage plan|manage/i });
 	}
 
+	/** The "Spent" value in PlanStatusCard ("<n> ABLE"), beneath the "Spent" label.
+	 *  Sourced from useUsagePlan → spendingLimits.spentAmount, so it reflects the
+	 *  per-prompt cost actually debited. */
+	get spentValue() {
+		return this.page.getByText('Spent', { exact: true }).locator('..').getByText(/ABLE/).first();
+	}
+
 	/** RecentActivityCard */
 	get activityCard() {
 		return this.page.getByText(/recent activity/i).first();

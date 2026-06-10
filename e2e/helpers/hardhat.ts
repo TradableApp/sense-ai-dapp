@@ -1,4 +1,4 @@
-import { encodeFunctionData, parseAbi } from 'viem';
+import { decodeFunctionResult, encodeFunctionData, parseAbi } from 'viem';
 
 const RPC_URL = 'http://127.0.0.1:8545';
 let reqId = 1;
@@ -148,6 +148,7 @@ const ESCROW_ABI = parseAbi([
 	'function setSpendingLimit(uint256 _allowance, uint256 _expiresAt)',
 	'function setPromptFee(uint256 _newFee)',
 	'function promptFee() view returns (uint256)',
+	'function spendingLimits(address) view returns (uint256 allowance, uint256 spentAmount, uint256 expiresAt)',
 ]);
 const ERC20_APPROVE_ABI = parseAbi(['function approve(address spender, uint256 amount)']);
 
@@ -218,4 +219,27 @@ export async function setPromptFee(escrowAddress: string, newFee: bigint): Promi
 		args: [newFee],
 	});
 	await sendFrom(DEPLOYER_ADDRESS, escrowAddress, data);
+}
+
+/**
+ * Read a user's on-chain spending limit: { allowance, spentAmount, expiresAt }
+ * (wei-scale). `spentAmount` is exactly what the dApp surfaces as "Spent" in the
+ * usage dashboard (via useUsagePlan), so it's the cross-check for cost changes.
+ */
+export async function getSpendingLimit(
+	escrowAddress: string,
+	userAddress: string,
+): Promise<{ allowance: bigint; spentAmount: bigint; expiresAt: bigint }> {
+	const data = encodeFunctionData({
+		abi: ESCROW_ABI,
+		functionName: 'spendingLimits',
+		args: [userAddress as `0x${string}`],
+	});
+	const result = await callContract(escrowAddress, data);
+	const [allowance, spentAmount, expiresAt] = decodeFunctionResult({
+		abi: ESCROW_ABI,
+		functionName: 'spendingLimits',
+		data: result as `0x${string}`,
+	}) as [bigint, bigint, bigint];
+	return { allowance, spentAmount, expiresAt };
 }
