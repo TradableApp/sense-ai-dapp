@@ -124,7 +124,10 @@ function isQueryAhead(reduxMessages: ActiveMessage[], queryMessages: ActiveMessa
 	// the query is "ahead" if for any id it carries newer data than Redux holds —
 	// content where Redux has none (answer delivered), a status change (pending →
 	// cancelled/refunded), or more streamed reasoning.
-	const reduxById = new Map(reduxMessages.map(m => [String(m.id ?? ''), m]));
+	// Skip unresolved placeholders (no id) — they carry no content the query could be
+	// "ahead" of, and keying them all to '' would collapse several onto one slot and
+	// compare the wrong message.
+	const reduxById = new Map(reduxMessages.filter(m => m.id != null).map(m => [String(m.id), m]));
 	return queryMessages.some(queryMsg => {
 		const reduxMsg = reduxById.get(String(queryMsg.id ?? ''));
 		if (!reduxMsg) {
@@ -686,7 +689,10 @@ export default function Chat() {
 		// synced thread split into a disjoint branch). NaN (no prior message — a brand
 		// new conversation) correctly yields a null parent.
 		const lastDisplayedMessage = messagesToDisplay?.at(-1);
-		const parentIdNum = Number(lastDisplayedMessage?.id);
+		// `?? NaN` first: a missing/null id (brand-new conversation, or an unresolved
+		// placeholder) must map to a null parent. Number(null) is 0 — which would
+		// wrongly thread the prompt onto message id 0 — so guard it before Number().
+		const parentIdNum = Number(lastDisplayedMessage?.id ?? NaN);
 		const parentId = Number.isFinite(parentIdNum) ? parentIdNum : null;
 		const parentCID = lastDisplayedMessage?.messageCID ?? null;
 

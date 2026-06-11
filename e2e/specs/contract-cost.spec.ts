@@ -171,7 +171,6 @@ test.describe('Insufficient balance blocks an action (T-COST-INSUFFICIENT)', () 
 
 	test('T-COST-04: a prompt fails when the wallet holds less ABLE than the fee', async ({
 		chatPage,
-		authenticatedPage,
 	}) => {
 		const fee = ABLE(10);
 		await setPromptFee(ESCROW_ADDRESS, fee);
@@ -185,9 +184,7 @@ test.describe('Insufficient balance blocks an action (T-COST-INSUFFICIENT)', () 
 		await chatPage.goto();
 		await chatPage.sendPrompt('Not enough ABLE to cover the fee');
 
-		await expect(authenticatedPage.getByText(/insufficient ABLE balance/i).first()).toBeVisible({
-			timeout: 15_000,
-		});
+		await expect(chatPage.insufficientBalanceToast).toBeVisible({ timeout: 15_000 });
 		// The prompt was rejected, not accepted — no thinking indicator appears.
 		await expect(chatPage.thinkingIndicator).toBeHidden();
 	});

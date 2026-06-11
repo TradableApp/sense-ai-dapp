@@ -141,10 +141,13 @@ export const test = base.extend<SenseAIFixtures>({
 		const page = await freshContext.newPage();
 		await page.goto('/');
 
-		if (page.url().includes('/auth')) {
-			const authPage = new AuthPage(page);
-			await authPage.connectAndSign();
-		}
+		// A fresh context has no cached session, so the app ALWAYS redirects to /auth —
+		// don't gate on page.url(). page.goto resolves on the `load` event, BEFORE
+		// React's async Firebase/Thirdweb init and the ProtectedRoute redirect, so the
+		// URL can still read '/' here; a url-check would then silently skip the connect
+		// and run the test unauthenticated (latent CI flake). connectAndSign waits for
+		// the connect button regardless of the redirect's timing.
+		await new AuthPage(page).connectAndSign();
 
 		await use(new ChatPage(page));
 		await page.close();
