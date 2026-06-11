@@ -122,10 +122,22 @@ export const getMessagesForConversation = async (
 			}
 		});
 
-		// Sort messages by timestamp
-		const sortedMessages = Array.from(byId.values()).sort(
-			(a: Message, b: Message) => a.createdAt - b.createdAt,
-		);
+		// Sort by numeric message id, falling back to timestamp for any non-numeric id.
+		// Within a conversation the contract assigns monotonically increasing ids, so
+		// id order IS true chronological order — and unlike createdAt it's immune to
+		// the optimistic-vs-block-time skew: an optimistic answer placeholder is
+		// stamped with wall-clock time (now+1) while its prompt, once synced, carries a
+		// LATER on-chain block time, which would otherwise sort the placeholder before
+		// its own prompt and make `.at(-1)` (the conversation leaf) point at the user
+		// message instead of the answer.
+		const sortedMessages = Array.from(byId.values()).sort((a: Message, b: Message) => {
+			const aId = Number(a.id);
+			const bId = Number(b.id);
+			if (Number.isFinite(aId) && Number.isFinite(bId) && aId !== bId) {
+				return aId - bId;
+			}
+			return a.createdAt - b.createdAt;
+		});
 
 		// Heal the cache when duplicates were actually collapsed, so the dirty blob
 		// isn't re-deduped on every subsequent read and isn't seen by paths that read
