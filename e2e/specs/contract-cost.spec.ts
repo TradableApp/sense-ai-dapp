@@ -96,37 +96,137 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 		await expect(dashboardPage.spentValue).toHaveText(/\b7\b.*ABLE/, { timeout: 20_000 });
 	});
 
+});
+
+// T-COST-03 needs the FIRST answer to render before the second prompt (the
+// composer re-enables only when isAiThinking clears), so it depends on the full
+// answer pipeline. Like the T-CHAT answer specs it therefore runs as a FRESH
+// per-test user (accounts 2..19) over a real mid-session connect, forward-only —
+// no snapshot/revert (CU-86d3a04rr).
+test.describe('Contract cost change across prompts (T-COST-MULTI)', () => {
+	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
+
+	// promptFee is GLOBAL on the escrow, so capture and restore it forward-only (no
+	// chain revert) — otherwise the fee this test sets leaks into any later project
+	// that assumes the default.
+	let originalFee: bigint;
+
+	test.beforeEach(async ({ freshUserAccount }) => {
+		originalFee = await getPromptFee(ESCROW_ADDRESS);
+		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+	});
+
+	test.afterEach(async () => {
+		await setPromptFee(ESCROW_ADDRESS, originalFee);
+	});
+
 	test('T-COST-03: two different fees debit their respective amounts across prompts', async ({
-		chatPage,
+		freshChatPage,
+		freshUserAccount,
 	}) => {
-		// Sending a SECOND prompt requires the first answer to render (isAiThinking
-		// clears). That pipeline is fixed + verified in isolation (CU-86d39wcfn); this
-		// spec stays fixme in-suite only because per-test isolation fights the live
-		// oracle/indexer/dApp re-sync — harness refactor tracked in CU-86d3a04rr.
-		// Un-fixme alongside T-CHAT-08/10/11/12.
-		test.fixme(
-			true,
-			'Answer pipeline fixed; fixme in-suite pending harness refactor (CU-86d3a04rr).',
-		);
 		const feeA = ABLE(3);
 		const feeB = ABLE(8);
 
 		await setPromptFee(ESCROW_ADDRESS, feeA);
-		const before1 = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
-		await chatPage.goto();
-		await chatPage.sendPrompt('First prompt at fee A');
-		await expect(chatPage.thinkingIndicator).toBeVisible({ timeout: 20_000 });
-		const after1 = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
+		const before1 = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		await freshChatPage.goto();
+		await freshChatPage.sendPrompt('First prompt at fee A');
+		await expect(freshChatPage.thinkingIndicator).toBeVisible({ timeout: 20_000 });
+		const after1 = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
 		expect(before1 - after1).toBe(feeA);
 
 		await setPromptFee(ESCROW_ADDRESS, feeB);
 		// The answer arrives (local IPFS) and thinking clears, re-enabling the
 		// composer for the second prompt.
-		await expect(chatPage.thinkingIndicator).toBeHidden({ timeout: 90_000 });
-		const before2 = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
-		await chatPage.sendPrompt('Second prompt at fee B');
-		await expect(chatPage.thinkingIndicator).toBeVisible({ timeout: 20_000 });
-		const after2 = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
+		await expect(freshChatPage.thinkingIndicator).toBeHidden({ timeout: 90_000 });
+		const before2 = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		await freshChatPage.sendPrompt('Second prompt at fee B');
+		await expect(freshChatPage.thinkingIndicator).toBeVisible({ timeout: 20_000 });
+		const after2 = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
 		expect(before2 - after2).toBe(feeB);
+	});
+});
+
+// Insufficient-balance boundary. The escrow guards EVERY token-costing action
+// (prompt/regenerate/branch/metadata) with the same allowance + balance check, so
+// per-function revert coverage lives in the contract unit tests (tokenized-ai-agent).
+// The e2e covers the user-facing surface ONCE on the representative action (prompt):
+// the dApp shows the right failure when the wallet can't cover the next fee.
+test.describe('Insufficient balance blocks an action (T-COST-INSUFFICIENT)', () => {
+	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
+
+	let snapshotId: string;
+
+	test.beforeEach(async () => {
+		// Snapshot only — this spec intentionally controls the wallet's balance itself.
+		snapshotId = await takeSnapshot();
+	});
+
+	test.afterEach(async () => {
+		await revertToSnapshot(snapshotId); // also restores the promptFee changed below
+	});
+
+	test('T-COST-04: a prompt fails when the wallet holds less ABLE than the fee', async ({
+		chatPage,
+		authenticatedPage,
+	}) => {
+		const fee = ABLE(10);
+		await setPromptFee(ESCROW_ADDRESS, fee);
+		// The plan activates fine (approve + setSpendingLimit move no tokens), but the
+		// wallet holds LESS than one fee — so initiatePrompt's transferFrom(user, escrow,
+		// fee) reverts ERC20InsufficientBalance, which the dApp surfaces as a toast (with
+		// the localnet faucet). This is the "ran out of ABLE" boundary.
+		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, ABLE(3));
+		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, TEST_ACCOUNT.address, PLAN_ALLOWANCE);
+
+		await chatPage.goto();
+		await chatPage.sendPrompt('Not enough ABLE to cover the fee');
+
+		await expect(authenticatedPage.getByText(/insufficient ABLE balance/i).first()).toBeVisible({
+			timeout: 15_000,
+		});
+		// The prompt was rejected, not accepted — no thinking indicator appears.
+		await expect(chatPage.thinkingIndicator).toBeHidden();
+	});
+});
+
+// Spot-check that the SAME escrow guard applies to a second costing action
+// (regenerate), not just the initial prompt — confirming the shared guard rather
+// than re-testing every action through the UI (which the contract unit tests own).
+// Fresh per-test user, forward-only (no snapshot/revert) so the answer renders.
+test.describe('Insufficient balance blocks regenerate (T-COST-REGEN)', () => {
+	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
+
+	let originalFee: bigint;
+
+	test.beforeEach(async () => {
+		originalFee = await getPromptFee(ESCROW_ADDRESS);
+	});
+
+	test.afterEach(async () => {
+		await setPromptFee(ESCROW_ADDRESS, originalFee); // forward-only restore (global fee)
+	});
+
+	test('T-COST-05: regenerate fails once the wallet can no longer cover the fee', async ({
+		freshChatPage,
+		freshUserAccount,
+	}) => {
+		const fee = ABLE(10);
+		await setPromptFee(ESCROW_ADDRESS, fee);
+		// Fund EXACTLY one fee: the first prompt succeeds and drains the wallet to 0, so
+		// the follow-up regenerate (another fee) hits ERC20InsufficientBalance — proving
+		// the guard covers regenerate too, not just the initial prompt (T-COST-04).
+		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, fee);
+		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse('Spend my last ABLE'); // debits the only fee
+
+		await freshChatPage.regenerate();
+		await expect(freshChatPage.insufficientBalanceToast).toBeVisible({ timeout: 15_000 });
 	});
 });

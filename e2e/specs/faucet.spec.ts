@@ -1,6 +1,6 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
-import { getABLEBalance, revertToSnapshot, takeSnapshot } from '../helpers/hardhat';
+import { fundABLE, getABLEBalance, revertToSnapshot, takeSnapshot } from '../helpers/hardhat';
 
 const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
 const SKIP_REASON =
@@ -70,5 +70,32 @@ test.describe('Localnet faucet (T-FAUCET)', () => {
 		const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
 		expect(balanceAfter - balanceBefore).toBe(ABLE(reported));
 		expect(cloudFnHit).toBe(false);
+	});
+
+	test('T-FAUCET-02: faucet tops up a user who already holds some ABLE', async ({
+		dashboardPage,
+		planModal,
+		authenticatedPage,
+	}) => {
+		// The faucet is gated on "requested limit > wallet balance", NOT "balance == 0".
+		// Seed a non-zero balance below the requested limit so the faucet still appears
+		// and tops the user up — the has-some-ABLE branch that T-FAUCET-01 doesn't cover.
+		const seed = ABLE(50n);
+		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, seed);
+		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
+		expect(balanceBefore).toBe(seed);
+
+		await dashboardPage.goto();
+		await dashboardPage.getStartedButton.click();
+		await planModal.assertOpen();
+		await planModal.limitInput.fill('1000');
+		await planModal.daysInput.fill('30');
+		await expect(planModal.faucetButton).toBeVisible({ timeout: 10_000 });
+		await planModal.faucetButton.click();
+
+		await expect(authenticatedPage.getByText(/tokens received/i)).toBeVisible({ timeout: 30_000 });
+		// The seeded balance was topped up (not reset) — it strictly increased.
+		const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
+		expect(balanceAfter).toBeGreaterThan(balanceBefore);
 	});
 });

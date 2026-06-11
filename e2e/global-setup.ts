@@ -9,6 +9,7 @@
  * the local service stack (start-e2e.sh).
  */
 
+import { resetFreshAccountAllocator } from './helpers/fresh-account';
 // GRAPH_URL / GRAPH_NODE_ORIGIN are imported (not re-derived) so the health
 // check can never pass/fail against a different endpoint than the tests query.
 import { GRAPH_NODE_ORIGIN, GRAPH_URL, isGraphRunning } from './helpers/graph';
@@ -68,6 +69,11 @@ async function isSubgraphReachable(): Promise<boolean> {
  * Only executes when E2E_LOCAL_SERVICES=1.
  */
 export default async function globalSetup(): Promise<void> {
+	// Reset the per-test fresh-account allocator once per run. Module counters
+	// don't survive Playwright worker recycling, so the next-account index is
+	// file-persisted (helpers/fresh-account.ts) and must start clean each run.
+	resetFreshAccountAllocator();
+
 	// Skip setup if not running local services
 	if (process.env.E2E_LOCAL_SERVICES !== '1') {
 		return;

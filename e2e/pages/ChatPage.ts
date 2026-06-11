@@ -35,6 +35,13 @@ export class ChatPage {
 		return this.page.getByText(/thinking/i).first();
 	}
 
+	/** All AI response bubbles. The `.is-assistant` class is only present once the
+	 *  answer HAS content (a content-less "Thinking…" placeholder renders no bubble),
+	 *  so the count increments by one per delivered answer. */
+	get assistantMessages() {
+		return this.page.locator('.is-assistant');
+	}
+
 	/** The last AI response message. Message bubbles carry an `.is-assistant`
 	 *  class (see components/ai/message.tsx); user bubbles carry `.is-user`. */
 	get latestAiMessage() {
@@ -62,6 +69,12 @@ export class ChatPage {
 		return this.page.getByRole('button', { name: /branch|split/i }).first();
 	}
 
+	/** Error toast shown when a token-costing action can't be covered by the wallet
+	 *  balance (ERC20InsufficientBalance — see useChatMutations buildErrorHandler). */
+	get insufficientBalanceToast() {
+		return this.page.getByText(/insufficient ABLE balance/i).first();
+	}
+
 	// ── Actions ───────────────────────────────────────────────────────────────
 
 	async goto() {
@@ -78,13 +91,28 @@ export class ChatPage {
 	}
 
 	/**
-	 * Sends a prompt and waits for the oracle response to appear.
-	 * Times out after `timeoutMs` (default 90s to allow oracle processing).
+	 * Sends a prompt and waits for a NEW oracle response to render. Waits for the
+	 * assistant-bubble count to increment (not just "any bubble visible"), so it
+	 * works for follow-up prompts in a conversation that already has answers — the
+	 * answer arrives live via useLiveResponse's event + fallback-poll path (see
+	 * src/hooks/useLiveResponse.ts), no navigation needed. Default timeout allows
+	 * oracle processing + the poll's catch-up.
 	 */
 	async sendPromptAndWaitForResponse(text: string, timeoutMs = 90_000) {
+		const before = await this.assistantMessages.count();
 		await this.sendPrompt(text);
-		await expect(this.latestAiMessage).toBeVisible({ timeout: timeoutMs });
+		await expect(this.assistantMessages).toHaveCount(before + 1, { timeout: timeoutMs });
 		return this.latestAiMessage.textContent();
+	}
+
+	/**
+	 * Regenerates the latest answer (default mode). "Try again" is a dropdown
+	 * trigger (button) that opens a menu; the default regenerate is the "Try again"
+	 * menu item (see components/ai/message-actions.tsx).
+	 */
+	async regenerate() {
+		await this.regenerateButton.click();
+		await this.page.getByRole('menuitem', { name: /try again/i }).first().click();
 	}
 
 	// ── Assertions ────────────────────────────────────────────────────────────
