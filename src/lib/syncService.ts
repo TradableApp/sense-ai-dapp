@@ -113,6 +113,44 @@ async function fetchFromStorage(cid: string): Promise<string | null> {
 }
 
 /**
+ * @notice Whether the locally-cached thread for a conversation still holds a content-less
+ *         ("Thinking…") assistant message that isn't cancelled/refunded.
+ * @dev Used to override the conversation-level hydration skip below. An earlier sync can
+ *      commit a conversation record's new CIDs/lastMessageCreatedAt before a (follow-up)
+ *      answer's content is retrievable from storage — leaving its message a permanent
+ *      placeholder. The conv-level CID check alone would then match forever and never
+ *      re-hydrate it. While such a placeholder exists locally we must keep hydrating.
+ *      Mirrors `hasPendingAnswer` in useLiveResponse so both layers agree on "pending".
+ * @returns {Promise<boolean>} True if a pending assistant placeholder is cached locally.
+ */
+async function conversationHasPendingMessage(
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	conversationId: string,
+): Promise<boolean> {
+	try {
+		const record = await db.messageCache.get([ownerAddress, conversationId]);
+		if (!record) return false;
+		const messages = await decryptData(sessionKey, record.encryptedData);
+		if (!Array.isArray(messages)) return false;
+		return (messages as Array<{ role?: string; content?: unknown; status?: string }>).some(
+			m =>
+				m.role === 'assistant' &&
+				(m.content === null || m.content === undefined) &&
+				m.status !== 'cancelled' &&
+				m.status !== 'refunded',
+		);
+	} catch {
+		// An unreadable cache must NOT take the conversation-level skip — that path
+		// returns before the merge step, so a corrupt entry would be stranded forever.
+		// Force re-hydration instead: the hydration path's own merge catch overwrites
+		// the corrupt cache, so this self-heals after a single round rather than
+		// perpetually re-fetching.
+		return true;
+	}
+}
+
+/**
  * @notice Retrieves the last successful sync timestamp from the user's encrypted metadata.
  * @dev This is critical for ensuring we only fetch new data, preventing redundant processing.
  *      If metadata can't be decrypted, it defaults to 0 to trigger a full re-sync.
@@ -305,9 +343,14 @@ export default async function syncWithRemote(
 						localConv.conversationCID === conv.conversationCID &&
 						localConv.conversationMetadataCID === conv.conversationMetadataCID &&
 						// We also check timestamps to ensure we don't skip if the message list changed
-						localConv.lastMessageCreatedAt === conv.lastMessageCreatedAt
+						localConv.lastMessageCreatedAt === conv.lastMessageCreatedAt &&
+						// …and only honour the skip once the local message cache has actually
+						// caught up. A follow-up answer can still be a content-less placeholder
+						// even when the conv-level CIDs match (see conversationHasPendingMessage),
+						// in which case we must re-hydrate rather than strand it on "Thinking…".
+						!(await conversationHasPendingMessage(sessionKey, ownerAddress, conv.id))
 					) {
-						// Data is identical. Skip hydration to save bandwidth and processing.
+						// Data is identical and fully hydrated. Skip to save bandwidth and processing.
 						return { conversation: null, messages: [], searchDeltas: [] };
 					}
 				} catch (e) {

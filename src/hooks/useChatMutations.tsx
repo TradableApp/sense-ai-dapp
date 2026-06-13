@@ -57,6 +57,44 @@ export async function createEncryptedPayloads(
 	return { encryptedPayload, roflEncryptedKey };
 }
 
+interface InitiatePromptPayloadInput {
+	promptText: string;
+	conversationId: number | string;
+	parentId: number | null;
+	parentCID: string | null;
+}
+
+/**
+ * Builds the plaintext `initiatePrompt` payload before it is encrypted for the oracle.
+ *
+ * `previousMessageId` MUST be a string (or null): the oracle's payload validator
+ * (`z.string().nullable().optional()`) rejects a numeric id and silently DROPS the
+ * prompt, so a follow-up would never be answered. `parentId` is numeric on the client
+ * (used for threading/sort), hence the explicit coercion. We use `!= null` rather than
+ * `||` so a legitimate parent message id of `0` is preserved instead of collapsing to null.
+ *
+ * Exported (pure) so the oracle's type contract is unit-testable independently of the
+ * mutation hook.
+ */
+export function buildInitiatePromptPayload({
+	promptText,
+	conversationId,
+	parentId,
+	parentCID,
+}: InitiatePromptPayloadInput): Record<string, unknown> {
+	return {
+		promptText,
+		// `!conversationId` is intentional and is NOT the same falsy idiom as the
+		// `parentId` handling below. The new-conversation sentinel is the numeric `0`
+		// the hook passes when there's no active conversation, so a `conversationId` of
+		// 0 genuinely means "new" — unlike `parentId`, where 0 is a real id to preserve.
+		// Existing conversations always arrive as a non-empty string id.
+		isNewConversation: !conversationId,
+		previousMessageId: parentId != null ? String(parentId) : null,
+		previousMessageCID: parentCID || null,
+	};
+}
+
 /**
  * Builds the centralized contract-error handler. Exported for testability.
  * @param {boolean} isTestnet
@@ -362,12 +400,10 @@ export default function useChatMutations() {
 			if (!contractConfig?.escrow) {
 				throw new Error('Contracts not configured for this chain.');
 			}
-			const { encryptedPayload, roflEncryptedKey } = await createEncryptedPayloads(sessionKey, {
-				promptText,
-				isNewConversation: !conversationId,
-				previousMessageId: parentId || null,
-				previousMessageCID: parentCID || null,
-			});
+			const { encryptedPayload, roflEncryptedKey } = await createEncryptedPayloads(
+				sessionKey,
+				buildInitiatePromptPayload({ promptText, conversationId, parentId, parentCID }),
+			);
 
 			const escrowContract = getContract({
 				client,
