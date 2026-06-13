@@ -145,15 +145,15 @@ test.describe('Chat — submission and response (T-CHAT-TX)', () => {
 		// First prompt + its answer — the answer must render so the composer
 		// re-enables (isAiThinking clears) for the follow-up.
 		await freshChatPage.sendPromptAndWaitForResponse('First message');
-		// Follow-up prompt threads onto the first (parentId = the first answer). Both
-		// user messages must appear in the SAME conversation thread — which only holds
-		// when the follow-up's parent is preserved end-to-end (see Chat.tsx onSubmit).
-		// We assert on the threaded user messages rather than the 2nd answer: the
-		// 2nd answer's live render depends on syncService re-hydrating a follow-up
-		// answer's content in an existing conversation, tracked separately in
-		// CU-86d3a9aye. Single-prompt answer rendering is covered by T-CHAT-08/10/11.
-		await freshChatPage.sendPrompt('Second message');
+		// Follow-up prompt threads onto the first (parentId = the first answer). Its
+		// answer must ALSO render live — in an existing conversation that exercises
+		// syncService re-hydrating a follow-up answer's content even when the
+		// conversation-level CIDs already match (CU-86d3a9aye). Waiting for the
+		// assistant-bubble count to reach 2 drives that path end-to-end.
+		await freshChatPage.sendPromptAndWaitForResponse('Second message');
+		// Both user messages thread into the SAME conversation, and both answers render.
 		await expect(freshChatPage.userMessages).toHaveCount(2, { timeout: 30_000 });
+		await expect(freshChatPage.assistantMessages).toHaveCount(2, { timeout: 30_000 });
 	});
 });
 
