@@ -14,7 +14,7 @@ vi.mock('@/lib/crypto', () => ({
 }));
 vi.mock('@/lib/faucetService', () => ({ default: vi.fn() }));
 
-import { createEncryptedPayloads } from './useChatMutations';
+import { buildInitiatePromptPayload, createEncryptedPayloads } from './useChatMutations';
 
 describe('createEncryptedPayloads', () => {
 	beforeEach(() => {
@@ -30,5 +30,45 @@ describe('createEncryptedPayloads', () => {
 		await expect(createEncryptedPayloads(mockKey, payload)).rejects.toThrow(
 			'VITE_ORACLE_PUBLIC_KEY is not set in .env',
 		);
+	});
+});
+
+describe('buildInitiatePromptPayload', () => {
+	// The oracle's payload validator requires previousMessageId to be a string (or
+	// null); a numeric id is rejected and the prompt is silently dropped, so a
+	// follow-up never gets answered. The client carries parentId numerically, so the
+	// payload boundary must coerce it.
+	it('stringifies a numeric previousMessageId so the oracle accepts it', () => {
+		const payload = buildInitiatePromptPayload({
+			promptText: 'follow-up',
+			conversationId: 1,
+			parentId: 53,
+			parentCID: 'cid',
+		});
+
+		expect(payload.previousMessageId).toBe('53');
+	});
+
+	it('preserves a parent message id of 0 instead of collapsing it to null', () => {
+		const payload = buildInitiatePromptPayload({
+			promptText: 'q',
+			conversationId: 1,
+			parentId: 0,
+			parentCID: null,
+		});
+
+		expect(payload.previousMessageId).toBe('0');
+	});
+
+	it('maps a null parent (new conversation) to null', () => {
+		const payload = buildInitiatePromptPayload({
+			promptText: 'first',
+			conversationId: 0,
+			parentId: null,
+			parentCID: null,
+		});
+
+		expect(payload.previousMessageId).toBeNull();
+		expect(payload.isNewConversation).toBe(true);
 	});
 });

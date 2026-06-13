@@ -57,6 +57,39 @@ export async function createEncryptedPayloads(
 	return { encryptedPayload, roflEncryptedKey };
 }
 
+interface InitiatePromptPayloadInput {
+	promptText: string;
+	conversationId: number | string;
+	parentId: number | null;
+	parentCID: string | null;
+}
+
+/**
+ * Builds the plaintext `initiatePrompt` payload before it is encrypted for the oracle.
+ *
+ * `previousMessageId` MUST be a string (or null): the oracle's payload validator
+ * (`z.string().nullable().optional()`) rejects a numeric id and silently DROPS the
+ * prompt, so a follow-up would never be answered. `parentId` is numeric on the client
+ * (used for threading/sort), hence the explicit coercion. We use `!= null` rather than
+ * `||` so a legitimate parent message id of `0` is preserved instead of collapsing to null.
+ *
+ * Exported (pure) so the oracle's type contract is unit-testable independently of the
+ * mutation hook.
+ */
+export function buildInitiatePromptPayload({
+	promptText,
+	conversationId,
+	parentId,
+	parentCID,
+}: InitiatePromptPayloadInput): Record<string, unknown> {
+	return {
+		promptText,
+		isNewConversation: !conversationId,
+		previousMessageId: parentId != null ? String(parentId) : null,
+		previousMessageCID: parentCID || null,
+	};
+}
+
 /**
  * Builds the centralized contract-error handler. Exported for testability.
  * @param {boolean} isTestnet
@@ -362,12 +395,10 @@ export default function useChatMutations() {
 			if (!contractConfig?.escrow) {
 				throw new Error('Contracts not configured for this chain.');
 			}
-			const { encryptedPayload, roflEncryptedKey } = await createEncryptedPayloads(sessionKey, {
-				promptText,
-				isNewConversation: !conversationId,
-				previousMessageId: parentId || null,
-				previousMessageCID: parentCID || null,
-			});
+			const { encryptedPayload, roflEncryptedKey } = await createEncryptedPayloads(
+				sessionKey,
+				buildInitiatePromptPayload({ promptText, conversationId, parentId, parentCID }),
+			);
 
 			const escrowContract = getContract({
 				client,
