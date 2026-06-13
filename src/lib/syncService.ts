@@ -141,9 +141,12 @@ async function conversationHasPendingMessage(
 				m.status !== 'refunded',
 		);
 	} catch {
-		// A cache we can't read shouldn't force endless re-hydration — fall back to the
-		// conv-level decision (the merge step self-heals a corrupt cache on its own path).
-		return false;
+		// An unreadable cache must NOT take the conversation-level skip — that path
+		// returns before the merge step, so a corrupt entry would be stranded forever.
+		// Force re-hydration instead: the hydration path's own merge catch overwrites
+		// the corrupt cache, so this self-heals after a single round rather than
+		// perpetually re-fetching.
+		return true;
 	}
 }
 

@@ -84,6 +84,11 @@ export function buildInitiatePromptPayload({
 }: InitiatePromptPayloadInput): Record<string, unknown> {
 	return {
 		promptText,
+		// `!conversationId` is intentional and is NOT the same falsy idiom as the
+		// `parentId` handling below. The new-conversation sentinel is the numeric `0`
+		// the hook passes when there's no active conversation, so a `conversationId` of
+		// 0 genuinely means "new" — unlike `parentId`, where 0 is a real id to preserve.
+		// Existing conversations always arrive as a non-empty string id.
 		isNewConversation: !conversationId,
 		previousMessageId: parentId != null ? String(parentId) : null,
 		previousMessageCID: parentCID || null,

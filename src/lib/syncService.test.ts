@@ -136,9 +136,11 @@ describe('syncWithRemote — message-aware hydration skip', () => {
 
 		// It must NOT take the conversation-level skip: the message content is fetched
 		// and the hydrated answer is written back to the cache.
-		expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.some(([u]) =>
-			String(u).includes('msga'),
-		)).toBe(true);
+		expect(
+			(globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.some(([u]) =>
+				String(u).includes('msga'),
+			),
+		).toBe(true);
 		expect(mockDb.messageCache.bulkPut).toHaveBeenCalled();
 	});
 
@@ -152,9 +154,31 @@ describe('syncWithRemote — message-aware hydration skip', () => {
 		const syncWithRemote = await importSync();
 		await syncWithRemote(sessionKey, OWNER);
 
-		expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.some(([u]) =>
-			String(u).includes('msga'),
-		)).toBe(false);
+		expect(
+			(globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.some(([u]) =>
+				String(u).includes('msga'),
+			),
+		).toBe(false);
+		expect(mockDb.messageCache.bulkPut).not.toHaveBeenCalled();
+	});
+
+	it('treats a content-less but cancelled answer as resolved (still skips)', async () => {
+		// A cancelled/refunded prompt leaves a null-content assistant bubble that will
+		// never receive content — it must NOT count as pending, or the skip would be
+		// defeated forever. Mirrors the status exclusion in hasPendingAnswer.
+		await seedMessageCache([
+			{ id: 'm-prompt', role: 'user', content: 'cancelled question', createdAt: 1 },
+			{ id: 'm-answer', role: 'assistant', content: null, status: 'cancelled', createdAt: 2 },
+		]);
+
+		const syncWithRemote = await importSync();
+		await syncWithRemote(sessionKey, OWNER);
+
+		expect(
+			(globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.some(([u]) =>
+				String(u).includes('msga'),
+			),
+		).toBe(false);
 		expect(mockDb.messageCache.bulkPut).not.toHaveBeenCalled();
 	});
 });
