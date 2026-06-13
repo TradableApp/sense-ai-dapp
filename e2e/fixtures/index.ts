@@ -2,7 +2,9 @@ import { fileURLToPath } from 'url';
 
 import { test as base, type BrowserContext, type Page } from '@playwright/test';
 
-import { injectMockWalletIntoContext } from './mock-wallet';
+import { buildMockWalletScript, injectMockWalletIntoContext } from './mock-wallet';
+import { allocateFreshAccount } from '../helpers/fresh-account';
+import { type HardhatAccount } from '../helpers/hardhat';
 import { AuthPage } from '../pages/AuthPage';
 import { ChatPage } from '../pages/ChatPage';
 import { DashboardPage } from '../pages/DashboardPage';
@@ -27,6 +29,14 @@ interface SenseAIFixtures {
 	walletPage: Page;
 	/** Page that is already authenticated (wallet connected + session signed) */
 	authenticatedPage: Page;
+
+	// ── Per-test fresh user (answer-flow specs) ──────────────────────────────
+	/** A freshly-claimed Hardhat account (2..19) — a brand-new user for this test */
+	freshUserAccount: HardhatAccount;
+	/** Context whose mock wallet impersonates `freshUserAccount`, no cached auth */
+	freshContext: BrowserContext;
+	/** ChatPage for a `freshContext` page that has completed a real fresh connect */
+	freshChatPage: ChatPage;
 
 	// Page Object Models (available in all tests)
 	authPage: AuthPage;
@@ -92,6 +102,55 @@ export const test = base.extend<SenseAIFixtures>({
 		await use(page);
 		await page.close();
 		await context.close();
+	},
+
+	// ── Per-test fresh-user fixtures (answer-flow specs) ──────────────────────
+	// Production's first-ever connect IS the fresh-connect flow, and it works
+	// because a real injected wallet emits connect/chainChanged/accountsChanged
+	// after eth_requestAccounts. These fixtures exercise that exact path on a
+	// pristine account so the answer pipeline is tested the way it runs in prod
+	// (not via the cached-storageState boot the other specs use).
+
+	/**
+	 * Claims the next fresh Hardhat account for this test. File-persisted so the
+	 * allocation survives Playwright worker recycling (see helpers/fresh-account).
+	 */
+	// eslint-disable-next-line no-empty-pattern
+	freshUserAccount: async ({}, use) => {
+		const account = await allocateFreshAccount();
+		await use(account);
+	},
+
+	/**
+	 * A fresh context with NO cached auth, whose mock wallet impersonates the
+	 * claimed account — so the page must perform a real mid-session connect.
+	 */
+	freshContext: async ({ browser, freshUserAccount }, use) => {
+		const context = await browser.newContext();
+		await context.addInitScript(buildMockWalletScript(freshUserAccount));
+		await use(context);
+		await context.close();
+	},
+
+	/**
+	 * A ChatPage whose page has completed the full fresh connect + session sign.
+	 * The spec funds + activates `freshUserAccount` (in beforeEach) before the
+	 * test body touches this fixture, so the plan is live when /chat loads.
+	 */
+	freshChatPage: async ({ freshContext }, use) => {
+		const page = await freshContext.newPage();
+		await page.goto('/');
+
+		// A fresh context has no cached session, so the app ALWAYS redirects to /auth —
+		// don't gate on page.url(). page.goto resolves on the `load` event, BEFORE
+		// React's async Firebase/Thirdweb init and the ProtectedRoute redirect, so the
+		// URL can still read '/' here; a url-check would then silently skip the connect
+		// and run the test unauthenticated (latent CI flake). connectAndSign waits for
+		// the connect button regardless of the redirect's timing.
+		await new AuthPage(page).connectAndSign();
+
+		await use(new ChatPage(page));
+		await page.close();
 	},
 
 	// ── Page Object Model fixtures ─────────────────────────────────────────

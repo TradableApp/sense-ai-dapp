@@ -110,40 +110,40 @@ function isQueryAhead(reduxMessages: ActiveMessage[], queryMessages: ActiveMessa
 	if (reduxMessages.length === 0) {
 		return true;
 	}
-	const latestReduxMsg = reduxMessages.at(-1);
-	const latestQueryMsg = queryMessages.at(-1);
 
-	if (!latestReduxMsg || !latestQueryMsg) {
-		return false;
-	}
-
-	// 1. Check if we have a newer message ID
-	const queryId = latestQueryMsg.id ?? 0;
-	const reduxId = latestReduxMsg.id ?? 0;
-	if (queryId > reduxId) {
+	// The query has a message Redux doesn't yet (e.g. a new answer).
+	if (queryMessages.length > reduxMessages.length) {
 		return true;
 	}
 
-	// 2. If IDs are the same, check for data updates
-	if (queryId === reduxId) {
-		// Check for status change (e.g. 'pending' -> 'cancelled')
-		if (latestQueryMsg.status !== latestReduxMsg.status) {
+	// Position-independent comparison. The optimistic follow-up placeholder is
+	// stamped with wall-clock time while its (already-synced) prompt carries a later
+	// on-chain block time, so the placeholder can momentarily sort BEFORE its prompt.
+	// Comparing only the last element would then miss a resolved answer that isn't
+	// last — leaving a follow-up stuck on "Thinking…". So check every message by id:
+	// the query is "ahead" if for any id it carries newer data than Redux holds —
+	// content where Redux has none (answer delivered), a status change (pending →
+	// cancelled/refunded), or more streamed reasoning.
+	// Skip unresolved placeholders (no id) — they carry no content the query could be
+	// "ahead" of, and keying them all to '' would collapse several onto one slot and
+	// compare the wrong message.
+	const reduxById = new Map(reduxMessages.filter(m => m.id != null).map(m => [String(m.id), m]));
+	return queryMessages.some(queryMsg => {
+		const reduxMsg = reduxById.get(String(queryMsg.id ?? ''));
+		if (!reduxMsg) {
+			return true; // query carries a message Redux is missing
+		}
+		if (queryMsg.status !== reduxMsg.status) {
 			return true;
 		}
-
-		// Check for reasoning updates (streaming)
-		const queryReasoningLength = latestQueryMsg.reasoning?.length || 0;
-		const reduxReasoningLength = latestReduxMsg.reasoning?.length || 0;
-		if (queryReasoningLength > reduxReasoningLength) {
+		if ((queryMsg.reasoning?.length || 0) > (reduxMsg.reasoning?.length || 0)) {
 			return true;
 		}
-
-		// Check for content updates (streaming completion)
-		if (latestQueryMsg.content && !latestReduxMsg.content) {
+		if (queryMsg.content && !reduxMsg.content) {
 			return true;
 		}
-	}
-	return false;
+		return false;
+	});
 }
 
 const STREAM_BY_WORD = true;
@@ -683,9 +683,18 @@ export default function Chat() {
 	const onSubmit = (data: { prompt: string }) => {
 		if (!sessionKey) return;
 
-		const parentIdValue = messagesToDisplay?.at(-1)?.id ?? null;
-		const parentId = typeof parentIdValue === 'number' ? parentIdValue : null;
-		const parentCID = messagesToDisplay?.at(-1)?.messageCID ?? null;
+		// The new prompt threads off the last message in view. Message ids are numeric
+		// strings (e.g. "53"), so parse rather than `typeof === 'number'` (which was
+		// always false → parentId null → every follow-up stored with no parent, so the
+		// synced thread split into a disjoint branch). NaN (no prior message — a brand
+		// new conversation) correctly yields a null parent.
+		const lastDisplayedMessage = messagesToDisplay?.at(-1);
+		// `?? NaN` first: a missing/null id (brand-new conversation, or an unresolved
+		// placeholder) must map to a null parent. Number(null) is 0 — which would
+		// wrongly thread the prompt onto message id 0 — so guard it before Number().
+		const parentIdNum = Number(lastDisplayedMessage?.id ?? NaN);
+		const parentId = Number.isFinite(parentIdNum) ? parentIdNum : null;
+		const parentCID = lastDisplayedMessage?.messageCID ?? null;
 
 		initiatePromptMutation.mutate(
 			{

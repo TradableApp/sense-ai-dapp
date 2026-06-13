@@ -13,29 +13,18 @@ const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
 
-// Precondition for sending a real prompt: fund the user and activate a plan so
-// the escrow has an allowance to debit per-prompt. Done programmatically (both
-// accounts are Hardhat-unlocked) so chat tests don't re-drive the plan UI.
+// Precondition for sending a real prompt: fund the user and activate a plan so the
+// escrow has an allowance to debit per-prompt. Funded per-test (not pre-funded
+// globally) so balance-sensitive specs elsewhere — the faucet and plan "start at 0
+// ABLE" tests (T-FAUCET-01, T-PLAN-11/12) — keep full control of their account's
+// balance. The localnet stateful run is serial (playwright.config workers=1), so
+// these account-0 funding txs never contend. Both accounts are Hardhat-unlocked.
 const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 
-async function fundAndActivatePlan(): Promise<void> {
-	await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, PLAN_ALLOWANCE);
-	await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, TEST_ACCOUNT.address, PLAN_ALLOWANCE);
+async function fundAndActivatePlan(address: string = TEST_ACCOUNT.address): Promise<void> {
+	await fundABLE(TOKEN_ADDRESS, address, PLAN_ALLOWANCE);
+	await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, address, PLAN_ALLOWANCE);
 }
-
-// The full answer round-trip (oracle → local IPFS → subgraph → dApp render) is FIXED
-// and verified working end-to-end: T-CHAT-08 passes in isolation (~3.5s), and the
-// useLiveResponse event-derivation bug (UnknownSignatureError) + the duplicate-id
-// stuck-render bug are both fixed on this branch (CU-86d39wcfn). These specs stay
-// fixme only because they can't run green IN THE FULL SUITE yet: per-test isolation
-// fights the live oracle + graph-node + dApp sync. snapshot/revert reads as a chain
-// reorg the indexer can't track across consecutive answer round-trips; forward-only
-// makes each fresh-context test re-sync all accumulating conversations past the
-// timeout (and persists the plan, breaking T-CHAT-13). The fix is per-test isolated
-// Hardhat accounts — tracked in CU-86d3a04rr. Un-fixme once that lands.
-const ANSWER_DISPLAY_BLOCKED =
-	'Answer pipeline fixed + verified in isolation (CU-86d39wcfn); fixme in-suite only — ' +
-	'per-test isolation vs the live oracle/indexer/dApp re-sync needs the harness refactor in CU-86d3a04rr.';
 
 test.describe('Chat — prompt input (T-CHAT)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
@@ -88,76 +77,83 @@ test.describe('Chat — prompt input (T-CHAT)', () => {
 	});
 });
 
+// Answer-flow specs run as FRESH per-test users (Hardhat accounts 2..19), not the
+// shared cached-auth Account #1. Each connects mid-session like a real first-time
+// user — the path production actually runs — which is what makes the full answer
+// round-trip (oracle → local IPFS → subgraph → dApp render) reach the UI in-suite.
+// No snapshot/revert: that read as a chain reorg the live indexer couldn't track
+// across answer round-trips. Forward-only on a pristine account avoids both the
+// reorg and the cross-test accumulation that previously timed these out (CU-86d3a04rr).
 test.describe('Chat — submission and response (T-CHAT-TX)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	let snapshotId: string;
-
-	test.beforeEach(async () => {
-		snapshotId = await takeSnapshot();
-		await fundAndActivatePlan();
+	// Fund + activate the fresh account BEFORE the test body touches freshChatPage,
+	// so the plan is live when /chat first loads (the composer only renders with a
+	// plan — see T-CHAT-13). freshChatPage reuses this same allocated account.
+	test.beforeEach(async ({ freshUserAccount }) => {
+		await fundAndActivatePlan(freshUserAccount.address);
 	});
 
-	test.afterEach(async () => {
-		await revertToSnapshot(snapshotId);
+	test('T-CHAT-06: Submitting a prompt shows thinking indicator', async ({ freshChatPage }) => {
+		await freshChatPage.goto();
+		await freshChatPage.sendPrompt('What is the current market sentiment?');
+		await expect(freshChatPage.thinkingIndicator).toBeVisible({ timeout: 15_000 });
 	});
 
-	test('T-CHAT-06: Submitting a prompt shows thinking indicator', async ({ chatPage }) => {
-		await chatPage.goto();
-		await chatPage.sendPrompt('What is the current market sentiment?');
-		await expect(chatPage.thinkingIndicator).toBeVisible({ timeout: 15_000 });
-	});
-
-	test('T-CHAT-07: Submitted prompt appears as user message', async ({ chatPage }) => {
-		await chatPage.goto();
-		await chatPage.sendPrompt('Test user message visibility');
-		await expect(chatPage.userMessages.last()).toContainText('Test user message visibility', {
+	test('T-CHAT-07: Submitted prompt appears as user message', async ({ freshChatPage }) => {
+		await freshChatPage.goto();
+		await freshChatPage.sendPrompt('Test user message visibility');
+		await expect(freshChatPage.userMessages.last()).toContainText('Test user message visibility', {
 			timeout: 15_000,
 		});
 	});
 
-	test('T-CHAT-08: Oracle response appears as AI message', async ({ chatPage }) => {
-		test.fixme(true, ANSWER_DISPLAY_BLOCKED);
-		await chatPage.goto();
-		const response = await chatPage.sendPromptAndWaitForResponse('Hello SenseAI');
+	test('T-CHAT-08: Oracle response appears as AI message', async ({ freshChatPage }) => {
+		await freshChatPage.goto();
+		const response = await freshChatPage.sendPromptAndWaitForResponse('Hello SenseAI');
 		expect(response?.length).toBeGreaterThan(0);
 	});
 
-	test('T-CHAT-09: Cancel button appears during pending prompt', async ({ chatPage }) => {
-		await chatPage.goto();
-		await chatPage.sendPrompt('Test prompt for cancellation');
-		await expect(chatPage.cancelButton).toBeVisible({ timeout: 10_000 });
+	test('T-CHAT-09: Cancel button appears during pending prompt', async ({ freshChatPage }) => {
+		await freshChatPage.goto();
+		await freshChatPage.sendPrompt('Test prompt for cancellation');
+		await expect(freshChatPage.cancelButton).toBeVisible({ timeout: 10_000 });
 	});
 
-	test('T-CHAT-10: Regenerate button appears on AI response', async ({ chatPage }) => {
-		test.fixme(true, ANSWER_DISPLAY_BLOCKED);
-		await chatPage.goto();
-		await chatPage.sendPromptAndWaitForResponse('Test regeneration flow');
-		await expect(chatPage.regenerateButton).toBeVisible({ timeout: 5_000 });
+	test('T-CHAT-10: Regenerate button appears on AI response', async ({ freshChatPage }) => {
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse('Test regeneration flow');
+		await expect(freshChatPage.regenerateButton).toBeVisible({ timeout: 5_000 });
 	});
 
-	test('T-CHAT-11: Escrow balance decreases after query', async ({ chatPage }) => {
-		// Waits for the answer round-trip, so it's gated on the same answer-render bug.
-		// The debit-equals-fee path is covered directly in contract-cost.spec.
-		test.fixme(true, ANSWER_DISPLAY_BLOCKED);
-		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
+	test('T-CHAT-11: Escrow balance decreases after query', async ({
+		freshChatPage,
+		freshUserAccount,
+	}) => {
+		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
 
-		await chatPage.goto();
-		await chatPage.sendPromptAndWaitForResponse('Test balance deduction');
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse('Test balance deduction');
 
-		const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
+		const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
 		expect(balanceAfter).toBeLessThanOrEqual(balanceBefore);
 	});
 
-	test('T-CHAT-12: Multiple prompts in same conversation', async ({ chatPage }) => {
-		test.fixme(true, ANSWER_DISPLAY_BLOCKED);
-		await chatPage.goto();
-		await chatPage.sendPromptAndWaitForResponse('First message');
-		await chatPage.sendPromptAndWaitForResponse('Second message');
-
-		const userMsgCount = await chatPage.userMessages.count();
-		expect(userMsgCount).toBeGreaterThanOrEqual(2);
+	test('T-CHAT-12: Multiple prompts in same conversation', async ({ freshChatPage }) => {
+		await freshChatPage.goto();
+		// First prompt + its answer — the answer must render so the composer
+		// re-enables (isAiThinking clears) for the follow-up.
+		await freshChatPage.sendPromptAndWaitForResponse('First message');
+		// Follow-up prompt threads onto the first (parentId = the first answer). Both
+		// user messages must appear in the SAME conversation thread — which only holds
+		// when the follow-up's parent is preserved end-to-end (see Chat.tsx onSubmit).
+		// We assert on the threaded user messages rather than the 2nd answer: the
+		// 2nd answer's live render depends on syncService re-hydrating a follow-up
+		// answer's content in an existing conversation, tracked separately in
+		// CU-86d3a9aye. Single-prompt answer rendering is covered by T-CHAT-08/10/11.
+		await freshChatPage.sendPrompt('Second message');
+		await expect(freshChatPage.userMessages).toHaveCount(2, { timeout: 30_000 });
 	});
 });
 

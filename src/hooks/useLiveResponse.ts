@@ -27,6 +27,32 @@ interface EscrowEventArgs {
 	escrowId?: bigint;
 }
 
+// How often the fallback poll re-checks for a pending answer (see effect 6).
+const PENDING_ANSWER_POLL_MS = 4_000;
+
+interface CachedMessage {
+	role: string;
+	content: string | null;
+	status?: string;
+}
+
+/**
+ * True when the active conversation's cached messages include an assistant message
+ * that is still awaiting content (i.e. "Thinking…") and isn't cancelled/refunded.
+ */
+function hasPendingAnswer(messages: unknown): boolean {
+	return (
+		Array.isArray(messages) &&
+		(messages as CachedMessage[]).some(
+			m =>
+				m.role === 'assistant' &&
+				(m.content === null || m.content === undefined) &&
+				m.status !== 'cancelled' &&
+				m.status !== 'refunded',
+		)
+	);
+}
+
 /**
  * Listens for live blockchain events to ensure cross-device synchronization and real-time UI updates.
  *
@@ -61,6 +87,17 @@ export default function useLiveResponse() {
 	const activeConversationId = useAppSelector(
 		(state: RootState) => state.chat.activeConversationId,
 	);
+
+	// The in-memory thread (source of truth for what's displayed). The fallback
+	// poll (effect 6) reads pending state from here via a ref — not from the query
+	// cache — because an optimistic follow-up placeholder lands in Redux before the
+	// messages query refetches, and a same-conversation follow-up keeps the same
+	// query key (so the cache wouldn't reflect the new pending answer).
+	const activeConversationMessages = useAppSelector(
+		(state: RootState) => state.chat.activeConversationMessages,
+	);
+	const pendingAnswerRef = useRef(false);
+	pendingAnswerRef.current = hasPendingAnswer(activeConversationMessages);
 
 	const contractConfig = chainId ? CONTRACTS[chainId] : undefined;
 	const targetChain = chainId === deploymentChain.id ? deploymentChain : chain;
@@ -106,11 +143,16 @@ export default function useLiveResponse() {
 	);
 
 	// --- 2. Listeners ---
+	// useIndexer:false → query events straight from RPC. thirdweb's Insight indexer
+	// isn't available on every chain (e.g. localnet 31337), and the "insight
+	// unavailable → fallback" round-trip just adds latency/noise; the fallback poll
+	// below covers any events RPC watching misses (see effect 6).
 	const { data: agentLog, isLoading: isAgentLoading } = useContractEvents({
 		contract: agentContract!,
 		events: agentEvents,
 		enabled: !!agentContract && agentEvents.length > 0,
 		watch: true,
+		useIndexer: false,
 	});
 
 	const { data: escrowLog, isLoading: isEscrowLoading } = useContractEvents({
@@ -118,6 +160,7 @@ export default function useLiveResponse() {
 		events: escrowEvents,
 		enabled: !!escrowContract && escrowEvents.length > 0,
 		watch: true,
+		useIndexer: false,
 	});
 
 	// --- 3. State Management for Sync Queue ---
@@ -430,4 +473,38 @@ export default function useLiveResponse() {
 		queryClient,
 		sessionKey,
 	]);
+
+	// --- 6. Fallback poll for a pending answer ---
+	// Live delivery via useContractEvents is best-effort: thirdweb's Insight indexer
+	// isn't available on every chain (e.g. localnet 31337 → RPC fallback), and even
+	// on public RPCs event filters are stateful and intermittently miss events
+	// (wevm/wagmi#3883 — "not every event" on Sepolia). A missed/late
+	// AnswerMessageAdded would otherwise leave a prompt stuck on "Thinking…" forever.
+	// While the active conversation has an outstanding (content-less) assistant
+	// message, re-run the same refreshes the event would trigger: the conversation
+	// sync (which hydrates the answer into the cache) and the messages query (which
+	// renders it). The poll is self-limiting — it does nothing once the answer lands
+	// — so it adds no steady-state load. The live event stays the fast path.
+	useEffect(() => {
+		if (!activeConversationId || !ownerAddress) return undefined;
+
+		const messagesKey = ['messages', activeConversationId, ownerAddress];
+		let inFlight = false;
+
+		const interval = setInterval(() => {
+			if (inFlight || !pendingAnswerRef.current) return;
+
+			inFlight = true;
+			// Refresh the conversation sync first (hydrates the answer into the local
+			// cache), then re-read the messages so the resolved content renders.
+			queryClient
+				.invalidateQueries({ queryKey: ['conversations'] })
+				.then(() => queryClient.invalidateQueries({ queryKey: messagesKey }))
+				.finally(() => {
+					inFlight = false;
+				});
+		}, PENDING_ANSWER_POLL_MS);
+
+		return () => clearInterval(interval);
+	}, [activeConversationId, ownerAddress, queryClient]);
 }

@@ -33,8 +33,18 @@ export default defineConfig({
 
 	retries: process.env.CI ? 2 : 0,
 
-	/** Cap workers on CI to avoid overwhelming the Hardhat node */
-	workers: process.env.CI ? 2 : undefined,
+	/**
+	 * The localnet stateful run shares global chain state across specs — one Hardhat
+	 * node, a shared Account #1 (cached-auth fixtures), owner-only setPromptFee, and
+	 * global evm_snapshot/evm_revert. None of that is safe across parallel workers:
+	 * nonce races on the deployer (account 0), cross-project balance/plan races on the
+	 * shared Account #1 (e.g. the faucet/plan specs need it at 0 ABLE while others fund
+	 * it), and snapshots are global so a concurrent revert corrupts another project.
+	 * So the E2E_LOCAL_SERVICES run is SERIAL (workers=1); mocked (non-localnet) runs
+	 * parallelise normally. Full per-worker parallelism would need a chain-per-worker +
+	 * all-fresh-accounts + no global snapshots — tracked as a CU-86d3a04rr follow-up.
+	 */
+	workers: process.env.E2E_LOCAL_SERVICES === '1' ? 1 : process.env.CI ? 2 : undefined,
 
 	reporter: [['html', { outputFolder: 'playwright-report', open: 'never' }], ['list']],
 
@@ -94,12 +104,19 @@ export default defineConfig({
 			name: 'chat',
 			testMatch: '**/chat.spec.ts',
 			fullyParallel: false,
+			// Answer-flow specs drive a real fresh connect + the full oracle → IPFS →
+			// subgraph → dApp render round-trip (the POMs wait up to 90s). The default
+			// 30s per-test timeout would abort mid-round-trip, so give them headroom.
+			timeout: 120_000,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
 			name: 'cost',
 			testMatch: '**/contract-cost.spec.ts',
 			fullyParallel: false,
+			// T-COST-03 sends two prompts and waits for the first answer to render
+			// (thinking → hidden, up to 90s) before the second — same headroom need.
+			timeout: 120_000,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{

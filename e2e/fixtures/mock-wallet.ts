@@ -20,22 +20,44 @@ export const CHAIN_ID_HEX = '0x7a69'; // 31337
 export const CHAIN_ID = 31337;
 
 /**
- * Script injected into the browser page context before each navigation.
+ * Builds the EIP-1193 `window.ethereum` mock injected into the page before
+ * navigation, backed by the Hardhat JSON-RPC node. All signing and transaction
+ * sending is delegated to Hardhat, which has the dev accounts pre-unlocked, so
+ * ThirdWeb's injected-wallet adapter can connect without a real extension while
+ * every on-chain interaction hits the real contracts.
  *
- * Injects a minimal EIP-1193 compliant window.ethereum mock backed by the
- * Hardhat JSON-RPC node. All signing and transaction sending is delegated
- * to Hardhat, which has Account #1 pre-unlocked.
- *
- * This allows ThirdWeb's injected wallet adapter to connect without a real
- * browser extension, while all on-chain interactions use the real contracts.
+ * @param account The Hardhat account this wallet impersonates. Defaults to
+ *   Account #1 — the legacy shared "user" wallet used by the cached-auth fixtures
+ *   and the non-answer specs. Per-test fresh-user specs pass accounts 2..19 so
+ *   each connects as a brand-new user (see helpers/fresh-account.ts).
  */
-export const MOCK_WALLET_SCRIPT = `
+export function buildMockWalletScript(account: { address: string } = TEST_ACCOUNT): string {
+	return `
 (function() {
-  const ACCOUNT = '${TEST_ACCOUNT.address}';
+  const ACCOUNT = '${account.address}';
   const CHAIN_ID = '${CHAIN_ID_HEX}';
   const RPC_URL = '${HARDHAT_RPC}';
   let _reqId = 1;
   let _listeners = {};
+  let _announced = false;
+
+  function _dispatch(event, ...args) {
+    (_listeners[event] || []).forEach(h => h(...args));
+  }
+
+  // A real injected wallet emits connect → chainChanged → accountsChanged right
+  // after the user approves the connection. ThirdWeb v5's injected adapter relies
+  // on these to finalise the chain object; without them a mid-session fresh
+  // connect leaves the chain half-initialised, the RPC block watcher never starts
+  // (watchBlockNumber: "Failed to fetch 127.0.0.1:8545"), useContractEvents
+  // returns undefined, and the answer pipeline never syncs. Fire them once.
+  function announceConnection() {
+    if (_announced) return;
+    _announced = true;
+    _dispatch('connect', { chainId: CHAIN_ID });
+    _dispatch('chainChanged', CHAIN_ID);
+    _dispatch('accountsChanged', [ACCOUNT]);
+  }
 
   // Pre-seed cookie consent so the consent dialog (shown when
   // localStorage.consentSettings === null) never appears and gates the page /
@@ -81,7 +103,14 @@ export const MOCK_WALLET_SCRIPT = `
     request: async ({ method, params }) => {
       switch (method) {
         case 'eth_requestAccounts':
+          // Explicit connect (the fresh-connect path). Announce after this
+          // resolves (setTimeout 0) so ThirdWeb's adapter has already attached its
+          // connect/chainChanged/accountsChanged listeners before we fire them.
+          setTimeout(announceConnection, 0);
+          return [ACCOUNT];
+
         case 'eth_accounts':
+          // Silent read (autoConnect path) — never triggers the connect events.
           return [ACCOUNT];
 
         case 'eth_chainId':
@@ -91,6 +120,10 @@ export const MOCK_WALLET_SCRIPT = `
           return '31337';
 
         case 'wallet_switchEthereumChain':
+          // Confirm the switch, then notify listeners as a real wallet would.
+          setTimeout(() => _dispatch('chainChanged', CHAIN_ID), 0);
+          return null;
+
         case 'wallet_addEthereumChain':
         case 'wallet_watchAsset':
           return null;
@@ -167,6 +200,13 @@ export const MOCK_WALLET_SCRIPT = `
   });
 })();
 `;
+}
+
+/**
+ * The default mock wallet script — Hardhat Account #1, the legacy shared "user"
+ * wallet. Used by the cached-auth fixtures and every non-answer spec.
+ */
+export const MOCK_WALLET_SCRIPT = buildMockWalletScript();
 
 /**
  * Injects the mock wallet into a Playwright Page before navigation.
