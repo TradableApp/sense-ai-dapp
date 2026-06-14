@@ -116,6 +116,21 @@ function isQueryAhead(reduxMessages: ActiveMessage[], queryMessages: ActiveMessa
 		return true;
 	}
 
+	// The query is authoritative for removals too: if Redux still holds a content-less
+	// assistant PLACEHOLDER that the query no longer contains, it was dropped from the
+	// cache (a cancelled/refunded prompt's answer is never delivered — see
+	// syncService.dropCancelledAnswerPlaceholders). isQueryAhead otherwise only detects
+	// the query GAINING data, so without this Redux keeps the orphan and the composer
+	// stays stuck "Thinking…". A genuinely pending answer is still in the cache/query, so
+	// it is never matched here.
+	const queryIds = new Set(queryMessages.filter(m => m.id != null).map(m => String(m.id)));
+	const reduxHasDroppedPlaceholder = reduxMessages.some(
+		m => m.role === 'assistant' && !m.content && m.id != null && !queryIds.has(String(m.id)),
+	);
+	if (reduxHasDroppedPlaceholder) {
+		return true;
+	}
+
 	// Position-independent comparison. The optimistic follow-up placeholder is
 	// stamped with wall-clock time while its (already-synced) prompt carries a later
 	// on-chain block time, so the placeholder can momentarily sort BEFORE its prompt.

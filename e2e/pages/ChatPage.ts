@@ -32,7 +32,6 @@ export class ChatPage {
 		return this.page.getByRole('button', { name: /^cancel/i }).first();
 	}
 
-
 	/** Loading / thinking indicator while awaiting oracle response. The assistant
 	 *  message renders a Reasoning block ("Thinking…") while content is empty. */
 	get thinkingIndicator() {
@@ -138,7 +137,6 @@ export class ChatPage {
 	async sendDelayedPrompt(text: string, delayMs: number) {
 		await this.sendPrompt(`${text} __E2E_DELAY_MS__:${delayMs}`);
 	}
-
 
 	/**
 	 * Regenerates the latest answer. "Try again" is a dropdown trigger (button) that
