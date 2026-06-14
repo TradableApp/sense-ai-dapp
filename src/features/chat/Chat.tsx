@@ -659,6 +659,15 @@ export default function Chat() {
 		const parentId = Number.isFinite(parentIdNum) ? parentIdNum : null;
 		const parentCID = lastDisplayedMessage?.messageCID ?? null;
 
+		// Whether this conversation already has a delivered (content-bearing) answer. If it
+		// doesn't (e.g. its only prior prompt was cancelled), the conversation was never
+		// confirmed on-chain (ConversationAdded fires only with the first answer's
+		// conversationCID), so the resend must be flagged new — otherwise the answer never
+		// indexes and the chat stays stuck "Thinking…". See buildInitiatePromptPayload.
+		const conversationHasAnswer = activeConversationMessages.some(
+			m => m.role === 'assistant' && m.content != null && m.content !== '',
+		);
+
 		initiatePromptMutation.mutate(
 			{
 				conversationId: activeConversationId ?? 0,
@@ -666,6 +675,7 @@ export default function Chat() {
 				sessionKey,
 				parentId,
 				parentCID,
+				conversationHasAnswer,
 			},
 			{
 				onSuccess: async newIds => {

@@ -62,6 +62,22 @@ interface InitiatePromptPayloadInput {
 	conversationId: number | string;
 	parentId: number | null;
 	parentCID: string | null;
+	/**
+	 * Whether the target conversation already has a delivered (content-bearing) answer.
+	 * Defaults to `true` (a normal follow-up) when omitted. When this is `false` for an
+	 * existing conversationId, the conversation has never been confirmed on-chain — its
+	 * only prior prompt(s) were cancelled, so `ConversationAdded` was never emitted (it
+	 * fires only when the oracle delivers the first answer with a conversationCID). The
+	 * resend must therefore be treated as new so the oracle re-initialises the
+	 * conversation on storage and `ConversationAdded` finally fires; otherwise the
+	 * subgraph never creates the Conversation entity and the dApp's owner-filtered sync
+	 * never surfaces the answer (it stays stuck "Thinking…" forever). The UI's
+	 * one-pending-prompt-at-a-time rule makes "no delivered answer" an exact signal: by
+	 * the time a resend is possible the prior prompt is either answered (confirmed) or
+	 * cancelled (unconfirmed). Edit-of-first-message is unaffected — that conversation
+	 * has a delivered answer, so this stays `true`.
+	 */
+	conversationHasAnswer?: boolean;
 }
 
 /**
@@ -81,6 +97,7 @@ export function buildInitiatePromptPayload({
 	conversationId,
 	parentId,
 	parentCID,
+	conversationHasAnswer,
 }: InitiatePromptPayloadInput): Record<string, unknown> {
 	return {
 		promptText,
@@ -89,7 +106,14 @@ export function buildInitiatePromptPayload({
 		// the hook passes when there's no active conversation, so a `conversationId` of
 		// 0 genuinely means "new" — unlike `parentId`, where 0 is a real id to preserve.
 		// Existing conversations always arrive as a non-empty string id.
-		isNewConversation: !conversationId,
+		//
+		// An existing conversation with NO delivered answer (its only prior prompt was
+		// cancelled) is also "new" for indexing: ConversationAdded fires only when the
+		// oracle delivers the first answer with a conversationCID, so until then the
+		// Conversation entity was never created. Treating the resend as new makes the
+		// oracle re-initialise it and finally emit ConversationAdded. See
+		// `conversationHasAnswer`.
+		isNewConversation: !conversationId || conversationHasAnswer === false,
 		previousMessageId: parentId != null ? String(parentId) : null,
 		previousMessageCID: parentCID || null,
 	};
@@ -383,12 +407,14 @@ export default function useChatMutations() {
 			sessionKey,
 			parentId,
 			parentCID,
+			conversationHasAnswer,
 		}: {
 			conversationId: number | string;
 			promptText: string;
 			sessionKey: CryptoKey;
 			parentId: number | null;
 			parentCID: string | null;
+			conversationHasAnswer?: boolean;
 		}) => {
 			const chain = activeWallet?.getChain();
 			if (!activeWallet || !chain || !sessionKey || !activeAccount) {
@@ -402,7 +428,13 @@ export default function useChatMutations() {
 			}
 			const { encryptedPayload, roflEncryptedKey } = await createEncryptedPayloads(
 				sessionKey,
-				buildInitiatePromptPayload({ promptText, conversationId, parentId, parentCID }),
+				buildInitiatePromptPayload({
+					promptText,
+					conversationId,
+					parentId,
+					parentCID,
+					conversationHasAnswer,
+				}),
 			);
 
 			const escrowContract = getContract({
