@@ -98,9 +98,9 @@ test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 
 		// The composer re-enables (isAiThinking cleared) → Send returns.
 		await expect(freshChatPage.submitButton).toBeVisible({ timeout: 15_000 });
-		// Let the "tokens refunded" toast auto-dismiss — it overlaps Send and would
-		// otherwise intercept the resend click.
-		await expect(freshChatPage.cancelToast).toBeHidden({ timeout: 10_000 });
+		// Close the "tokens refunded" toast — it overlaps Send and would otherwise
+		// intercept the resend click (Sonner won't auto-dismiss it while headless/unfocused).
+		await freshChatPage.dismissCancelToast();
 
 		// A fresh prompt (no hold) completes the full round-trip.
 		await freshChatPage.sendPromptAndWaitForResponse('Now please answer this');

@@ -33,10 +33,20 @@ export class ChatPage {
 	}
 
 	/** The "Prompt Cancelled — tokens refunded" toast shown after a successful cancel.
-	 *  It overlaps the composer's Send button, so wait for it to auto-dismiss before a
-	 *  subsequent click. */
+	 *  It overlaps the composer's Send button. */
 	get cancelToast() {
 		return this.page.getByText(/tokens refunded/i).first();
+	}
+
+	/**
+	 * Closes the cancel toast so it stops overlapping the composer's Send button.
+	 * Sonner PAUSES its auto-dismiss timer when the page isn't focused (always the case
+	 * in headless Playwright), so waiting for it to disappear on its own hangs — close it
+	 * via its close button instead (the Toaster is mounted with `closeButton`).
+	 */
+	async dismissCancelToast() {
+		await this.page.locator('[data-close-button]').first().click({ timeout: 5_000 });
+		await expect(this.cancelToast).toBeHidden({ timeout: 5_000 });
 	}
 
 	/** Loading / thinking indicator while awaiting oracle response. The assistant
