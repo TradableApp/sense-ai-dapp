@@ -32,6 +32,13 @@ export class ChatPage {
 		return this.page.getByRole('button', { name: /^cancel/i }).first();
 	}
 
+	/** The "Prompt Cancelled — tokens refunded" toast shown after a successful cancel.
+	 *  It overlaps the composer's Send button, so wait for it to auto-dismiss before a
+	 *  subsequent click. */
+	get cancelToast() {
+		return this.page.getByText(/tokens refunded/i).first();
+	}
+
 	/** Loading / thinking indicator while awaiting oracle response. The assistant
 	 *  message renders a Reasoning block ("Thinking…") while content is empty. */
 	get thinkingIndicator() {
