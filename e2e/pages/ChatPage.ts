@@ -29,6 +29,11 @@ export class ChatPage {
 		return this.page.getByRole('button', { name: /cancel/i }).first();
 	}
 
+	/** "Cancelled" status shown on a prompt the user cancelled (see T-REFUND-02). */
+	get cancelledStatus() {
+		return this.page.getByText(/cancelled|canceled/i).first();
+	}
+
 	/** Loading / thinking indicator while awaiting oracle response. The assistant
 	 *  message renders a Reasoning block ("Thinking…") while content is empty. */
 	get thinkingIndicator() {
@@ -123,6 +128,26 @@ export class ChatPage {
 		await this.sendPrompt(text);
 		await expect(this.assistantMessages).toHaveCount(before + 1, { timeout: timeoutMs });
 		return this.latestAiMessage.textContent();
+	}
+
+	/**
+	 * Sends a prompt that the mock oracle holds PENDING for `delayMs` (via the
+	 * `__E2E_DELAY_MS__:<n>` sentinel — see tokenized-ai-agent oracle parseMockDelayMs).
+	 * Gives a deterministic window to cancel before the answer can land, and keeps the
+	 * pending state stable for assertions. Does NOT wait for a response.
+	 */
+	async sendDelayedPrompt(text: string, delayMs: number) {
+		await this.sendPrompt(`${text} __E2E_DELAY_MS__:${delayMs}`);
+	}
+
+	/**
+	 * Cancels the in-flight prompt. The Cancel button is only enabled during the 3s
+	 * CANCELLATION_TIMEOUT window after the prompt is submitted (it shows a
+	 * "Cancel (Ns)" countdown), so click promptly once it appears.
+	 */
+	async cancelPendingPrompt() {
+		await expect(this.cancelButton).toBeEnabled({ timeout: 30_000 });
+		await this.cancelButton.click();
 	}
 
 	/**

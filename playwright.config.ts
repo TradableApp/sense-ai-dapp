@@ -120,6 +120,15 @@ export default defineConfig({
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
+			name: 'cancel',
+			testMatch: '**/cancel.spec.ts',
+			fullyParallel: false,
+			// Each test holds a prompt pending (8s mock-oracle delay) and T-CANCEL-03 then
+			// runs a full answer round-trip — give headroom over the 30s default.
+			timeout: 180_000,
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
 			name: 'versions',
 			testMatch: '**/versions.spec.ts',
 			fullyParallel: false,
