@@ -284,8 +284,10 @@ export const addMessageToConversation = async (
 	);
 
 	queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
+	// Messages query is keyed without sessionKey (Chat.tsx / useLiveResponse) — must match,
+	// or the invalidation silently no-ops.
 	queryClient.invalidateQueries({
-		queryKey: ['messages', conversationId, sessionKey, ownerAddress],
+		queryKey: ['messages', conversationId, ownerAddress],
 	});
 
 	return { finalUserMessage, finalAiMessage };
@@ -462,8 +464,10 @@ export const branchConversation = async (
 	console.log(`[dataService] Created new branched conversation "${newConversation.id}".`);
 
 	queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
+	// Messages query is keyed without sessionKey (Chat.tsx / useLiveResponse) — must match,
+	// or the invalidation silently no-ops.
 	queryClient.invalidateQueries({
-		queryKey: ['messages', newConversation.id, sessionKey, ownerAddress],
+		queryKey: ['messages', newConversation.id, ownerAddress],
 	});
 
 	return newConversation;
@@ -534,8 +538,10 @@ export const regenerateAssistantResponse = async (
 	);
 
 	queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
+	// Messages query is keyed without sessionKey (Chat.tsx / useLiveResponse) — must match,
+	// or the invalidation silently no-ops.
 	queryClient.invalidateQueries({
-		queryKey: ['messages', conversationId, sessionKey, ownerAddress],
+		queryKey: ['messages', conversationId, ownerAddress],
 	});
 
 	return { finalAiMessage };
@@ -582,8 +588,12 @@ export const deleteMessageFromConversation = async (
 		await updateAndEncryptConversation(sessionKey, ownerAddress, conversationId, newMessages);
 
 		queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
+		// The messages query is keyed WITHOUT sessionKey (see Chat.tsx useQuery:
+		// ['messages', activeConversationId, ownerAddress]). Including sessionKey here made this
+		// invalidation a silent no-op, so the stale query kept re-hydrating a cancelled/deleted
+		// placeholder back into Redux. Match the real key.
 		queryClient.invalidateQueries({
-			queryKey: ['messages', conversationId, sessionKey, ownerAddress],
+			queryKey: ['messages', conversationId, ownerAddress],
 		});
 	} catch (error) {
 		console.error('[dataService] Failed to delete message:', error);

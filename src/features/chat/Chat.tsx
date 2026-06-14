@@ -124,6 +124,12 @@ export default function Chat() {
 	const [animatedContents, setAnimatedContents] = useState<Record<string, string>>({});
 	const activeTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 	const prevMessagesRef = useRef<ActiveMessage[]>([]);
+	// answerMessageIds the user just cancelled/refunded. Their optimistic answer placeholder is
+	// removed from Redux immediately, but a not-yet-refreshed query can still carry it and
+	// re-hydrate it (the cache drop via syncService.dropCancelledAnswerPlaceholders is eventual).
+	// isQueryAhead can't tell a dropped-cancelled placeholder from a fresh pending one, so we
+	// filter these ids out on every hydrate to keep the composer from re-sticking on "Thinking…".
+	const cancelledAnswerIdsRef = useRef<Set<string>>(new Set());
 	const [activeMessageId, setActiveMessageId] = useState<string | number | null>(null);
 	const [editingMessageId, setEditingMessageId] = useState<string | number | null>(null);
 	const prevMessageCountRef = useRef(0);
@@ -175,13 +181,18 @@ export default function Chat() {
 
 	useEffect(() => {
 		if (!isFetching && isSuccess && messagesFromQuery) {
-			const shouldHydrate = isQueryAhead(
-				activeConversationMessages,
-				messagesFromQuery as unknown as ActiveMessage[],
-			);
+			const queryMessages = messagesFromQuery as unknown as ActiveMessage[];
+			const shouldHydrate = isQueryAhead(activeConversationMessages, queryMessages);
 
 			if (shouldHydrate) {
-				dispatch(setActiveConversationMessages(messagesFromQuery as unknown as ActiveMessage[]));
+				// Drop any cancelled/refunded answer placeholder the query still carries before its
+				// cache eviction has propagated — otherwise it re-sticks the composer on "Thinking…".
+				const cancelled = cancelledAnswerIdsRef.current;
+				const hydrated =
+					cancelled.size === 0
+						? queryMessages
+						: queryMessages.filter(m => m.id == null || !cancelled.has(String(m.id)));
+				dispatch(setActiveConversationMessages(hydrated));
 			}
 		}
 	}, [isFetching, isSuccess, messagesFromQuery, activeConversationMessages, dispatch]);
@@ -253,6 +264,7 @@ export default function Chat() {
 		setEditingMessageId(null);
 		prevMessageCountRef.current = 0;
 		prevMessagesRef.current = [];
+		cancelledAnswerIdsRef.current = new Set();
 	}, [activeConversationId]);
 
 	const handleReset = useCallback((): void => {
@@ -613,6 +625,10 @@ export default function Chat() {
 			{
 				onSuccess: async () => {
 					setCancelDeadline(null);
+
+					// Tombstone the cancelled answer so a not-yet-refreshed query can't re-hydrate
+					// its orphaned placeholder back into Redux (see cancelledAnswerIdsRef).
+					cancelledAnswerIdsRef.current.add(String(lastMessage.id));
 
 					try {
 						// 1. Clean up IndexedDB so it doesn't reappear on refresh
