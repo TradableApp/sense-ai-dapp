@@ -113,6 +113,31 @@ async function fetchFromStorage(cid: string): Promise<string | null> {
 }
 
 /**
+ * @notice Removes orphaned, content-less assistant placeholders whose prompt was
+ *         cancelled/refunded.
+ * @dev When a prompt is cancelled the answer is never delivered, but the optimistic
+ *      answer placeholder (keyed by answerMessageId) lingers content-less and would keep
+ *      the chat stuck "Thinking…" (isAiThinking) after the cancelled prompt re-hydrates
+ *      from sync. The placeholder's id equals the PromptRequest id (= answerMessageId),
+ *      so we drop exactly those. Only content-less assistants are dropped — a delivered
+ *      answer is never removed.
+ * @returns {T[]} The messages with the cancelled placeholders removed.
+ */
+export function dropCancelledAnswerPlaceholders<
+	T extends { id?: string | number; role?: string; content?: unknown },
+>(messages: T[], cancelledAnswerIds: Set<string>): T[] {
+	if (cancelledAnswerIds.size === 0) return messages;
+	return messages.filter(
+		m =>
+			!(
+				m.role === 'assistant' &&
+				(m.content === null || m.content === undefined) &&
+				cancelledAnswerIds.has(String(m.id))
+			),
+	);
+}
+
+/**
  * @notice Whether the locally-cached thread for a conversation still holds a content-less
  *         ("Thinking…") assistant message that isn't cancelled/refunded.
  * @dev Used to override the conversation-level hydration skip below. An earlier sync can
@@ -216,6 +241,7 @@ interface ConversationUpdate {
 		searchDelta?: { searchDeltaCID: string };
 	}>;
 	promptRequests: Array<{
+		id: string; // = answerMessageId (matches the optimistic answer placeholder's id)
 		promptMessageId: string;
 		createdAt: number;
 		isCancelled?: boolean;
@@ -351,7 +377,12 @@ export default async function syncWithRemote(
 						!(await conversationHasPendingMessage(sessionKey, ownerAddress, conv.id))
 					) {
 						// Data is identical and fully hydrated. Skip to save bandwidth and processing.
-						return { conversation: null, messages: [], searchDeltas: [] };
+						return {
+							conversation: null,
+							messages: [],
+							searchDeltas: [],
+							cancelledAnswerIds: new Set<string>(),
+						};
 					}
 				} catch (e) {
 					// Decryption failed, proceed with fresh hydration
@@ -440,6 +471,15 @@ export default async function syncWithRemote(
 			// Merge normal messages with recovered prompt requests
 			const allMessages = [...validMessages, ...validRequests];
 
+			// answerMessageIds of cancelled/refunded prompts: their optimistic answer
+			// placeholder never receives content, so it must be dropped from the cache (see
+			// dropCancelledAnswerPlaceholders) — otherwise the chat stays stuck "Thinking…".
+			const cancelledAnswerIds = new Set(
+				(conv.promptRequests || [])
+					.filter(req => req.isCancelled || req.isRefunded)
+					.map(req => req.id),
+			);
+
 			// Construct the Remote Conversation Object
 			const remoteConversation = convData
 				? {
@@ -460,7 +500,12 @@ export default async function syncWithRemote(
 			if (remoteConversation && localConv) {
 				if (localConv.lastUpdatedAt > remoteConversation.lastUpdatedAt) {
 					// Returning null conversation prevents the overwrite in the next step
-					return { conversation: null, messages: allMessages, searchDeltas: [] };
+					return {
+						conversation: null,
+						messages: allMessages,
+						searchDeltas: [],
+						cancelledAnswerIds,
+					};
 				}
 			}
 
@@ -468,6 +513,7 @@ export default async function syncWithRemote(
 			return {
 				conversation: remoteConversation,
 				messages: allMessages,
+				cancelledAnswerIds,
 				searchDeltas: messageResults
 					.map((r: { searchDelta: unknown }) => r.searchDelta)
 					.filter(Boolean) as unknown[],
@@ -527,6 +573,17 @@ export default async function syncWithRemote(
 						err,
 					);
 				}
+
+				// Drop the orphaned content-less answer placeholders of cancelled/refunded
+				// prompts so the chat doesn't stay stuck "Thinking…" after a cancel.
+				finalMessages = dropCancelledAnswerPlaceholders(
+					finalMessages as unknown as Array<{
+						id?: string | number;
+						role?: string;
+						content?: unknown;
+					}>,
+					item.cancelledAnswerIds,
+				) as typeof finalMessages;
 
 				// encryptData JSON-stringifies internally, so pass the array directly —
 				// pre-stringifying here double-encodes it, and getMessages() then decrypts

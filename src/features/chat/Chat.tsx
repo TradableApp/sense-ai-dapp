@@ -116,6 +116,25 @@ function isQueryAhead(reduxMessages: ActiveMessage[], queryMessages: ActiveMessa
 		return true;
 	}
 
+	// The query is authoritative for removals too: if Redux still holds a content-less
+	// assistant PLACEHOLDER that the query no longer contains, it was dropped from the
+	// cache (a cancelled/refunded prompt's answer is never delivered — see
+	// syncService.dropCancelledAnswerPlaceholders). isQueryAhead otherwise only detects
+	// the query GAINING data, so without this Redux keeps the orphan and the composer
+	// stays stuck "Thinking…". A genuinely pending answer is still in the cache/query, so
+	// it is never matched here.
+	const queryIds = new Set(queryMessages.filter(m => m.id != null).map(m => String(m.id)));
+	const reduxHasDroppedPlaceholder = reduxMessages.some(
+		m =>
+			m.role === 'assistant' &&
+			(m.content === null || m.content === undefined) &&
+			m.id != null &&
+			!queryIds.has(String(m.id)),
+	);
+	if (reduxHasDroppedPlaceholder) {
+		return true;
+	}
+
 	// Position-independent comparison. The optimistic follow-up placeholder is
 	// stamped with wall-clock time while its (already-synced) prompt carries a later
 	// on-chain block time, so the placeholder can momentarily sort BEFORE its prompt.
@@ -598,7 +617,19 @@ export default function Chat() {
 
 	// Derived state: Check if AI is thinking (assistant message with no content)
 	const lastMessage = messagesToDisplay.at(-1);
-	const isAiThinking = lastMessage?.role === 'assistant' && !lastMessage.content;
+	// A content-less assistant message is "thinking" ONLY while the prompt is still live.
+	// The cancel/refund unblock is actually done by dropping the orphaned placeholder
+	// (syncService.dropCancelledAnswerPlaceholders) + the isQueryAhead removal-reconcile
+	// above. This status exclusion is a DEFENSIVE consistency guard mirroring
+	// hasPendingAnswer/conversationHasPendingMessage: should an assistant message ever
+	// carry a 'cancelled'/'refunded' status (a future or non-cancel path), it must not
+	// read as "thinking". It is not what unsticks the current cancel flow — don't remove
+	// the drop/reconcile layers on the assumption that this handles it.
+	const isAiThinking =
+		lastMessage?.role === 'assistant' &&
+		!lastMessage.content &&
+		lastMessage.status !== 'cancelled' &&
+		lastMessage.status !== 'refunded';
 
 	// Clear cancel deadline when answer arrives or thinking stops
 	useEffect(() => {

@@ -26,7 +26,10 @@ export class ChatPage {
 	}
 
 	get cancelButton() {
-		return this.page.getByRole('button', { name: /cancel/i }).first();
+		// Anchor to the start of the accessible name so we match ONLY the composer's
+		// cancel control — "Cancel" (icon, aria-label) or "Cancel (Ns)" (countdown) —
+		// and never a sidebar conversation title that merely contains the word "cancel".
+		return this.page.getByRole('button', { name: /^cancel/i }).first();
 	}
 
 	/** Loading / thinking indicator while awaiting oracle response. The assistant
@@ -123,6 +126,16 @@ export class ChatPage {
 		await this.sendPrompt(text);
 		await expect(this.assistantMessages).toHaveCount(before + 1, { timeout: timeoutMs });
 		return this.latestAiMessage.textContent();
+	}
+
+	/**
+	 * Sends a prompt that the mock oracle holds PENDING for `delayMs` (via the
+	 * `__E2E_DELAY_MS__:<n>` sentinel — see tokenized-ai-agent oracle parseMockDelayMs).
+	 * Gives a deterministic window to cancel before the answer can land, and keeps the
+	 * pending state stable for assertions. Does NOT wait for a response.
+	 */
+	async sendDelayedPrompt(text: string, delayMs: number) {
+		await this.sendPrompt(`${text} __E2E_DELAY_MS__:${delayMs}`);
 	}
 
 	/**

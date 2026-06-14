@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import db from '@/lib/db';
 
 import { deriveKeyFromEntropy, encryptData } from './crypto';
+import { dropCancelledAnswerPlaceholders } from './syncService';
 
 // graphql-request: capture a hoisted request mock so each test controls the
 // conversation updates returned by The Graph.
@@ -180,5 +181,38 @@ describe('syncWithRemote — message-aware hydration skip', () => {
 			),
 		).toBe(false);
 		expect(mockDb.messageCache.bulkPut).not.toHaveBeenCalled();
+	});
+});
+
+describe('dropCancelledAnswerPlaceholders', () => {
+	// When a prompt is cancelled/refunded the answer is never delivered, but the
+	// optimistic answer placeholder (keyed by answerMessageId) lingers content-less
+	// and keeps the chat stuck "Thinking…". Drop exactly those.
+	it('drops a content-less assistant placeholder whose id is cancelled', () => {
+		const messages = [
+			{ id: 'p1', role: 'user', content: 'prompt', status: 'cancelled' },
+			{ id: 'a1', role: 'assistant', content: null },
+		];
+		const result = dropCancelledAnswerPlaceholders(messages, new Set(['a1']));
+		expect(result).toEqual([{ id: 'p1', role: 'user', content: 'prompt', status: 'cancelled' }]);
+	});
+
+	it('keeps a delivered (content-ful) answer even if its id is in the set', () => {
+		const messages = [{ id: 'a1', role: 'assistant', content: 'the answer' }];
+		expect(dropCancelledAnswerPlaceholders(messages, new Set(['a1']))).toEqual(messages);
+	});
+
+	it('keeps the cancelled user prompt and unrelated messages', () => {
+		const messages = [
+			{ id: 'p1', role: 'user', content: 'prompt', status: 'cancelled' },
+			{ id: 'a2', role: 'assistant', content: null },
+		];
+		// a2 is not in the cancelled set → keep it (a different pending answer).
+		expect(dropCancelledAnswerPlaceholders(messages, new Set(['a1']))).toEqual(messages);
+	});
+
+	it('returns the list unchanged for an empty set', () => {
+		const messages = [{ id: 'a1', role: 'assistant', content: null }];
+		expect(dropCancelledAnswerPlaceholders(messages, new Set())).toBe(messages);
 	});
 });
