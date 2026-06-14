@@ -1,6 +1,6 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
-import { advanceTime, getABLEBalance, revertToSnapshot, takeSnapshot } from '../helpers/hardhat';
+import { getABLEBalance, increaseTime, revertToSnapshot, takeSnapshot } from '../helpers/hardhat';
 
 const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
 const REFUND_TIMEOUT_S = 3600; // 1 hour — matches EVMAIAgentEscrow constant
@@ -46,11 +46,14 @@ test.describe('Refunds — cancellation flow (T-REFUND)', () => {
 		authenticatedPage,
 	}) => {
 		await chatPage.goto();
-		await chatPage.sendPrompt('Test refund timeout');
+		// A dropped prompt is never answered, so it stays genuinely pending past the refund
+		// window — without it the oracle answers within seconds and finalises the job, making
+		// the prompt no longer refundable (a race).
+		await chatPage.sendDroppedPrompt('Test refund timeout');
 		await expect(chatPage.cancelButton).toBeVisible({ timeout: 10_000 });
 
 		// Advance EVM time past the refund timeout
-		await advanceTime(REFUND_TIMEOUT_S + 60);
+		await increaseTime(REFUND_TIMEOUT_S + 60);
 
 		// Reload to trigger stuck request detection
 		await authenticatedPage.reload();
@@ -68,10 +71,11 @@ test.describe('Refunds — cancellation flow (T-REFUND)', () => {
 		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
 
 		await chatPage.goto();
-		await chatPage.sendPrompt('Test refund claim');
+		// Dropped → never answered → stays pending past the refund window (see T-REFUND-03).
+		await chatPage.sendDroppedPrompt('Test refund claim');
 		await expect(chatPage.cancelButton).toBeVisible({ timeout: 10_000 });
 
-		await advanceTime(REFUND_TIMEOUT_S + 60);
+		await increaseTime(REFUND_TIMEOUT_S + 60);
 		await authenticatedPage.reload();
 		await authenticatedPage.waitForLoadState('networkidle');
 
@@ -104,10 +108,11 @@ test.describe('Refunds — cancellation flow (T-REFUND)', () => {
 		authenticatedPage,
 	}) => {
 		await chatPage.goto();
-		await chatPage.sendPrompt('Test refunded status display');
+		// Dropped → never answered → stays pending past the refund window (see T-REFUND-03).
+		await chatPage.sendDroppedPrompt('Test refunded status display');
 		await expect(chatPage.cancelButton).toBeVisible({ timeout: 10_000 });
 
-		await advanceTime(REFUND_TIMEOUT_S + 60);
+		await increaseTime(REFUND_TIMEOUT_S + 60);
 		await authenticatedPage.reload();
 		await authenticatedPage.waitForLoadState('networkidle');
 

@@ -142,10 +142,6 @@ export async function getCurrentBlock(): Promise<number> {
 	return getBlockNumber();
 }
 
-export async function advanceTime(seconds: number): Promise<void> {
-	return increaseTime(seconds);
-}
-
 // ERC-20 ABI function selectors
 const BALANCE_OF_SELECTOR = '0x70a08231';
 const ALLOWANCE_SELECTOR = '0xdd62ed3e';

@@ -1,11 +1,11 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 import {
-	advanceTime,
 	fundABLE,
 	getABLEBalance,
 	getAllowance,
 	getEscrowBalance,
+	increaseTime,
 	revertToSnapshot,
 	takeSnapshot,
 } from '../helpers/hardhat';
@@ -216,7 +216,7 @@ test.describe('Plan modal validation (T-PLAN-EDGE)', () => {
 		await planModal.waitForTxCompletion();
 		await dashboardPage.assertHasPlan();
 
-		await advanceTime(86400 + 60);
+		await increaseTime(86400 + 60);
 
 		await dashboardPage.goto();
 		await expect(dashboardPage.planStatusCard.or(dashboardPage.getStartedButton)).toBeVisible({

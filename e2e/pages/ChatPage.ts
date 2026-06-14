@@ -156,6 +156,16 @@ export class ChatPage {
 	}
 
 	/**
+	 * Sends a prompt the mock oracle NEVER answers (via the `__E2E_DROP__` sentinel — see
+	 * tokenized-ai-agent oracle hasMockDropSentinel). The on-chain job stays unfinalized, so
+	 * the prompt is genuinely pending forever — the deterministic precondition for the refund
+	 * flow (forward EVM time past REFUND_TIMEOUT, then claim). Does NOT wait for a response.
+	 */
+	async sendDroppedPrompt(text: string) {
+		await this.sendPrompt(`${text} __E2E_DROP__`);
+	}
+
+	/**
 	 * Regenerates the latest answer. "Try again" is a dropdown trigger (button) that
 	 * opens a menu with three modes (see components/ai/message-actions.tsx):
 	 *   default  → "Try again"     (instructions: 'better')
