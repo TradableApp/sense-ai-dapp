@@ -120,6 +120,16 @@ export default defineConfig({
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
+			name: 'versions',
+			testMatch: '**/versions.spec.ts',
+			fullyParallel: false,
+			// Each T-REGEN/T-EDIT test does a prompt round-trip THEN a regenerate/edit
+			// round-trip (two oracle → IPFS → subgraph → dApp cycles, POMs wait up to 90s
+			// each), so it needs more headroom than the single-round-trip chat specs.
+			timeout: 240_000,
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
 			name: 'history',
 			testMatch: '**/history.spec.ts',
 			fullyParallel: false,

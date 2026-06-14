@@ -75,6 +75,26 @@ export class ChatPage {
 		return this.page.getByText(/insufficient ABLE balance/i).first();
 	}
 
+	// ── Answer versions (regenerations / prompt edits) ──────────────────────────
+	// Regenerating an answer or editing a prompt creates a SIBLING (a new "version"),
+	// not a second bubble. The message renders one version at a time with a
+	// "‹ {i} / {n} ›" pager (see message-actions.tsx / user-message-actions.tsx),
+	// shown only when siblings.length > 1. In a per-flow test exactly one message
+	// (the answer for regenerate, the prompt for edit) carries the pager.
+
+	get prevVersionButton() {
+		return this.page.getByRole('button', { name: 'Previous version' }).first();
+	}
+
+	get nextVersionButton() {
+		return this.page.getByRole('button', { name: 'Next version' }).first();
+	}
+
+	/** The "{currentIndex + 1} / {siblings.length}" counter between the chevrons. */
+	get versionIndicator() {
+		return this.page.getByText(/^\s*\d+\s*\/\s*\d+\s*$/).first();
+	}
+
 	// ── Actions ───────────────────────────────────────────────────────────────
 
 	async goto() {
@@ -120,19 +140,37 @@ export class ChatPage {
 	}
 
 	/**
-	 * Regenerates and waits for the NEW answer to render. Regeneration appends a new
-	 * assistant bubble (see Chat.tsx handleRegenerate → appendLiveMessages), so the
-	 * `.is-assistant` count increments by one — the same live-event/fallback-poll
-	 * delivery path as a normal answer. Returns the new answer's text.
+	 * Regenerates and waits for the answer to SWITCH to the new version. With version
+	 * semantics the answer is replaced (not appended): the pager advances to
+	 * "{expectedVersions} / {expectedVersions}" and the new answer re-hydrates (the
+	 * active assistant bubble briefly shows "Thinking…" then renders content again).
 	 */
-	async regenerateAndWaitForResponse(
-		mode: 'default' | 'detailed' | 'concise' = 'default',
+	async regenerateAndWaitForNewVersion(
+		mode: 'default' | 'detailed' | 'concise',
+		expectedVersions: number,
 		timeoutMs = 90_000,
 	) {
-		const before = await this.assistantMessages.count();
 		await this.regenerate(mode);
-		await expect(this.assistantMessages).toHaveCount(before + 1, { timeout: timeoutMs });
-		return this.latestAiMessage.textContent();
+		await expect(this.versionIndicator).toHaveText(
+			new RegExp(`^\\s*${expectedVersions}\\s*/\\s*${expectedVersions}\\s*$`),
+			{ timeout: timeoutMs },
+		);
+		// The regenerated answer hydrated — content rendered, not stuck on "Thinking…".
+		await expect(this.thinkingIndicator).toBeHidden({ timeout: timeoutMs });
+		await expect(this.assistantMessages).toHaveCount(1);
+	}
+
+	/**
+	 * Edit the latest user message to `newText`, producing a new prompt+answer version
+	 * (a sibling of the original prompt — see Chat.tsx handleSaveEdit). Opens the inline
+	 * editor (its textarea autofocuses) and submits with Enter.
+	 */
+	async editLatestUserMessage(newText: string) {
+		await this.userMessages.last().hover();
+		await this.page.getByRole('button', { name: 'Edit message' }).first().click();
+		const editor = this.page.locator('textarea:focus');
+		await editor.fill(newText);
+		await editor.press('Enter');
 	}
 
 	// ── Assertions ────────────────────────────────────────────────────────────
