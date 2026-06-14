@@ -106,13 +106,33 @@ export class ChatPage {
 	}
 
 	/**
-	 * Regenerates the latest answer (default mode). "Try again" is a dropdown
-	 * trigger (button) that opens a menu; the default regenerate is the "Try again"
-	 * menu item (see components/ai/message-actions.tsx).
+	 * Regenerates the latest answer. "Try again" is a dropdown trigger (button) that
+	 * opens a menu with three modes (see components/ai/message-actions.tsx):
+	 *   default  → "Try again"     (instructions: 'better')
+	 *   detailed → "Add details"   (instructions: 'more detailed')
+	 *   concise  → "More concise"  (instructions: 'more concise')
 	 */
-	async regenerate() {
+	async regenerate(mode: 'default' | 'detailed' | 'concise' = 'default') {
 		await this.regenerateButton.click();
-		await this.page.getByRole('menuitem', { name: /try again/i }).first().click();
+		const itemName =
+			mode === 'detailed' ? /add details/i : mode === 'concise' ? /more concise/i : /try again/i;
+		await this.page.getByRole('menuitem', { name: itemName }).first().click();
+	}
+
+	/**
+	 * Regenerates and waits for the NEW answer to render. Regeneration appends a new
+	 * assistant bubble (see Chat.tsx handleRegenerate → appendLiveMessages), so the
+	 * `.is-assistant` count increments by one — the same live-event/fallback-poll
+	 * delivery path as a normal answer. Returns the new answer's text.
+	 */
+	async regenerateAndWaitForResponse(
+		mode: 'default' | 'detailed' | 'concise' = 'default',
+		timeoutMs = 90_000,
+	) {
+		const before = await this.assistantMessages.count();
+		await this.regenerate(mode);
+		await expect(this.assistantMessages).toHaveCount(before + 1, { timeout: timeoutMs });
+		return this.latestAiMessage.textContent();
 	}
 
 	// ── Assertions ────────────────────────────────────────────────────────────

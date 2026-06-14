@@ -107,3 +107,133 @@ export async function getPendingPayments(
 	);
 	return data.payments;
 }
+
+// ── Full-stack assertion helpers (CU-86d3bawhh) ──────────────────────────────
+// The subgraph is the indexing layer's observable surface. These let a test
+// cross-check that an action the dApp shows actually landed on-chain and indexed
+// — e.g. a rendered answer ⇒ a role:"assistant" Message + PromptRequest.isAnswered,
+// not just an optimistic bubble. Mirrors schema.graphql in sense-ai-subgraph.
+
+export interface IndexedMessage {
+	id: string;
+	messageId: string;
+	role: string;
+	messageCID: string;
+	createdAt: string;
+	searchDelta: { id: string } | null;
+}
+
+/** All indexed messages for a conversation, oldest first (prompt + answer rows). */
+export async function getMessages(conversationId: string): Promise<IndexedMessage[]> {
+	const data = await graphQuery<{ messages: IndexedMessage[] }>(
+		`query($conv: ID!) {
+      messages(where: { conversation: $conv }, orderBy: createdAt, orderDirection: asc) {
+        id
+        messageId
+        role
+        messageCID
+        createdAt
+        searchDelta { id }
+      }
+    }`,
+		{ conv: conversationId },
+	);
+	return data.messages;
+}
+
+export interface IndexedPromptRequest {
+	id: string; // answerMessageId
+	promptMessageId: string;
+	isCancelled: boolean;
+	isAnswered: boolean;
+	isRefunded: boolean;
+}
+
+/** Prompt-request status rows for a user (answered/cancelled/refunded flags). */
+export async function getPromptRequests(userAddress: string): Promise<IndexedPromptRequest[]> {
+	const data = await graphQuery<{ promptRequests: IndexedPromptRequest[] }>(
+		`query($user: Bytes!) {
+      promptRequests(where: { user: $user }, orderBy: createdAt, orderDirection: asc) {
+        id
+        promptMessageId
+        isCancelled
+        isAnswered
+        isRefunded
+      }
+    }`,
+		{ user: userAddress.toLowerCase() },
+	);
+	return data.promptRequests;
+}
+
+export interface IndexedConversation {
+	id: string;
+	conversationCID: string;
+	conversationMetadataCID: string;
+	lastMessageCreatedAt: string;
+	isDeleted: boolean;
+	branchedFrom: { id: string } | null;
+}
+
+/** A single conversation's indexed metadata (CIDs, isDeleted, branch parent). */
+export async function getConversation(
+	conversationId: string,
+): Promise<IndexedConversation | null> {
+	const data = await graphQuery<{ conversation: IndexedConversation | null }>(
+		`query($id: ID!) {
+      conversation(id: $id) {
+        id
+        conversationCID
+        conversationMetadataCID
+        lastMessageCreatedAt
+        isDeleted
+        branchedFrom { id }
+      }
+    }`,
+		{ id: conversationId },
+	);
+	return data.conversation;
+}
+
+export interface IndexedRegenerationRequest {
+	id: string;
+	originalAnswerMessageId: string;
+	answerMessageId: string;
+}
+
+/** Regeneration requests for a user (links original answer → new answer id). */
+export async function getRegenerationRequests(
+	userAddress: string,
+): Promise<IndexedRegenerationRequest[]> {
+	const data = await graphQuery<{ regenerationRequests: IndexedRegenerationRequest[] }>(
+		`query($user: Bytes!) {
+      regenerationRequests(where: { user: $user }) {
+        id
+        originalAnswerMessageId
+        answerMessageId
+      }
+    }`,
+		{ user: userAddress.toLowerCase() },
+	);
+	return data.regenerationRequests;
+}
+
+/**
+ * Polls `query()` until `predicate` is satisfied, returning the matching value.
+ * The generic indexing-aware wait the assertion helpers above compose with —
+ * the subgraph lags the chain by a block or two, so reads must be retried.
+ */
+export async function waitForGraph<T>(
+	query: () => Promise<T>,
+	predicate: (_value: T) => boolean,
+	{ timeoutMs = 30_000, label = 'condition' }: { timeoutMs?: number; label?: string } = {},
+): Promise<T> {
+	const deadline = Date.now() + timeoutMs;
+	let last: T;
+	do {
+		last = await query();
+		if (predicate(last)) return last;
+		await new Promise(r => setTimeout(r, 1_000));
+	} while (Date.now() < deadline);
+	throw new Error(`waitForGraph: ${label} not met within ${timeoutMs}ms`);
+}
