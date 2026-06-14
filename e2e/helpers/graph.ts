@@ -176,9 +176,7 @@ export interface IndexedConversation {
 }
 
 /** A single conversation's indexed metadata (CIDs, isDeleted, branch parent). */
-export async function getConversation(
-	conversationId: string,
-): Promise<IndexedConversation | null> {
+export async function getConversation(conversationId: string): Promise<IndexedConversation | null> {
 	const data = await graphQuery<{ conversation: IndexedConversation | null }>(
 		`query($id: ID!) {
       conversation(id: $id) {
