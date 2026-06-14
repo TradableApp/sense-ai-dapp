@@ -44,7 +44,14 @@ export default function isQueryAhead(
 	// message.
 	const reduxById = new Map(reduxMessages.filter(m => m.id != null).map(m => [String(m.id), m]));
 	return queryMessages.some(queryMsg => {
-		const reduxMsg = reduxById.get(String(queryMsg.id ?? ''));
+		// Genuinely skip unresolved placeholders (no id): there's nothing to compare them
+		// against, and `String(undefined ?? '')` would collapse to '' — a key `reduxById`
+		// never holds (it excludes null-id entries) — making the lookup miss and spuriously
+		// read as "query is ahead".
+		if (queryMsg.id == null) {
+			return false;
+		}
+		const reduxMsg = reduxById.get(String(queryMsg.id));
 		if (!reduxMsg) {
 			return true; // query carries a message Redux is missing
 		}

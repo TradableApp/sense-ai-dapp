@@ -21,9 +21,9 @@ each run; re-running on a used chain reverts `setSpendingLimit` `0x9d4f9794`).
 
 ## Supported today
 
-**Contract (`hardhat.ts`):** `getBlockNumber`, `getBalance`, `mineBlocks`, `increaseTime`/
-`advanceTime`, `takeSnapshot`/`revertToSnapshot`; ERC-20 `getABLEBalance`, `getEscrowBalance`,
-`getAllowance`; `fundABLE` (treasury transfer); `approveABLE`, `activatePlan`; `getPromptFee`,
+**Contract (`hardhat.ts`):** `getBlockNumber`, `getBalance`, `mineBlocks`, `increaseTime`,
+`takeSnapshot`/`revertToSnapshot`; ERC-20 `getABLEBalance`, `getEscrowBalance`,
+`getAllowance`; `fundABLE` (treasury transfer); `approveABLE`, `activatePlan`, `processRefund`; `getPromptFee`,
 `setPromptFee` (owner); `getSpendingLimit` → `{allowance, spentAmount, expiresAt}`.
 
 **Indexing (`graph.ts`):** `isGraphRunning`, `getIndexedBlockNumber`, `waitForIndexing(block)`,

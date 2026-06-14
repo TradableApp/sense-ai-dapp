@@ -83,6 +83,14 @@ describe('isQueryAhead', () => {
 
 	// Once the resend answer is delivered + synced, the query carries the real user message (6)
 	// and the answered assistant (7) that optimistic Redux lacks, so hydration must proceed.
+	// A null-id query message (a hypothetical future provisional IndexedDB entry) must be
+	// skipped, not read as "ahead": String(undefined ?? '') would miss reduxById and look new.
+	it('does not read a null-id query placeholder as ahead', () => {
+		const redux = [user(4, 'Hi'), answer(5, 'A', 4)];
+		const query = [user(4, 'Hi'), answer(undefined, null, 4)];
+		expect(isQueryAhead(redux, query)).toBe(false);
+	});
+
 	it('returns true once the resend answer is delivered and synced', () => {
 		const redux = [user(4, 'Hold this', 'cancelled'), user(6, 'Now please answer'), answer(7, null, 6)];
 		const query = [

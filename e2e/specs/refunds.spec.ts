@@ -91,8 +91,11 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		await increaseTime(REFUND_TIMEOUT_S + 1);
 		await expect(processRefund(ESCROW_ADDRESS, owner, answered.id)).rejects.toThrow();
 
-		// And it stays answered, never refunded.
-		const reqs = await getPromptRequests(owner);
-		expect(reqs.find(r => r.id === answered.id)?.isRefunded).toBe(false);
+		// The finalized job is untouched: still answered, never refunded. (Asserting
+		// isAnswered too makes this a real subgraph check, not just "a reverted call didn't
+		// flip a flag" — a regression where processRefund silently succeeds would change one.)
+		const req = (await getPromptRequests(owner)).find(r => r.id === answered.id);
+		expect(req?.isAnswered).toBe(true);
+		expect(req?.isRefunded).toBe(false);
 	});
 });
