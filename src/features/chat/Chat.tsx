@@ -60,6 +60,7 @@ import {
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
 import ActivatePlanCTA from './ActivatePlanCTA';
+import isQueryAhead from './messageReconcile';
 
 interface MarkdownParagraphProps {
 	children: ReactNode;
@@ -94,75 +95,6 @@ function BranchInfo({ originalConversationId, onNavigate }: BranchInfoProps) {
 			</button>
 		</div>
 	);
-}
-
-/**
- * Compares the latest message in two message arrays to determine if the
- * query (from IndexedDB) is more up-to-date than the redux (in-memory) state.
- * @param {Array} reduxMessages The array from `activeConversationMessages`.
- * @param {Array} queryMessages The array from `messagesFromQuery`.
- * @returns {boolean} True if the query data is ahead.
- */
-function isQueryAhead(reduxMessages: ActiveMessage[], queryMessages: ActiveMessage[]): boolean {
-	if (!queryMessages || queryMessages.length === 0) {
-		return false;
-	}
-	if (reduxMessages.length === 0) {
-		return true;
-	}
-
-	// The query has a message Redux doesn't yet (e.g. a new answer).
-	if (queryMessages.length > reduxMessages.length) {
-		return true;
-	}
-
-	// The query is authoritative for removals too: if Redux still holds a content-less
-	// assistant PLACEHOLDER that the query no longer contains, it was dropped from the
-	// cache (a cancelled/refunded prompt's answer is never delivered — see
-	// syncService.dropCancelledAnswerPlaceholders). isQueryAhead otherwise only detects
-	// the query GAINING data, so without this Redux keeps the orphan and the composer
-	// stays stuck "Thinking…". A genuinely pending answer is still in the cache/query, so
-	// it is never matched here.
-	const queryIds = new Set(queryMessages.filter(m => m.id != null).map(m => String(m.id)));
-	const reduxHasDroppedPlaceholder = reduxMessages.some(
-		m =>
-			m.role === 'assistant' &&
-			(m.content === null || m.content === undefined) &&
-			m.id != null &&
-			!queryIds.has(String(m.id)),
-	);
-	if (reduxHasDroppedPlaceholder) {
-		return true;
-	}
-
-	// Position-independent comparison. The optimistic follow-up placeholder is
-	// stamped with wall-clock time while its (already-synced) prompt carries a later
-	// on-chain block time, so the placeholder can momentarily sort BEFORE its prompt.
-	// Comparing only the last element would then miss a resolved answer that isn't
-	// last — leaving a follow-up stuck on "Thinking…". So check every message by id:
-	// the query is "ahead" if for any id it carries newer data than Redux holds —
-	// content where Redux has none (answer delivered), a status change (pending →
-	// cancelled/refunded), or more streamed reasoning.
-	// Skip unresolved placeholders (no id) — they carry no content the query could be
-	// "ahead" of, and keying them all to '' would collapse several onto one slot and
-	// compare the wrong message.
-	const reduxById = new Map(reduxMessages.filter(m => m.id != null).map(m => [String(m.id), m]));
-	return queryMessages.some(queryMsg => {
-		const reduxMsg = reduxById.get(String(queryMsg.id ?? ''));
-		if (!reduxMsg) {
-			return true; // query carries a message Redux is missing
-		}
-		if (queryMsg.status !== reduxMsg.status) {
-			return true;
-		}
-		if ((queryMsg.reasoning?.length || 0) > (reduxMsg.reasoning?.length || 0)) {
-			return true;
-		}
-		if (queryMsg.content && !reduxMsg.content) {
-			return true;
-		}
-		return false;
-	});
 }
 
 const STREAM_BY_WORD = true;
