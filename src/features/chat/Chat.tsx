@@ -598,7 +598,16 @@ export default function Chat() {
 
 	// Derived state: Check if AI is thinking (assistant message with no content)
 	const lastMessage = messagesToDisplay.at(-1);
-	const isAiThinking = lastMessage?.role === 'assistant' && !lastMessage.content;
+	// A content-less assistant message is "thinking" ONLY while the prompt is still
+	// live. A cancelled/refunded prompt is also content-less but RESOLVED — excluding
+	// those statuses (mirrors hasPendingAnswer in useLiveResponse) stops the composer
+	// from getting stuck on "Cancel" after a cancel/refund re-hydrates from sync, so the
+	// user can send a new prompt.
+	const isAiThinking =
+		lastMessage?.role === 'assistant' &&
+		!lastMessage.content &&
+		lastMessage.status !== 'cancelled' &&
+		lastMessage.status !== 'refunded';
 
 	// Clear cancel deadline when answer arrives or thinking stops
 	useEffect(() => {
