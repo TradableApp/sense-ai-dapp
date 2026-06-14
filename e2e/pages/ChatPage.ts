@@ -75,6 +75,26 @@ export class ChatPage {
 		return this.page.getByText(/insufficient ABLE balance/i).first();
 	}
 
+	// ── Answer versions (regenerations / prompt edits) ──────────────────────────
+	// Regenerating an answer or editing a prompt creates a SIBLING (a new "version"),
+	// not a second bubble. The message renders one version at a time with a
+	// "‹ {i} / {n} ›" pager (see message-actions.tsx / user-message-actions.tsx),
+	// shown only when siblings.length > 1. In a per-flow test exactly one message
+	// (the answer for regenerate, the prompt for edit) carries the pager.
+
+	get prevVersionButton() {
+		return this.page.getByRole('button', { name: 'Previous version' }).first();
+	}
+
+	get nextVersionButton() {
+		return this.page.getByRole('button', { name: 'Next version' }).first();
+	}
+
+	/** The "{currentIndex + 1} / {siblings.length}" counter between the chevrons. */
+	get versionIndicator() {
+		return this.page.getByText(/^\s*\d+\s*\/\s*\d+\s*$/).first();
+	}
+
 	// ── Actions ───────────────────────────────────────────────────────────────
 
 	async goto() {
@@ -106,13 +126,59 @@ export class ChatPage {
 	}
 
 	/**
-	 * Regenerates the latest answer (default mode). "Try again" is a dropdown
-	 * trigger (button) that opens a menu; the default regenerate is the "Try again"
-	 * menu item (see components/ai/message-actions.tsx).
+	 * Regenerates the latest answer. "Try again" is a dropdown trigger (button) that
+	 * opens a menu with three modes (see components/ai/message-actions.tsx):
+	 *   default  → "Try again"     (instructions: 'better')
+	 *   detailed → "Add details"   (instructions: 'more detailed')
+	 *   concise  → "More concise"  (instructions: 'more concise')
 	 */
-	async regenerate() {
+	async regenerate(mode: 'default' | 'detailed' | 'concise' = 'default') {
 		await this.regenerateButton.click();
-		await this.page.getByRole('menuitem', { name: /try again/i }).first().click();
+		const itemName =
+			mode === 'detailed' ? /add details/i : mode === 'concise' ? /more concise/i : /try again/i;
+		await this.page.getByRole('menuitem', { name: itemName }).first().click();
+	}
+
+	/**
+	 * Regenerates and waits for the answer to SWITCH to the new version. With version
+	 * semantics the answer is replaced (not appended): the pager advances to
+	 * "{expectedVersions} / {expectedVersions}" and the new answer re-hydrates (the
+	 * active assistant bubble briefly shows "Thinking…" then renders content again).
+	 */
+	async regenerateAndWaitForNewVersion(
+		mode: 'default' | 'detailed' | 'concise',
+		expectedVersions: number,
+		timeoutMs = 90_000,
+	) {
+		await this.regenerate(mode);
+		await expect(this.versionIndicator).toHaveText(
+			new RegExp(`^\\s*${expectedVersions}\\s*/\\s*${expectedVersions}\\s*$`),
+			{ timeout: timeoutMs },
+		);
+		// The regenerated answer hydrated — content rendered, not stuck on "Thinking…".
+		await expect(this.thinkingIndicator).toBeHidden({ timeout: timeoutMs });
+		await expect(this.assistantMessages).toHaveCount(1);
+	}
+
+	/**
+	 * Edit the latest user message to `newText`, producing a new prompt+answer version
+	 * (a sibling of the original prompt — see Chat.tsx handleSaveEdit). Opens the inline
+	 * editor (its textarea autofocuses) and submits with Enter.
+	 */
+	async editLatestUserMessage(newText: string) {
+		await this.userMessages.last().hover();
+		await this.page.getByRole('button', { name: 'Edit message' }).first().click();
+		// The inline editor REPLACES the user bubble, and `:focus` is flaky (a React
+		// re-render can blur the textarea while Playwright resolves the locator). Scope
+		// to the edit form instead — it's the only PromptInput carrying a "Cancel"
+		// button (the composer shows Cancel only while a prompt is pending, which it
+		// isn't here since the answer already rendered).
+		const editForm = this.page
+			.locator('form')
+			.filter({ has: this.page.getByRole('button', { name: 'Cancel', exact: true }) });
+		const editor = editForm.locator('textarea');
+		await editor.fill(newText);
+		await editor.press('Enter');
 	}
 
 	// ── Assertions ────────────────────────────────────────────────────────────
