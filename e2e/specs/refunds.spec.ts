@@ -1,122 +1,101 @@
 import { expect, test } from '../fixtures';
-import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
-import { advanceTime, getABLEBalance, revertToSnapshot, takeSnapshot } from '../helpers/hardhat';
+import { getPromptRequests, waitForGraph } from '../helpers/graph';
+import { activatePlan, fundABLE, getABLEBalance, increaseTime, processRefund } from '../helpers/hardhat';
 
 const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const REFUND_TIMEOUT_S = 3600; // 1 hour — matches EVMAIAgentEscrow constant
+const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
+const REFUND_TIMEOUT_S = 3600; // 1 hour — matches EVMAIAgentEscrow REFUND_TIMEOUT
+const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 const SKIP_REASON =
-	'Skipped: requires Hardhat node + escrow contract + oracle (set E2E_LOCAL_SERVICES=1)';
+	'Skipped: requires Hardhat node + escrow contract + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
 
-test.describe('Refunds — cancellation flow (T-REFUND)', () => {
+const isPending = (r: { isAnswered: boolean; isCancelled: boolean; isRefunded: boolean }): boolean =>
+	!r.isAnswered && !r.isCancelled && !r.isRefunded;
+
+// Stuck-prompt refund (T-REFUND). A prompt the mock oracle never answers (via the
+// __E2E_DROP__ sentinel) stays pending on-chain forever; after REFUND_TIMEOUT the user can
+// reclaim the escrowed fee with processRefund. Full cross-layer: the dApp shows it pending,
+// the escrow holds the fee, processRefund returns it, and the subgraph flips isRefunded.
+//
+// NOTE: the dApp's in-app refund affordance is wall-clock-gated (it compares Date.now() to the
+// prompt's createdAt + REFUND_TIMEOUT), which evm_increaseTime can't move — testing that button
+// needs Playwright's page.clock and is tracked separately. These tests drive the on-chain claim
+// (the contract gate IS block-time based) and verify the indexed result.
+//
+// Fresh per-test users; serial (localnet shares one Hardhat node + global EVM time).
+test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
-	test.skip(!TOKEN_ADDRESS, 'Skipped: VITE_TOKEN_CONTRACT_ADDRESS not set');
+	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	let snapshotId: string;
-
-	test.beforeEach(async () => {
-		snapshotId = await takeSnapshot();
+	test.beforeEach(async ({ freshUserAccount }) => {
+		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
 	});
 
-	test.afterEach(async () => {
-		await revertToSnapshot(snapshotId);
-	});
-
-	test('T-REFUND-01: Cancel button appears during pending prompt', async ({ chatPage }) => {
-		await chatPage.goto();
-		await chatPage.sendPrompt('Test cancellation flow');
-		await expect(chatPage.cancelButton).toBeVisible({ timeout: 10_000 });
-	});
-
-	test('T-REFUND-02: Clicking cancel marks prompt as cancelled', async ({
-		chatPage,
-		authenticatedPage,
+	test('T-REFUND-01: a stuck prompt is refundable after the timeout — fee returned + indexed', async ({
+		freshChatPage,
+		freshUserAccount,
 	}) => {
-		await chatPage.goto();
-		await chatPage.sendPrompt('Test cancel action');
-		await expect(chatPage.cancelButton).toBeVisible({ timeout: 10_000 });
-		await chatPage.cancelButton.click();
+		const owner = freshUserAccount.address;
+		await freshChatPage.goto();
 
-		await expect(authenticatedPage.getByText(/cancelled|canceled/i).first()).toBeVisible({
-			timeout: 15_000,
-		});
+		// Submit a prompt the oracle never answers → the escrow is debited and the job stays
+		// pending on-chain. The cancel affordance confirms the dApp sees it pending.
+		await freshChatPage.sendDroppedPrompt('This one gets stuck and refunded');
+		await expect(freshChatPage.cancelButton).toBeVisible({ timeout: 30_000 });
+
+		// Indexing: the stuck PromptRequest is pending (not answered/cancelled/refunded).
+		const pendingReqs = await waitForGraph(
+			() => getPromptRequests(owner),
+			reqs => reqs.some(isPending),
+			{ label: 'pending PromptRequest' },
+		);
+		const stuck = pendingReqs.find(isPending)!;
+
+		// The escrow holds the prompt fee now (balance already debited at submission).
+		const balanceWhileStuck = await getABLEBalance(TOKEN_ADDRESS, owner);
+
+		// Advance EVM time past the 1h refund window, then claim on-chain (signed by the user).
+		await increaseTime(REFUND_TIMEOUT_S + 1);
+		await processRefund(ESCROW_ADDRESS, owner, stuck.id);
+
+		// Indexing: the request flips to refunded (escrow → subgraph).
+		await waitForGraph(
+			() => getPromptRequests(owner),
+			reqs => reqs.some(r => r.id === stuck.id && r.isRefunded),
+			{ label: 'PromptRequest.isRefunded' },
+		);
+
+		// Contract: the escrowed fee is returned to the wallet.
+		const balanceAfterRefund = await getABLEBalance(TOKEN_ADDRESS, owner);
+		expect(balanceAfterRefund).toBeGreaterThan(balanceWhileStuck);
 	});
 
-	test('T-REFUND-03: Refund button appears after 1hr timeout', async ({
-		chatPage,
-		authenticatedPage,
+	test('T-REFUND-02: an answered prompt cannot be refunded (job finalized)', async ({
+		freshChatPage,
+		freshUserAccount,
 	}) => {
-		await chatPage.goto();
-		await chatPage.sendPrompt('Test refund timeout');
-		await expect(chatPage.cancelButton).toBeVisible({ timeout: 10_000 });
+		const owner = freshUserAccount.address;
+		await freshChatPage.goto();
 
-		// Advance EVM time past the refund timeout
-		await advanceTime(REFUND_TIMEOUT_S + 60);
+		// A normal answered prompt finalizes the job, so its escrow is settled, not refundable.
+		await freshChatPage.sendPromptAndWaitForResponse('Answer this one normally');
+		const answeredReqs = await waitForGraph(
+			() => getPromptRequests(owner),
+			reqs => reqs.some(r => r.isAnswered),
+			{ label: 'answered PromptRequest' },
+		);
+		const answered = answeredReqs.find(r => r.isAnswered)!;
 
-		// Reload to trigger stuck request detection
-		await authenticatedPage.reload();
-		await authenticatedPage.waitForLoadState('networkidle');
+		// Even past the refund window, claiming reverts (the job is finalized).
+		await increaseTime(REFUND_TIMEOUT_S + 1);
+		await expect(processRefund(ESCROW_ADDRESS, owner, answered.id)).rejects.toThrow();
 
-		await expect(
-			authenticatedPage.getByRole('button', { name: /refund|claim/i }).first(),
-		).toBeVisible({ timeout: 15_000 });
-	});
-
-	test('T-REFUND-04: Claiming refund returns ABLE tokens to wallet', async ({
-		chatPage,
-		authenticatedPage,
-	}) => {
-		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
-
-		await chatPage.goto();
-		await chatPage.sendPrompt('Test refund claim');
-		await expect(chatPage.cancelButton).toBeVisible({ timeout: 10_000 });
-
-		await advanceTime(REFUND_TIMEOUT_S + 60);
-		await authenticatedPage.reload();
-		await authenticatedPage.waitForLoadState('networkidle');
-
-		const refundButton = authenticatedPage.getByRole('button', { name: /refund|claim/i }).first();
-		await expect(refundButton).toBeVisible({ timeout: 15_000 });
-		await refundButton.click();
-
-		// Wait for transaction to complete
-		await expect(refundButton).not.toBeVisible({ timeout: 30_000 });
-
-		const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
-		expect(balanceAfter).toBeGreaterThan(balanceBefore);
-	});
-
-	test('T-REFUND-05: Already-answered prompts cannot be refunded', async ({
-		chatPage,
-		authenticatedPage,
-	}) => {
-		await chatPage.goto();
-		await chatPage.sendPromptAndWaitForResponse('Test no-refund on answered');
-
-		// Answered prompts should not show a refund button
-		await expect(
-			authenticatedPage.getByRole('button', { name: /refund|claim/i }).first(),
-		).not.toBeVisible({ timeout: 5_000 });
-	});
-
-	test('T-REFUND-06: Already-refunded prompts show refunded status', async ({
-		chatPage,
-		authenticatedPage,
-	}) => {
-		await chatPage.goto();
-		await chatPage.sendPrompt('Test refunded status display');
-		await expect(chatPage.cancelButton).toBeVisible({ timeout: 10_000 });
-
-		await advanceTime(REFUND_TIMEOUT_S + 60);
-		await authenticatedPage.reload();
-		await authenticatedPage.waitForLoadState('networkidle');
-
-		const refundButton = authenticatedPage.getByRole('button', { name: /refund|claim/i }).first();
-		await expect(refundButton).toBeVisible({ timeout: 15_000 });
-		await refundButton.click();
-		await expect(refundButton).not.toBeVisible({ timeout: 30_000 });
-
-		// Should show refunded status indicator
-		await expect(authenticatedPage.getByText(/refunded/i).first()).toBeVisible({ timeout: 10_000 });
+		// The finalized job is untouched: still answered, never refunded. (Asserting
+		// isAnswered too makes this a real subgraph check, not just "a reverted call didn't
+		// flip a flag" — a regression where processRefund silently succeeds would change one.)
+		const req = (await getPromptRequests(owner)).find(r => r.id === answered.id);
+		expect(req?.isAnswered).toBe(true);
+		expect(req?.isRefunded).toBe(false);
 	});
 });

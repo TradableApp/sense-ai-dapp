@@ -142,10 +142,6 @@ export async function getCurrentBlock(): Promise<number> {
 	return getBlockNumber();
 }
 
-export async function advanceTime(seconds: number): Promise<void> {
-	return increaseTime(seconds);
-}
-
 // ERC-20 ABI function selectors
 const BALANCE_OF_SELECTOR = '0x70a08231';
 const ALLOWANCE_SELECTOR = '0xdd62ed3e';
@@ -237,6 +233,7 @@ const ESCROW_ABI = parseAbi([
 	'function setPromptFee(uint256 _newFee)',
 	'function promptFee() view returns (uint256)',
 	'function spendingLimits(address) view returns (uint256 allowance, uint256 spentAmount, uint256 expiresAt)',
+	'function processRefund(uint256 _answerMessageId)',
 ]);
 const ERC20_APPROVE_ABI = parseAbi(['function approve(address spender, uint256 amount)']);
 
@@ -285,6 +282,27 @@ export async function activatePlan(
 		abi: ESCROW_ABI,
 		functionName: 'setSpendingLimit',
 		args: [allowance, BigInt(expiresAt)],
+	});
+	await sendFrom(userAddress, escrowAddress, data);
+}
+
+/**
+ * Claim a refund for a stuck (never-answered) prompt, signed by the user. The contract
+ * requires `block.timestamp >= escrow.createdAt + REFUND_TIMEOUT` (1h) and the job to be
+ * unfinalized, so advance EVM time with `increaseTime` first. The dApp's in-app refund
+ * affordance is wall-clock-gated (Date.now), which `increaseTime` can't move, so a cross-layer
+ * refund test drives the on-chain claim here and verifies the subgraph/dApp reflect it.
+ * @param answerMessageId The PromptRequest id (= answerMessageId) of the stuck prompt.
+ */
+export async function processRefund(
+	escrowAddress: string,
+	userAddress: string,
+	answerMessageId: bigint | string,
+): Promise<void> {
+	const data = encodeFunctionData({
+		abi: ESCROW_ABI,
+		functionName: 'processRefund',
+		args: [BigInt(answerMessageId)],
 	});
 	await sendFrom(userAddress, escrowAddress, data);
 }

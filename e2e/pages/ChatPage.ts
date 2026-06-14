@@ -32,6 +32,23 @@ export class ChatPage {
 		return this.page.getByRole('button', { name: /^cancel/i }).first();
 	}
 
+	/** The "Prompt Cancelled — tokens refunded" toast shown after a successful cancel.
+	 *  It overlaps the composer's Send button. */
+	get cancelToast() {
+		return this.page.getByText(/tokens refunded/i).first();
+	}
+
+	/**
+	 * Closes the cancel toast so it stops overlapping the composer's Send button.
+	 * Sonner PAUSES its auto-dismiss timer when the page isn't focused (always the case
+	 * in headless Playwright), so waiting for it to disappear on its own hangs — close it
+	 * via its close button instead (the Toaster is mounted with `closeButton`).
+	 */
+	async dismissCancelToast() {
+		await this.page.locator('[data-close-button]').first().click({ timeout: 5_000 });
+		await expect(this.cancelToast).toBeHidden({ timeout: 5_000 });
+	}
+
 	/** Loading / thinking indicator while awaiting oracle response. The assistant
 	 *  message renders a Reasoning block ("Thinking…") while content is empty. */
 	get thinkingIndicator() {
@@ -136,6 +153,16 @@ export class ChatPage {
 	 */
 	async sendDelayedPrompt(text: string, delayMs: number) {
 		await this.sendPrompt(`${text} __E2E_DELAY_MS__:${delayMs}`);
+	}
+
+	/**
+	 * Sends a prompt the mock oracle NEVER answers (via the `__E2E_DROP__` sentinel — see
+	 * tokenized-ai-agent oracle hasMockDropSentinel). The on-chain job stays unfinalized, so
+	 * the prompt is genuinely pending forever — the deterministic precondition for the refund
+	 * flow (forward EVM time past REFUND_TIMEOUT, then claim). Does NOT wait for a response.
+	 */
+	async sendDroppedPrompt(text: string) {
+		await this.sendPrompt(`${text} __E2E_DROP__`);
 	}
 
 	/**

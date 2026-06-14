@@ -47,7 +47,7 @@ All conversation and message data is encrypted client-side with the user's `sess
 
 **`src/lib/dataService.js`** — all IndexedDB read/write operations. Functions encrypt/decrypt on every access.
 
-**TanStack Query** (`@tanstack/react-query`) manages server/blockchain state. Query keys follow the pattern `['conversations', sessionKey, ownerAddress]` and `['messages', conversationId, sessionKey, ownerAddress]`. The `sessionKey` in query keys ensures data isolation between wallets.
+**TanStack Query** (`@tanstack/react-query`) manages server/blockchain state. The conversations key includes `sessionKey` for per-wallet data isolation: `['conversations', sessionKey, ownerAddress]`. The **messages** key does NOT include `sessionKey` — it is `['messages', conversationId, ownerAddress]` (see `Chat.tsx` / `useLiveResponse.ts`). Any code invalidating the messages query MUST use this exact key; adding `sessionKey` makes the invalidation a silent no-op (which previously stranded cancelled-prompt placeholders).
 
 **`src/hooks/useLiveResponse.js`** — subscribes to on-chain events (via `useContractEvents` from Thirdweb) and orchestrates a retry/backoff sync queue that invalidates TanStack Query caches when blockchain state changes. This is the real-time update mechanism.
 

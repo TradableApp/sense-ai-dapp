@@ -60,6 +60,7 @@ import {
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
 import ActivatePlanCTA from './ActivatePlanCTA';
+import isQueryAhead from './messageReconcile';
 
 interface MarkdownParagraphProps {
 	children: ReactNode;
@@ -96,75 +97,6 @@ function BranchInfo({ originalConversationId, onNavigate }: BranchInfoProps) {
 	);
 }
 
-/**
- * Compares the latest message in two message arrays to determine if the
- * query (from IndexedDB) is more up-to-date than the redux (in-memory) state.
- * @param {Array} reduxMessages The array from `activeConversationMessages`.
- * @param {Array} queryMessages The array from `messagesFromQuery`.
- * @returns {boolean} True if the query data is ahead.
- */
-function isQueryAhead(reduxMessages: ActiveMessage[], queryMessages: ActiveMessage[]): boolean {
-	if (!queryMessages || queryMessages.length === 0) {
-		return false;
-	}
-	if (reduxMessages.length === 0) {
-		return true;
-	}
-
-	// The query has a message Redux doesn't yet (e.g. a new answer).
-	if (queryMessages.length > reduxMessages.length) {
-		return true;
-	}
-
-	// The query is authoritative for removals too: if Redux still holds a content-less
-	// assistant PLACEHOLDER that the query no longer contains, it was dropped from the
-	// cache (a cancelled/refunded prompt's answer is never delivered — see
-	// syncService.dropCancelledAnswerPlaceholders). isQueryAhead otherwise only detects
-	// the query GAINING data, so without this Redux keeps the orphan and the composer
-	// stays stuck "Thinking…". A genuinely pending answer is still in the cache/query, so
-	// it is never matched here.
-	const queryIds = new Set(queryMessages.filter(m => m.id != null).map(m => String(m.id)));
-	const reduxHasDroppedPlaceholder = reduxMessages.some(
-		m =>
-			m.role === 'assistant' &&
-			(m.content === null || m.content === undefined) &&
-			m.id != null &&
-			!queryIds.has(String(m.id)),
-	);
-	if (reduxHasDroppedPlaceholder) {
-		return true;
-	}
-
-	// Position-independent comparison. The optimistic follow-up placeholder is
-	// stamped with wall-clock time while its (already-synced) prompt carries a later
-	// on-chain block time, so the placeholder can momentarily sort BEFORE its prompt.
-	// Comparing only the last element would then miss a resolved answer that isn't
-	// last — leaving a follow-up stuck on "Thinking…". So check every message by id:
-	// the query is "ahead" if for any id it carries newer data than Redux holds —
-	// content where Redux has none (answer delivered), a status change (pending →
-	// cancelled/refunded), or more streamed reasoning.
-	// Skip unresolved placeholders (no id) — they carry no content the query could be
-	// "ahead" of, and keying them all to '' would collapse several onto one slot and
-	// compare the wrong message.
-	const reduxById = new Map(reduxMessages.filter(m => m.id != null).map(m => [String(m.id), m]));
-	return queryMessages.some(queryMsg => {
-		const reduxMsg = reduxById.get(String(queryMsg.id ?? ''));
-		if (!reduxMsg) {
-			return true; // query carries a message Redux is missing
-		}
-		if (queryMsg.status !== reduxMsg.status) {
-			return true;
-		}
-		if ((queryMsg.reasoning?.length || 0) > (reduxMsg.reasoning?.length || 0)) {
-			return true;
-		}
-		if (queryMsg.content && !reduxMsg.content) {
-			return true;
-		}
-		return false;
-	});
-}
-
 const STREAM_BY_WORD = true;
 const promptSchema = z.object({
 	// Any changes to schema must be updated in tokenized-ai-agent/oracle/src/payloadValidator.js
@@ -192,6 +124,12 @@ export default function Chat() {
 	const [animatedContents, setAnimatedContents] = useState<Record<string, string>>({});
 	const activeTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 	const prevMessagesRef = useRef<ActiveMessage[]>([]);
+	// answerMessageIds the user just cancelled/refunded. Their optimistic answer placeholder is
+	// removed from Redux immediately, but a not-yet-refreshed query can still carry it and
+	// re-hydrate it (the cache drop via syncService.dropCancelledAnswerPlaceholders is eventual).
+	// isQueryAhead can't tell a dropped-cancelled placeholder from a fresh pending one, so we
+	// filter these ids out on every hydrate to keep the composer from re-sticking on "Thinking…".
+	const cancelledAnswerIdsRef = useRef<Set<string>>(new Set());
 	const [activeMessageId, setActiveMessageId] = useState<string | number | null>(null);
 	const [editingMessageId, setEditingMessageId] = useState<string | number | null>(null);
 	const prevMessageCountRef = useRef(0);
@@ -243,13 +181,18 @@ export default function Chat() {
 
 	useEffect(() => {
 		if (!isFetching && isSuccess && messagesFromQuery) {
-			const shouldHydrate = isQueryAhead(
-				activeConversationMessages,
-				messagesFromQuery as unknown as ActiveMessage[],
-			);
+			const queryMessages = messagesFromQuery as unknown as ActiveMessage[];
+			const shouldHydrate = isQueryAhead(activeConversationMessages, queryMessages);
 
 			if (shouldHydrate) {
-				dispatch(setActiveConversationMessages(messagesFromQuery as unknown as ActiveMessage[]));
+				// Drop any cancelled/refunded answer placeholder the query still carries before its
+				// cache eviction has propagated — otherwise it re-sticks the composer on "Thinking…".
+				const cancelled = cancelledAnswerIdsRef.current;
+				const hydrated =
+					cancelled.size === 0
+						? queryMessages
+						: queryMessages.filter(m => m.id == null || !cancelled.has(String(m.id)));
+				dispatch(setActiveConversationMessages(hydrated));
 			}
 		}
 	}, [isFetching, isSuccess, messagesFromQuery, activeConversationMessages, dispatch]);
@@ -321,6 +264,7 @@ export default function Chat() {
 		setEditingMessageId(null);
 		prevMessageCountRef.current = 0;
 		prevMessagesRef.current = [];
+		cancelledAnswerIdsRef.current = new Set();
 	}, [activeConversationId]);
 
 	const handleReset = useCallback((): void => {
@@ -682,6 +626,10 @@ export default function Chat() {
 				onSuccess: async () => {
 					setCancelDeadline(null);
 
+					// Tombstone the cancelled answer so a not-yet-refreshed query can't re-hydrate
+					// its orphaned placeholder back into Redux (see cancelledAnswerIdsRef).
+					cancelledAnswerIdsRef.current.add(String(lastMessage.id));
+
 					try {
 						// 1. Clean up IndexedDB so it doesn't reappear on refresh
 						await deleteMessageFromConversation(
@@ -727,6 +675,15 @@ export default function Chat() {
 		const parentId = Number.isFinite(parentIdNum) ? parentIdNum : null;
 		const parentCID = lastDisplayedMessage?.messageCID ?? null;
 
+		// Whether this conversation already has a delivered (content-bearing) answer. If it
+		// doesn't (e.g. its only prior prompt was cancelled), the conversation was never
+		// confirmed on-chain (ConversationAdded fires only with the first answer's
+		// conversationCID), so the resend must be flagged new — otherwise the answer never
+		// indexes and the chat stays stuck "Thinking…". See buildInitiatePromptPayload.
+		const conversationHasAnswer = activeConversationMessages.some(
+			m => m.role === 'assistant' && m.content != null && m.content !== '',
+		);
+
 		initiatePromptMutation.mutate(
 			{
 				conversationId: activeConversationId ?? 0,
@@ -734,6 +691,7 @@ export default function Chat() {
 				sessionKey,
 				parentId,
 				parentCID,
+				conversationHasAnswer,
 			},
 			{
 				onSuccess: async newIds => {
