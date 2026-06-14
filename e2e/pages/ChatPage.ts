@@ -26,13 +26,12 @@ export class ChatPage {
 	}
 
 	get cancelButton() {
-		return this.page.getByRole('button', { name: /cancel/i }).first();
+		// Anchor to the start of the accessible name so we match ONLY the composer's
+		// cancel control — "Cancel" (icon, aria-label) or "Cancel (Ns)" (countdown) —
+		// and never a sidebar conversation title that merely contains the word "cancel".
+		return this.page.getByRole('button', { name: /^cancel/i }).first();
 	}
 
-	/** "Cancelled" status shown on a prompt the user cancelled (see T-REFUND-02). */
-	get cancelledStatus() {
-		return this.page.getByText(/cancelled|canceled/i).first();
-	}
 
 	/** Loading / thinking indicator while awaiting oracle response. The assistant
 	 *  message renders a Reasoning block ("Thinking…") while content is empty. */
@@ -140,15 +139,6 @@ export class ChatPage {
 		await this.sendPrompt(`${text} __E2E_DELAY_MS__:${delayMs}`);
 	}
 
-	/**
-	 * Cancels the in-flight prompt. The Cancel button is only enabled during the 3s
-	 * CANCELLATION_TIMEOUT window after the prompt is submitted (it shows a
-	 * "Cancel (Ns)" countdown), so click promptly once it appears.
-	 */
-	async cancelPendingPrompt() {
-		await expect(this.cancelButton).toBeEnabled({ timeout: 30_000 });
-		await this.cancelButton.click();
-	}
 
 	/**
 	 * Regenerates the latest answer. "Try again" is a dropdown trigger (button) that

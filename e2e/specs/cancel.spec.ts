@@ -1,6 +1,6 @@
 import { expect, test } from '../fixtures';
 import { getPromptRequests, waitForGraph } from '../helpers/graph';
-import { activatePlan, fundABLE } from '../helpers/hardhat';
+import { activatePlan, fundABLE, increaseTime } from '../helpers/hardhat';
 
 const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
 const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
@@ -8,20 +8,25 @@ const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
 
 const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
-// Hold the answer pending well past the 3s cancel window so the cancel always wins the
-// race with the oracle (the oracle's post-delay isJobFinalized re-check then drops the
-// answer), and the pending state stays stable for assertions.
+// Hold the answer pending well past the cancel window so the cancel always wins the race
+// with the oracle (the oracle's post-delay isJobFinalized re-check then drops the answer).
 const HOLD_MS = 8000;
+// On-chain, cancelPrompt reverts (PromptNotCancellableYet) until `createdAt +
+// CANCELLATION_TIMEOUT` (3s). On a real chain block time advances naturally between the
+// submit and the cancel tx; on localnet (auto-mine, frozen between txs) we must advance
+// EVM time past the window so the cancel can land — mirroring real-chain progression.
+const CANCELLATION_TIMEOUT_S = 3;
 
 async function fundAndActivatePlan(address: string): Promise<void> {
 	await fundABLE(TOKEN_ADDRESS, address, PLAN_ALLOWANCE);
 	await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, address, PLAN_ALLOWANCE);
 }
 
-// Cancel a pending prompt + concurrency. Submitting a 2nd prompt while one is pending is
-// PREVENTED by design (the composer swaps Send→Cancel while isAiThinking); cancelling is
-// only allowed in the 3s CANCELLATION_TIMEOUT window. Uses the oracle's mock delay
-// sentinel to hold the answer pending deterministically. Fresh per-test users; serial.
+// Cancel a pending prompt + concurrency. A 2nd prompt cannot be submitted while one is
+// pending (the composer swaps Send→Cancel while isAiThinking). Cancelling debits a
+// cancellation fee, refunds the prompt fee, flags PromptRequest.isCancelled, and the dApp
+// drops the pending message so the composer frees up. Uses the oracle mock-delay sentinel
+// to hold the answer pending deterministically. Fresh per-test users; serial.
 test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
@@ -30,7 +35,7 @@ test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 		await fundAndActivatePlan(freshUserAccount.address);
 	});
 
-	test('T-CANCEL-01: cancelling a pending prompt marks it cancelled (index + dApp), no answer lands', async ({
+	test('T-CANCEL-01: cancelling a pending prompt flags it cancelled (index + dApp), no answer lands', async ({
 		freshChatPage,
 		freshUserAccount,
 	}) => {
@@ -38,10 +43,11 @@ test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 		await freshChatPage.goto();
 		await freshChatPage.sendDelayedPrompt('Please hold this one', HOLD_MS);
 
-		await freshChatPage.cancelPendingPrompt();
-
-		// dApp: the prompt shows a cancelled status.
-		await expect(freshChatPage.cancelledStatus).toBeVisible({ timeout: 15_000 });
+		// Prompt is pending (createdAt now set on-chain) → cancel affordance appears…
+		await expect(freshChatPage.cancelButton).toBeVisible({ timeout: 30_000 });
+		// …advance past the on-chain cancellation window, then cancel within the UI window.
+		await increaseTime(CANCELLATION_TIMEOUT_S + 1);
+		await freshChatPage.cancelButton.click();
 
 		// Indexing: the prompt request is flagged cancelled on-chain → subgraph.
 		await waitForGraph(
@@ -50,8 +56,10 @@ test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 			{ label: 'PromptRequest.isCancelled' },
 		);
 
-		// The held answer must NOT arrive — a cancelled answer has no content, so no
-		// assistant bubble ever renders (well past the 8s hold).
+		// dApp: the pending message is dropped → the composer frees up (Send returns).
+		await expect(freshChatPage.submitButton).toBeVisible({ timeout: 15_000 });
+
+		// The held answer must NOT arrive — the oracle's post-delay re-check drops it.
 		await freshChatPage.page.waitForTimeout(HOLD_MS);
 		await expect(freshChatPage.assistantMessages).toHaveCount(0);
 	});
@@ -68,8 +76,9 @@ test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 		await expect(freshChatPage.submitButton).toHaveCount(0);
 
 		// Cleanup: cancel so the test leaves no in-flight job.
-		await freshChatPage.cancelPendingPrompt();
-		await expect(freshChatPage.cancelledStatus).toBeVisible({ timeout: 15_000 });
+		await increaseTime(CANCELLATION_TIMEOUT_S + 1);
+		await freshChatPage.cancelButton.click();
+		await expect(freshChatPage.submitButton).toBeVisible({ timeout: 15_000 });
 	});
 
 	test('T-CANCEL-03: after cancelling, the user can send a new prompt that is answered', async ({
@@ -80,9 +89,10 @@ test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 		await freshChatPage.goto();
 
 		// Cancel the first prompt.
-		await freshChatPage.sendDelayedPrompt('Cancel me first', HOLD_MS);
-		await freshChatPage.cancelPendingPrompt();
-		await expect(freshChatPage.cancelledStatus).toBeVisible({ timeout: 15_000 });
+		await freshChatPage.sendDelayedPrompt('Hold then drop this one', HOLD_MS);
+		await expect(freshChatPage.cancelButton).toBeVisible({ timeout: 30_000 });
+		await increaseTime(CANCELLATION_TIMEOUT_S + 1);
+		await freshChatPage.cancelButton.click();
 
 		// The composer re-enables (isAiThinking cleared) → Send returns.
 		await expect(freshChatPage.submitButton).toBeVisible({ timeout: 15_000 });
@@ -91,7 +101,7 @@ test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 		await freshChatPage.sendPromptAndWaitForResponse('Now please answer this');
 		await expect(freshChatPage.assistantMessages).toHaveCount(1);
 
-		// Indexing: exactly one cancelled and one answered prompt request.
+		// Indexing: one cancelled and one answered prompt request.
 		await waitForGraph(
 			() => getPromptRequests(owner),
 			reqs => reqs.some(r => r.isCancelled) && reqs.some(r => r.isAnswered),
@@ -99,15 +109,15 @@ test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 		);
 	});
 
-	test('T-CANCEL-04: cancel is offered only within the 3s CANCELLATION_TIMEOUT window', async ({
+	test('T-CANCEL-04: the cancel affordance follows the 3s CANCELLATION_TIMEOUT countdown', async ({
 		freshChatPage,
 	}) => {
 		await freshChatPage.goto();
-		await freshChatPage.sendDelayedPrompt('Watch the cancel window', HOLD_MS);
+		await freshChatPage.sendDelayedPrompt('Hold for the timeout check', HOLD_MS);
 
 		// Enabled during the countdown ("Cancel (Ns)")…
 		await expect(freshChatPage.cancelButton).toBeEnabled({ timeout: 30_000 });
-		// …then disabled once the 3s window closes (the answer is still pending via the hold).
+		// …then disabled once the 3s countdown elapses (answer still held pending).
 		await expect(freshChatPage.cancelButton).toBeDisabled({ timeout: 10_000 });
 	});
 });
