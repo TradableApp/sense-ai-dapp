@@ -37,31 +37,36 @@ export default function isQueryAhead(
 		return true;
 	}
 
-	// The query is authoritative for removals too: if Redux still holds a content-less
-	// assistant PLACEHOLDER that the query no longer contains, it was dropped from the
-	// cache (a cancelled/refunded prompt's answer is never delivered — see
-	// syncService.dropCancelledAnswerPlaceholders). isQueryAhead otherwise only detects
-	// the query GAINING data, so without this Redux keeps the orphan and the composer
-	// stays stuck "Thinking…". A genuinely pending answer is still in the cache/query, so
-	// it is never matched here.
+	// The query is authoritative for removals too: a content-less assistant PLACEHOLDER that
+	// the query no longer contains was dropped from the cache because its prompt was
+	// cancelled/refunded and the answer is never delivered (see
+	// syncService.dropCancelledAnswerPlaceholders). isQueryAhead otherwise only detects the
+	// query GAINING data, so without this Redux keeps the orphan and the composer stays stuck
+	// "Thinking…".
+	//
+	// The precise signal is the placeholder's PROMPT being cancelled/refunded — NOT merely
+	// "a placeholder is missing". A fresh optimistic placeholder (a resend after cancel, or a
+	// regenerate/edit version) is also content-less and missing from the not-yet-synced query,
+	// but its prompt is pending, not cancelled — wiping it would lose the resend (stuck
+	// "Thinking…") or the new answer version (the version pager never appears). syncService
+	// recovers a cancelled/refunded prompt into the query as a `status: 'cancelled' | 'refunded'`
+	// message keyed by promptMessageId, which is exactly the placeholder's parentId — so only
+	// remove a missing placeholder when the query shows its parent prompt cancelled/refunded.
 	const queryIds = new Set(queryMessages.filter(m => m.id != null).map(m => String(m.id)));
-	const reduxMissingFromQuery = reduxMessages.filter(
-		m => m.id != null && !queryIds.has(String(m.id)),
+	const cancelledPromptIds = new Set(
+		queryMessages
+			.filter(m => (m.status === 'cancelled' || m.status === 'refunded') && m.id != null)
+			.map(m => String(m.id)),
 	);
-	const droppedPlaceholders = reduxMissingFromQuery.filter(
-		m => m.role === 'assistant' && (m.content === null || m.content === undefined),
+	const reduxHasDroppedPlaceholder = reduxMessages.some(
+		m =>
+			m.role === 'assistant' &&
+			(m.content === null || m.content === undefined) &&
+			m.id != null &&
+			!queryIds.has(String(m.id)) &&
+			m.parentId != null &&
+			cancelledPromptIds.has(String(m.parentId)),
 	);
-	// Reconcile a removal ONLY when every id-bearing Redux message the query lacks is a
-	// content-less assistant placeholder — i.e. the query has caught up on all real content
-	// and merely shed the orphaned answer of a cancelled/refunded prompt. If a non-placeholder
-	// (a user message or a delivered answer) is also missing, the query is just BEHIND a fresh
-	// optimistic send (the resend-after-cancel case): replacing Redux would wipe it, stop the
-	// fallback poll, and the answer would never render. A prompt and its placeholder sync
-	// atomically, so "only the placeholder is missing" reliably means a cancellation-drop, not
-	// a pending follow-up (whose placeholder is still recovered into the cache/query).
-	const reduxHasDroppedPlaceholder =
-		droppedPlaceholders.length > 0 &&
-		droppedPlaceholders.length === reduxMissingFromQuery.length;
 	if (reduxHasDroppedPlaceholder) {
 		return true;
 	}
