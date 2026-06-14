@@ -125,7 +125,11 @@ function isQueryAhead(reduxMessages: ActiveMessage[], queryMessages: ActiveMessa
 	// it is never matched here.
 	const queryIds = new Set(queryMessages.filter(m => m.id != null).map(m => String(m.id)));
 	const reduxHasDroppedPlaceholder = reduxMessages.some(
-		m => m.role === 'assistant' && !m.content && m.id != null && !queryIds.has(String(m.id)),
+		m =>
+			m.role === 'assistant' &&
+			(m.content === null || m.content === undefined) &&
+			m.id != null &&
+			!queryIds.has(String(m.id)),
 	);
 	if (reduxHasDroppedPlaceholder) {
 		return true;
@@ -613,11 +617,14 @@ export default function Chat() {
 
 	// Derived state: Check if AI is thinking (assistant message with no content)
 	const lastMessage = messagesToDisplay.at(-1);
-	// A content-less assistant message is "thinking" ONLY while the prompt is still
-	// live. A cancelled/refunded prompt is also content-less but RESOLVED — excluding
-	// those statuses (mirrors hasPendingAnswer in useLiveResponse) stops the composer
-	// from getting stuck on "Cancel" after a cancel/refund re-hydrates from sync, so the
-	// user can send a new prompt.
+	// A content-less assistant message is "thinking" ONLY while the prompt is still live.
+	// The cancel/refund unblock is actually done by dropping the orphaned placeholder
+	// (syncService.dropCancelledAnswerPlaceholders) + the isQueryAhead removal-reconcile
+	// above. This status exclusion is a DEFENSIVE consistency guard mirroring
+	// hasPendingAnswer/conversationHasPendingMessage: should an assistant message ever
+	// carry a 'cancelled'/'refunded' status (a future or non-cancel path), it must not
+	// read as "thinking". It is not what unsticks the current cancel flow — don't remove
+	// the drop/reconcile layers on the assumption that this handles it.
 	const isAiThinking =
 		lastMessage?.role === 'assistant' &&
 		!lastMessage.content &&

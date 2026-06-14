@@ -66,8 +66,10 @@ test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 		// dApp: the pending message is dropped → the composer frees up (Send returns).
 		await expect(freshChatPage.submitButton).toBeVisible({ timeout: 15_000 });
 
-		// The held answer must NOT arrive — the oracle's post-delay re-check drops it.
-		await freshChatPage.page.waitForTimeout(HOLD_MS);
+		// The held answer must NOT arrive. isCancelled is already confirmed above, so the
+		// on-chain job is finalized — the oracle's post-delay re-check will drop the answer
+		// and none can ever land. Assert on that confirmed state rather than sleeping for
+		// the (wall-clock) hold, which would race the oracle on a slow runner.
 		await expect(freshChatPage.assistantMessages).toHaveCount(0);
 	});
 
