@@ -32,7 +32,6 @@ async function indexedAnswers(conversationId: string) {
 test.describe('Answer versions — regenerate (T-REGEN)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
-	test.describe.configure({ timeout: 240_000 });
 
 	test.beforeEach(async ({ freshUserAccount }) => {
 		await fundAndActivatePlan(freshUserAccount.address);
@@ -98,6 +97,10 @@ test.describe('Answer versions — regenerate (T-REGEN)', () => {
 		await expect(freshChatPage.versionIndicator).toHaveText(/^\s*2\s*\/\s*2\s*$/);
 	});
 
+	// T-REGEN-02/03 cover the other two UI modes. They intentionally omit the escrow
+	// promptFee-debit cross-check (asserted in T-REGEN-01) since all modes go through
+	// the same initiateRegeneration path — they only verify the mode menu item drives a
+	// regeneration that switches versions and indexes its RegenerationRequest.
 	test('T-REGEN-02: "Add details" mode regenerates to a new version', async ({
 		freshChatPage,
 		freshUserAccount,
@@ -140,7 +143,6 @@ test.describe('Answer versions — regenerate (T-REGEN)', () => {
 test.describe('Answer versions — edit prompt (T-EDIT)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
-	test.describe.configure({ timeout: 240_000 });
 
 	test.beforeEach(async ({ freshUserAccount }) => {
 		await fundAndActivatePlan(freshUserAccount.address);

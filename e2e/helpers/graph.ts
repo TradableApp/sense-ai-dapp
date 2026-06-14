@@ -204,8 +204,11 @@ export async function getRegenerationRequests(
 	userAddress: string,
 ): Promise<IndexedRegenerationRequest[]> {
 	const data = await graphQuery<{ regenerationRequests: IndexedRegenerationRequest[] }>(
+		// RegenerationRequest is an immutable event entity — it has `timestamp`/
+		// `blockNumber`, not `createdAt` (unlike Message/PromptRequest) — so order by
+		// timestamp for a deterministic result if a test ever chains regenerations.
 		`query($user: Bytes!) {
-      regenerationRequests(where: { user: $user }) {
+      regenerationRequests(where: { user: $user }, orderBy: timestamp, orderDirection: asc) {
         id
         originalAnswerMessageId
         answerMessageId
@@ -233,5 +236,7 @@ export async function waitForGraph<T>(
 		if (predicate(last)) return last;
 		await new Promise(r => setTimeout(r, 1_000));
 	} while (Date.now() < deadline);
-	throw new Error(`waitForGraph: ${label} not met within ${timeoutMs}ms`);
+	throw new Error(
+		`waitForGraph: ${label} not met within ${timeoutMs}ms. Last value: ${JSON.stringify(last)}`,
+	);
 }

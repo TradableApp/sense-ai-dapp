@@ -168,7 +168,15 @@ export class ChatPage {
 	async editLatestUserMessage(newText: string) {
 		await this.userMessages.last().hover();
 		await this.page.getByRole('button', { name: 'Edit message' }).first().click();
-		const editor = this.page.locator('textarea:focus');
+		// The inline editor REPLACES the user bubble, and `:focus` is flaky (a React
+		// re-render can blur the textarea while Playwright resolves the locator). Scope
+		// to the edit form instead — it's the only PromptInput carrying a "Cancel"
+		// button (the composer shows Cancel only while a prompt is pending, which it
+		// isn't here since the answer already rendered).
+		const editForm = this.page
+			.locator('form')
+			.filter({ has: this.page.getByRole('button', { name: 'Cancel', exact: true }) });
+		const editor = editForm.locator('textarea');
 		await editor.fill(newText);
 		await editor.press('Enter');
 	}
