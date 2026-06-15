@@ -162,6 +162,16 @@ export default defineConfig({
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
+			name: 'metadata',
+			testMatch: '**/metadata.spec.ts',
+			fullyParallel: false,
+			// Two oracle round-trips (the answer, then the rename/delete metadata update) plus
+			// indexing waits and a re-sync — worst-case well past 120s, so match the versions
+			// project's headroom.
+			timeout: 240_000,
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
 			name: 'security',
 			testMatch: '**/security.spec.ts',
 			use: { ...devices['Desktop Chrome'] },
