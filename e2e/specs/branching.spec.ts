@@ -22,14 +22,14 @@ test.describe('Branching (T-BRANCH)', () => {
 	test('T-BRANCH-01: the branch button appears on an AI response', async ({ freshChatPage }) => {
 		await freshChatPage.goto();
 		await freshChatPage.sendPromptAndWaitForResponse('Test branch button visibility');
-		await expect(freshChatPage.branchButton).toBeVisible({ timeout: 10_000 });
+		await expect(freshChatPage.branchTrigger).toBeVisible({ timeout: 10_000 });
 	});
 
 	test('T-BRANCH-02: clicking branch creates a new conversation', async ({ freshChatPage }) => {
 		await freshChatPage.goto();
 		await freshChatPage.sendPromptAndWaitForResponse('Original conversation for branching');
 
-		await freshChatPage.branchButton.click();
+		await freshChatPage.branchInNewChat();
 
 		// The branched conversation opens with a usable composer.
 		await freshChatPage.assertPromptInputVisible();
@@ -41,7 +41,7 @@ test.describe('Branching (T-BRANCH)', () => {
 		await freshChatPage.goto();
 		await freshChatPage.sendPromptAndWaitForResponse('Branch source message');
 
-		await freshChatPage.branchButton.click();
+		await freshChatPage.branchInNewChat();
 
 		// The branch copies the prior context, so at least the original user message is present.
 		await expect(freshChatPage.userMessages.first()).toBeVisible({ timeout: 15_000 });
@@ -56,7 +56,7 @@ test.describe('Branching (T-BRANCH)', () => {
 		await freshChatPage.sendPromptAndWaitForResponse('Original message before branch');
 		const originalMsgCount = await freshChatPage.userMessages.count();
 
-		await freshChatPage.branchButton.click();
+		await freshChatPage.branchInNewChat();
 		await freshChatPage.sendPromptAndWaitForResponse('Message in branched conversation');
 
 		// Reopen the original conversation from history (the branch is most recent at index 0,
@@ -74,7 +74,7 @@ test.describe('Branching (T-BRANCH)', () => {
 	}) => {
 		await freshChatPage.goto();
 		await freshChatPage.sendPromptAndWaitForResponse('Pre-branch message');
-		await freshChatPage.branchButton.click();
+		await freshChatPage.branchInNewChat();
 
 		// After branching there are two conversations: the original + the branch.
 		await freshHistoryPage.goto();
