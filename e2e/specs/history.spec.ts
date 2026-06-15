@@ -116,7 +116,10 @@ test.describe('History (T-HIST)', () => {
 		await freshHistoryPage.goto();
 		await freshHistoryPage.assertConversationCount(1);
 		await freshHistoryPage.deleteConversation(0);
-		await freshHistoryPage.assertConversationCount(0);
+		// Delete is NOT optimistic — confirmDelete goes through metadataUpdateMutation (an
+		// on-chain isDeleted write) and only removes from the list in onSuccess, so allow more
+		// than the 10s default for the tx to confirm on a loaded localnet.
+		await freshHistoryPage.assertConversationCount(0, { timeout: 30_000 });
 	});
 
 	test('T-HIST-10: resuming a conversation allows sending a follow-up', async ({

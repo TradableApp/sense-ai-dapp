@@ -78,8 +78,10 @@ export class HistoryPage {
 
 	// ── Assertions ────────────────────────────────────────────────────────────
 
-	async assertConversationCount(count: number) {
-		await expect(this.conversationItems).toHaveCount(count, { timeout: 10_000 });
+	async assertConversationCount(count: number, options?: { timeout?: number }) {
+		await expect(this.conversationItems).toHaveCount(count, {
+			timeout: options?.timeout ?? 10_000,
+		});
 	}
 
 	async assertHasConversations() {

@@ -69,7 +69,7 @@ test.describe('Branching (T-BRANCH)', () => {
 		await waitForGraph(
 			() => getConversations(freshUserAccount.address),
 			convs => convs.length === 2,
-			{ label: 'branched conversation indexed', timeoutMs: 90_000 },
+			{ label: 'branched conversation indexed', timeoutMs: 60_000 },
 		);
 
 		// Reopen the original conversation from history (the branch is most recent at index 0,
@@ -94,7 +94,7 @@ test.describe('Branching (T-BRANCH)', () => {
 		await waitForGraph(
 			() => getConversations(freshUserAccount.address),
 			convs => convs.length === 2,
-			{ label: 'branched conversation indexed', timeoutMs: 90_000 },
+			{ label: 'branched conversation indexed', timeoutMs: 60_000 },
 		);
 
 		// dApp: after a /history mount syncs it, both the original + the branch are listed.

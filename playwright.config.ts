@@ -173,8 +173,9 @@ export default defineConfig({
 			name: 'branching',
 			testMatch: '**/branching.spec.ts',
 			fullyParallel: false,
-			// Branch tests do multiple chat round-trips plus a branch op; give generous headroom.
-			timeout: 180_000,
+			// Branch tests do multiple chat round-trips plus a branch op, then wait up to 60s for
+			// graph-node to index the branch before the follow-on assertions; generous headroom.
+			timeout: 240_000,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{

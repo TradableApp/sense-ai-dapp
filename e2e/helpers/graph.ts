@@ -230,13 +230,21 @@ export async function waitForGraph<T>(
 	{ timeoutMs = 30_000, label = 'condition' }: { timeoutMs?: number; label?: string } = {},
 ): Promise<T> {
 	const deadline = Date.now() + timeoutMs;
-	let last: T;
+	let last: T | undefined;
+	let lastError: unknown;
 	do {
-		last = await query();
-		if (predicate(last)) return last;
+		try {
+			last = await query();
+			if (predicate(last)) return last;
+		} catch (err) {
+			// A transient subgraph/network error (graph-node restarting, an HTTP 5xx, a cold
+			// endpoint) must not fail the whole wait — keep polling until the deadline.
+			lastError = err;
+		}
 		await new Promise(r => setTimeout(r, 1_000));
 	} while (Date.now() < deadline);
+	const tail = lastError ? ` (last error: ${String(lastError)})` : '';
 	throw new Error(
-		`waitForGraph: ${label} not met within ${timeoutMs}ms. Last value: ${JSON.stringify(last)}`,
+		`waitForGraph: ${label} not met within ${timeoutMs}ms. Last value: ${JSON.stringify(last)}${tail}`,
 	);
 }
