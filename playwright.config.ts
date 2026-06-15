@@ -162,6 +162,15 @@ export default defineConfig({
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
+			name: 'metadata',
+			testMatch: '**/metadata.spec.ts',
+			fullyParallel: false,
+			// Chat round-trip + a rename/delete metadata round-trip (oracle + subgraph) before the
+			// re-sync assertion; the 30s default aborts.
+			timeout: 120_000,
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
 			name: 'security',
 			testMatch: '**/security.spec.ts',
 			use: { ...devices['Desktop Chrome'] },
