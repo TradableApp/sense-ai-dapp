@@ -257,7 +257,17 @@ export default function History() {
 								</div>
 							))}
 						{isError && <div className="p-4 text-destructive">Error loading conversations.</div>}
-						{showEmptyState && <EmptyState />}
+						{showEmptyState && (
+							<EmptyState data-testid="history-empty">
+								<MessageSquare className="size-8 text-muted-foreground" />
+								<div>
+									<p className="font-medium">No conversations yet</p>
+									<p className="text-sm text-muted-foreground">
+										Start a new chat and it will appear here.
+									</p>
+								</div>
+							</EmptyState>
+						)}
 						{showNoResults && (
 							<div className="p-4 text-center text-muted-foreground">No results found.</div>
 						)}
@@ -268,6 +278,7 @@ export default function History() {
 								return (
 									<div
 										key={item.id}
+										data-testid="conversation-item"
 										role="button"
 										tabIndex={0}
 										className="w-full text-left flex items-center gap-3 border-b p-4 text-sm last:border-b-0 cursor-pointer hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"

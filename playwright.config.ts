@@ -142,6 +142,9 @@ export default defineConfig({
 			name: 'history',
 			testMatch: '**/history.spec.ts',
 			fullyParallel: false,
+			// Data tests do a full chat round-trip (fresh connect + prompt + answer) before
+			// touching history; the 30s default would abort mid-round-trip.
+			timeout: 120_000,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
@@ -170,6 +173,8 @@ export default defineConfig({
 			name: 'branching',
 			testMatch: '**/branching.spec.ts',
 			fullyParallel: false,
+			// Branch tests do multiple chat round-trips plus a branch op; give generous headroom.
+			timeout: 180_000,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
