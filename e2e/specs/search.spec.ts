@@ -38,10 +38,11 @@ test.describe('Search relevance (T-SEARCH)', () => {
 		freshChatPage,
 		freshHistoryPage,
 	}) => {
-		// 56-char prefix (> the 40-char title cutoff), then the distinctive marker. The title and
-		// the answer preview (which echoes the first 40 chars) therefore never show "zephyrium" —
-		// so matching it can only come from the content keywords of the full prompt.
+		// A prefix longer than the 40-char title cutoff, then the distinctive marker. The title
+		// and the answer preview (which echoes the first 40 chars) therefore never show
+		// "zephyrium" — so matching it can only come from the content keywords of the full prompt.
 		const prefix = 'Intro filler text long enough to fill the title bar';
+		expect(prefix.length).toBeGreaterThan(40); // self-enforcing: marker must fall past the title
 		await freshChatPage.goto();
 		await freshChatPage.sendPromptAndWaitForResponse(`${prefix} zephyrium`);
 
@@ -72,6 +73,8 @@ test.describe('Search relevance (T-SEARCH)', () => {
 		// NOT fuzzy-match it.
 		await freshHistoryPage.searchFor('zephyrium');
 		await freshHistoryPage.assertConversationCount(1);
-		await expect(freshHistoryPage.conversationItems.first()).toContainText(/zephyrium|notes/i);
+		// Assert the RIGHT conversation came back — both prompts start "Notes on … rollout", so a
+		// /notes/ branch would pass for either; only "zephyrium" proves it's the matching one.
+		await expect(freshHistoryPage.conversationItems.first()).toContainText(/zephyrium/i);
 	});
 });
