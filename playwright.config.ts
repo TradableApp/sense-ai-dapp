@@ -154,6 +154,14 @@ export default defineConfig({
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
+			name: 'search',
+			testMatch: '**/search.spec.ts',
+			fullyParallel: false,
+			// Creates conversations via full chat round-trips before searching; 30s default aborts.
+			timeout: 120_000,
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
 			name: 'security',
 			testMatch: '**/security.spec.ts',
 			use: { ...devices['Desktop Chrome'] },

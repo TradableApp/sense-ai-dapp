@@ -125,10 +125,23 @@ export class ChatPage {
 		return this.page.getByText(/^\s*\d+\s*\/\s*\d+\s*$/).first();
 	}
 
+	/** The "Reset Chat" button — clears the active conversation so the next prompt starts a
+	 *  brand-new one (see Chat.tsx handleReset → clearActiveConversation). */
+	get resetChatButton() {
+		return this.page.getByRole('button', { name: /reset chat/i });
+	}
+
 	// ── Actions ───────────────────────────────────────────────────────────────
 
 	async goto() {
 		await this.page.goto('/chat');
+	}
+
+	/** Start a fresh conversation: clear the active one, so the next prompt creates a new
+	 *  conversation rather than appending to the current thread. */
+	async startNewConversation() {
+		await this.resetChatButton.click();
+		await this.assertPromptInputVisible();
 	}
 
 	async sendPrompt(text: string) {
