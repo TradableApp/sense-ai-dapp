@@ -35,8 +35,13 @@ interface SenseAIFixtures {
 	freshUserAccount: HardhatAccount;
 	/** Context whose mock wallet impersonates `freshUserAccount`, no cached auth */
 	freshContext: BrowserContext;
+	/** A `freshContext` page that has completed a real fresh connect + session sign.
+	 *  Use directly when a test needs more than one POM on the same fresh page. */
+	freshPage: Page;
 	/** ChatPage for a `freshContext` page that has completed a real fresh connect */
 	freshChatPage: ChatPage;
+	/** HistoryPage on the SAME fresh page as `freshChatPage` (both built on `freshPage`) */
+	freshHistoryPage: HistoryPage;
 
 	// Page Object Models (available in all tests)
 	authPage: AuthPage;
@@ -133,11 +138,13 @@ export const test = base.extend<SenseAIFixtures>({
 	},
 
 	/**
-	 * A ChatPage whose page has completed the full fresh connect + session sign.
-	 * The spec funds + activates `freshUserAccount` (in beforeEach) before the
-	 * test body touches this fixture, so the plan is live when /chat loads.
+	 * A `freshContext` page that has completed the full fresh connect + session sign.
+	 * The spec funds + activates `freshUserAccount` (in beforeEach) before the test body
+	 * touches a fixture built on this, so the plan is live when a protected route loads.
+	 * Shared base for `freshChatPage` / `freshHistoryPage` so a single test can drive both
+	 * chat and history on the SAME fresh page (e.g. create a conversation, then view it).
 	 */
-	freshChatPage: async ({ freshContext }, use) => {
+	freshPage: async ({ freshContext }, use) => {
 		const page = await freshContext.newPage();
 		await page.goto('/');
 
@@ -149,8 +156,18 @@ export const test = base.extend<SenseAIFixtures>({
 		// the connect button regardless of the redirect's timing.
 		await new AuthPage(page).connectAndSign();
 
-		await use(new ChatPage(page));
+		await use(page);
 		await page.close();
+	},
+
+	/** A ChatPage on the shared `freshPage`. */
+	freshChatPage: async ({ freshPage }, use) => {
+		await use(new ChatPage(freshPage));
+	},
+
+	/** A HistoryPage on the shared `freshPage` (same page as `freshChatPage`). */
+	freshHistoryPage: async ({ freshPage }, use) => {
+		await use(new HistoryPage(freshPage));
 	},
 
 	// ── Page Object Model fixtures ─────────────────────────────────────────

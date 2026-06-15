@@ -1,81 +1,104 @@
 import { expect, test } from '../fixtures';
-import { revertToSnapshot, takeSnapshot } from '../helpers/hardhat';
+import { getConversations, waitForGraph } from '../helpers/graph';
+import { activatePlan, fundABLE } from '../helpers/hardhat';
 
+const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
+const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
+const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 const SKIP_REASON =
-	'Skipped: requires Hardhat node + oracle for multi-turn conversations (set E2E_LOCAL_SERVICES=1)';
+	'Skipped: requires Hardhat node + oracle + Graph node for multi-turn conversations (set E2E_LOCAL_SERVICES=1)';
 
-test.describe('Branching — conversation branch/split (T-BRANCH)', () => {
+// Conversation branch/split. Fresh funded account per test — NOT evm_snapshot/revert (which
+// corrupts graph-node; see docs/decisions/0002-e2e-isolation-fresh-account.md). Serial; fresh
+// stack per run.
+test.describe('Branching (T-BRANCH)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	let snapshotId: string;
-
-	test.beforeEach(async () => {
-		snapshotId = await takeSnapshot();
+	test.beforeEach(async ({ freshUserAccount }) => {
+		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
 	});
 
-	test.afterEach(async () => {
-		await revertToSnapshot(snapshotId);
+	test('T-BRANCH-01: the branch button appears on an AI response', async ({ freshChatPage }) => {
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse('Test branch button visibility');
+		await expect(freshChatPage.branchTrigger).toBeVisible({ timeout: 10_000 });
 	});
 
-	test('T-BRANCH-01: Branch button appears on AI response messages', async ({ chatPage }) => {
-		await chatPage.goto();
-		await chatPage.sendPromptAndWaitForResponse('Test branch button visibility');
-		await expect(chatPage.branchButton).toBeVisible({ timeout: 5_000 });
+	test('T-BRANCH-02: clicking branch creates a new conversation', async ({ freshChatPage }) => {
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse('Original conversation for branching');
+
+		await freshChatPage.branchInNewChat();
+
+		// The branched conversation opens with a usable composer.
+		await freshChatPage.assertPromptInputVisible();
 	});
 
-	test('T-BRANCH-02: Clicking branch creates a new conversation', async ({ chatPage }) => {
-		await chatPage.goto();
-		await chatPage.sendPromptAndWaitForResponse('Original conversation for branching');
-
-		await chatPage.branchButton.click();
-
-		// Should navigate to or create a new conversation
-		await chatPage.assertPromptInputVisible();
-	});
-
-	test('T-BRANCH-03: Branched conversation has correct message history', async ({ chatPage }) => {
-		await chatPage.goto();
-		await chatPage.sendPromptAndWaitForResponse('Branch source message');
-		await chatPage.branchButton.click();
-
-		// The branched conversation should include the original message context
-		const userMsgCount = await chatPage.userMessages.count();
-		expect(userMsgCount).toBeGreaterThanOrEqual(1);
-	});
-
-	test('T-BRANCH-04: Original conversation is unaffected by branch', async ({
-		chatPage,
-		historyPage,
+	test('T-BRANCH-03: the branched conversation carries the original message history', async ({
+		freshChatPage,
 	}) => {
-		await chatPage.goto();
-		await chatPage.sendPromptAndWaitForResponse('Original message before branch');
-		const originalMsgCount = await chatPage.userMessages.count();
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse('Branch source message');
 
-		await chatPage.branchButton.click();
-		await chatPage.sendPromptAndWaitForResponse('Message in branched conversation');
+		await freshChatPage.branchInNewChat();
 
-		// Reopen the original conversation from history and verify message count unchanged
-		await historyPage.goto();
-		await historyPage.assertHasConversations();
-		// The original conversation should be at index 1 (branched is most recent at 0)
-		await historyPage.clickConversation(1);
-		const reopenedMsgCount = await chatPage.userMessages.count();
-		expect(reopenedMsgCount).toBe(originalMsgCount);
+		// The branch copies the prior context, so at least the original user message is present.
+		await expect(freshChatPage.userMessages.first()).toBeVisible({ timeout: 15_000 });
+		expect(await freshChatPage.userMessages.count()).toBeGreaterThanOrEqual(1);
 	});
 
-	test('T-BRANCH-05: Branched conversation appears in history', async ({
-		chatPage,
-		historyPage,
+	test('T-BRANCH-04: the original conversation is unaffected by branching', async ({
+		freshChatPage,
+		freshHistoryPage,
+		freshUserAccount,
 	}) => {
-		await historyPage.goto();
-		const countBefore = await historyPage.conversationItems.count();
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse('Original message before branch');
+		const originalMsgCount = await freshChatPage.userMessages.count();
 
-		await chatPage.goto();
-		await chatPage.sendPromptAndWaitForResponse('Pre-branch message');
-		await chatPage.branchButton.click();
+		await freshChatPage.branchInNewChat();
 
-		await historyPage.goto();
-		const countAfter = await historyPage.conversationItems.count();
-		expect(countAfter).toBeGreaterThan(countBefore);
+		// NOTE: sending a follow-up INSIDE the branched conversation is covered separately
+		// (audit Area 5 "branched conversation is fully live") — it exercises a distinct
+		// answer-render path. This test only asserts the ORIGINAL is unaffected by the branch.
+
+		// Wait for the branch to index (ConversationBranched → subgraph) — localnet live events
+		// are unreliable, so the dApp's history only reflects it after a sync (a /history mount).
+		await waitForGraph(
+			() => getConversations(freshUserAccount.address),
+			convs => convs.length === 2,
+			{ label: 'branched conversation indexed', timeoutMs: 60_000 },
+		);
+
+		// Reopen the original conversation from history (the branch is most recent at index 0,
+		// the original is at index 1) and verify its message count is unchanged.
+		await freshHistoryPage.goto();
+		await freshHistoryPage.assertConversationCount(2);
+		await freshHistoryPage.clickConversation(1);
+		await expect(freshChatPage.userMessages.first()).toBeVisible({ timeout: 15_000 });
+		expect(await freshChatPage.userMessages.count()).toBe(originalMsgCount);
+	});
+
+	test('T-BRANCH-05: the branched conversation appears in history', async ({
+		freshChatPage,
+		freshHistoryPage,
+		freshUserAccount,
+	}) => {
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse('Pre-branch message');
+		await freshChatPage.branchInNewChat();
+
+		// Indexing: the branch creates a second conversation (ConversationBranched → subgraph).
+		await waitForGraph(
+			() => getConversations(freshUserAccount.address),
+			convs => convs.length === 2,
+			{ label: 'branched conversation indexed', timeoutMs: 60_000 },
+		);
+
+		// dApp: after a /history mount syncs it, both the original + the branch are listed.
+		await freshHistoryPage.goto();
+		await freshHistoryPage.assertConversationCount(2);
 	});
 });

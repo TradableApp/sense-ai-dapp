@@ -84,9 +84,19 @@ export class ChatPage {
 		return this.page.getByRole('button', { name: /try again/i }).first();
 	}
 
-	/** The branch/split button on AI messages */
-	get branchButton() {
-		return this.page.getByRole('button', { name: /branch|split/i }).first();
+	/** The "More actions" menu trigger on an AI message — it contains "Branch in new chat"
+	 *  (see components/ai/message-actions.tsx). Use `.last()` so multi-answer threads target the
+	 *  most recent answer. NOTE: a bare /branch|split/i button query wrongly matches sidebar
+	 *  conversation titles that contain the word "branch". */
+	get branchTrigger() {
+		return this.page.getByRole('button', { name: /more actions/i }).last();
+	}
+
+	/** Branch the latest AI answer into a new conversation: open "More actions" → "Branch in
+	 *  new chat" (a DropdownMenuItem, not a standalone button). */
+	async branchInNewChat() {
+		await this.branchTrigger.click();
+		await this.page.getByRole('menuitem', { name: /branch in new chat/i }).click();
 	}
 
 	/** Error toast shown when a token-costing action can't be covered by the wallet
