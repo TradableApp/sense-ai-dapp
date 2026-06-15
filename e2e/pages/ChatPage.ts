@@ -125,10 +125,26 @@ export class ChatPage {
 		return this.page.getByText(/^\s*\d+\s*\/\s*\d+\s*$/).first();
 	}
 
+	/** The "Reset Chat" button — clears the active conversation so the next prompt starts a
+	 *  brand-new one (see Chat.tsx handleReset → clearActiveConversation). */
+	get resetChatButton() {
+		return this.page.getByRole('button', { name: /reset chat/i });
+	}
+
 	// ── Actions ───────────────────────────────────────────────────────────────
 
 	async goto() {
 		await this.page.goto('/chat');
+	}
+
+	/** Start a fresh conversation: clear the active one, so the next prompt creates a new
+	 *  conversation rather than appending to the current thread. The textarea is visible both
+	 *  before and after the reset, so that's not a usable barrier — wait for the prior thread's
+	 *  messages to clear (proof the reset propagated through Redux) before the next sendPrompt. */
+	async startNewConversation() {
+		await this.resetChatButton.click();
+		await expect(this.assistantMessages).toHaveCount(0, { timeout: 5_000 });
+		await expect(this.userMessages).toHaveCount(0, { timeout: 5_000 });
 	}
 
 	async sendPrompt(text: string) {
