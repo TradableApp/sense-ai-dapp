@@ -1,5 +1,12 @@
 import { expect, test } from '../fixtures';
-import { getConversations, waitForGraph } from '../helpers/graph';
+import {
+	getConversation,
+	getConversations,
+	getMessages,
+	getPromptRequests,
+	type IndexedConversation,
+	waitForGraph,
+} from '../helpers/graph';
 import { activatePlan, fundABLE } from '../helpers/hardhat';
 
 const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
@@ -7,6 +14,16 @@ const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
 const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node for multi-turn conversations (set E2E_LOCAL_SERVICES=1)';
+
+// Fetches every conversation for `owner` WITH its branch lineage (branchedFrom). A branched
+// conversation is only created — with branchedFrom populated — once the oracle completes the
+// branch and emits ConversationBranched (handleConversationBranched), so this is the observable
+// surface for verifying branch parentage cross-layer.
+async function getConversationLineage(owner: string): Promise<IndexedConversation[]> {
+	const convs = await getConversations(owner);
+	const detailed = await Promise.all(convs.map(c => getConversation(c.id)));
+	return detailed.filter((c): c is IndexedConversation => c !== null);
+}
 
 // Conversation branch/split. Fresh funded account per test — NOT evm_snapshot/revert (which
 // corrupts graph-node; see docs/decisions/0002-e2e-isolation-fresh-account.md). Serial; fresh
@@ -60,7 +77,7 @@ test.describe('Branching (T-BRANCH)', () => {
 
 		await freshChatPage.branchInNewChat();
 
-		// NOTE: sending a follow-up INSIDE the branched conversation is covered separately
+		// NOTE: sending a follow-up INSIDE the branched conversation is covered by T-BRANCH-06
 		// (audit Area 5 "branched conversation is fully live") — it exercises a distinct
 		// answer-render path. This test only asserts the ORIGINAL is unaffected by the branch.
 
@@ -100,5 +117,109 @@ test.describe('Branching (T-BRANCH)', () => {
 		// dApp: after a /history mount syncs it, both the original + the branch are listed.
 		await freshHistoryPage.goto();
 		await freshHistoryPage.assertConversationCount(2);
+	});
+
+	// ── Area 5: a branched conversation is FULLY LIVE ───────────────────────────
+	// T-BRANCH-01..05 only prove the branch is created and carries copied history. These two
+	// close the audit gap: a branch must be a real, continuable conversation — you can send a
+	// NEW prompt inside it and get it answered, and you can branch a branch (nested lineage).
+
+	test('T-BRANCH-06: a follow-up prompt inside a branched conversation is answered and indexed under the branch', async ({
+		freshChatPage,
+		freshUserAccount,
+	}) => {
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse('Source conversation for an in-branch follow-up');
+
+		await freshChatPage.branchInNewChat();
+
+		// The branch opens carrying the copied history (user prompt + AI answer). Wait for the
+		// copied context to render before continuing, so the follow-up appends to a real thread.
+		await expect(freshChatPage.userMessages.first()).toBeVisible({ timeout: 15_000 });
+		const copiedUserCount = await freshChatPage.userMessages.count();
+		expect(copiedUserCount).toBeGreaterThanOrEqual(1);
+
+		// The branch conversation is created — with branchedFrom set to the original — only once
+		// the oracle emits ConversationBranched. Wait for that, and capture the branch's id.
+		const lineage = await waitForGraph(
+			() => getConversationLineage(freshUserAccount.address),
+			list => list.length === 2 && list.some(c => c.branchedFrom !== null),
+			{ label: 'branch lineage indexed', timeoutMs: 60_000 },
+		);
+		const original = lineage.find(c => c.branchedFrom === null);
+		const branch = lineage.find(c => c.branchedFrom !== null);
+		expect(original, 'an un-branched original conversation should exist').toBeTruthy();
+		expect(branch, 'a branched conversation should exist').toBeTruthy();
+		expect(branch!.branchedFrom!.id).toBe(original!.id);
+
+		// The key assertion: send a brand-new prompt INSIDE the branch and get a live answer.
+		await freshChatPage.sendPromptAndWaitForResponse('A new question asked inside the branch');
+
+		// dApp: the follow-up appended exactly one user message on top of the copied history,
+		// and its answer rendered (assistant bubble count incremented in sendPrompt… above).
+		expect(await freshChatPage.userMessages.count()).toBe(copiedUserCount + 1);
+
+		// Cross-layer: the copied history lives only in the conversation CID — it is NOT indexed
+		// as Message rows. So the branch conversation's ONLY indexed messages are the follow-up's
+		// new prompt + answer. This cleanly proves the in-branch round-trip landed on-chain and
+		// indexed under the BRANCH (not the original).
+		const branchMessages = await waitForGraph(
+			() => getMessages(branch!.id),
+			msgs => msgs.length === 2 && msgs.some(m => m.role === 'assistant'),
+			{ label: 'in-branch follow-up messages indexed', timeoutMs: 60_000 },
+		);
+		expect(branchMessages.map(m => m.role)).toEqual(['user', 'assistant']);
+		const answer = branchMessages.find(m => m.role === 'assistant')!;
+		expect(answer.messageCID).not.toBe('');
+
+		// And the prompt request for that answer is marked answered (PromptRequest.id =
+		// answerMessageId = the answer Message's messageId — the universal cross-layer key).
+		const requests = await getPromptRequests(freshUserAccount.address);
+		const answeredRequest = requests.find(r => r.id === answer.messageId);
+		expect(answeredRequest, 'a PromptRequest should exist for the in-branch answer').toBeTruthy();
+		expect(answeredRequest!.isAnswered).toBe(true);
+		expect(answeredRequest!.isCancelled).toBe(false);
+	});
+
+	test('T-BRANCH-07: branching a branch produces a nested lineage (A ← B ← C)', async ({
+		freshChatPage,
+		freshUserAccount,
+	}) => {
+		// A: the root conversation.
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse('Root conversation A for nested branching');
+
+		// A → B.
+		await freshChatPage.branchInNewChat();
+		// The copied AI answer must render in B before we can branch it again — branching targets
+		// the "More actions" menu on an AI message (see ChatPage.branchTrigger).
+		await expect(freshChatPage.assistantMessages.first()).toBeVisible({ timeout: 20_000 });
+		await waitForGraph(
+			() => getConversations(freshUserAccount.address),
+			convs => convs.length === 2,
+			{ label: 'first branch (B) indexed', timeoutMs: 60_000 },
+		);
+
+		// B → C: branch the branch.
+		await freshChatPage.branchInNewChat();
+
+		// All three conversations are indexed, two of them carrying a branch parent.
+		const lineage = await waitForGraph(
+			() => getConversationLineage(freshUserAccount.address),
+			list => list.length === 3 && list.filter(c => c.branchedFrom !== null).length === 2,
+			{ label: 'nested branch lineage indexed', timeoutMs: 90_000 },
+		);
+
+		// Resolve the chain by parentage rather than insertion order: A has no parent, B branched
+		// from A, C branched from B.
+		const root = lineage.find(c => c.branchedFrom === null); // A
+		const mid = root ? lineage.find(c => c.branchedFrom?.id === root.id) : undefined; // B
+		const leaf = mid ? lineage.find(c => c.branchedFrom?.id === mid.id) : undefined; // C
+
+		expect(root, 'root conversation A (no parent) should exist').toBeTruthy();
+		expect(mid, 'branch B (parent = A) should exist').toBeTruthy();
+		expect(leaf, 'branch-of-branch C (parent = B) should exist').toBeTruthy();
+		// Three distinct conversations forming a single chain A ← B ← C.
+		expect(new Set([root!.id, mid!.id, leaf!.id]).size).toBe(3);
 	});
 });
