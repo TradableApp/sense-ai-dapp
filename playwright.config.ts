@@ -165,9 +165,10 @@ export default defineConfig({
 			name: 'metadata',
 			testMatch: '**/metadata.spec.ts',
 			fullyParallel: false,
-			// Chat round-trip + a rename/delete metadata round-trip (oracle + subgraph) before the
-			// re-sync assertion; the 30s default aborts.
-			timeout: 120_000,
+			// Two oracle round-trips (the answer, then the rename/delete metadata update) plus
+			// indexing waits and a re-sync — worst-case well past 120s, so match the versions
+			// project's headroom.
+			timeout: 240_000,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{

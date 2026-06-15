@@ -41,6 +41,8 @@ test.describe('Metadata round-trip (T-META)', () => {
 		});
 		const convId = convs[0].id;
 		const before = await getConversation(convId);
+		expect(before).not.toBeNull(); // baseline must exist, else the CID-change check is vacuous
+		const baselineCid = before!.conversationMetadataCID;
 
 		await freshHistoryPage.goto();
 		await freshHistoryPage.assertHasConversations();
@@ -50,7 +52,7 @@ test.describe('Metadata round-trip (T-META)', () => {
 		// metadata CID changes (a new ConversationMetadataFile).
 		await waitForGraph(
 			() => getConversation(convId),
-			c => c != null && c.conversationMetadataCID !== before?.conversationMetadataCID,
+			c => c != null && c.conversationMetadataCID !== baselineCid,
 			{ label: 'ConversationMetadataUpdated indexed', timeoutMs: 60_000 },
 		);
 
@@ -77,6 +79,8 @@ test.describe('Metadata round-trip (T-META)', () => {
 		});
 		const convId = convs[0].id;
 		const before = await getConversation(convId);
+		expect(before).not.toBeNull(); // baseline must exist, else the CID-change check is vacuous
+		const baselineCid = before!.conversationMetadataCID;
 
 		await freshHistoryPage.goto();
 		await freshHistoryPage.assertConversationCount(1);
@@ -87,7 +91,7 @@ test.describe('Metadata round-trip (T-META)', () => {
 		// subgraph's isDeleted stays false; the deletion flag is in the encrypted metadata).
 		await waitForGraph(
 			() => getConversation(convId),
-			c => c != null && c.conversationMetadataCID !== before?.conversationMetadataCID,
+			c => c != null && c.conversationMetadataCID !== baselineCid,
 			{ label: 'delete metadata update indexed', timeoutMs: 60_000 },
 		);
 
@@ -96,6 +100,9 @@ test.describe('Metadata round-trip (T-META)', () => {
 		// the still-present Conversation entity from the graph.
 		await freshChatPage.goto();
 		await freshHistoryPage.goto();
+		// Gate on the History list having mounted (search control is always present) so the count
+		// assertion can't pass in the transient empty loading state before the re-sync has run.
+		await expect(freshHistoryPage.searchInput).toBeVisible({ timeout: 10_000 });
 		await freshHistoryPage.assertConversationCount(0, { timeout: 15_000 });
 	});
 });
