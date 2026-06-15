@@ -59,7 +59,10 @@ test.describe('Branching (T-BRANCH)', () => {
 		const originalMsgCount = await freshChatPage.userMessages.count();
 
 		await freshChatPage.branchInNewChat();
-		await freshChatPage.sendPromptAndWaitForResponse('Message in branched conversation');
+
+		// NOTE: sending a follow-up INSIDE the branched conversation is covered separately
+		// (audit Area 5 "branched conversation is fully live") — it exercises a distinct
+		// answer-render path. This test only asserts the ORIGINAL is unaffected by the branch.
 
 		// Wait for the branch to index (ConversationBranched → subgraph) — localnet live events
 		// are unreliable, so the dApp's history only reflects it after a sync (a /history mount).
