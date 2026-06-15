@@ -1,4 +1,5 @@
 import { expect, test } from '../fixtures';
+import { getConversations, waitForGraph } from '../helpers/graph';
 import { activatePlan, fundABLE } from '../helpers/hardhat';
 
 const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
@@ -51,6 +52,7 @@ test.describe('Branching (T-BRANCH)', () => {
 	test('T-BRANCH-04: the original conversation is unaffected by branching', async ({
 		freshChatPage,
 		freshHistoryPage,
+		freshUserAccount,
 	}) => {
 		await freshChatPage.goto();
 		await freshChatPage.sendPromptAndWaitForResponse('Original message before branch');
@@ -58,6 +60,14 @@ test.describe('Branching (T-BRANCH)', () => {
 
 		await freshChatPage.branchInNewChat();
 		await freshChatPage.sendPromptAndWaitForResponse('Message in branched conversation');
+
+		// Wait for the branch to index (ConversationBranched → subgraph) — localnet live events
+		// are unreliable, so the dApp's history only reflects it after a sync (a /history mount).
+		await waitForGraph(
+			() => getConversations(freshUserAccount.address),
+			convs => convs.length === 2,
+			{ label: 'branched conversation indexed' },
+		);
 
 		// Reopen the original conversation from history (the branch is most recent at index 0,
 		// the original is at index 1) and verify its message count is unchanged.
@@ -71,12 +81,20 @@ test.describe('Branching (T-BRANCH)', () => {
 	test('T-BRANCH-05: the branched conversation appears in history', async ({
 		freshChatPage,
 		freshHistoryPage,
+		freshUserAccount,
 	}) => {
 		await freshChatPage.goto();
 		await freshChatPage.sendPromptAndWaitForResponse('Pre-branch message');
 		await freshChatPage.branchInNewChat();
 
-		// After branching there are two conversations: the original + the branch.
+		// Indexing: the branch creates a second conversation (ConversationBranched → subgraph).
+		await waitForGraph(
+			() => getConversations(freshUserAccount.address),
+			convs => convs.length === 2,
+			{ label: 'branched conversation indexed' },
+		);
+
+		// dApp: after a /history mount syncs it, both the original + the branch are listed.
 		await freshHistoryPage.goto();
 		await freshHistoryPage.assertConversationCount(2);
 	});
