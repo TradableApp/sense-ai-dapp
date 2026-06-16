@@ -193,6 +193,32 @@ export async function getConversation(conversationId: string): Promise<IndexedCo
 	return data.conversation;
 }
 
+/**
+ * All conversations for an owner WITH their branch lineage, in a SINGLE query.
+ * The list variant of getConversation: selecting `branchedFrom` inline avoids the
+ * 1+N fan-out (and its TOCTOU window) of listing ids and then fetching each
+ * conversation's detail separately — which matters when polled by waitForGraph.
+ * Newest first.
+ */
+export async function getConversationsWithLineage(
+	ownerAddress: string,
+): Promise<IndexedConversation[]> {
+	const data = await graphQuery<{ conversations: IndexedConversation[] }>(
+		`query($owner: Bytes!) {
+      conversations(where: { owner: $owner }, orderBy: lastMessageCreatedAt, orderDirection: desc) {
+        id
+        conversationCID
+        conversationMetadataCID
+        lastMessageCreatedAt
+        isDeleted
+        branchedFrom { id }
+      }
+    }`,
+		{ owner: ownerAddress.toLowerCase() },
+	);
+	return data.conversations;
+}
+
 export interface IndexedRegenerationRequest {
 	id: string;
 	originalAnswerMessageId: string;
@@ -245,6 +271,8 @@ export async function waitForGraph<T>(
 	} while (Date.now() < deadline);
 	const tail = lastError ? ` (last error: ${String(lastError)})` : '';
 	throw new Error(
-		`waitForGraph: ${label} not met within ${timeoutMs}ms. Last value: ${JSON.stringify(last)}${tail}`,
+		`waitForGraph: ${label} not met within ${timeoutMs}ms. Last value: ${JSON.stringify(
+			last,
+		)}${tail}`,
 	);
 }
