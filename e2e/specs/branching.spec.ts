@@ -1,10 +1,9 @@
 import { expect, test } from '../fixtures';
 import {
-	getConversation,
 	getConversations,
+	getConversationsWithLineage,
 	getMessages,
 	getPromptRequests,
-	type IndexedConversation,
 	waitForGraph,
 } from '../helpers/graph';
 import { activatePlan, fundABLE } from '../helpers/hardhat';
@@ -15,15 +14,10 @@ const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node for multi-turn conversations (set E2E_LOCAL_SERVICES=1)';
 
-// Fetches every conversation for `owner` WITH its branch lineage (branchedFrom). A branched
-// conversation is only created — with branchedFrom populated — once the oracle completes the
-// branch and emits ConversationBranched (handleConversationBranched), so this is the observable
-// surface for verifying branch parentage cross-layer.
-async function getConversationLineage(owner: string): Promise<IndexedConversation[]> {
-	const convs = await getConversations(owner);
-	const detailed = await Promise.all(convs.map(c => getConversation(c.id)));
-	return detailed.filter((c): c is IndexedConversation => c !== null);
-}
+// A branched conversation is only created — with branchedFrom populated — once the oracle
+// completes the branch and emits ConversationBranched (handleConversationBranched). The subgraph
+// is the observable surface for that parentage; getConversationsWithLineage (helpers/graph.ts)
+// reads it for an owner in a single query.
 
 // Conversation branch/split. Fresh funded account per test — NOT evm_snapshot/revert (which
 // corrupts graph-node; see docs/decisions/0002-e2e-isolation-fresh-account.md). Serial; fresh
@@ -129,7 +123,9 @@ test.describe('Branching (T-BRANCH)', () => {
 		freshUserAccount,
 	}) => {
 		await freshChatPage.goto();
-		await freshChatPage.sendPromptAndWaitForResponse('Source conversation for an in-branch follow-up');
+		await freshChatPage.sendPromptAndWaitForResponse(
+			'Source conversation for an in-branch follow-up',
+		);
 
 		await freshChatPage.branchInNewChat();
 
@@ -142,7 +138,7 @@ test.describe('Branching (T-BRANCH)', () => {
 		// The branch conversation is created — with branchedFrom set to the original — only once
 		// the oracle emits ConversationBranched. Wait for that, and capture the branch's id.
 		const lineage = await waitForGraph(
-			() => getConversationLineage(freshUserAccount.address),
+			() => getConversationsWithLineage(freshUserAccount.address),
 			list => list.length === 2 && list.some(c => c.branchedFrom !== null),
 			{ label: 'branch lineage indexed', timeoutMs: 60_000 },
 		);
@@ -174,10 +170,16 @@ test.describe('Branching (T-BRANCH)', () => {
 
 		// And the prompt request for that answer is marked answered (PromptRequest.id =
 		// answerMessageId = the answer Message's messageId — the universal cross-layer key).
-		const requests = await getPromptRequests(freshUserAccount.address);
-		const answeredRequest = requests.find(r => r.id === answer.messageId);
+		// Wrapped in waitForGraph for consistency with the rest of the spec: handleAnswerMessageAdded
+		// sets isAnswered=true in the same block it creates the assistant Message above, so this is
+		// already satisfied — but the retry keeps the test resilient if that invariant ever changes.
+		const answeredRequest = await waitForGraph(
+			async () =>
+				(await getPromptRequests(freshUserAccount.address)).find(r => r.id === answer.messageId),
+			r => r?.isAnswered === true,
+			{ label: 'in-branch PromptRequest marked answered', timeoutMs: 15_000 },
+		);
 		expect(answeredRequest, 'a PromptRequest should exist for the in-branch answer').toBeTruthy();
-		expect(answeredRequest!.isAnswered).toBe(true);
 		expect(answeredRequest!.isCancelled).toBe(false);
 	});
 
@@ -205,7 +207,7 @@ test.describe('Branching (T-BRANCH)', () => {
 
 		// All three conversations are indexed, two of them carrying a branch parent.
 		const lineage = await waitForGraph(
-			() => getConversationLineage(freshUserAccount.address),
+			() => getConversationsWithLineage(freshUserAccount.address),
 			list => list.length === 3 && list.filter(c => c.branchedFrom !== null).length === 2,
 			{ label: 'nested branch lineage indexed', timeoutMs: 90_000 },
 		);
