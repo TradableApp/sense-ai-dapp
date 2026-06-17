@@ -34,7 +34,9 @@ export const CHAIN_ID = 31337;
 export function buildMockWalletScript(account: { address: string } = TEST_ACCOUNT): string {
 	return `
 (function() {
-  const ACCOUNT = '${account.address}';
+  // 'let' (not 'const') so an e2e test can simulate the user switching to a different
+  // account in their wallet via window.__mockWalletSwitchAccount (see below).
+  let ACCOUNT = '${account.address}';
   const CHAIN_ID = '${CHAIN_ID_HEX}';
   const RPC_URL = '${HARDHAT_RPC}';
   let _reqId = 1;
@@ -173,6 +175,15 @@ export function buildMockWalletScript(account: { address: string } = TEST_ACCOUN
   };
 
   window.ethereum = provider;
+
+  // E2E only: simulate the user switching to a different account in the SAME wallet/device.
+  // Updates the active account and fires accountsChanged, exactly as a real injected wallet
+  // does — letting a test verify per-wallet data isolation on one shared browser/IndexedDB.
+  window.__mockWalletSwitchAccount = function (newAddress) {
+    ACCOUNT = newAddress;
+    provider.selectedAddress = newAddress;
+    _dispatch('accountsChanged', [newAddress]);
+  };
 
   // Announce to ThirdWeb and other EIP-1193 listeners
   window.dispatchEvent(new Event('ethereum#initialized'));

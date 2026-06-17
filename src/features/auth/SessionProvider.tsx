@@ -8,11 +8,15 @@ import {
 	useState,
 } from 'react';
 
-import { useActiveWallet } from 'thirdweb/react';
+import { useActiveAccount, useActiveWallet } from 'thirdweb/react';
 import { signMessage } from 'thirdweb/utils';
 import type { Wallet } from 'thirdweb/wallets';
 
 import { deriveKeyFromEntropy } from '@/lib/crypto';
+import { clearUserSession } from '@/store/chatSlice';
+import { useAppDispatch } from '@/store/hooks';
+
+import needsSessionDerivation from './sessionDerivation';
 
 type SessionStatus = 'disconnected' | 'deriving' | 'ready' | 'rejected' | 'error';
 
@@ -63,6 +67,11 @@ const usePageVisibility = () => {
 
 export default function SessionProvider({ children }: { children: ReactNode }) {
 	const activeWallet = useActiveWallet();
+	// useActiveAccount (not activeWallet.getAccount()) so the derivation effect actually re-runs
+	// when the user switches accounts in their wallet — the wallet object is stable across that
+	// switch, so depending on it alone would never react to the account change.
+	const account = useActiveAccount();
+	const dispatch = useAppDispatch();
 	const [sessionKey, setSessionKey] = useState<CryptoKey | null>(null);
 	const [status, setStatus] = useState<SessionStatus>('disconnected');
 	const [ownerAddress, setOwnerAddress] = useState<string | null>(null);
@@ -75,37 +84,39 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
 
 	useEffect(() => {
 		const generateKey = async () => {
-			// --- GUARD CLAUSE 1: NO WALLET ---
-			// If no wallet is connected, reset everything and stop.
-			if (!activeWallet) {
+			// --- GUARD CLAUSE 1: NO CONNECTED ACCOUNT ---
+			// If no wallet/account is connected, reset everything and stop.
+			if (!account) {
 				setSessionKey(null);
 				setOwnerAddress(null);
 				setStatus('disconnected');
 				return;
 			}
 
-			// --- GUARD CLAUSE 2: KEY ALREADY EXISTS ---
-			// If we already have a session key, we don't need to do anything.
-			// This prevents asking for a signature again on every tab refocus.
-			if (sessionKey) {
+			// --- GUARD CLAUSE 2: KEY ALREADY MATCHES THIS ACCOUNT ---
+			// A key derived for the CURRENTLY connected account → ready. Still avoids re-signing on
+			// every tab refocus, but (unlike the old "any key exists" check) it re-derives when the
+			// user switches accounts — otherwise the previous account's key, and its decrypted data,
+			// would persist under the new account (see sessionDerivation + the T-MULTI-07 bug).
+			if (!needsSessionDerivation(!!sessionKey, ownerAddress, account.address)) {
 				setStatus('ready');
 				return;
 			}
 
 			// --- GUARD CLAUSE 3: TAB IS HIDDEN ---
-			// If a wallet is connected but the tab is not visible, we wait.
-			// We do NOT request a signature. The effect will re-run when the tab becomes visible.
+			// Connected but with no usable key for this account, and the tab isn't visible — wait
+			// (don't prompt a signature). The effect re-runs when the tab becomes visible.
 			if (!isTabVisible) {
 				return;
 			}
 
-			// --- PROCEED WITH SIGNATURE ---
-			// If all guards are passed, it means we have a wallet, no key, and a visible tab.
-			const account = activeWallet.getAccount();
-			if (!account) {
-				setStatus('error');
-				console.error('Wallet connected but account not found.');
-				return;
+			// A key for a DIFFERENT account means the user switched wallets: wipe the prior account's
+			// in-memory chat state before deriving the new one. Setting ownerAddress below immediately
+			// re-scopes the owner-keyed queries to the new account, and the session key is overwritten
+			// once derivation completes — so the old account's data is never shown under the new one.
+			const isAccountSwitch = !!sessionKey && ownerAddress !== account.address;
+			if (isAccountSwitch) {
+				dispatch(clearUserSession());
 			}
 
 			try {
@@ -134,9 +145,9 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
 		};
 
 		generateKey();
-		// The effect now depends on tab visibility. It will re-run when the user
-		// clicks back to this tab, allowing the guards to be checked again.
-	}, [activeWallet, retryCount, isTabVisible, sessionKey]);
+		// Depends on `account` (whose reference changes on an in-wallet account switch — unlike the
+		// stable wallet object) so derivation re-runs on a switch, plus the other read values.
+	}, [account, sessionKey, ownerAddress, isTabVisible, dispatch, retryCount]);
 
 	const value = useMemo(
 		() => ({ sessionKey, status, activeWallet, ownerAddress, retry }),
