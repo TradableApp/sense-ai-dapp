@@ -2,9 +2,13 @@ import { test as base, expect } from '@playwright/test';
 
 import { test } from '../fixtures';
 import { injectMockWallet } from '../fixtures/mock-wallet';
+import { activatePlan, fundABLE } from '../helpers/hardhat';
 
 const SKIP_REASON =
 	'Skipped: requires Hardhat node for wallet signing and storage inspection (set E2E_LOCAL_SERVICES=1)';
+const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
+const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
+const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 
 test.describe('Security — route protection (T-SEC-ROUTE)', () => {
 	const unauthTest = base;
@@ -71,12 +75,33 @@ test.describe('Security — session and storage (T-SEC-SESSION)', () => {
 		expect(hasSessionKey).toBe(false);
 	});
 
-	test('T-SEC-06: No plaintext prompts in IndexedDB', async ({ chatPage, authenticatedPage }) => {
-		const testPrompt = `SEC_TEST_PLAINTEXT_MARKER_${  Date.now()}`;
-		await chatPage.goto();
-		await chatPage.sendPromptAndWaitForResponse(testPrompt);
+	// T-SEC-06 (no plaintext prompts in IndexedDB) moved to the T-SEC-CRYPTO block below — it
+	// needs a funded wallet with an active plan to actually send a prompt, so it now runs on a
+	// fresh account instead of the planless cached Account #1 (where the composer never appears).
 
-		const foundPlaintext = await authenticatedPage.evaluate(async (marker: string) => {
+	// T-SEC-07 (a different wallet sees different conversation history) is now implemented as a
+	// real two-context cross-layer test in multi-device.spec.ts (T-MULTI-02 / T-SEC-07), which the
+	// second-device fixture this stub was waiting on made possible.
+});
+
+// Encryption at rest (IndexedDB) and in transit (contract calldata). These send a real prompt, so
+// they need a funded wallet with an active plan — they run on a FRESH account (fund + activate in
+// beforeEach, page connects after) rather than the planless cached Account #1 they were stranded on.
+test.describe('Security — encryption at rest and in transit (T-SEC-CRYPTO)', () => {
+	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
+
+	test.beforeEach(async ({ freshUserAccount }) => {
+		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+	});
+
+	test('T-SEC-06: No plaintext prompts in IndexedDB', async ({ freshChatPage, freshPage }) => {
+		const testPrompt = `SEC_TEST_PLAINTEXT_MARKER_${Date.now()}`;
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse(testPrompt);
+
+		const foundPlaintext = await freshPage.evaluate(async (marker: string) => {
 			const idb = window.indexedDB;
 			const dbs = await idb.databases();
 			for (let i = 0; i < dbs.length; i++) {
@@ -85,11 +110,13 @@ test.describe('Security — session and storage (T-SEC-SESSION)', () => {
 					// skip unnamed databases
 				} else {
 					try {
-						const db = await new Promise<ReturnType<typeof idb.open>['result']>((resolve, reject) => {
-							const req = idb.open(dbInfo.name!);
-							req.onsuccess = () => resolve(req.result);
-							req.onerror = () => reject(req.error);
-						});
+						const db = await new Promise<ReturnType<typeof idb.open>['result']>(
+							(resolve, reject) => {
+								const req = idb.open(dbInfo.name!);
+								req.onsuccess = () => resolve(req.result);
+								req.onerror = () => reject(req.error);
+							},
+						);
 						for (const storeName of db.objectStoreNames) {
 							const tx = db.transaction(storeName, 'readonly');
 							const store = tx.objectStore(storeName);
@@ -118,26 +145,16 @@ test.describe('Security — session and storage (T-SEC-SESSION)', () => {
 		);
 	});
 
-	test('T-SEC-07: Different wallet sees different conversation history', async ({ chatPage }) => {
-		test.fixme(true, 'Needs second Hardhat account fixture for multi-wallet isolation test');
-
-		await chatPage.goto();
-		await chatPage.sendPromptAndWaitForResponse('Wallet A exclusive message');
-	});
-});
-
-test.describe('Security — ECIES encryption (T-SEC-ECIES)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
-
 	test('T-SEC-08: Contract calldata does not contain plaintext prompt', async ({
-		chatPage,
-		authenticatedPage,
+		freshChatPage,
+		freshPage,
 	}) => {
-		const testPrompt = `ECIES_PLAINTEXT_CHECK_${  Date.now()}`;
+		const testPrompt = `ECIES_PLAINTEXT_CHECK_${Date.now()}`;
 
-		// Intercept the eth_sendTransaction RPC call to inspect calldata
+		// Intercept the eth_sendTransaction RPC call to inspect calldata. fundABLE/activatePlan run
+		// off-page (direct RPC), so the first on-page eth_sendTransaction is the prompt itself.
 		const txDataPromise = new Promise<string>(resolve => {
-			authenticatedPage.on('request', req => {
+			freshPage.on('request', req => {
 				if (req.url().includes('8545') && req.method() === 'POST') {
 					try {
 						const body = JSON.parse(req.postData() ?? '{}');
@@ -151,8 +168,8 @@ test.describe('Security — ECIES encryption (T-SEC-ECIES)', () => {
 			});
 		});
 
-		await chatPage.goto();
-		await chatPage.sendPrompt(testPrompt);
+		await freshChatPage.goto();
+		await freshChatPage.sendPrompt(testPrompt);
 
 		const txData = await Promise.race([
 			txDataPromise,

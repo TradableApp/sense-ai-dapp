@@ -181,6 +181,16 @@ export default defineConfig({
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
+			name: 'multi-device',
+			testMatch: '**/multi-device.spec.ts',
+			fullyParallel: false,
+			// Each test boots TWO fresh devices (connect + session sign each) around a full prompt →
+			// answer round-trip and a cross-device sync, so it needs more headroom than the
+			// single-device answer specs.
+			timeout: 180_000,
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
 			name: 'security',
 			testMatch: '**/security.spec.ts',
 			use: { ...devices['Desktop Chrome'] },
