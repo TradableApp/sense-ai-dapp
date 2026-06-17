@@ -43,13 +43,19 @@ test.describe('Reasoning & sources rendering (T-REASON)', () => {
 		await expect(freshChatPage.sourcesTrigger).toBeVisible();
 		await freshChatPage.sourcesTrigger.click();
 
+		// Assert BOTH sources' hrefs — proving each entry round-tripped intact (a hydration
+		// off-by-one would otherwise pass on visibility alone).
 		const docsLink = freshChatPage.sourceLink('Tradable Documentation');
 		await expect(docsLink).toBeVisible();
 		await expect(docsLink).toHaveAttribute('href', 'https://tradable.app/docs');
-		await expect(freshChatPage.sourceLink('SenseAI Reference')).toBeVisible();
+		const refLink = freshChatPage.sourceLink('SenseAI Reference');
+		await expect(refLink).toBeVisible();
+		await expect(refLink).toHaveAttribute('href', 'https://senseai.tradable.app');
 	});
 
-	test('T-REASON-02: a normal answer renders no reasoning disclosure', async ({ freshChatPage }) => {
+	test('T-REASON-02: a normal answer renders no reasoning disclosure', async ({
+		freshChatPage,
+	}) => {
 		await freshChatPage.goto();
 		// No sentinel → the oracle attaches no reasoning/sources → the disclosure must not appear.
 		await freshChatPage.sendPromptAndWaitForResponse('A plain question with no reasoning');

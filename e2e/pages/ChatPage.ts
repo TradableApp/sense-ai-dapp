@@ -120,14 +120,20 @@ export class ChatPage {
 		return this.page.getByRole('button', { name: /used \d+ sources?/i }).first();
 	}
 
-	/** A reasoning step's title — rendered as an <h4> heading inside the expanded block. */
+	/** A reasoning step's title — rendered specifically as an <h4> heading (level 4) inside the
+	 *  expanded block, so it can't collide with a page heading of the same text. */
 	reasoningStep(title: string) {
-		return this.page.getByRole('heading', { name: title });
+		return this.page.getByRole('heading', { name: title, level: 4 });
 	}
 
-	/** A rendered source link (opens in a new tab). */
+	/** A rendered source link (opens in a new tab). Scoped to the expanded reasoning panel (the
+	 *  open collapsible holding the "Used N sources" disclosure) so it can never match a nav,
+	 *  footer, or onboarding link that happens to share the title. */
 	sourceLink(title: string) {
-		return this.page.getByRole('link', { name: title });
+		return this.page
+			.locator('[data-state="open"]')
+			.filter({ hasText: /used \d+ sources?/i })
+			.getByRole('link', { name: title });
 	}
 
 	// ── Answer versions (regenerations / prompt edits) ──────────────────────────
