@@ -191,6 +191,15 @@ export default defineConfig({
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
+			name: 'features',
+			testMatch: '**/remaining-features.spec.ts',
+			fullyParallel: false,
+			// T-STUCK does a dropped-prompt round-trip + indexing wait before the dashboard assertion;
+			// T-ONBOARD/T-THEME are quick. Same headroom as the other answer-flow specs.
+			timeout: 120_000,
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
 			name: 'security',
 			testMatch: '**/security.spec.ts',
 			use: { ...devices['Desktop Chrome'] },
