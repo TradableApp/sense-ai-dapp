@@ -151,6 +151,10 @@ export default defineConfig({
 			name: 'refunds',
 			testMatch: '**/refunds.spec.ts',
 			fullyParallel: false,
+			// T-REFUND-03 does a dropped-prompt round-trip + indexing, then waits for useStuckRequests'
+			// 15s refetch to re-evaluate the wall-clock gate, then a refund round-trip + indexing —
+			// past the 30s default, so give it the same headroom as the other round-trip specs.
+			timeout: 120_000,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
@@ -188,6 +192,15 @@ export default defineConfig({
 			// answer round-trip and a cross-device sync, so it needs more headroom than the
 			// single-device answer specs.
 			timeout: 180_000,
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
+			name: 'features',
+			testMatch: '**/remaining-features.spec.ts',
+			fullyParallel: false,
+			// T-STUCK does a dropped-prompt round-trip + indexing wait before the dashboard assertion;
+			// T-ONBOARD/T-THEME are quick. Same headroom as the other answer-flow specs.
+			timeout: 120_000,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{

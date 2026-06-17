@@ -237,7 +237,7 @@ const ESCROW_ABI = parseAbi([
 ]);
 const ERC20_APPROVE_ABI = parseAbi(['function approve(address spender, uint256 amount)']);
 
-async function getLatestBlockTimestamp(): Promise<number> {
+export async function getLatestBlockTimestamp(): Promise<number> {
 	const block = (await rpc('eth_getBlockByNumber', ['latest', false])) as { timestamp: string };
 	return parseInt(block.timestamp, 16);
 }
