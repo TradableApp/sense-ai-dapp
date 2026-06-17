@@ -847,7 +847,7 @@ export default function Chat() {
 											reasoningDuration={message.reasoningDuration}
 											reasoningSteps={
 												message.reasoning && Array.isArray(message.reasoning)
-													? (message.reasoning as any)
+													? message.reasoning
 													: undefined
 											}
 										>
@@ -861,7 +861,7 @@ export default function Chat() {
 												}
 												sources={
 													message.sources && Array.isArray(message.sources)
-														? (message.sources as any)
+														? message.sources
 														: undefined
 												}
 											/>

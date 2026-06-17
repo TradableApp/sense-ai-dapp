@@ -105,6 +105,31 @@ export class ChatPage {
 		return this.page.getByText(/insufficient ABLE balance/i).first();
 	}
 
+	// ── Reasoning / sources (answer disclosure) ─────────────────────────────────
+	// An answer carrying reasoning renders a collapsible disclosure above the bubble
+	// (components/ai/reasoning.tsx). With a reasoningDuration its trigger reads "Thought
+	// for N seconds"; expanding it reveals the steps ({title, description}) and a nested
+	// "Used N sources" disclosure (source.tsx) of {title, url} links.
+
+	get reasoningTrigger() {
+		return this.page.getByRole('button', { name: /thought for \d+ seconds?/i }).first();
+	}
+
+	/** The nested "Used N sources" disclosure inside an expanded reasoning block. */
+	get sourcesTrigger() {
+		return this.page.getByRole('button', { name: /used \d+ sources?/i }).first();
+	}
+
+	/** A reasoning step's title — rendered as an <h4> heading inside the expanded block. */
+	reasoningStep(title: string) {
+		return this.page.getByRole('heading', { name: title });
+	}
+
+	/** A rendered source link (opens in a new tab). */
+	sourceLink(title: string) {
+		return this.page.getByRole('link', { name: title });
+	}
+
 	// ── Answer versions (regenerations / prompt edits) ──────────────────────────
 	// Regenerating an answer or editing a prompt creates a SIBLING (a new "version"),
 	// not a second bubble. The message renders one version at a time with a
@@ -189,6 +214,16 @@ export class ChatPage {
 	 */
 	async sendDroppedPrompt(text: string) {
 		await this.sendPrompt(`${text} __E2E_DROP__`);
+	}
+
+	/**
+	 * Sends a prompt with the `__E2E_REASONING__` sentinel so the mock oracle attaches
+	 * deterministic reasoning + sources to the answer MessageFile (see tokenized-ai-agent
+	 * hasMockReasoningSentinel), then waits for the answer to render — so the reasoning/sources
+	 * disclosure is present to assert.
+	 */
+	async sendReasoningPrompt(text: string, timeoutMs = 90_000) {
+		return this.sendPromptAndWaitForResponse(`${text} __E2E_REASONING__`, timeoutMs);
 	}
 
 	/**

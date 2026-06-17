@@ -172,6 +172,15 @@ export default defineConfig({
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
+			name: 'reasoning',
+			testMatch: '**/reasoning.spec.ts',
+			fullyParallel: false,
+			// Each test does a full prompt → answer round-trip before asserting the reasoning/sources
+			// disclosure, so it needs the same headroom as the other answer-flow specs.
+			timeout: 120_000,
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
 			name: 'security',
 			testMatch: '**/security.spec.ts',
 			use: { ...devices['Desktop Chrome'] },
