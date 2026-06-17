@@ -133,6 +133,12 @@ export function buildMockWalletScript(account: { address: string } = TEST_ACCOUN
         case 'personal_sign': {
           // params = [message, address] — Hardhat supports this for unlocked accounts
           const [message, address] = params || [];
+          // E2E only: an optional window.__mockSignDelayMs holds the signing/deriving screen
+          // visible long enough for a test to assert it (the mock otherwise signs near-instantly
+          // via Hardhat, so the screen would flash by before an assertion can catch it).
+          if (typeof window.__mockSignDelayMs === 'number' && window.__mockSignDelayMs > 0) {
+            await new Promise(r => setTimeout(r, window.__mockSignDelayMs));
+          }
           return rpc('personal_sign', [message, address || ACCOUNT]);
         }
 

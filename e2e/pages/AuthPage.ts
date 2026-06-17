@@ -48,9 +48,14 @@ export class AuthPage {
 			.first();
 	}
 
-	/** The session key signature screen shown after wallet connect */
+	/** The session-key signature screen shown after wallet connect (SignatureScreen.tsx). Match its
+	 *  actual copy — the "Enable End-to-End Encryption" badge / the one-time-signature explainer. */
 	get signatureScreen() {
-		return this.page.getByText(/login to senseai/i).or(this.page.getByText(/encrypt and decrypt/i));
+		return this.page
+			.getByText(/enable end-to-end encryption/i)
+			.or(this.page.getByText(/one-time signature/i))
+			.or(this.page.getByText(/waiting for signature/i))
+			.first();
 	}
 
 	/** The "Sign" or "Confirm" button on the signature screen */
@@ -68,9 +73,10 @@ export class AuthPage {
 			.or(this.page.locator('[data-testid="spinner"], .animate-spin').first());
 	}
 
-	/** Rejection / error state after declining signature */
+	/** Rejection / error state after declining the signature (SignatureScreen.tsx hasError copy:
+	 *  "Signature was declined…" for a rejection, "An unexpected error occurred…" otherwise). */
 	get signatureError() {
-		return this.page.getByText(/rejected|cancelled|error/i);
+		return this.page.getByText(/declined|rejected|cancelled|unexpected error/i);
 	}
 
 	/** Retry button shown on signature rejection */
@@ -85,20 +91,28 @@ export class AuthPage {
 	}
 
 	/**
+	 * Opens the wallet list inside the ThirdWeb connect modal: clicks "Connect Wallet", then
+	 * (ThirdWeb v5) "Connect a Wallet" to get past the "Sign in" landing view and reveal the
+	 * external/injected wallet options. The granular T-AUTH modal tests use this; without the
+	 * second click the injected option never appears (the v5-migration break the granular tests
+	 * were left on). connectAndSign() composes it too.
+	 */
+	async openWalletList() {
+		await this.connectButton.click();
+		await this.connectAWalletButton.click();
+	}
+
+	/**
 	 * Full wallet connection flow:
-	 * 1. Opens ThirdWeb connect modal
+	 * 1. Opens ThirdWeb connect modal + the wallet list
 	 * 2. Selects the injected wallet
 	 * 3. Waits for the signature screen
 	 * 4. Signs the session message
 	 * 5. Waits for redirect to /
 	 */
 	async connectAndSign() {
-		// Open the ThirdWeb modal.
-		await this.connectButton.click();
-
-		// v5 opens to a "Sign in" view (socials / email / passkey). Click
-		// "Connect a Wallet" to reveal the external/injected wallet list.
-		await this.connectAWalletButton.click();
+		// Open the ThirdWeb modal + reveal the wallet list (v5 lands on a "Sign in" view first).
+		await this.openWalletList();
 
 		// Select the injected wallet (our mock announces as MetaMask via EIP-6963).
 		await expect(this.injectedWalletOption).toBeVisible({ timeout: 10_000 });
