@@ -35,7 +35,9 @@ export interface Message {
 	role: 'user' | 'assistant';
 	content: string | null;
 	createdAt: number;
-	reasoning?: Array<{ step: string }>;
+	// Shape matches the oracle's answer MessageFile + the Reasoning/Source UI components
+	// (see components/ai/reasoning.tsx ReasoningStep / source.tsx SourceItem).
+	reasoning?: Array<{ title: string; description: string }>;
 	sources?: Array<{ title: string; url: string }>;
 	reasoningDuration?: number;
 }
