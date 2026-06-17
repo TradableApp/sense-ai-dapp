@@ -1,4 +1,4 @@
-import { type Browser, type Page } from '@playwright/test';
+import { type Browser, type BrowserContext, type Page } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
 import { buildMockWalletScript } from '../fixtures/mock-wallet';
@@ -38,18 +38,23 @@ interface Device {
 	history: HistoryPage;
 	dashboard: DashboardPage;
 	planModal: PlanModal;
-	close: () => Promise<void>;
 }
+
+// Every context opened in a test (via openDevice or directly) is registered here and closed in
+// afterEach — so a mid-test assertion failure can't leak a worker-scoped BrowserContext.
+const openContexts: BrowserContext[] = [];
 
 /**
  * Opens a brand-new "device" — a fresh BrowserContext (its own empty IndexedDB) whose mock wallet
  * impersonates `account`, then completes the real connect + session-key signature. Two devices on
  * the SAME account derive the SAME session key (SIGNATURE_MESSAGE is fixed and Hardhat signing is
  * deterministic), so device B can decrypt device A's data; two DIFFERENT accounts derive different
- * keys and query the subgraph under a different owner, so they stay isolated.
+ * keys and query the subgraph under a different owner, so they stay isolated. The context is
+ * registered for afterEach cleanup, so callers don't close it explicitly.
  */
 async function openDevice(browser: Browser, account: HardhatAccount): Promise<Device> {
 	const context = await browser.newContext();
+	openContexts.push(context);
 	await context.addInitScript(buildMockWalletScript(account));
 	const page = await context.newPage();
 	await page.goto('/');
@@ -60,7 +65,6 @@ async function openDevice(browser: Browser, account: HardhatAccount): Promise<De
 		history: new HistoryPage(page),
 		dashboard: new DashboardPage(page),
 		planModal: new PlanModal(page),
-		close: () => context.close(),
 	};
 }
 
@@ -71,6 +75,12 @@ async function openDevice(browser: Browser, account: HardhatAccount): Promise<De
 test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
+
+	// Close every context opened during the test — even if it failed mid-body — so worker-scoped
+	// contexts never accumulate.
+	test.afterEach(async () => {
+		await Promise.all(openContexts.splice(0).map(c => c.close().catch(() => {})));
+	});
 
 	test("T-MULTI-01: a second device with the same wallet syncs the first device's conversation", async ({
 		browser,
@@ -107,9 +117,6 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		// Opening it renders the decrypted prompt content on device B.
 		await deviceB.history.clickConversation(0);
 		await expect(deviceB.chat.userMessages.first()).toContainText(marker, { timeout: 15_000 });
-
-		await deviceA.close();
-		await deviceB.close();
 	});
 
 	test("T-MULTI-02 / T-SEC-07: a different wallet sees none of the first wallet's history", async ({
@@ -137,9 +144,6 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		// distinct session key could not decrypt it anyway. Confirm at the subgraph layer too.
 		await deviceB.history.assertEmpty();
 		expect(await getConversations(accountB.address)).toHaveLength(0);
-
-		await deviceA.close();
-		await deviceB.close();
 	});
 
 	// NOTE: an already-open device only re-syncs on its 5-min poll (useConversations
@@ -185,9 +189,6 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await expect(deviceB.history.conversationItems.first()).toContainText('Renamed on device A', {
 			timeout: 15_000,
 		});
-
-		await deviceA.close();
-		await deviceB.close();
 	});
 
 	test('T-MULTI-04: a freshly-opened device reflects a conversation deleted on another device', async ({
@@ -223,9 +224,6 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await deviceB.history.goto();
 		await expect(deviceB.history.searchInput).toBeVisible({ timeout: 30_000 });
 		await deviceB.history.assertEmpty();
-
-		await deviceA.close();
-		await deviceB.close();
 	});
 
 	test('T-MULTI-05: two different wallets each see only their own conversations', async ({
@@ -272,9 +270,6 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await deviceB.history.assertConversationCount(1);
 		await expect(deviceB.history.conversationItems.first()).toContainText('bravo');
 		await expect(deviceB.page.getByText('alpha')).toHaveCount(0);
-
-		await deviceA.close();
-		await deviceB.close();
 	});
 
 	test("T-MULTI-06: a shared wallet's balance and spent allowance are consistent on another device", async ({
@@ -323,9 +318,6 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		expect(Math.abs(parseAble((await balanceHint.textContent()) ?? '') - onChainAble)).toBeLessThan(
 			1,
 		);
-
-		await deviceA.close();
-		await deviceB.close();
 	});
 
 	test('T-MULTI-07: switching wallets on the same device shows no data from the previous wallet', async ({
@@ -346,6 +338,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 
 		// Connect as wallet A on a SINGLE context, create a conversation, confirm it shows.
 		const context = await browser.newContext();
+		openContexts.push(context); // closed in afterEach (even on failure)
 		await context.addInitScript(buildMockWalletScript(accountA));
 		const page = await context.newPage();
 		await page.goto('/');
@@ -366,7 +359,5 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await expect(history.searchInput).toBeVisible({ timeout: 30_000 });
 		await history.assertEmpty();
 		await expect(page.getByText('Wallet A private message')).toHaveCount(0);
-
-		await context.close();
 	});
 });

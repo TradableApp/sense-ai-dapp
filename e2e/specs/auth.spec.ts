@@ -161,17 +161,36 @@ test.describe('Session key derivation security (T-SIGN)', () => {
 		await expect(authPage.retryButton).toBeVisible({ timeout: 5_000 });
 	});
 
-	test('T-AUTH-10: Signature screen is shown while awaiting the wallet signature', async ({
-		walletPage,
-	}) => {
-		// Hold the signing screen visible (the mock otherwise signs instantly), then assert the
-		// deriving screen is shown — the state from which the user can sign/retry.
-		await walletPage.addInitScript('window.__mockSignDelayMs = 4000;');
+	test('T-AUTH-10: Clicking retry re-triggers the signature request', async ({ walletPage }) => {
+		// Reject only the FIRST personal_sign (one-shot request override — the proven T-AUTH-09
+		// mechanism), then delegate to the real mock for the retry. __mockSignDelayMs makes that
+		// delegated re-sign hold the signing screen visible so we can assert the retry re-requested it.
+		await walletPage.addInitScript(`
+      window.__mockSignDelayMs = 4000;
+      let __rejectedOnce = false;
+      const orig = window.ethereum && window.ethereum.request;
+      if (orig) {
+        window.ethereum.request = async (args) => {
+          if (args && args.method === 'personal_sign' && !__rejectedOnce) {
+            __rejectedOnce = true;
+            const err = new Error('User rejected the request.');
+            err.code = 4001;
+            throw err;
+          }
+          return orig.call(window.ethereum, args);
+        };
+      }
+    `);
 		const authPage = new AuthPage(walletPage);
 		await authPage.goto();
 		await authPage.openWalletList();
 		await authPage.injectedWalletOption.click();
 
+		// First attempt is rejected → error state with a Retry button.
+		await expect(authPage.signatureError).toBeVisible({ timeout: 10_000 });
+		await authPage.retryButton.click();
+
+		// Retry re-requests the signature — the (now-delayed) signing screen is shown again.
 		await expect(authPage.signatureScreen).toBeVisible({ timeout: 10_000 });
 	});
 });
