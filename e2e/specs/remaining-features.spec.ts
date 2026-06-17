@@ -127,8 +127,9 @@ test.describe('Onboarding flow (T-ONBOARD)', () => {
 		await planModal.waitForTxCompletion();
 
 		// The onboarding screen is replaced by the real dashboard (PlanStatusCard); the onboarding
-		// "Get Started" CTA is gone.
-		await dashboard.assertHasPlan();
+		// "Get Started" CTA is gone. Allow headroom past the tx: after waitForTxCompletion the UI must
+		// still invalidate + refetch useUsagePlan and re-render, which can exceed 10s under load.
+		await dashboard.assertHasPlan(30_000);
 		await expect(dashboard.getStartedButton).toHaveCount(0);
 	});
 });
@@ -162,12 +163,12 @@ test.describe('Stuck-request auto-detection (T-STUCK)', () => {
 
 		// On the dashboard, PlanStatusCard (via useStuckRequests + pendingEscrowCount) raises the
 		// "Action Required" stuck-request panel. (The per-request *refund button* is gated on
-		// Date.now() > createdAt + 1h — wall-clock, not EVM time — so asserting that needs Playwright
-		// page.clock; tracked as a follow-up. Here we assert the auto-detection itself.)
+		// Date.now() > createdAt + 1h — wall-clock, not EVM time. T-REFUND-03 in refunds.spec.ts
+		// covers that button end-to-end via page.clock; here we assert the auto-detection itself.)
 		const dashboard = new DashboardPage(freshPage);
 		await dashboard.goto();
-		await expect(freshPage.getByText(/action required/i)).toBeVisible({ timeout: 30_000 });
+		await expect(dashboard.actionRequiredPanel).toBeVisible({ timeout: 30_000 });
 		await expect(freshPage.getByText(/older than 1 hour can be refunded/i)).toBeVisible();
-		await expect(freshPage.getByText(/request #/i).first()).toBeVisible();
+		await expect(dashboard.stuckRequestRow.first()).toBeVisible();
 	});
 });

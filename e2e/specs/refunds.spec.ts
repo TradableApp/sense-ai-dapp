@@ -17,8 +17,11 @@ const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + escrow contract + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
 
-const isPending = (r: { isAnswered: boolean; isCancelled: boolean; isRefunded: boolean }): boolean =>
-	!r.isAnswered && !r.isCancelled && !r.isRefunded;
+const isPending = (r: {
+	isAnswered: boolean;
+	isCancelled: boolean;
+	isRefunded: boolean;
+}): boolean => !r.isAnswered && !r.isCancelled && !r.isRefunded;
 
 // Stuck-prompt refund (T-REFUND). A prompt the mock oracle never answers (via the
 // __E2E_DROP__ sentinel) stays pending on-chain forever; after REFUND_TIMEOUT the user can
@@ -133,8 +136,8 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		// UI shows "Wait 1h" — no Refund button yet. This is the wall-clock gate, closed.
 		const dashboard = new DashboardPage(freshPage);
 		await dashboard.goto();
-		await expect(dashboard.stuckRequestRow).toBeVisible({ timeout: 30_000 });
-		await expect(dashboard.refundWaitLabel).toBeVisible();
+		await expect(dashboard.stuckRequestRow.first()).toBeVisible({ timeout: 30_000 });
+		await expect(dashboard.refundWaitLabel.first()).toBeVisible();
 		await expect(dashboard.refundButton).toHaveCount(0);
 
 		// Open BOTH gates: EVM time (so the contract permits processRefund) and the browser wall clock
@@ -149,11 +152,18 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		await freshPage.clock.setFixedTime(new Date(evmNowMs + 60_000));
 
 		// The gate opens: "Wait 1h" is replaced by an enabled "Refund" button (on the next refetch).
-		await expect(dashboard.refundButton).toBeVisible({ timeout: 30_000 });
+		await expect(dashboard.refundButton.first()).toBeVisible({ timeout: 30_000 });
 		await expect(dashboard.refundWaitLabel).toHaveCount(0);
 
 		// Clicking it drives the real on-chain processRefund (signed by the mock wallet) …
-		await dashboard.refundButton.click();
+		await dashboard.refundButton.first().click();
+
+		// … and the request leaves the "Action Required" panel once refunded + refetched. This is a
+		// fast, clear UI signal that the click actually triggered the refund — a no-op click would
+		// fail here rather than sitting out the full subgraph-indexing timeout below. (We assert the
+		// row removal, not the transient in-flight disabled state, which a fast localnet tx can clear
+		// before the assertion even runs.)
+		await expect(dashboard.stuckRequestRow).toHaveCount(0, { timeout: 45_000 });
 
 		// … which the subgraph indexes as refunded, and the escrowed fee returns to the wallet.
 		await waitForGraph(

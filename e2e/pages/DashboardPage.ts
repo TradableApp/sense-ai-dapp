@@ -60,20 +60,21 @@ export class DashboardPage {
 		return this.page.getByText(/action required/i);
 	}
 
-	/** A stuck request's "Request #<id>" row label */
+	/** A stuck request's "Request #<id>" row label. Base locator — add `.first()` at the call
+	 *  site for a single-element action/visibility; keep it bare for `toHaveCount(N)`. */
 	get stuckRequestRow() {
-		return this.page.getByText(/request #/i).first();
+		return this.page.getByText(/request #/i);
 	}
 
 	/** Per-request "Refund" button — only rendered once the request is refundable
-	 *  (Date.now() > createdAt + REFUND_TIMEOUT_MS). */
+	 *  (Date.now() > createdAt + REFUND_TIMEOUT_MS). Base locator (see stuckRequestRow). */
 	get refundButton() {
-		return this.page.getByRole('button', { name: /^refund$/i }).first();
+		return this.page.getByRole('button', { name: /^refund$/i });
 	}
 
-	/** The "Wait 1h" label shown for a stuck request that is not yet refundable. */
+	/** The "Wait 1h" label shown for a stuck request that is not yet refundable. Base locator. */
 	get refundWaitLabel() {
-		return this.page.getByText(/^wait 1h$/i).first();
+		return this.page.getByText(/^wait 1h$/i);
 	}
 
 	/** Loading state */
@@ -94,8 +95,8 @@ export class DashboardPage {
 
 	// ── Assertions ────────────────────────────────────────────────────────────
 
-	async assertHasPlan() {
-		await expect(this.planStatusCard).toBeVisible({ timeout: 10_000 });
+	async assertHasPlan(timeoutMs = 10_000) {
+		await expect(this.planStatusCard).toBeVisible({ timeout: timeoutMs });
 	}
 
 	async assertNoPlan() {
