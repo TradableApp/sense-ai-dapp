@@ -11,7 +11,12 @@ leave a pointer.
 The dApp keeps conversation/usage state fresh by polling the subgraph: `useConversations` has a
 5-minute `staleTime`/`refetchInterval`, `useUsagePlan` a 1-minute `staleTime` + `refetchOnWindowFocus`.
 That was a deliberate cost choice — usage is overwhelmingly single-device, so a long poll plus a
-focus refetch covers the rare second device without paying for constant subgraph queries.
+focus refetch covers the rare second device without paying for constant subgraph queries. An
+event-driven supplement already exists — `useLiveResponse` (`liveResponseEvents.ts`) invalidates
+these queries on `AnswerMessageAdded` / `ConversationBranched` / `MetadataUpdateRequested` and
+related events — but the poll is still the *primary* freshness driver. Phase 1 below flips that
+primacy (events primary, poll fallback) and adds the events not yet watched; it is an incremental
+change, not a greenfield event build.
 
 Two pressures push beyond polling:
 
@@ -48,8 +53,12 @@ Model freshness as **two planes**, and keep the TEE coupled to the **prompt**, n
 
 **Phase 1 — dApp freshness (near-term, ships alone).** Make on-chain **event-driven invalidation
 the primary** mechanism, the poll a fallback: a dedicated WSS `watchContractEvent` filtered by the
-user's address (`AnswerMessageAdded` / `ConversationAdded` / `ConversationBranched` /
-`ConversationMetadataUpdated` / `PaymentFinalized`) invalidates `['conversations'|'usagePlan'|'tokenBalance']`.
+user's address — `AnswerMessageAdded` / `ConversationBranched` / `ConversationMetadataUpdated` on
+**EVMAIAgent** plus `PaymentFinalized` on **EVMAIAgentEscrow** — invalidates
+`['conversations'|'usagePlan'|'tokenBalance']`. Two of these are **additions to the current watch
+lists** (`liveResponseEvents.ts`): `ConversationAdded` (EVMAIAgent) is not in `AGENT_EVENT_NAMES`,
+and `PaymentFinalized` is not in `ESCROW_EVENT_NAMES` — and because the events span two contracts,
+this stays two `watchContractEvent` listeners (the existing agent/escrow split).
 This is near-real-time **and cheaper** — query only when something actually changed; an idle device
 holds a ~free WSS. **Decouple `syncWithRemote` from the read query** (background sync writes IndexedDB;
 the read query reads it and is invalidated by the sync). Tune windows + make polls visibility-aware,
@@ -70,10 +79,15 @@ the TEE. Metadata only — never plaintext.
   is also persisted encrypted (durable plane) for late joiners / other devices. The dApp already has
   both sides of this structure: `chatSlice.addReasoningStepById` (live append) and
   `MessageFile.reasoning` (durable, the Area-6 shape).
-  - *Security:* the broker sees only ciphertext + topic ids + timing (the chain already exposes that
-    metadata). Transport is verified via ROFL **remote attestation** (RA-TLS / a signed attestation in
-    the subscribe handshake) so the device trusts only the genuine enclave; subscription requires a
-    **wallet-signed token** (defense in depth — payload is ciphertext regardless).
+  - *Security:* the broker sees only ciphertext + topic ids + timing. Be explicit about the trust
+    level, though: because subscription uses a **wallet-signed token**, the broker operator can
+    correlate **device IP ↔ wallet address ↔ specific `answerMessageId` activity, in real time**. The
+    wallet↔prompt link is already public on-chain, but the chain doesn't tie it to device network
+    identity or live timing — the broker does. This is acceptable only if the broker is **1st-party
+    (trusted) infra that does not log subscription metadata beyond operational necessity**; it is not
+    a zero-knowledge relay. Transport is verified via ROFL **remote attestation** (RA-TLS / a signed
+    attestation in the subscribe handshake) so the device trusts only the genuine enclave; the
+    wallet-signed token is defense in depth (the payload is ciphertext regardless).
 - **Atomic distribution across TEEs:** on-chain prompt events feed a shared job table in the existing
   `sense-ai-shared-schema` Postgres; replicas claim with `FOR UPDATE SKIP LOCKED` + a lease/heartbeat
   (reclaim on replica death). **Correctness is already guaranteed** by the existing
