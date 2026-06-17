@@ -130,17 +130,18 @@ test.describe('Theme and visual', () => {
 	});
 
 	test('T-UI-08c: Dark theme preference is applied on load', async ({ page }) => {
-		await page.addInitScript(() => localStorage.setItem('vite-ui-theme', 'dark'));
+		// ThemeProvider (main.tsx) reads the persisted theme from storageKey "senseai-ui-theme" — NOT
+		// the component's own 'vite-ui-theme' default. Seed the correct key so the app loads dark.
+		await page.addInitScript(() => localStorage.setItem('senseai-ui-theme', 'dark'));
 		await injectMockWallet(page);
 		await page.goto('/auth');
 		await page.waitForLoadState('domcontentloaded');
 
-		const bgColor = await page.evaluate(
-			() => window.getComputedStyle(document.body).backgroundColor,
-		);
-		const storedTheme = await page.evaluate(() => localStorage.getItem('vite-ui-theme'));
+		// Assert the dark theme is actually applied (html class), not merely that the background is
+		// non-transparent — which holds for any theme and so never caught the wrong-key bug above.
+		await expect(page.locator('html')).toHaveClass(/dark/);
+		const storedTheme = await page.evaluate(() => localStorage.getItem('senseai-ui-theme'));
 		expect(storedTheme).toBe('dark');
-		expect(bgColor).not.toBe('rgba(0, 0, 0, 0)');
 	});
 });
 

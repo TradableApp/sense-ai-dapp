@@ -27,9 +27,9 @@ test.describe('Theme toggle (T-THEME)', () => {
 	// Existing T-UI-08b/c only assert the applied/loaded theme; these assert the toggle *actions*.
 	test.beforeEach(async ({ authenticatedPage }) => {
 		await authenticatedPage.goto('/history');
-		await expect(
-			authenticatedPage.getByRole('heading', { name: /conversations/i }),
-		).toBeVisible({ timeout: 30_000 });
+		await expect(authenticatedPage.getByRole('heading', { name: /conversations/i })).toBeVisible({
+			timeout: 30_000,
+		});
 	});
 
 	test('T-THEME-01: selecting Dark then Light flips the html class and persists', async ({

@@ -1,6 +1,14 @@
 import { expect, test } from '../fixtures';
 import { getPromptRequests, waitForGraph } from '../helpers/graph';
-import { activatePlan, fundABLE, getABLEBalance, increaseTime, processRefund } from '../helpers/hardhat';
+import {
+	activatePlan,
+	fundABLE,
+	getABLEBalance,
+	getLatestBlockTimestamp,
+	increaseTime,
+	processRefund,
+} from '../helpers/hardhat';
+import { DashboardPage } from '../pages/DashboardPage';
 
 const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
 const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
@@ -17,10 +25,11 @@ const isPending = (r: { isAnswered: boolean; isCancelled: boolean; isRefunded: b
 // reclaim the escrowed fee with processRefund. Full cross-layer: the dApp shows it pending,
 // the escrow holds the fee, processRefund returns it, and the subgraph flips isRefunded.
 //
-// NOTE: the dApp's in-app refund affordance is wall-clock-gated (it compares Date.now() to the
-// prompt's createdAt + REFUND_TIMEOUT), which evm_increaseTime can't move — testing that button
-// needs Playwright's page.clock and is tracked separately. These tests drive the on-chain claim
-// (the contract gate IS block-time based) and verify the indexed result.
+// The dApp's in-app refund affordance (the "Refund" button in PlanStatusCard's "Action Required"
+// panel) is wall-clock-gated: useStuckRequests sets isRefundable = Date.now() > createdAt +
+// REFUND_TIMEOUT_MS, which evm_increaseTime can't move. T-REFUND-01/02 drive the on-chain claim
+// directly (the contract gate IS block-time based); T-REFUND-03 covers the *button* end-to-end by
+// advancing the browser clock with Playwright's page.clock (UI gate) AND EVM time (contract gate).
 //
 // Fresh per-test users; serial (localnet shares one Hardhat node + global EVM time).
 test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
@@ -97,5 +106,61 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		const req = (await getPromptRequests(owner)).find(r => r.id === answered.id);
 		expect(req?.isAnswered).toBe(true);
 		expect(req?.isRefunded).toBe(false);
+	});
+
+	test('T-REFUND-03: the in-app Refund button unlocks past the wall-clock window and refunds on-chain', async ({
+		freshChatPage,
+		freshPage,
+		freshUserAccount,
+	}) => {
+		const owner = freshUserAccount.address;
+		await freshChatPage.goto();
+
+		// Stuck prompt → escrow debited, job pending on-chain forever.
+		await freshChatPage.sendDroppedPrompt('This one gets stuck and refunded via the button');
+		await expect(freshChatPage.cancelButton).toBeVisible({ timeout: 30_000 });
+		// Runs last in the serial refunds suite (after two round-trips + increaseTime jumps), so
+		// graph-node indexing lags more than the 30s default — give the indexing waits headroom.
+		const pendingReqs = await waitForGraph(
+			() => getPromptRequests(owner),
+			reqs => reqs.some(isPending),
+			{ label: 'pending PromptRequest', timeoutMs: 60_000 },
+		);
+		const stuck = pendingReqs.find(isPending)!;
+		const balanceWhileStuck = await getABLEBalance(TOKEN_ADDRESS, owner);
+
+		// On the dashboard the stuck request is auto-detected, but the window hasn't elapsed, so the
+		// UI shows "Wait 1h" — no Refund button yet. This is the wall-clock gate, closed.
+		const dashboard = new DashboardPage(freshPage);
+		await dashboard.goto();
+		await expect(dashboard.stuckRequestRow).toBeVisible({ timeout: 30_000 });
+		await expect(dashboard.refundWaitLabel).toBeVisible();
+		await expect(dashboard.refundButton).toHaveCount(0);
+
+		// Open BOTH gates: EVM time (so the contract permits processRefund) and the browser wall clock
+		// (so useStuckRequests flips isRefundable). useStuckRequests compares Date.now() to the
+		// prompt's on-chain createdAt (block time) + REFUND_TIMEOUT — and the serial suite's prior
+		// increaseTime jumps have pushed EVM time well ahead of the real wall clock, so the browser
+		// clock must be set relative to EVM time, not Date.now(). Pin it to the latest block timestamp
+		// (already past createdAt + 1h after increaseTime). setFixedTime overrides Date.now() without
+		// freezing timers, so the hook's 15s refetchInterval still fires and recomputes the gate.
+		await increaseTime(REFUND_TIMEOUT_S + 60);
+		const evmNowMs = (await getLatestBlockTimestamp()) * 1000;
+		await freshPage.clock.setFixedTime(new Date(evmNowMs + 60_000));
+
+		// The gate opens: "Wait 1h" is replaced by an enabled "Refund" button (on the next refetch).
+		await expect(dashboard.refundButton).toBeVisible({ timeout: 30_000 });
+		await expect(dashboard.refundWaitLabel).toHaveCount(0);
+
+		// Clicking it drives the real on-chain processRefund (signed by the mock wallet) …
+		await dashboard.refundButton.click();
+
+		// … which the subgraph indexes as refunded, and the escrowed fee returns to the wallet.
+		await waitForGraph(
+			() => getPromptRequests(owner),
+			reqs => reqs.some(r => r.id === stuck.id && r.isRefunded),
+			{ label: 'PromptRequest.isRefunded (via button)', timeoutMs: 60_000 },
+		);
+		expect(await getABLEBalance(TOKEN_ADDRESS, owner)).toBeGreaterThan(balanceWhileStuck);
 	});
 });

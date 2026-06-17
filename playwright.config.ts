@@ -151,6 +151,10 @@ export default defineConfig({
 			name: 'refunds',
 			testMatch: '**/refunds.spec.ts',
 			fullyParallel: false,
+			// T-REFUND-03 does a dropped-prompt round-trip + indexing, then waits for useStuckRequests'
+			// 15s refetch to re-evaluate the wall-clock gate, then a refund round-trip + indexing —
+			// past the 30s default, so give it the same headroom as the other round-trip specs.
+			timeout: 120_000,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{

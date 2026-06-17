@@ -53,6 +53,29 @@ export class DashboardPage {
 		return this.page.getByText(/recent activity/i).first();
 	}
 
+	// ── Stuck-request / refund affordance (PlanStatusCard "Action Required" panel) ──
+
+	/** The "Action Required" stuck-request panel header */
+	get actionRequiredPanel() {
+		return this.page.getByText(/action required/i);
+	}
+
+	/** A stuck request's "Request #<id>" row label */
+	get stuckRequestRow() {
+		return this.page.getByText(/request #/i).first();
+	}
+
+	/** Per-request "Refund" button — only rendered once the request is refundable
+	 *  (Date.now() > createdAt + REFUND_TIMEOUT_MS). */
+	get refundButton() {
+		return this.page.getByRole('button', { name: /^refund$/i }).first();
+	}
+
+	/** The "Wait 1h" label shown for a stuck request that is not yet refundable. */
+	get refundWaitLabel() {
+		return this.page.getByText(/^wait 1h$/i).first();
+	}
+
 	/** Loading state */
 	get loadingState() {
 		return this.page.getByText(/loading your usage plan/i);
