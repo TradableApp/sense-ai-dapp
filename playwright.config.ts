@@ -204,6 +204,16 @@ export default defineConfig({
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
+			name: 'governance',
+			testMatch: '**/governance.spec.ts',
+			fullyParallel: false,
+			// T-GOV-CFG-01/02 drive owner-only setters then wait for the subgraph singleton to index;
+			// T-GOV-CFG-03 does a full prompt→answer round-trip after a fee change. Same headroom as
+			// the other answer-flow projects.
+			timeout: 120_000,
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
 			name: 'security',
 			testMatch: '**/security.spec.ts',
 			use: { ...devices['Desktop Chrome'] },

@@ -245,6 +245,61 @@ export async function getRegenerationRequests(
 	return data.regenerationRequests;
 }
 
+/** The protocol-wide fee config singleton (id "singleton"), written by the escrow's
+ *  *FeeUpdated handlers. Fees are BigInt strings (wei-scale); null until first set. */
+export interface IndexedFeeConfig {
+	id: string;
+	promptFee: string | null;
+	branchFee: string | null;
+	cancellationFee: string | null;
+	metadataUpdateFee: string | null;
+	updatedAt: string;
+}
+
+/** Reads the FeeConfig singleton, or null if it hasn't been created yet. */
+export async function getFeeConfig(): Promise<IndexedFeeConfig | null> {
+	const data = await graphQuery<{ feeConfig: IndexedFeeConfig | null }>(
+		`query {
+      feeConfig(id: "singleton") {
+        id
+        promptFee
+        branchFee
+        cancellationFee
+        metadataUpdateFee
+        updatedAt
+      }
+    }`,
+	);
+	return data.feeConfig;
+}
+
+/** The protocol address config singleton (id "singleton"), written by the
+ *  AgentEscrowUpdated / OracleUpdated / TreasuryUpdated handlers. Addresses are
+ *  lowercase Bytes hex; null until the corresponding event first fires. */
+export interface IndexedProtocolConfig {
+	id: string;
+	escrowAddress: string | null;
+	oracleAddress: string | null;
+	treasuryAddress: string | null;
+	updatedAt: string;
+}
+
+/** Reads the ProtocolConfig singleton, or null if it hasn't been created yet. */
+export async function getProtocolConfig(): Promise<IndexedProtocolConfig | null> {
+	const data = await graphQuery<{ protocolConfig: IndexedProtocolConfig | null }>(
+		`query {
+      protocolConfig(id: "singleton") {
+        id
+        escrowAddress
+        oracleAddress
+        treasuryAddress
+        updatedAt
+      }
+    }`,
+	);
+	return data.protocolConfig;
+}
+
 /**
  * Polls `query()` until `predicate` is satisfied, returning the matching value.
  * The generic indexing-aware wait the assertion helpers above compose with —
