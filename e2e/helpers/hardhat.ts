@@ -334,7 +334,11 @@ export async function setPromptFee(escrowAddress: string, newFee: bigint): Promi
 
 /** Set the per-branch fee (owner-only). @param newFee wei-scale. */
 export async function setBranchFee(escrowAddress: string, newFee: bigint): Promise<void> {
-	const data = encodeFunctionData({ abi: ESCROW_ABI, functionName: 'setBranchFee', args: [newFee] });
+	const data = encodeFunctionData({
+		abi: ESCROW_ABI,
+		functionName: 'setBranchFee',
+		args: [newFee],
+	});
 	await sendFrom(DEPLOYER_ADDRESS, escrowAddress, data);
 }
 

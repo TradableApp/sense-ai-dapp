@@ -107,7 +107,9 @@ test.describe('Governance continuity (T-GOV-CFG)', () => {
 		// (not merely that the dApp cold-starts correctly after a change).
 		await freshChatPage.goto();
 		await setPromptFee(ESCROW_ADDRESS, 2n * ABLE);
-		await freshChatPage.sendPromptAndWaitForResponse('Still working after a mid-session fee change?');
+		await freshChatPage.sendPromptAndWaitForResponse(
+			'Still working after a mid-session fee change?',
+		);
 		await expect(freshChatPage.assistantMessages.last()).toBeVisible();
 	});
 });
