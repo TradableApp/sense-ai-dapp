@@ -231,7 +231,12 @@ export async function fundABLE(
 const ESCROW_ABI = parseAbi([
 	'function setSpendingLimit(uint256 _allowance, uint256 _expiresAt)',
 	'function setPromptFee(uint256 _newFee)',
+	'function setBranchFee(uint256 _newFee)',
+	'function setCancellationFee(uint256 _newFee)',
+	'function setMetadataUpdateFee(uint256 _newFee)',
+	'function setTreasury(address _newTreasury)',
 	'function promptFee() view returns (uint256)',
+	'function treasury() view returns (address)',
 	'function spendingLimits(address) view returns (uint256 allowance, uint256 spentAmount, uint256 expiresAt)',
 	'function processRefund(uint256 _answerMessageId)',
 ]);
@@ -325,6 +330,54 @@ export async function setPromptFee(escrowAddress: string, newFee: bigint): Promi
 		args: [newFee],
 	});
 	await sendFrom(DEPLOYER_ADDRESS, escrowAddress, data);
+}
+
+/** Set the per-branch fee (owner-only). @param newFee wei-scale. */
+export async function setBranchFee(escrowAddress: string, newFee: bigint): Promise<void> {
+	const data = encodeFunctionData({
+		abi: ESCROW_ABI,
+		functionName: 'setBranchFee',
+		args: [newFee],
+	});
+	await sendFrom(DEPLOYER_ADDRESS, escrowAddress, data);
+}
+
+/** Set the cancellation fee (owner-only). @param newFee wei-scale. */
+export async function setCancellationFee(escrowAddress: string, newFee: bigint): Promise<void> {
+	const data = encodeFunctionData({
+		abi: ESCROW_ABI,
+		functionName: 'setCancellationFee',
+		args: [newFee],
+	});
+	await sendFrom(DEPLOYER_ADDRESS, escrowAddress, data);
+}
+
+/** Set the metadata-update fee (owner-only). @param newFee wei-scale. */
+export async function setMetadataUpdateFee(escrowAddress: string, newFee: bigint): Promise<void> {
+	const data = encodeFunctionData({
+		abi: ESCROW_ABI,
+		functionName: 'setMetadataUpdateFee',
+		args: [newFee],
+	});
+	await sendFrom(DEPLOYER_ADDRESS, escrowAddress, data);
+}
+
+/** Set the treasury payout address (owner-only). Sent by the deployer/owner (account 0). */
+export async function setTreasury(escrowAddress: string, newTreasury: string): Promise<void> {
+	const data = encodeFunctionData({
+		abi: ESCROW_ABI,
+		functionName: 'setTreasury',
+		args: [newTreasury as `0x${string}`],
+	});
+	await sendFrom(DEPLOYER_ADDRESS, escrowAddress, data);
+}
+
+/** Read the current treasury payout address from the escrow. */
+export async function getTreasury(escrowAddress: string): Promise<string> {
+	const data = encodeFunctionData({ abi: ESCROW_ABI, functionName: 'treasury', args: [] });
+	const result = await callContract(escrowAddress, data);
+	// eth_call returns a 32-byte word; the address is the low 20 bytes.
+	return `0x${result.slice(-40)}`;
 }
 
 /**
