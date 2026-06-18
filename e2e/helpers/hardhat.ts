@@ -235,8 +235,10 @@ const ESCROW_ABI = parseAbi([
 	'function setCancellationFee(uint256 _newFee)',
 	'function setMetadataUpdateFee(uint256 _newFee)',
 	'function setTreasury(address _newTreasury)',
+	'function transferOwnership(address newOwner)',
 	'function promptFee() view returns (uint256)',
 	'function treasury() view returns (address)',
+	'function owner() view returns (address)',
 	'function spendingLimits(address) view returns (uint256 allowance, uint256 spentAmount, uint256 expiresAt)',
 	'function processRefund(uint256 _answerMessageId)',
 ]);
@@ -378,6 +380,47 @@ export async function getTreasury(escrowAddress: string): Promise<string> {
 	const result = await callContract(escrowAddress, data);
 	// eth_call returns a 32-byte word; the address is the low 20 bytes.
 	return `0x${result.slice(-40)}`;
+}
+
+/** Read the current owner of an Ownable contract (escrow or agent). */
+export async function getOwner(contractAddress: string): Promise<string> {
+	const data = encodeFunctionData({ abi: ESCROW_ABI, functionName: 'owner', args: [] });
+	const result = await callContract(contractAddress, data);
+	return `0x${result.slice(-40)}`;
+}
+
+/**
+ * Transfer ownership of an Ownable contract (single-step OwnableUpgradeable).
+ * @param fromAddress the CURRENT owner sending the tx (defaults to the deployer/owner, account 0).
+ */
+export async function transferOwnership(
+	contractAddress: string,
+	newOwner: string,
+	fromAddress: string = DEPLOYER_ADDRESS,
+): Promise<void> {
+	const data = encodeFunctionData({
+		abi: ESCROW_ABI,
+		functionName: 'transferOwnership',
+		args: [newOwner as `0x${string}`],
+	});
+	await sendFrom(fromAddress, contractAddress, data);
+}
+
+/**
+ * Set the per-prompt fee as a SPECIFIC sender (not the default deployer) — used to assert that the
+ * new owner can set fees and the old owner can no longer (the call reverts and this promise rejects).
+ */
+export async function setPromptFeeFrom(
+	escrowAddress: string,
+	fromAddress: string,
+	newFee: bigint,
+): Promise<void> {
+	const data = encodeFunctionData({
+		abi: ESCROW_ABI,
+		functionName: 'setPromptFee',
+		args: [newFee],
+	});
+	await sendFrom(fromAddress, escrowAddress, data);
 }
 
 /**

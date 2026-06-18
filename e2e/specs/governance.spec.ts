@@ -3,13 +3,17 @@ import { getFeeConfig, getProtocolConfig, waitForGraph } from '../helpers/graph'
 import {
 	activatePlan,
 	fundABLE,
+	getABLEBalance,
+	getOwner,
 	getPromptFee,
 	getTreasury,
 	setBranchFee,
 	setCancellationFee,
 	setMetadataUpdateFee,
 	setPromptFee,
+	setPromptFeeFrom,
 	setTreasury,
+	transferOwnership,
 } from '../helpers/hardhat';
 
 const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
@@ -19,11 +23,16 @@ const ABLE = 10n ** 18n;
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + escrow + Graph node (set E2E_LOCAL_SERVICES=1)';
 
-// A well-known Hardhat account (#9) used as the rotated-treasury target — deterministic and distinct
-// from the deployer (#0, the owner). It is in the fresh-account pool, but the afterEach restore (and
-// localnet's serial execution) means it is only the treasury transiently within T-GOV-CFG-02, with
-// no settlement routed to it in that window — so it never collides with its use as a fresh user.
-const NEW_TREASURY = '0xa0Ee7A142d267C1f36714E4a8F75612F20a79720';
+// A synthetic, non-Hardhat address used as the rotated-treasury target. Using an address that is
+// never allocated to a test user means settlement fees routed into it (T-GOV-TREAS-01) can't pollute
+// a fresh user's balance. Lowercase — the subgraph stores Bytes lowercase and viem encodes it fine
+// (the 9a treasury restore already round-trips lowercase addresses through setTreasury).
+const NEW_TREASURY = '0x000000000000000000000000000000000000beef';
+
+// The reserved Hardhat account #1 (NOT in the fresh-user pool) used as the new owner. It must be a
+// real unlocked account so it can send owner-only txs; ownership is restored to the original in
+// afterEach so the change never bricks owner-only ops for the rest of the suite.
+const NEW_OWNER = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 
 // Area 9a — governance config indexing + continuity. Contract-level governance (owner-only setters,
 // UUPS) is unit-tested in tokenized-ai-agent and the subgraph handlers are matchstick-tested; these
@@ -111,5 +120,99 @@ test.describe('Governance continuity (T-GOV-CFG)', () => {
 			'Still working after a mid-session fee change?',
 		);
 		await expect(freshChatPage.assistantMessages.last()).toBeVisible();
+	});
+});
+
+// Area 9b — ownership transfer (of the escrow, where the fee setters live). OwnableUpgradeable is
+// single-step; the contract-level transfer is unit-tested in tokenized-ai-agent, so here we assert
+// the cross-layer effect: access control flips (old owner's setter reverts, new owner's succeeds and
+// still indexes) and users are unaffected. Ownership is snapshotted + restored so a failed restore
+// can't brick owner-only ops for the rest of the run.
+test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
+	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
+
+	let originalOwner: string;
+	let originalPromptFee: bigint;
+	test.beforeEach(async () => {
+		originalOwner = await getOwner(ESCROW_ADDRESS);
+		originalPromptFee = await getPromptFee(ESCROW_ADDRESS);
+	});
+	test.afterEach(async () => {
+		// Hand ownership back (from whoever holds it now) and restore the fee, so owner-only ops keep
+		// working for the rest of the suite.
+		const currentOwner = await getOwner(ESCROW_ADDRESS);
+		if (currentOwner.toLowerCase() !== originalOwner.toLowerCase()) {
+			await transferOwnership(ESCROW_ADDRESS, originalOwner, currentOwner);
+		}
+		await setPromptFeeFrom(ESCROW_ADDRESS, originalOwner, originalPromptFee);
+	});
+
+	test('T-GOV-OWN-01: after an ownership transfer, only the new owner can set fees', async () => {
+		await transferOwnership(ESCROW_ADDRESS, NEW_OWNER); // from the current owner (deployer) → NEW_OWNER
+
+		// The old owner (deployer) can no longer set fees — the onlyOwner guard reverts the tx.
+		await expect(setPromptFee(ESCROW_ADDRESS, 7n * ABLE)).rejects.toThrow();
+
+		// The new owner can, and the change still indexes into FeeConfig (cross-layer). Runs after the
+		// continuity describe's answer round-trip, so graph-node can lag well past the 30s default —
+		// give the indexing wait headroom (same reason as T-REFUND-03).
+		await setPromptFeeFrom(ESCROW_ADDRESS, NEW_OWNER, 7n * ABLE);
+		await waitForGraph(
+			() => getFeeConfig(),
+			c => c?.promptFee === String(7n * ABLE),
+			{
+				label: 'new owner fee change indexed',
+				timeoutMs: 60_000,
+			},
+		);
+	});
+
+	test('T-GOV-OWN-02: a user can still complete a prompt after an ownership transfer', async ({
+		freshUserAccount,
+		freshChatPage,
+	}) => {
+		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+
+		await freshChatPage.goto();
+		await transferOwnership(ESCROW_ADDRESS, NEW_OWNER); // ownership changes while the session is live
+		await freshChatPage.sendPromptAndWaitForResponse(
+			'Still answering after an ownership transfer?',
+		);
+		await expect(freshChatPage.assistantMessages.last()).toBeVisible();
+	});
+});
+
+// Area 9c — treasury routing. After a treasury change, settled prompt fees pay out to the NEW
+// treasury (refunds, by contrast, return to the user — covered by the T-REFUND suite). Treasury is
+// snapshotted + restored so the routing change doesn't leak into the rest of the run.
+test.describe('Governance treasury routing (T-GOV-TREAS)', () => {
+	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
+
+	let originalTreasury: string;
+	test.beforeEach(async ({ freshUserAccount }) => {
+		originalTreasury = await getTreasury(ESCROW_ADDRESS);
+		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+	});
+	test.afterEach(async () => {
+		await setTreasury(ESCROW_ADDRESS, originalTreasury);
+	});
+
+	test('T-GOV-TREAS-01: a settled prompt routes its fee to the current treasury', async ({
+		freshChatPage,
+	}) => {
+		await setTreasury(ESCROW_ADDRESS, NEW_TREASURY);
+		const fee = await getPromptFee(ESCROW_ADDRESS);
+		const treasuryBefore = await getABLEBalance(TOKEN_ADDRESS, NEW_TREASURY);
+
+		// A full prompt → answer round-trip finalizes the escrow, which pays the fee out to the treasury.
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse('Route my fee to the new treasury.');
+
+		const treasuryAfter = await getABLEBalance(TOKEN_ADDRESS, NEW_TREASURY);
+		expect(treasuryAfter - treasuryBefore).toBe(fee);
 	});
 });
