@@ -366,6 +366,7 @@ test.describe('Governance UUPS upgrade (T-GOV-UPGRADE)', () => {
 		// storage slots) — allowance + expiry are unchanged.
 		const after = await getSpendingLimit(ESCROW_ADDRESS, freshUserAccount.address);
 		expect(after.allowance).toBe(before.allowance);
+		expect(after.spentAmount).toBe(before.spentAmount);
 		expect(after.expiresAt).toBe(before.expiresAt);
 
 		// Continuity: the dApp still completes a full prompt → answer on the same proxy address.
