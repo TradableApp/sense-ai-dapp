@@ -45,5 +45,11 @@ non-subgraph use, but specs must not use them around indexed assertions.
   (monotonic chain, no rewinds).
 - **Negative:** consumes Hardhat accounts (bounded; fresh stack per run resets them); a long run
   accrues chain state (acceptable — it only grows).
+- **Negative (indexing lag):** because the run is serial (`workers: 1`) and the chain/graph only
+  grow, graph-node lags further behind as a project progresses — especially after a prompt→answer
+  round-trip (oracle/IPFS/message indexing). Indexing assertions (`waitForGraph`) that run *after* a
+  round-trip in the same project need >30s headroom (use `{ timeoutMs: 60_000 }`) even though the
+  on-chain value is already correct; symptom + rule of thumb are documented in the
+  `sense-ai-e2e/docs/LOCALNET_SETUP.md` troubleshooting list (seen in `T-REFUND-03`, `T-GOV-OWN-01`).
 - **Migration:** `refunds` was migrated first; `history` and `branching` follow (this ADR is the
   rationale for that migration).
