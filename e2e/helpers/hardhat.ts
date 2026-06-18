@@ -243,6 +243,11 @@ const ESCROW_ABI = parseAbi([
 	'function processRefund(uint256 _answerMessageId)',
 ]);
 const ERC20_APPROVE_ABI = parseAbi(['function approve(address spender, uint256 amount)']);
+// EVMAIAgent owns the oracle address (setOracle / OracleUpdated → subgraph ProtocolConfig.oracle).
+const AGENT_ABI = parseAbi([
+	'function oracle() view returns (address)',
+	'function setOracle(address _newOracle)',
+]);
 
 export async function getLatestBlockTimestamp(): Promise<number> {
 	const block = (await rpc('eth_getBlockByNumber', ['latest', false])) as { timestamp: string };
@@ -421,6 +426,32 @@ export async function setPromptFeeFrom(
 		args: [newFee],
 	});
 	await sendFrom(fromAddress, escrowAddress, data);
+}
+
+/** Read the current on-chain oracle address from the EVMAIAgent. */
+export async function getOracle(agentAddress: string): Promise<string> {
+	const data = encodeFunctionData({ abi: AGENT_ABI, functionName: 'oracle', args: [] });
+	const result = await callContract(agentAddress, data);
+	return `0x${result.slice(-40)}`;
+}
+
+/**
+ * Rotate the on-chain oracle address (owner-only on EVMAIAgent). Sent by the deployer/owner
+ * (account 0). NOTE: the running localnet oracle keeps DECRYPTING with its signer key, but answer
+ * submission is onlyOracle-gated — so once rotated it can no longer SUBMIT, and any in-flight prompt
+ * is orphaned (see T-GOV-ORACLE-02). Restore the original address afterwards so the stack stays clean.
+ */
+export async function setOracle(
+	agentAddress: string,
+	newOracle: string,
+	fromAddress: string = DEPLOYER_ADDRESS,
+): Promise<void> {
+	const data = encodeFunctionData({
+		abi: AGENT_ABI,
+		functionName: 'setOracle',
+		args: [newOracle as `0x${string}`],
+	});
+	await sendFrom(fromAddress, agentAddress, data);
 }
 
 /**

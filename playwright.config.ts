@@ -207,10 +207,11 @@ export default defineConfig({
 			name: 'governance',
 			testMatch: '**/governance.spec.ts',
 			fullyParallel: false,
-			// T-GOV-CFG-01/02 drive owner-only setters then wait for the subgraph singleton to index;
-			// T-GOV-CFG-03 does a full prompt→answer round-trip after a fee change. Same headroom as
-			// the other answer-flow projects.
-			timeout: 120_000,
+			// Owner-only setters + subgraph-index waits + answer round-trips. T-GOV-ORACLE-02 is the
+			// heaviest: it holds a prompt's answer (20s sentinel), rotates mid-flight, waits past the
+			// delay, then waits up to 60s for the orphaned PENDING state to index — so give extra
+			// headroom over the other answer-flow projects.
+			timeout: 180_000,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
