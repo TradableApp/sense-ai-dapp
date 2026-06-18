@@ -1,4 +1,21 @@
+import { execFile } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+
 import { decodeFunctionResult, encodeFunctionData, parseAbi } from 'viem';
+
+const execFileAsync = promisify(execFile);
+// Sibling repo that owns the contracts + hardhat-upgrades plugin + the OZ upgrades manifest. Anchor on
+// THIS file (e2e/helpers/) rather than process.cwd(), so it resolves correctly no matter where
+// Playwright is launched from: e2e/helpers → e2e → sense-ai-dapp → <siblings>/tokenized-ai-agent.
+const AGENT_REPO_DIR = path.resolve(
+	path.dirname(fileURLToPath(import.meta.url)),
+	'..',
+	'..',
+	'..',
+	'tokenized-ai-agent',
+);
 
 const RPC_URL = 'http://127.0.0.1:8545';
 let reqId = 1;
@@ -426,6 +443,27 @@ export async function setPromptFeeFrom(
 		args: [newFee],
 	});
 	await sendFrom(fromAddress, escrowAddress, data);
+}
+
+/**
+ * Upgrade the localnet EVMAIAgentEscrow UUPS proxy to its V2 implementation by shelling out to the
+ * tokenized-ai-agent repo's hardhat-upgrades script. The upgrade MUST run inside that Hardhat project
+ * (the upgrades plugin + the OZ manifest written by `deploy:base-localnet` live there) — it can't be
+ * driven raw from here. The proxy address + storage are unchanged; only the implementation swaps.
+ */
+export async function upgradeEscrowToV2(escrowAddress: string): Promise<void> {
+	try {
+		await execFileAsync('bun', ['run', 'upgrade:base-localnet-v2'], {
+			cwd: AGENT_REPO_DIR,
+			env: { ...process.env, PROXY_ADDRESS: escrowAddress, UPGRADE_TARGET: 'escrow' },
+			timeout: 120_000,
+		});
+	} catch (err: unknown) {
+		// execFile's error message is a generic "Command failed"; the real Hardhat output lives on
+		// stderr/stdout — surface it so the Playwright reporter shows why the upgrade failed.
+		const e = err as { stderr?: string; stdout?: string };
+		throw new Error(`upgradeEscrowToV2 failed:\n${e.stderr || e.stdout || ''}`, { cause: err });
+	}
 }
 
 /** Read the current on-chain oracle address from the EVMAIAgent. */

@@ -52,7 +52,15 @@ Adopt **multi-oracle role-based authorization + a shared decryption key** ("Opti
 4. **Oracle:** be multi-oracle-aware and **resilient** — a single auth/`onlyOracle` revert must not be
    a FATAL non-retryable wedge (the second finding above).
 5. **Subgraph:** index an oracle **set** (`OracleAdded`/`OracleRemoved` or OZ `RoleGranted`/
-   `RoleRevoked`) instead of today's single `ProtocolConfig.oracleAddress`.
+   `RoleRevoked`) instead of today's single `ProtocolConfig.oracleAddress`. While reworking the
+   governance indexing, also adopt the industry-standard **"current + immutable change-log"** pattern:
+   keep the mutable `ProtocolConfig`/`FeeConfig` **singletons** for fast current-state reads, and add
+   **immutable per-change entities** (`@entity(immutable: true)` — e.g. `OracleChange`/`TreasuryChange`/
+   `FeeChange { previous, new, txHash, blockNumber, timestamp, sender }`), *or* extend the existing
+   immutable `Activity` entity with governance event types. Today governance changes keep only the
+   latest value + `updatedAt` (no audit trail), whereas the codebase already uses the immutable-log
+   pattern for *user* actions via `Activity` — governance config should match it for the change history
+   (when/from→to/by-whom) that admin operations need.
 
 ## Consequences
 
