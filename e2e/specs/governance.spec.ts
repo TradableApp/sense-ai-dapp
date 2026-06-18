@@ -140,12 +140,18 @@ test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
 	});
 	test.afterEach(async () => {
 		// Hand ownership back (from whoever holds it now) and restore the fee, so owner-only ops keep
-		// working for the rest of the suite.
+		// working for the rest of the suite. Decouple the two with try/finally so a failed ownership
+		// restore doesn't skip the fee restore (which would leave the next beforeEach snapshotting a
+		// dirty owner+fee). If ownership is somehow still NEW_OWNER, the fee restore reverts — which
+		// surfaces the real problem rather than hiding it behind a silently-skipped restore.
 		const currentOwner = await getOwner(ESCROW_ADDRESS);
-		if (currentOwner.toLowerCase() !== originalOwner.toLowerCase()) {
-			await transferOwnership(ESCROW_ADDRESS, originalOwner, currentOwner);
+		try {
+			if (currentOwner.toLowerCase() !== originalOwner.toLowerCase()) {
+				await transferOwnership(ESCROW_ADDRESS, originalOwner, currentOwner);
+			}
+		} finally {
+			await setPromptFeeFrom(ESCROW_ADDRESS, originalOwner, originalPromptFee);
 		}
-		await setPromptFeeFrom(ESCROW_ADDRESS, originalOwner, originalPromptFee);
 	});
 
 	test('T-GOV-OWN-01: after an ownership transfer, only the new owner can set fees', async () => {
@@ -206,6 +212,9 @@ test.describe('Governance treasury routing (T-GOV-TREAS)', () => {
 	}) => {
 		await setTreasury(ESCROW_ADDRESS, NEW_TREASURY);
 		const fee = await getPromptFee(ESCROW_ADDRESS);
+		// Guard against a vacuous pass: if a prior test left the fee at 0, the balance-delta assertion
+		// below (`after - before == fee`) would trivially hold while nothing was actually routed.
+		expect(fee).toBeGreaterThan(0n);
 		const treasuryBefore = await getABLEBalance(TOKEN_ADDRESS, NEW_TREASURY);
 
 		// A full prompt → answer round-trip finalizes the escrow, which pays the fee out to the treasury.
