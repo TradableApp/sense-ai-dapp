@@ -64,12 +64,14 @@ test.describe('Governance config indexing (T-GOV-CFG)', () => {
 	// that assume the deploy default. So snapshot it and restore after each test to avoid leaking the
 	// change into the rest of the run. (Fee sentinels are intentionally NOT restored: no downstream
 	// test asserts an exact fee, and contract-cost reads/restores its own fee dynamically.)
-	let originalTreasury: string;
+	let originalTreasury: string | undefined;
 	test.beforeEach(async () => {
 		originalTreasury = await getTreasury(ESCROW_ADDRESS);
 	});
 	test.afterEach(async () => {
-		await setTreasury(ESCROW_ADDRESS, originalTreasury);
+		// Guard: if beforeEach threw before snapshotting, don't restore with undefined (which would
+		// throw a cryptic viem error in afterEach and mask the real beforeEach failure).
+		if (originalTreasury !== undefined) await setTreasury(ESCROW_ADDRESS, originalTreasury);
 	});
 
 	test('T-GOV-CFG-01: the four fee changes are indexed into the FeeConfig singleton', async () => {
@@ -112,14 +114,15 @@ test.describe('Governance continuity (T-GOV-CFG)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	let originalPromptFee: bigint;
+	let originalPromptFee: bigint | undefined;
 	test.beforeEach(async ({ freshUserAccount }) => {
 		originalPromptFee = await getPromptFee(ESCROW_ADDRESS);
 		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
 		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
 	});
 	test.afterEach(async () => {
-		await setPromptFee(ESCROW_ADDRESS, originalPromptFee);
+		// Guard: skip the restore if beforeEach threw before snapshotting (see treasury note above).
+		if (originalPromptFee !== undefined) await setPromptFee(ESCROW_ADDRESS, originalPromptFee);
 	});
 
 	test('T-GOV-CFG-03: the dApp still answers a prompt after a mid-session governance change', async ({
@@ -146,8 +149,8 @@ test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	let originalOwner: string;
-	let originalPromptFee: bigint;
+	let originalOwner: string | undefined;
+	let originalPromptFee: bigint | undefined;
 	test.beforeEach(async () => {
 		originalOwner = await getOwner(ESCROW_ADDRESS);
 		originalPromptFee = await getPromptFee(ESCROW_ADDRESS);
@@ -157,14 +160,19 @@ test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
 		// working for the rest of the suite. Decouple the two with try/finally so a failed ownership
 		// restore doesn't skip the fee restore (which would leave the next beforeEach snapshotting a
 		// dirty owner+fee). If ownership is somehow still NEW_OWNER, the fee restore reverts — which
-		// surfaces the real problem rather than hiding it behind a silently-skipped restore.
-		const currentOwner = await getOwner(ESCROW_ADDRESS);
+		// surfaces the real problem rather than hiding it behind a silently-skipped restore. Each
+		// restore is also guarded against an undefined snapshot (a beforeEach that threw early).
 		try {
-			if (currentOwner.toLowerCase() !== originalOwner.toLowerCase()) {
-				await transferOwnership(ESCROW_ADDRESS, originalOwner, currentOwner);
+			if (originalOwner !== undefined) {
+				const currentOwner = await getOwner(ESCROW_ADDRESS);
+				if (currentOwner.toLowerCase() !== originalOwner.toLowerCase()) {
+					await transferOwnership(ESCROW_ADDRESS, originalOwner, currentOwner);
+				}
 			}
 		} finally {
-			await setPromptFeeFrom(ESCROW_ADDRESS, originalOwner, originalPromptFee);
+			if (originalOwner !== undefined && originalPromptFee !== undefined) {
+				await setPromptFeeFrom(ESCROW_ADDRESS, originalOwner, originalPromptFee);
+			}
 		}
 	});
 
@@ -261,12 +269,13 @@ test.describe('Governance oracle rotation (T-GOV-ORACLE)', () => {
 	// The on-chain oracle is owner-global; snapshot + restore it so the rotation doesn't leak into the
 	// rest of the run. (The running oracle keeps DECRYPTING with its signer key, but answer submission
 	// is onlyOracle-gated — so once rotated it can no longer SUBMIT; see T-GOV-ORACLE-02.)
-	let originalOracle: string;
+	let originalOracle: string | undefined;
 	test.beforeEach(async () => {
 		originalOracle = await getOracle(AGENT_ADDRESS);
 	});
 	test.afterEach(async () => {
-		await setOracle(AGENT_ADDRESS, originalOracle);
+		// Guard: skip the restore if beforeEach threw before snapshotting (see treasury note above).
+		if (originalOracle !== undefined) await setOracle(AGENT_ADDRESS, originalOracle);
 	});
 
 	test('T-GOV-ORACLE-01: an oracle rotation is indexed into the ProtocolConfig singleton', async () => {
