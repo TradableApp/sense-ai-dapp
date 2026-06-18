@@ -7,6 +7,7 @@ import {
 	getOracle,
 	getOwner,
 	getPromptFee,
+	getSpendingLimit,
 	getTreasury,
 	setBranchFee,
 	setCancellationFee,
@@ -16,6 +17,7 @@ import {
 	setPromptFeeFrom,
 	setTreasury,
 	transferOwnership,
+	upgradeEscrowToV2,
 } from '../helpers/hardhat';
 
 const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
@@ -330,5 +332,44 @@ test.describe('Governance oracle rotation (T-GOV-ORACLE)', () => {
 			{ label: 'orphaned prompt stays pending (unanswered)', timeoutMs: 60_000 },
 		);
 		await expect(freshChatPage.assistantMessages).toHaveCount(0);
+	});
+});
+
+// Area 9e — UUPS upgrade continuity (of the escrow proxy, which holds spending limits + escrows). The
+// contract-level upgrade (onlyOwner, storage preserved, version 2.0) is unit-tested in
+// tokenized-ai-agent; here we prove the CROSS-LAYER claim on a real stack: a live upgrade preserves
+// user state and the dApp keeps working on the same proxy address. The upgrade is run via the agent
+// repo's hardhat-upgrades script (see upgradeEscrowToV2). It is left in place — EVMAIAgentEscrowV2
+// inherits all V1 logic (behaviourally identical + a version() marker), and the stack is fresh per run.
+test.describe('Governance UUPS upgrade (T-GOV-UPGRADE)', () => {
+	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
+
+	test('T-GOV-UPGRADE-01: a UUPS upgrade preserves state and the dApp keeps working', async ({
+		freshUserAccount,
+		freshChatPage,
+	}) => {
+		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+
+		// Pre-upgrade state: the user's spending limit is set in the escrow's storage.
+		const before = await getSpendingLimit(ESCROW_ADDRESS, freshUserAccount.address);
+		expect(before.allowance).toBeGreaterThan(0n);
+		expect(before.expiresAt).toBeGreaterThan(0n);
+
+		await freshChatPage.goto();
+
+		// Upgrade the escrow proxy implementation to V2 against the live stack.
+		await upgradeEscrowToV2(ESCROW_ADDRESS);
+
+		// Storage preserved: the spending limit survived the implementation swap (same proxy, same
+		// storage slots) — allowance + expiry are unchanged.
+		const after = await getSpendingLimit(ESCROW_ADDRESS, freshUserAccount.address);
+		expect(after.allowance).toBe(before.allowance);
+		expect(after.expiresAt).toBe(before.expiresAt);
+
+		// Continuity: the dApp still completes a full prompt → answer on the same proxy address.
+		await freshChatPage.sendPromptAndWaitForResponse('Still working after a UUPS upgrade?');
+		await expect(freshChatPage.assistantMessages.last()).toBeVisible();
 	});
 });

@@ -1,4 +1,13 @@
+import { execFile } from 'node:child_process';
+import path from 'node:path';
+import { promisify } from 'node:util';
+
 import { decodeFunctionResult, encodeFunctionData, parseAbi } from 'viem';
+
+const execFileAsync = promisify(execFile);
+// Sibling repo that owns the contracts + hardhat-upgrades plugin + the OZ upgrades manifest. Playwright
+// runs from the dApp root, so the agent repo is one level up.
+const AGENT_REPO_DIR = path.resolve(process.cwd(), '..', 'tokenized-ai-agent');
 
 const RPC_URL = 'http://127.0.0.1:8545';
 let reqId = 1;
@@ -426,6 +435,20 @@ export async function setPromptFeeFrom(
 		args: [newFee],
 	});
 	await sendFrom(fromAddress, escrowAddress, data);
+}
+
+/**
+ * Upgrade the localnet EVMAIAgentEscrow UUPS proxy to its V2 implementation by shelling out to the
+ * tokenized-ai-agent repo's hardhat-upgrades script. The upgrade MUST run inside that Hardhat project
+ * (the upgrades plugin + the OZ manifest written by `deploy:base-localnet` live there) — it can't be
+ * driven raw from here. The proxy address + storage are unchanged; only the implementation swaps.
+ */
+export async function upgradeEscrowToV2(escrowAddress: string): Promise<void> {
+	await execFileAsync('bun', ['run', 'upgrade:base-localnet-v2'], {
+		cwd: AGENT_REPO_DIR,
+		env: { ...process.env, PROXY_ADDRESS: escrowAddress, UPGRADE_TARGET: 'escrow' },
+		timeout: 120_000,
+	});
 }
 
 /** Read the current on-chain oracle address from the EVMAIAgent. */
