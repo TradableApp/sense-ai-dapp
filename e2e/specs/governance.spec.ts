@@ -1,15 +1,17 @@
 import { expect, test } from '../fixtures';
-import { getFeeConfig, getProtocolConfig, waitForGraph } from '../helpers/graph';
+import { getFeeConfig, getPromptRequests, getProtocolConfig, waitForGraph } from '../helpers/graph';
 import {
 	activatePlan,
 	fundABLE,
 	getABLEBalance,
+	getOracle,
 	getOwner,
 	getPromptFee,
 	getTreasury,
 	setBranchFee,
 	setCancellationFee,
 	setMetadataUpdateFee,
+	setOracle,
 	setPromptFee,
 	setPromptFeeFrom,
 	setTreasury,
@@ -18,6 +20,7 @@ import {
 
 const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
 const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
+const AGENT_ADDRESS = process.env.VITE_AGENT_CONTRACT_ADDRESS ?? '';
 const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 const ABLE = 10n ** 18n;
 const SKIP_REASON =
@@ -33,6 +36,17 @@ const NEW_TREASURY = '0x000000000000000000000000000000000000beef';
 // real unlocked account so it can send owner-only txs; ownership is restored to the original in
 // afterEach so the change never bricks owner-only ops for the rest of the suite.
 const NEW_OWNER = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
+
+// A synthetic, non-Hardhat address used as the rotated-oracle target. The oracle address is never a
+// fund recipient and we never send txs from it, so a synthetic address is fine; it's restored to the
+// original in afterEach. Lowercase for the same reason as NEW_TREASURY.
+const NEW_ORACLE = '0x000000000000000000000000000000000000face';
+
+const isPending = (r: {
+	isAnswered: boolean;
+	isCancelled: boolean;
+	isRefunded: boolean;
+}): boolean => !r.isAnswered && !r.isCancelled && !r.isRefunded;
 
 // Area 9a — governance config indexing + continuity. Contract-level governance (owner-only setters,
 // UUPS) is unit-tested in tokenized-ai-agent and the subgraph handlers are matchstick-tested; these
@@ -223,5 +237,89 @@ test.describe('Governance treasury routing (T-GOV-TREAS)', () => {
 
 		const treasuryAfter = await getABLEBalance(TOKEN_ADDRESS, NEW_TREASURY);
 		expect(treasuryAfter - treasuryBefore).toBe(fee);
+	});
+});
+
+// Area 9d — oracle rotation (of the EVMAIAgent, which owns the oracle address). The contract-level
+// setOracle is unit-tested in tokenized-ai-agent; here we assert the cross-layer effect: a rotation
+// indexes into ProtocolConfig, and in-flight prompts are not orphaned by it.
+//
+// The dApp's STALENESS failure mode (it holds VITE_ORACLE_PUBLIC_KEY from env, never read from chain,
+// so a rotation to a genuinely different key would leave prompts encrypted to the old key and never
+// answered) cannot be injected in this harness: the key is build-time-baked and the localnet runs a
+// single oracle process. Its user-facing OUTCOME — a prompt submitted but never answered, then
+// recoverable via refund — is already covered by T-REFUND-01 / T-STUCK-01 (the __E2E_DROP__ sentinel
+// produces the same observable state). The root-cause design risk (read the oracle key from chain so
+// a rotation reaches the dApp) is tracked as a backlog ticket; see the PR description.
+test.describe('Governance oracle rotation (T-GOV-ORACLE)', () => {
+	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(
+		!TOKEN_ADDRESS || !ESCROW_ADDRESS || !AGENT_ADDRESS,
+		'Skipped: contract addresses not set',
+	);
+
+	// The on-chain oracle is owner-global; snapshot + restore it so the rotation doesn't leak into the
+	// rest of the run. (The running oracle keeps DECRYPTING with its signer key, but answer submission
+	// is onlyOracle-gated — so once rotated it can no longer SUBMIT; see T-GOV-ORACLE-02.)
+	let originalOracle: string;
+	test.beforeEach(async () => {
+		originalOracle = await getOracle(AGENT_ADDRESS);
+	});
+	test.afterEach(async () => {
+		await setOracle(AGENT_ADDRESS, originalOracle);
+	});
+
+	test('T-GOV-ORACLE-01: an oracle rotation is indexed into the ProtocolConfig singleton', async () => {
+		await setOracle(AGENT_ADDRESS, NEW_ORACLE);
+
+		// Runs after the earlier describes' answer round-trips, so graph-node lags past the 30s default
+		// — give the indexing wait headroom (see ADR-0002 / the e2e troubleshooting note).
+		await waitForGraph(
+			() => getProtocolConfig(),
+			c => c?.oracleAddress?.toLowerCase() === NEW_ORACLE.toLowerCase(),
+			{ label: 'ProtocolConfig reflects the rotated oracle', timeoutMs: 60_000 },
+		);
+	});
+
+	test('T-GOV-ORACLE-02: a mid-flight oracle rotation orphans the in-flight prompt (onlyOracle answer-submit)', async ({
+		freshUserAccount,
+		freshChatPage,
+		freshPage,
+	}) => {
+		// FINDING (see ADR-0006 + the linked tokenized-ai-agent issue / CU task): answer submission is
+		// onlyOracle-gated to a SINGLE address, so the instant the oracle is rotated the running oracle
+		// can no longer submit — any in-flight prompt is ORPHANED (submitAnswer reverts with
+		// UnauthorizedOracle and the oracle then hits a FATAL non-retryable error). A naive rotation is
+		// therefore NOT zero-downtime. This locks in the known risk until the planned multi-oracle
+		// (ORACLE_ROLE) + shared-key design (Option B) lands; the orphaned prompt is recoverable via
+		// refund exactly like a stuck prompt (T-REFUND-01 / T-STUCK-01).
+		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+
+		await freshChatPage.goto();
+		// The oracle holds the answer for 20s (mock sentinel), giving a deterministic window to rotate
+		// the oracle BEFORE it attempts to submit — so the orphan is caused by the rotation, not a race.
+		await freshChatPage.sendPrompt(
+			'Orphaned by a mid-flight oracle rotation __E2E_DELAY_MS__:20000',
+		);
+		await expect(freshChatPage.cancelButton).toBeVisible({ timeout: 30_000 });
+		await setOracle(AGENT_ADDRESS, NEW_ORACLE);
+
+		// Wait past the answer-delay window so the oracle's now-delayed submitAnswer has fired and
+		// reverted (onlyOracle) — this makes the pending state DURABLE (orphaned), not merely "not yet
+		// answered". A bounded wait is required to prove non-delivery of the held answer.
+		await freshPage.waitForTimeout(25_000);
+
+		// Orphaned: the prompt stays PENDING on-chain — never answered. waitForGraph (not a single read)
+		// because this runs last in the serial suite, so graph-node lags past the 30s default; once
+		// indexed it is pending and STAYS pending (the old oracle can no longer submit), so the wait
+		// resolves — whereas if the rotation had lost the race the prompt would be answered and this
+		// would (correctly) time out.
+		await waitForGraph(
+			() => getPromptRequests(freshUserAccount.address),
+			reqs => reqs.some(isPending),
+			{ label: 'orphaned prompt stays pending (unanswered)', timeoutMs: 60_000 },
+		);
+		await expect(freshChatPage.assistantMessages).toHaveCount(0);
 	});
 });
