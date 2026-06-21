@@ -300,6 +300,36 @@ export async function getProtocolConfig(): Promise<IndexedProtocolConfig | null>
 	return data.protocolConfig;
 }
 
+/** A row from the protocol-wide `Activity` log (immutable, id = txHash-logIndex), written by
+ *  the escrow/agent handlers. `type` ∈ CONVERSATION/RENAME/DELETE/METADATA_UPDATE/BRANCH/CANCEL/
+ *  REFUND/PLAN_UPDATE/PLAN_REVOKE; `amount` is wei-scale (0 for non-financial actions). */
+export interface IndexedActivity {
+	id: string;
+	type: string;
+	amount: string;
+	timestamp: string;
+	transactionHash: string;
+}
+
+/** Recent on-chain Activity rows for a user, newest-first — mirrors the dApp's GET_RECENT_ACTIVITY
+ *  (the RecentActivityCard's source). Lets a test cross-check that an action (plan activation,
+ *  prompt, refund) wrote the expected Activity that the dashboard then renders as a labelled row. */
+export async function getActivities(userAddress: string): Promise<IndexedActivity[]> {
+	const data = await graphQuery<{ activities: IndexedActivity[] }>(
+		`query($user: Bytes!) {
+      activities(where: { user: $user }, orderBy: timestamp, orderDirection: desc) {
+        id
+        type
+        amount
+        timestamp
+        transactionHash
+      }
+    }`,
+		{ user: userAddress.toLowerCase() },
+	);
+	return data.activities;
+}
+
 /**
  * Polls `query()` until `predicate` is satisfied, returning the matching value.
  * The generic indexing-aware wait the assertion helpers above compose with —

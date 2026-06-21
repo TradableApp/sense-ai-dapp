@@ -53,6 +53,16 @@ export class DashboardPage {
 		return this.page.getByText(/recent activity/i).first();
 	}
 
+	/** PlanStatusCard's full-width allowance-gap warning panel, rendered whenever the on-chain
+	 *  ERC-20 allowance has fallen below the plan's remaining limit (e.g. after a cancellation/
+	 *  refund). The "Authorization Gap" heading itself lives in a hover tooltip; this always-rendered
+	 *  panel is the stable signal, so assert on it. */
+	get authorizationGapWarning() {
+		return this.page
+			.getByText(/your wallet allowance is lower than your plan limit/i)
+			.first();
+	}
+
 	// ── Stuck-request / refund affordance (PlanStatusCard "Action Required" panel) ──
 
 	/** The "Action Required" stuck-request panel header */

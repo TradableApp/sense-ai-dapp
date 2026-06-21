@@ -195,12 +195,24 @@ export default defineConfig({
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
+			name: 'activity',
+			testMatch: '**/activity.spec.ts',
+			fullyParallel: false,
+			// T-ACTIVITY-02/03 do a full prompt → answer round-trip before asserting the indexed
+			// Activity row + its dashboard label, plus a 60s indexing wait — same headroom as the
+			// other answer-flow projects.
+			timeout: 180_000,
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
 			name: 'features',
 			testMatch: '**/remaining-features.spec.ts',
 			fullyParallel: false,
 			// T-STUCK does a dropped-prompt round-trip + indexing wait before the dashboard assertion;
-			// T-ONBOARD/T-THEME are quick. Same headroom as the other answer-flow specs.
-			timeout: 120_000,
+			// T-PENDING-01 does a full answer round-trip AND a dropped prompt + indexing wait before its
+			// dashboard/history assertions (so it needs more than the single-round-trip headroom);
+			// T-ONBOARD/T-THEME are quick.
+			timeout: 180_000,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{

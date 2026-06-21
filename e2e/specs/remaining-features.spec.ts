@@ -172,3 +172,56 @@ test.describe('Stuck-request auto-detection (T-STUCK)', () => {
 		await expect(dashboard.stuckRequestRow.first()).toBeVisible();
 	});
 });
+
+test.describe('Pending-escrow guards (T-PENDING)', () => {
+	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
+
+	test.beforeEach(async ({ freshUserAccount }) => {
+		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+	});
+
+	// While any prompt's escrow is still unsettled (pendingEscrowCount > 0), changing the spending
+	// limit or deleting a conversation would corrupt accounting, so the dApp blocks both. This proves
+	// that read-driven guard end-to-end: an on-chain pending escrow → disabled Manage Limit + disabled
+	// History delete.
+	test('T-PENDING-01: a pending prompt disables plan management and conversation deletion', async ({
+		freshUserAccount,
+		freshChatPage,
+		freshHistoryPage,
+		freshPage,
+	}) => {
+		// First land an ANSWERED conversation, so History has a real row whose delete we can assert is
+		// blocked. (A never-answered prompt creates no Conversation entity — see ADR-0003 — so it would
+		// never appear in History; only an answered conversation does.)
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse('A normal, answered prompt');
+
+		// Then a dropped prompt that stays escrowed forever → the escrow's pendingEscrowCount > 0.
+		await freshChatPage.sendDroppedPrompt('A prompt the oracle will never answer');
+		await waitForGraph(
+			() => getPendingPayments(freshUserAccount.address),
+			payments => payments.length >= 1,
+			{ label: 'pending payment indexed', timeoutMs: 60_000 },
+		);
+
+		// Dashboard: useUsagePlan reads pendingEscrowCount on-chain → PlanStatusCard disables the
+		// (native <button>) "Manage Limit" control while a prompt is pending.
+		const dashboard = new DashboardPage(freshPage);
+		await dashboard.goto();
+		await dashboard.assertHasPlan(30_000);
+		await expect(dashboard.managePlanButton).toBeDisabled({ timeout: 30_000 });
+
+		// History: the answered conversation's Delete action is likewise blocked while pending. The
+		// delete is a Radix DropdownMenuItem (role="menuitem", not a native control), so its disabled
+		// state surfaces as aria-disabled rather than the `disabled` attribute.
+		await freshHistoryPage.goto();
+		await freshHistoryPage.assertHasConversations();
+		await freshHistoryPage.openConversationMenu(0);
+		await expect(freshPage.getByRole('menuitem', { name: /delete/i })).toHaveAttribute(
+			'aria-disabled',
+			'true',
+		);
+	});
+});
