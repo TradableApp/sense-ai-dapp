@@ -58,9 +58,7 @@ export class DashboardPage {
 	 *  refund). The "Authorization Gap" heading itself lives in a hover tooltip; this always-rendered
 	 *  panel is the stable signal, so assert on it. */
 	get authorizationGapWarning() {
-		return this.page
-			.getByText(/your wallet allowance is lower than your plan limit/i)
-			.first();
+		return this.page.getByText(/your wallet allowance is lower than your plan limit/i).first();
 	}
 
 	// ── Stuck-request / refund affordance (PlanStatusCard "Action Required" panel) ──
