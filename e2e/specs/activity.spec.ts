@@ -40,8 +40,9 @@ test.describe('Recent activity feed (T-ACTIVITY)', () => {
 		const dashboard = new DashboardPage(freshPage);
 		await dashboard.goto();
 		await expect(dashboard.activityCard).toBeVisible({ timeout: 30_000 });
-		// useRecentActivity maps PLAN_UPDATE → "Spending Limit Updated".
-		await expect(freshPage.getByText('Spending Limit Updated').first()).toBeVisible({
+		// useRecentActivity maps PLAN_UPDATE → "Spending Limit Updated". Scope to the card so the match
+		// is proven to be a feed row, not the same string somewhere else in the layout.
+		await expect(dashboard.activityCard.getByText('Spending Limit Updated').first()).toBeVisible({
 			timeout: 30_000,
 		});
 	});
@@ -63,8 +64,10 @@ test.describe('Recent activity feed (T-ACTIVITY)', () => {
 		const dashboard = new DashboardPage(freshPage);
 		await dashboard.goto();
 		await expect(dashboard.activityCard).toBeVisible({ timeout: 30_000 });
-		// useRecentActivity maps CONVERSATION → "AI Conversation".
-		await expect(freshPage.getByText('AI Conversation').first()).toBeVisible({ timeout: 30_000 });
+		// useRecentActivity maps CONVERSATION → "AI Conversation". Scoped to the card (see T-ACTIVITY-01).
+		await expect(dashboard.activityCard.getByText('AI Conversation').first()).toBeVisible({
+			timeout: 30_000,
+		});
 	});
 
 	test('T-ACTIVITY-03: the activity log is ordered newest-first (a prompt after activation sorts ahead of it)', async ({

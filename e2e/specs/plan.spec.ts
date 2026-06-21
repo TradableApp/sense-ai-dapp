@@ -158,7 +158,12 @@ test.describe('Spending plan management (T-PLAN)', () => {
 		// PlanStatusCard surfaces the always-visible allowance-gap panel and keeps "Manage Limit" as
 		// the re-sync CTA (allowanceGap = (allowance − spent) − realTokenAllowance = 10 − 0 − 5 = 5).
 		await expect(dashboardPage.authorizationGapWarning).toBeVisible({ timeout: 15_000 });
+		// This is the COMPLEMENT of T-PENDING-01 (pending → disabled): with no pending escrow the
+		// "Manage Limit" CTA must be clickable so the user can re-sync the allowance — assert it's
+		// enabled, not merely present (a bug disabling it while showing the gap would slip past a
+		// visibility-only check).
 		await expect(dashboardPage.managePlanButton).toBeVisible();
+		await expect(dashboardPage.managePlanButton).not.toBeDisabled();
 	});
 
 	test('T-PLAN-10: Cancel plan reverts dashboard to onboarding', async ({

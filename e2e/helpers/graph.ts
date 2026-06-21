@@ -313,11 +313,14 @@ export interface IndexedActivity {
 
 /** Recent on-chain Activity rows for a user, newest-first — mirrors the dApp's GET_RECENT_ACTIVITY
  *  (the RecentActivityCard's source). Lets a test cross-check that an action (plan activation,
- *  prompt, refund) wrote the expected Activity that the dashboard then renders as a labelled row. */
-export async function getActivities(userAddress: string): Promise<IndexedActivity[]> {
+ *  prompt, refund) wrote the expected Activity that the dashboard then renders as a labelled row.
+ *  `first` defaults to 20 to match RecentActivityCard's `useRecentActivity(20)` window — so the
+ *  helper only confirms indexing of items the UI would actually show, and never operates on a
+ *  silently graph-node-truncated list (the default page size is 100). */
+export async function getActivities(userAddress: string, first = 20): Promise<IndexedActivity[]> {
 	const data = await graphQuery<{ activities: IndexedActivity[] }>(
-		`query($user: Bytes!) {
-      activities(where: { user: $user }, orderBy: timestamp, orderDirection: desc) {
+		`query($user: Bytes!, $first: Int!) {
+      activities(where: { user: $user }, orderBy: timestamp, orderDirection: desc, first: $first) {
         id
         type
         amount
@@ -325,7 +328,7 @@ export async function getActivities(userAddress: string): Promise<IndexedActivit
         transactionHash
       }
     }`,
-		{ user: userAddress.toLowerCase() },
+		{ user: userAddress.toLowerCase(), first },
 	);
 	return data.activities;
 }

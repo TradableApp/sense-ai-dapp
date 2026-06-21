@@ -48,9 +48,10 @@ export class DashboardPage {
 			.or(this.page.getByText('Spent', { exact: true }).locator('..').getByText(/ABLE/).first());
 	}
 
-	/** RecentActivityCard */
+	/** RecentActivityCard root (data-testid on the Card). Scope activity-row assertions to this so a
+	 *  label match is proven to live INSIDE the feed, not in some other layout/tooltip/aria node. */
 	get activityCard() {
-		return this.page.getByText(/recent activity/i).first();
+		return this.page.getByTestId('recent-activity-card');
 	}
 
 	/** PlanStatusCard's full-width allowance-gap warning panel, rendered whenever the on-chain
