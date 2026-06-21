@@ -195,6 +195,15 @@ export default defineConfig({
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
+			name: 'live-sync',
+			testMatch: '**/live-sync.spec.ts',
+			fullyParallel: false,
+			// Two devices (connect + session sign each) plus a full prompt → answer round-trip on
+			// device B, then a live-convergence window on device A — same headroom as multi-device.
+			timeout: 180_000,
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
 			name: 'activity',
 			testMatch: '**/activity.spec.ts',
 			fullyParallel: false,
