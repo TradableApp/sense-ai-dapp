@@ -222,7 +222,9 @@ export default function useLiveResponse() {
 			if (uniqueKeys.length > 0) {
 				// eslint-disable-next-line no-await-in-loop
 				await Promise.all(
-					uniqueKeys.map((key: (string | number | symbol)[]) =>
+					// `unknown[]` to match addInvalidationKey + TanStack's QueryKey — structured keys like
+					// the wallet-balance key carry an object element, not just primitives.
+					uniqueKeys.map((key: unknown[]) =>
 						queryClient.invalidateQueries({ queryKey: key }),
 					),
 				);
