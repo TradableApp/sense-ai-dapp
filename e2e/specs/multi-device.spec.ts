@@ -7,7 +7,7 @@ import { allocateFreshAccount } from '../helpers/fresh-account';
 import {
 	getConversation,
 	getConversations,
-	getPendingPayments,
+	getPromptRequests,
 	waitForGraph,
 } from '../helpers/graph';
 import { activatePlan, fundABLE, getABLEBalance } from '../helpers/hardhat';
@@ -356,18 +356,24 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await deviceA.chat.sendPromptAndWaitForResponse(answeredMarker);
 		await deviceA.chat.sendDroppedPrompt(pendingMarker);
 
-		// Both must be indexed before device B syncs: the conversation (from the answer) and the
-		// follow-up's still-PENDING payment (its unanswered PromptRequest).
-		await waitForGraph(
-			() => getConversations(account.address),
-			convs => convs.length === 1,
-			{ label: 'conversation indexed', timeoutMs: 60_000 },
-		);
-		await waitForGraph(
-			() => getPendingPayments(account.address),
-			payments => payments.length >= 1,
-			{ label: 'pending (in-flight) prompt indexed', timeoutMs: 60_000 },
-		);
+		// Both must be indexed before device B syncs, and they're independent (the conversation comes
+		// from the answered first prompt; the unanswered request from the dropped follow-up), so wait in
+		// parallel — worst case stays ~60s instead of 120s, well inside the 180s project timeout. The
+		// pending wait keys on the SAME entity the recovery itself reads: an unanswered, non-cancelled/
+		// refunded PromptRequest (syncService rebuilds exactly these into pending user messages), so the
+		// precondition matches the mechanism under test rather than a proxy `payments` row.
+		await Promise.all([
+			waitForGraph(
+				() => getConversations(account.address),
+				convs => convs.length === 1,
+				{ label: 'conversation indexed', timeoutMs: 60_000 },
+			),
+			waitForGraph(
+				() => getPromptRequests(account.address),
+				reqs => reqs.some(r => !r.isAnswered && !r.isCancelled && !r.isRefunded),
+				{ label: 'in-flight (unanswered) prompt request indexed', timeoutMs: 60_000 },
+			),
+		]);
 
 		// Fresh device B (empty IndexedDB, same wallet) syncs from chain and opens the conversation.
 		const deviceB = await openDevice(browser, account, openContexts);
