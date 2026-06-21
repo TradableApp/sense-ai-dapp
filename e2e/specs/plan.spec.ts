@@ -1,6 +1,8 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 import {
+	activatePlan,
+	approveABLE,
 	fundABLE,
 	getABLEBalance,
 	getAllowance,
@@ -138,6 +140,30 @@ test.describe('Spending plan management (T-PLAN)', () => {
 		// clears the spending limit — the user's ABLE balance is unchanged.
 		const balanceAfterCancel = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
 		expect(balanceAfterCancel).toBe(balanceBeforeCancel);
+	});
+
+	test('T-PLAN-14: Authorization Gap warning shows when the ERC-20 allowance drops below the plan limit', async ({
+		dashboardPage,
+	}) => {
+		// Activate a 10 ABLE plan directly on-chain (approve(escrow, 10) → setSpendingLimit(10)).
+		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, TEST_ACCOUNT.address, 10n ** 18n * 10n);
+		// Then drop the ERC-20 allowance BELOW the plan's remaining limit (10 → 5). In production this
+		// happens after cancellations/refunds (the allowance isn't credited back); here we reproduce it
+		// directly. Doing it BEFORE the first dashboard load means the very first useUsagePlan read
+		// already observes the gap — no dependence on a staleTime refetch.
+		await approveABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, ESCROW_ADDRESS, 10n ** 18n * 5n);
+
+		await dashboardPage.goto();
+		await dashboardPage.assertHasPlan();
+		// PlanStatusCard surfaces the always-visible allowance-gap panel and keeps "Manage Limit" as
+		// the re-sync CTA (allowanceGap = (allowance − spent) − realTokenAllowance = 10 − 0 − 5 = 5).
+		await expect(dashboardPage.authorizationGapWarning).toBeVisible({ timeout: 15_000 });
+		// This is the COMPLEMENT of T-PENDING-01 (pending → disabled): with no pending escrow the
+		// "Manage Limit" CTA must be clickable so the user can re-sync the allowance — assert it's
+		// enabled, not merely present (a bug disabling it while showing the gap would slip past a
+		// visibility-only check).
+		await expect(dashboardPage.managePlanButton).toBeVisible();
+		await expect(dashboardPage.managePlanButton).not.toBeDisabled();
 	});
 
 	test('T-PLAN-10: Cancel plan reverts dashboard to onboarding', async ({

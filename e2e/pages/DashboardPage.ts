@@ -48,9 +48,18 @@ export class DashboardPage {
 			.or(this.page.getByText('Spent', { exact: true }).locator('..').getByText(/ABLE/).first());
 	}
 
-	/** RecentActivityCard */
+	/** RecentActivityCard root (data-testid on the Card). Scope activity-row assertions to this so a
+	 *  label match is proven to live INSIDE the feed, not in some other layout/tooltip/aria node. */
 	get activityCard() {
-		return this.page.getByText(/recent activity/i).first();
+		return this.page.getByTestId('recent-activity-card');
+	}
+
+	/** PlanStatusCard's full-width allowance-gap warning panel, rendered whenever the on-chain
+	 *  ERC-20 allowance has fallen below the plan's remaining limit (e.g. after a cancellation/
+	 *  refund). The "Authorization Gap" heading itself lives in a hover tooltip; this always-rendered
+	 *  panel is the stable signal, so assert on it. */
+	get authorizationGapWarning() {
+		return this.page.getByText(/your wallet allowance is lower than your plan limit/i).first();
 	}
 
 	// ── Stuck-request / refund affordance (PlanStatusCard "Action Required" panel) ──
