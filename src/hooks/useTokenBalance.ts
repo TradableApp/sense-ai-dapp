@@ -24,14 +24,6 @@ export default function useTokenBalance(
 
 	const contractConfig = chainId ? CONTRACTS[chainId] : undefined;
 	const tokenAddress = contractConfig?.token?.address;
-	console.log(
-		'activeWallet',
-		activeWallet,
-		'contractConfig',
-		contractConfig,
-		'tokenAddress',
-		tokenAddress,
-	);
 
 	return useWalletBalance({
 		client,

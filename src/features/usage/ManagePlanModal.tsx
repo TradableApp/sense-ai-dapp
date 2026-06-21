@@ -252,7 +252,15 @@ export default function ManagePlanModal({
 
 			await Promise.all([
 				queryClient.invalidateQueries({ queryKey: ['usagePlan'], refetchType: 'all' }),
-				queryClient.invalidateQueries({ queryKey: ['tokenBalance'], refetchType: 'all' }),
+				queryClient.invalidateQueries({
+					// Real thirdweb wallet-balance key (not the dead ['tokenBalance'] literal — CU-86d3dvy2y).
+					queryKey: getTokenBalanceQueryKey(
+						chainId ?? 0,
+						activeWallet?.getAccount()?.address,
+						CONTRACTS[chainId ?? 0]?.token?.address,
+					),
+					refetchType: 'all',
+				}),
 			]);
 			onOpenChange(false);
 		},
@@ -312,7 +320,15 @@ export default function ManagePlanModal({
 
 			await Promise.all([
 				queryClient.invalidateQueries({ queryKey: ['usagePlan'], refetchType: 'all' }),
-				queryClient.invalidateQueries({ queryKey: ['tokenBalance'], refetchType: 'all' }),
+				queryClient.invalidateQueries({
+					// Real thirdweb wallet-balance key (not the dead ['tokenBalance'] literal — CU-86d3dvy2y).
+					queryKey: getTokenBalanceQueryKey(
+						chainId ?? 0,
+						activeWallet?.getAccount()?.address,
+						CONTRACTS[chainId ?? 0]?.token?.address,
+					),
+					refetchType: 'all',
+				}),
 			]);
 			onOpenChange(false);
 		},

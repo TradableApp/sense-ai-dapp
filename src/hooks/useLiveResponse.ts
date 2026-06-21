@@ -12,6 +12,7 @@ import { useAppSelector } from '@/store/hooks';
 import type { RootState } from '@/store/store';
 
 import { AGENT_EVENT_NAMES, deriveEvents, ESCROW_EVENT_NAMES } from './liveResponseEvents';
+import { getTokenBalanceQueryKey } from './useTokenBalance';
 
 interface AgentEventArgs {
 	user?: `0x${string}`;
@@ -100,6 +101,8 @@ export default function useLiveResponse() {
 	pendingAnswerRef.current = hasPendingAnswer(activeConversationMessages);
 
 	const contractConfig = chainId ? CONTRACTS[chainId] : undefined;
+	// The ABLE token address for this chain — the third component of the thirdweb wallet-balance key.
+	const tokenAddress = contractConfig?.token?.address;
 	const targetChain = chainId === deploymentChain.id ? deploymentChain : chain;
 
 	// Memoize contracts to prevent unnecessary re-initialization
@@ -175,7 +178,9 @@ export default function useLiveResponse() {
 	const keysToInvalidateRef = useRef(new Set<string>());
 	const resetBackoffRef = useRef(false);
 
-	const addInvalidationKey = useCallback((queryKey: (string | number | symbol)[]) => {
+	// `unknown[]` (not just primitives) so structured keys like the thirdweb wallet-balance key
+	// `['walletBalance', chainId, addr, { tokenAddress }]` are accepted; they round-trip via JSON.
+	const addInvalidationKey = useCallback((queryKey: unknown[]) => {
 		keysToInvalidateRef.current.add(JSON.stringify(queryKey));
 	}, []);
 
@@ -336,7 +341,7 @@ export default function useLiveResponse() {
 					eventName === 'MetadataUpdateRequested'
 				) {
 					addInvalidationKey(['usagePlan']);
-					addInvalidationKey(['tokenBalance']);
+					addInvalidationKey(getTokenBalanceQueryKey(chainId, ownerAddress, tokenAddress));
 					addInvalidationKey(['recentActivity']);
 					addInvalidationKey(['conversations']);
 					newWorkDetected = true;
@@ -418,7 +423,7 @@ export default function useLiveResponse() {
 					if (args.user?.toLowerCase() === ownerAddress.toLowerCase()) {
 						addInvalidationKey(['usagePlan']);
 						addInvalidationKey(['recentActivity']);
-						addInvalidationKey(['tokenBalance']);
+						addInvalidationKey(getTokenBalanceQueryKey(chainId, ownerAddress, tokenAddress));
 						newWorkDetected = true;
 					}
 				}
@@ -427,7 +432,7 @@ export default function useLiveResponse() {
 					if (args.user?.toLowerCase() === ownerAddress.toLowerCase()) {
 						addInvalidationKey(['stuckRequests']);
 						addInvalidationKey(['usagePlan']);
-						addInvalidationKey(['tokenBalance']);
+						addInvalidationKey(getTokenBalanceQueryKey(chainId, ownerAddress, tokenAddress));
 						addInvalidationKey(['recentActivity']);
 
 						// Only invalidate the chat if it's the one we are currently looking at
@@ -445,7 +450,7 @@ export default function useLiveResponse() {
 					if (stuckList.some(s => s.id === args.escrowId?.toString())) {
 						addInvalidationKey(['stuckRequests']);
 						addInvalidationKey(['usagePlan']);
-						addInvalidationKey(['tokenBalance']);
+						addInvalidationKey(getTokenBalanceQueryKey(chainId, ownerAddress, tokenAddress));
 						addInvalidationKey(['recentActivity']);
 
 						if (activeConversationId) {
@@ -472,6 +477,7 @@ export default function useLiveResponse() {
 		processSyncQueue,
 		queryClient,
 		sessionKey,
+		tokenAddress,
 	]);
 
 	// --- 6. Fallback poll for a pending answer ---
