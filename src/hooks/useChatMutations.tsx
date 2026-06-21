@@ -283,6 +283,26 @@ export function buildErrorHandler(
 }
 
 /**
+ * Query keys to invalidate after a token-costing transaction confirms (the `genericOnSuccess` path,
+ * hit by every chat mutation). The wallet-balance entry MUST be the real thirdweb key built by
+ * `getTokenBalanceQueryKey` — invalidating the literal `['tokenBalance']` is a silent no-op, since
+ * the balance query is keyed `['walletBalance', …]`, which left the balance stale after every prompt
+ * (CU-86d3dvy2y). Extra keys are each wrapped as their own single-element query key.
+ */
+export function postTxInvalidationKeys(
+	chainId: number | undefined,
+	address: string | undefined,
+	tokenAddress: string | undefined,
+	extraKeys: string[] = [],
+): unknown[][] {
+	return [
+		['usagePlan'],
+		getTokenBalanceQueryKey(chainId, address, tokenAddress),
+		...extraKeys.map(key => [key]),
+	];
+}
+
+/**
  * A centralized hook for managing all "write" transactions for chat and history.
  * It returns a collection of pre-configured `useMutation` hooks that components can use.
  */
@@ -374,16 +394,17 @@ export default function useChatMutations() {
 		}
 	};
 
-	// We invalidate 'usagePlan' (Allowance, Pending Count) and 'tokenBalance' (Wallet funds)
-	// immediately after a transaction confirms, as these live on-chain and update instantly.
-	// Graph data ('conversations', 'messages', 'stuckRequests') is handled by useLiveResponse.jsx
-	const genericOnSuccess = (queryKeysToInvalidate = []) => {
-		queryClient.invalidateQueries({ queryKey: ['usagePlan'] });
-		queryClient.invalidateQueries({ queryKey: ['tokenBalance'] });
-
-		queryKeysToInvalidate.forEach(key => {
-			queryClient.invalidateQueries({ queryKey: [key] });
-		});
+	// We invalidate 'usagePlan' (Allowance, Pending Count) and the wallet balance immediately after a
+	// transaction confirms, as these live on-chain and update instantly. Graph data ('conversations',
+	// 'messages', 'stuckRequests') is handled by useLiveResponse. The balance key MUST be the real
+	// ['walletBalance', …] key (postTxInvalidationKeys → getTokenBalanceQueryKey), not ['tokenBalance'].
+	const genericOnSuccess = (queryKeysToInvalidate: string[] = []) => {
+		postTxInvalidationKeys(
+			chainId,
+			activeAccount?.address,
+			CONTRACTS[chainId ?? 0]?.token?.address,
+			queryKeysToInvalidate,
+		).forEach(queryKey => queryClient.invalidateQueries({ queryKey }));
 	};
 
 	const genericOnError = buildErrorHandler(
