@@ -1,15 +1,19 @@
-import { type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { type BrowserContext } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
 import { buildMockWalletScript } from '../fixtures/mock-wallet';
+import { openDevice, parseAble } from '../helpers/devices';
 import { allocateFreshAccount } from '../helpers/fresh-account';
-import { getConversation, getConversations, waitForGraph } from '../helpers/graph';
-import { activatePlan, fundABLE, getABLEBalance, type HardhatAccount } from '../helpers/hardhat';
+import {
+	getConversation,
+	getConversations,
+	getPendingPayments,
+	waitForGraph,
+} from '../helpers/graph';
+import { activatePlan, fundABLE, getABLEBalance } from '../helpers/hardhat';
 import { AuthPage } from '../pages/AuthPage';
 import { ChatPage } from '../pages/ChatPage';
-import { DashboardPage } from '../pages/DashboardPage';
 import { HistoryPage } from '../pages/HistoryPage';
-import { PlanModal } from '../pages/PlanModal';
 
 declare global {
 	// eslint-disable-next-line no-unused-vars
@@ -26,47 +30,9 @@ const FAUCET_CREDIT = 10n ** 18n * 50n; // +50 ABLE
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node for the answer round-trip (set E2E_LOCAL_SERVICES=1)';
 
-/** Extracts the leading numeric amount from a displayed "<n> ABLE" string. */
-function parseAble(text: string): number {
-	const match = text.replace(/,/g, '').match(/\d+(\.\d+)?/);
-	return match ? Number(match[0]) : NaN;
-}
-
-interface Device {
-	page: Page;
-	chat: ChatPage;
-	history: HistoryPage;
-	dashboard: DashboardPage;
-	planModal: PlanModal;
-}
-
 // Every context opened in a test (via openDevice or directly) is registered here and closed in
 // afterEach — so a mid-test assertion failure can't leak a worker-scoped BrowserContext.
 const openContexts: BrowserContext[] = [];
-
-/**
- * Opens a brand-new "device" — a fresh BrowserContext (its own empty IndexedDB) whose mock wallet
- * impersonates `account`, then completes the real connect + session-key signature. Two devices on
- * the SAME account derive the SAME session key (SIGNATURE_MESSAGE is fixed and Hardhat signing is
- * deterministic), so device B can decrypt device A's data; two DIFFERENT accounts derive different
- * keys and query the subgraph under a different owner, so they stay isolated. The context is
- * registered for afterEach cleanup, so callers don't close it explicitly.
- */
-async function openDevice(browser: Browser, account: HardhatAccount): Promise<Device> {
-	const context = await browser.newContext();
-	openContexts.push(context);
-	await context.addInitScript(buildMockWalletScript(account));
-	const page = await context.newPage();
-	await page.goto('/');
-	await new AuthPage(page).connectAndSign();
-	return {
-		page,
-		chat: new ChatPage(page),
-		history: new HistoryPage(page),
-		dashboard: new DashboardPage(page),
-		planModal: new PlanModal(page),
-	};
-}
 
 // Multi-device / multi-wallet (audit Area 7). Two BrowserContexts (separate IndexedDB stores) prove
 // that the dApp's subgraph→IndexedDB sync is the real source of truth: a second device with the
@@ -91,7 +57,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 
 		// Device A creates a conversation (a unique marker so we can identify it on device B).
 		const marker = 'Quokkawump cross-device marker';
-		const deviceA = await openDevice(browser, account);
+		const deviceA = await openDevice(browser, account, openContexts);
 		await deviceA.chat.goto();
 		await deviceA.chat.sendPromptAndWaitForResponse(marker);
 
@@ -104,7 +70,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 
 		// Device B — a pristine context (empty IndexedDB) on the SAME wallet — never saw this
 		// conversation locally. Opening /history triggers the subgraph→IndexedDB sync.
-		const deviceB = await openDevice(browser, account);
+		const deviceB = await openDevice(browser, account, openContexts);
 		await deviceB.history.goto();
 
 		// B surfaces A's conversation (sync from chain) AND its title carries the marker — proving
@@ -126,7 +92,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		const accountA = await allocateFreshAccount();
 		await fundABLE(TOKEN_ADDRESS, accountA.address, PLAN_ALLOWANCE);
 		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, accountA.address, PLAN_ALLOWANCE);
-		const deviceA = await openDevice(browser, accountA);
+		const deviceA = await openDevice(browser, accountA, openContexts);
 		await deviceA.chat.goto();
 		await deviceA.chat.sendPromptAndWaitForResponse('Wallet A exclusive message');
 		await waitForGraph(
@@ -137,7 +103,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 
 		// Wallet B (a different account, no plan needed to view history) connects fresh.
 		const accountB = await allocateFreshAccount();
-		const deviceB = await openDevice(browser, accountB);
+		const deviceB = await openDevice(browser, accountB, openContexts);
 		await deviceB.history.goto();
 
 		// B's history is empty — the owner-scoped sync never surfaces wallet A's data, and B's
@@ -159,7 +125,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, account.address, PLAN_ALLOWANCE);
 
 		// Device A creates two conversations.
-		const deviceA = await openDevice(browser, account);
+		const deviceA = await openDevice(browser, account, openContexts);
 		await deviceA.chat.goto();
 		await deviceA.chat.sendPromptAndWaitForResponse('Alpha conversation on device A');
 		await deviceA.chat.startNewConversation();
@@ -183,7 +149,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		);
 
 		// A fresh device B (empty cache → syncs on first mount) sees BOTH conversations + the rename.
-		const deviceB = await openDevice(browser, account);
+		const deviceB = await openDevice(browser, account, openContexts);
 		await deviceB.history.goto();
 		await deviceB.history.assertConversationCount(2, { timeout: 30_000 });
 		await expect(deviceB.history.conversationItems.first()).toContainText('Renamed on device A', {
@@ -198,7 +164,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await fundABLE(TOKEN_ADDRESS, account.address, PLAN_ALLOWANCE);
 		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, account.address, PLAN_ALLOWANCE);
 
-		const deviceA = await openDevice(browser, account);
+		const deviceA = await openDevice(browser, account, openContexts);
 		await deviceA.chat.goto();
 		await deviceA.chat.sendPromptAndWaitForResponse('Gamma conversation to delete');
 		const convs = await waitForGraph(
@@ -220,7 +186,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		);
 
 		// A fresh device B syncs and HIDES the deleted conversation (it decrypts the deletion flag).
-		const deviceB = await openDevice(browser, account);
+		const deviceB = await openDevice(browser, account, openContexts);
 		await deviceB.history.goto();
 		await expect(deviceB.history.searchInput).toBeVisible({ timeout: 30_000 });
 		await deviceB.history.assertEmpty();
@@ -236,7 +202,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await fundABLE(TOKEN_ADDRESS, accountB.address, PLAN_ALLOWANCE);
 		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, accountB.address, PLAN_ALLOWANCE);
 
-		const deviceA = await openDevice(browser, accountA);
+		const deviceA = await openDevice(browser, accountA, openContexts);
 		await deviceA.chat.goto();
 		await deviceA.chat.sendPromptAndWaitForResponse('Wallet A only alpha');
 		await waitForGraph(
@@ -248,7 +214,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 			},
 		);
 
-		const deviceB = await openDevice(browser, accountB);
+		const deviceB = await openDevice(browser, accountB, openContexts);
 		await deviceB.chat.goto();
 		await deviceB.chat.sendPromptAndWaitForResponse('Wallet B only bravo');
 		await waitForGraph(
@@ -280,7 +246,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, account.address, PLAN_ALLOWANCE);
 
 		// Device A spends from the shared on-chain balance/allowance by sending a prompt.
-		const deviceA = await openDevice(browser, account);
+		const deviceA = await openDevice(browser, account, openContexts);
 		await deviceA.chat.goto();
 		await deviceA.chat.sendPromptAndWaitForResponse('Device A spends from the shared wallet');
 		await waitForGraph(
@@ -299,7 +265,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		const onChainAble = Number(await getABLEBalance(TOKEN_ADDRESS, account.address)) / 1e18;
 
 		// A fresh device B reads the SAME shared state.
-		const deviceB = await openDevice(browser, account);
+		const deviceB = await openDevice(browser, account, openContexts);
 
 		// The spent allowance is visible on B's dashboard (non-zero after A's prompt) — so B cannot
 		// re-spend what A already spent against the single on-chain spending limit.
@@ -359,5 +325,64 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await expect(history.searchInput).toBeVisible({ timeout: 30_000 });
 		await history.assertEmpty();
 		await expect(page.getByText('Wallet A private message')).toHaveCount(0);
+	});
+
+	// Area 13 — cross-device recovery of an IN-FLIGHT (unanswered) prompt. When a prompt is submitted
+	// but not yet answered, the subgraph holds a PromptRequest (isAnswered:false) but no answer Message
+	// and (for a follow-up) no new Conversation. syncService reconstructs that unanswered request as a
+	// status:'pending' user message from its decrypted on-chain payload (syncService.ts ~446) — so a
+	// fresh device of the same wallet recovers the in-flight prompt rather than losing it.
+	//
+	// SCOPE NOTE: this asserts the prompt itself is recovered + visible. It deliberately does NOT assert
+	// a pending-answer "Thinking…" indicator on the fresh device — that placeholder is an optimistic
+	// artifact of the SENDING device only (isAiThinking needs an assistant message with content===null,
+	// Chat.tsx:572), so a fresh device shows the recovered prompt with no "awaiting answer" cue. That
+	// missing cross-device pending indicator is a minor by-design UX gap (tracked alongside the
+	// realtime/multi-device freshness work, CU-86d3dvxdy / ADR-0005), not a data-loss bug.
+	test('T-RECOVER-01: a fresh device recovers an in-flight (unanswered) prompt from the subgraph', async ({
+		browser,
+	}) => {
+		const account = await allocateFreshAccount();
+		await fundABLE(TOKEN_ADDRESS, account.address, PLAN_ALLOWANCE);
+		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, account.address, PLAN_ALLOWANCE);
+
+		// Device A: first an ANSWERED prompt so the Conversation entity exists (ConversationAdded fires
+		// only on the first answer — a never-answered first prompt would have no Conversation to sync),
+		// then a follow-up the oracle never answers (__E2E_DROP__) → a PENDING PromptRequest.
+		const answeredMarker = 'Quokkawump answered base prompt';
+		const pendingMarker = 'Zephyrium in-flight follow-up prompt';
+		const deviceA = await openDevice(browser, account, openContexts);
+		await deviceA.chat.goto();
+		await deviceA.chat.sendPromptAndWaitForResponse(answeredMarker);
+		await deviceA.chat.sendDroppedPrompt(pendingMarker);
+
+		// Both must be indexed before device B syncs: the conversation (from the answer) and the
+		// follow-up's still-PENDING payment (its unanswered PromptRequest).
+		await waitForGraph(
+			() => getConversations(account.address),
+			convs => convs.length === 1,
+			{ label: 'conversation indexed', timeoutMs: 60_000 },
+		);
+		await waitForGraph(
+			() => getPendingPayments(account.address),
+			payments => payments.length >= 1,
+			{ label: 'pending (in-flight) prompt indexed', timeoutMs: 60_000 },
+		);
+
+		// Fresh device B (empty IndexedDB, same wallet) syncs from chain and opens the conversation.
+		const deviceB = await openDevice(browser, account, openContexts);
+		await deviceB.history.goto();
+		await deviceB.history.assertConversationCount(1, { timeout: 30_000 });
+		await deviceB.history.clickConversation(0);
+
+		// B recovered BOTH the answered exchange AND the in-flight follow-up prompt — the latter rebuilt
+		// from the unanswered PromptRequest (decrypted with the shared session key), so an in-flight
+		// prompt is never lost when the user moves to another device.
+		await expect(deviceB.chat.userMessages.filter({ hasText: answeredMarker })).toHaveCount(1, {
+			timeout: 15_000,
+		});
+		await expect(deviceB.chat.userMessages.filter({ hasText: pendingMarker })).toHaveCount(1, {
+			timeout: 15_000,
+		});
 	});
 });

@@ -121,3 +121,22 @@ The multi-device e2e suite (CU-86d3bawhh) is the Phase-1 regression safety net, 
 invalidation lands, the "live convergence on an already-open device" case also becomes cleanly
 testable (today it is verified by opening a fresh device, since a fetched query only re-syncs on its
 5-minute poll).
+
+### Current behaviour confirmed by e2e (2026-06-21, [CU-86d3dvxdy](https://app.clickup.com/t/86d3dvxdy))
+
+The e2e Area-11 work tried to assert live convergence on an *idle* second device and confirmed it is
+not reliable today, with a sharper edge than the "5-minute lag" framing above:
+
+- The existing `useLiveResponse` event path *is* eligible to update an idle device (the same-wallet
+  gate `args.user === ownerAddress` passes for a second device of the same wallet), but live delivery
+  rides `useContractEvents({ watch:true, useIndexer:false })`, whose RPC filters "intermittently miss
+  events" (the hook's own comment, wevm/wagmi#3883). The only backstop — the effect-6 fallback poll —
+  is gated on `activeConversationId && pendingAnswerRef.current`, so it helps **only** a device
+  awaiting its **own** answer in the open conversation, never a passive observer.
+- Consequence for an idle device: `['conversations']` still reconverges on its 5-min `refetchInterval`,
+  but **`['usagePlan']` has no `refetchInterval` at all** (60s `staleTime` + `refetchOnWindowFocus`
+  only) — so a missed event leaves usage/spent stale **until window-focus or remount**, not merely for
+  5 minutes. Phase 1 should give `usagePlan` a bounded background poll (or rely on the new robust event
+  layer) independent of active-conversation pending state.
+- The desired behaviour is encoded as `test.fixme` `T-LIVE-01`/`T-LIVE-02` in
+  `e2e/specs/live-sync.spec.ts` — un-fixme when Phase 1 lands.
