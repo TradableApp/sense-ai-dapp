@@ -856,7 +856,7 @@ export default function Chat() {
 												hidden={!hasReasoning}
 												reasoningSteps={
 													message.reasoning && Array.isArray(message.reasoning)
-														? (message.reasoning as any)
+														? message.reasoning
 														: undefined
 												}
 												sources={
