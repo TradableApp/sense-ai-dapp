@@ -29,7 +29,8 @@ let reqId = 1;
 // history + plan claims one (via helpers/fresh-account.ts) so its on-chain state
 // never collides with another test's. The pool is derived rather than hardcoded
 // because a full serial run plus retry-spawned workers can consume more than the
-// node's 20 prefunded accounts; indices ≥ 20 hold no ETH until the
+// node's 20 prefunded accounts (a full run with retries burned through 58);
+// indices ≥ 20 hold no ETH until the
 // freshUserAccount fixture tops them up via hardhat_setBalance at claim time.
 // PUBLIC Hardhat test keys — NEVER use on any real network.
 export interface HardhatAccount {
@@ -39,7 +40,7 @@ export interface HardhatAccount {
 
 const HARDHAT_MNEMONIC = 'test test test test test test test test test test test junk';
 const FRESH_POOL_FIRST_INDEX = 2;
-const FRESH_POOL_LAST_INDEX = 59;
+const FRESH_POOL_LAST_INDEX = 249;
 
 export const FRESH_TEST_ACCOUNTS: readonly HardhatAccount[] = Array.from(
 	{ length: FRESH_POOL_LAST_INDEX - FRESH_POOL_FIRST_INDEX + 1 },

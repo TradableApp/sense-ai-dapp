@@ -52,14 +52,43 @@ async function withCounterLock<T>(fn: () => T): Promise<T> {
 	}
 }
 
+const CHAIN_FILE = `${COUNTER_FILE}.chain`;
+
 /**
- * Reset the allocator to the start of the fresh-account pool. Call ONCE per run
- * (global-setup) so a stale counter from a previous run can't immediately exhaust
- * the pool or skip accounts.
+ * Prepare the allocator for a run. Called ONCE per run (global-setup).
+ *
+ * "Fresh" means fresh ON THIS CHAIN, not fresh per run: accounts claimed by an
+ * earlier run against the SAME localnet still own their on-chain conversations,
+ * and re-issuing them breaks specs that assert exact per-account state (e.g.
+ * T-BRANCH-06/07's conversation counts). So the counter resets to 0 only when
+ * the chain's genesis hash changes (stack was restarted with a fresh chain);
+ * on the same chain the counter continues where the previous run stopped and
+ * simply consumes further into the 2..249 pool. A crashed run's stale lock is
+ * always cleared.
  */
-export function resetFreshAccountAllocator(): void {
+export async function resetFreshAccountAllocator(): Promise<void> {
 	fs.mkdirSync(path.dirname(COUNTER_FILE), { recursive: true });
-	fs.writeFileSync(COUNTER_FILE, '0', 'utf8');
+	let genesisHash = 'unknown';
+	try {
+		const res = await fetch('http://127.0.0.1:8545', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				jsonrpc: '2.0',
+				id: 1,
+				method: 'eth_getBlockByNumber',
+				params: ['0x0', false],
+			}),
+		});
+		genesisHash = ((await res.json()) as { result?: { hash?: string } }).result?.hash ?? 'unknown';
+	} catch {
+		// Node unreachable (e.g. E2E_LOCAL_SERVICES unset) — treat as a new chain.
+	}
+	const priorChain = fs.existsSync(CHAIN_FILE) ? fs.readFileSync(CHAIN_FILE, 'utf8').trim() : '';
+	if (genesisHash === 'unknown' || priorChain !== genesisHash || !fs.existsSync(COUNTER_FILE)) {
+		fs.writeFileSync(COUNTER_FILE, '0', 'utf8');
+	}
+	fs.writeFileSync(CHAIN_FILE, genesisHash, 'utf8');
 	try {
 		fs.rmdirSync(LOCK_DIR);
 	} catch {

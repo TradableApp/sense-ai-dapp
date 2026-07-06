@@ -7,8 +7,15 @@ work tracked in **CU-86d3bawhh**.
 The stack (`sense-ai-e2e/scripts/start-e2e.sh`) brings up: Hardhat (31337) → contracts → oracle
 keypair → config/ABI sync → Graph node (Docker) → subgraph deploy → oracle (mocked AI + storage) →
 local IPFS gateway. Playwright auto-starts the dApp (`:3002`). Localnet runs **serial**
-(`workers:1`) and assumes a **fresh stack per run** (the fresh-account allocator resets to acct 2
-each run; re-running on a used chain reverts `setSpendingLimit` `0x9d4f9794`).
+(`workers:1`). The fresh-account allocator is **chain-aware**: the
+counter resets to acct 2 only when the localnet's genesis hash changes (fresh stack); re-running on
+the same live chain continues deeper into the pool so "fresh" accounts never carry prior-run state
+(conversations, plans). The pool is derived from Hardhat's well-known mnemonic (indices 2..249,
+`e2e/helpers/hardhat.ts`) and each claim is ETH-topped-up via `hardhat_setBalance` — indices ≥ 20
+are beyond the node's 20 prefunded accounts. Sizing note: Playwright retries spawn new workers and
+each burns an account, so a full serial run consumes far more than the test count (58+ observed).
+The mock wallet pre-seeds `consentSettings` so the cookie banner never gates tests; the consent
+specs themselves (T-UI-16..18) opt out via `injectMockWallet(page, { seedConsent: false })`.
 
 ## Layers an e2e test can observe
 

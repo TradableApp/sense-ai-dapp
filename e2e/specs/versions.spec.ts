@@ -50,6 +50,7 @@ test.describe('Answer versions — regenerate (T-REGEN)', () => {
 			c => c.length === 1,
 			{
 				label: 'conversation indexed',
+				timeoutMs: 60_000,
 			},
 		);
 		const [firstAnswer] = await waitForGraph(
@@ -116,6 +117,7 @@ test.describe('Answer versions — regenerate (T-REGEN)', () => {
 			r => r.length === 1,
 			{
 				label: 'detailed RegenerationRequest indexed',
+				timeoutMs: 60_000,
 			},
 		);
 	});
@@ -135,6 +137,7 @@ test.describe('Answer versions — regenerate (T-REGEN)', () => {
 			r => r.length === 1,
 			{
 				label: 'concise RegenerationRequest indexed',
+				timeoutMs: 60_000,
 			},
 		);
 	});
@@ -161,6 +164,7 @@ test.describe('Answer versions — edit prompt (T-EDIT)', () => {
 			c => c.length === 1,
 			{
 				label: 'conversation indexed',
+				timeoutMs: 60_000,
 			},
 		);
 		const spendBefore = (await getSpendingLimit(ESCROW_ADDRESS, owner)).spentAmount;

@@ -63,9 +63,12 @@ export function buildMockWalletScript(account: { address: string } = TEST_ACCOUN
 
   // Pre-seed cookie consent so the consent dialog (shown when
   // localStorage.consentSettings === null) never appears and gates the page /
-  // blocks the ThirdWeb connect modal during E2E.
+  // blocks the ThirdWeb connect modal during E2E. The consent specs themselves
+  // (T-UI-16..18) opt out via injectMockWallet(page, { seedConsent: false }) —
+  // this seeding runs AFTER any spec-level localStorage.clear() init script and
+  // would otherwise make the banner untestable.
   try {
-    if (window.localStorage.getItem('consentSettings') === null) {
+    if (window.__SEED_CONSENT__ !== false && window.localStorage.getItem('consentSettings') === null) {
       window.localStorage.setItem(
         'consentSettings',
         JSON.stringify({ analytics_storage: true, ad_storage: true, personalization_storage: true }),
@@ -229,7 +232,13 @@ export const MOCK_WALLET_SCRIPT = buildMockWalletScript();
  * Injects the mock wallet into a Playwright Page before navigation.
  * Call this in test setup or a fixture before `page.goto()`.
  */
-export async function injectMockWallet(page: Page): Promise<void> {
+export async function injectMockWallet(
+	page: Page,
+	opts?: { seedConsent?: boolean },
+): Promise<void> {
+	if (opts?.seedConsent === false) {
+		await page.addInitScript('window.__SEED_CONSENT__ = false;');
+	}
 	await page.addInitScript(MOCK_WALLET_SCRIPT);
 }
 

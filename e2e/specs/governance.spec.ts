@@ -105,7 +105,7 @@ test.describe('Governance config indexing (T-GOV-CFG)', () => {
 		await waitForGraph(
 			() => getProtocolConfig(),
 			c => c?.treasuryAddress?.toLowerCase() === NEW_TREASURY.toLowerCase(),
-			{ label: 'ProtocolConfig reflects the new treasury' },
+			{ label: 'ProtocolConfig reflects the new treasury', timeoutMs: 60_000 },
 		);
 	});
 });

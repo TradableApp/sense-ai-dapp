@@ -267,7 +267,7 @@ test.describe('Accessibility basics', () => {
 test.describe('Consent banner', () => {
 	test('T-UI-16: Cookie consent banner appears on first visit', async ({ page }) => {
 		await page.addInitScript(() => localStorage.clear());
-		await injectMockWallet(page);
+		await injectMockWallet(page, { seedConsent: false });
 		await page.goto('/auth');
 
 		await expect(page.getByText('Cookie Settings')).toBeVisible({ timeout: 10_000 });
@@ -275,7 +275,7 @@ test.describe('Consent banner', () => {
 
 	test('T-UI-17: Accepting consent dismisses the banner', async ({ page }) => {
 		await page.addInitScript(() => localStorage.clear());
-		await injectMockWallet(page);
+		await injectMockWallet(page, { seedConsent: false });
 		await page.goto('/auth');
 
 		const banner = page.getByText('Cookie Settings');
@@ -300,7 +300,7 @@ test.describe('Consent banner', () => {
 					w.__consentTestInitDone = true;
 				}
 			});
-			await injectMockWallet(page);
+			await injectMockWallet(page, { seedConsent: false });
 			await page.goto('/auth');
 
 			const acceptButton = page.getByRole('button', { name: /accept all/i });
