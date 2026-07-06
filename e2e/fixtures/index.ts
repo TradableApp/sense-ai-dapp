@@ -5,7 +5,7 @@ import { test as base, type BrowserContext, type Page } from '@playwright/test';
 import { injectMockWalletIntoContext } from './mock-wallet';
 import { createWalletContext } from '../helpers/devices';
 import { allocateFreshAccount } from '../helpers/fresh-account';
-import { enableFreshAccount, type HardhatAccount } from '../helpers/hardhat';
+import { type HardhatAccount } from '../helpers/hardhat';
 import { AuthPage } from '../pages/AuthPage';
 import { ChatPage } from '../pages/ChatPage';
 import { DashboardPage } from '../pages/DashboardPage';
@@ -123,10 +123,9 @@ export const test = base.extend<SenseAIFixtures>({
 	 */
 	// eslint-disable-next-line no-empty-pattern
 	freshUserAccount: async ({}, use) => {
+		// allocateFreshAccount provisions the account at claim time (balance +
+		// impersonation) — provisioning lives in exactly one place.
 		const account = await allocateFreshAccount();
-		// Pool indices ≥ 20 exceed the node's 20 managed accounts — unconditionally
-		// (idempotent, dev node only) fund them AND impersonate so eth_sendTransaction works.
-		await enableFreshAccount(account.address, 10_000n * 10n ** 18n);
 		await use(account);
 	},
 

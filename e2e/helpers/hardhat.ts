@@ -24,14 +24,15 @@ let reqId = 1;
 // ── Per-test fresh accounts ───────────────────────────────────────────────────
 // Hardhat's deterministic dev accounts (mnemonic "test test … junk"). Account 0
 // is the deployer/oracle and account 1 is the legacy shared user (see
-// mock-wallet.ts) — both are RESERVED. Indices 2..59 are derived from the
+// mock-wallet.ts) — both are RESERVED. Indices 2..249 are derived from the
 // mnemonic for per-test "fresh user" isolation: a test that needs a pristine
 // history + plan claims one (via helpers/fresh-account.ts) so its on-chain state
 // never collides with another test's. The pool is derived rather than hardcoded
 // because a full serial run plus retry-spawned workers can consume more than the
-// node's 20 prefunded accounts (a full run with retries burned through 58);
-// indices ≥ 20 hold no ETH until the
-// freshUserAccount fixture tops them up via hardhat_setBalance at claim time.
+// node's 20 prefunded accounts (a full run with retries burned through 58).
+// allocateFreshAccount provisions every claim via enableFreshAccount
+// (hardhat_setBalance + hardhat_impersonateAccount) — indices ≥ 20 are unusable
+// without it.
 // PUBLIC Hardhat test keys — NEVER use on any real network.
 export interface HardhatAccount {
 	address: string;

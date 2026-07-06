@@ -65,7 +65,10 @@ test.describe('Graph — subgraph data layer (T-GRAPH)', () => {
 		// validity, not a specific transient status.
 		const payments = await getPayments(TEST_ACCOUNT.address);
 		expect(payments.length).toBeGreaterThan(0);
-		expect(['PENDING', 'COMPLETE']).toContain(payments[0].status);
+		// getPayments is unordered — assert SOME payment is in a valid lifecycle
+		// state rather than indexing [0], which the subgraph may fill with an
+		// older entity for this shared account.
+		expect(payments.some(pay => ['PENDING', 'COMPLETE'].includes(pay.status))).toBe(true);
 	});
 
 	test('T-GRAPH-03: Subgraph data matches UI conversation list', async ({

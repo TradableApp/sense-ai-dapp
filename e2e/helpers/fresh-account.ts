@@ -68,27 +68,40 @@ const CHAIN_FILE = `${COUNTER_FILE}.chain`;
  */
 export async function resetFreshAccountAllocator(): Promise<void> {
 	fs.mkdirSync(path.dirname(COUNTER_FILE), { recursive: true });
-	let genesisHash = 'unknown';
-	try {
-		const res = await fetch('http://127.0.0.1:8545', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				jsonrpc: '2.0',
-				id: 1,
-				method: 'eth_getBlockByNumber',
-				params: ['0x0', false],
-			}),
-		});
-		genesisHash = ((await res.json()) as { result?: { hash?: string } }).result?.hash ?? 'unknown';
-	} catch {
-		// Node unreachable (e.g. E2E_LOCAL_SERVICES unset) — treat as a new chain.
+	// Small retry: this runs early in global-setup and Hardhat may be up but not
+	// yet accepting connections. A transient failure must NOT look like a new
+	// chain — resetting the counter on a live, used chain re-issues accounts and
+	// reintroduces the exact cross-test state collisions this allocator prevents.
+	let genesisHash: string | null = null;
+	for (let attempt = 0; attempt < 3 && genesisHash === null; attempt += 1) {
+		try {
+			const res = await fetch('http://127.0.0.1:8545', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					jsonrpc: '2.0',
+					id: 1,
+					method: 'eth_getBlockByNumber',
+					params: ['0x0', false],
+				}),
+			});
+			genesisHash = ((await res.json()) as { result?: { hash?: string } }).result?.hash ?? null;
+		} catch {
+			await new Promise(r => setTimeout(r, 1_000));
+		}
 	}
-	const priorChain = fs.existsSync(CHAIN_FILE) ? fs.readFileSync(CHAIN_FILE, 'utf8').trim() : '';
-	if (genesisHash === 'unknown' || priorChain !== genesisHash || !fs.existsSync(COUNTER_FILE)) {
-		fs.writeFileSync(COUNTER_FILE, '0', 'utf8');
+	if (genesisHash === null) {
+		// Node unreachable (E2E_LOCAL_SERVICES unset, or genuinely down — later
+		// checks report that loudly). FAIL SAFE: keep the existing counter so a
+		// transient outage can only waste pool depth, never reuse an account.
+		if (!fs.existsSync(COUNTER_FILE)) fs.writeFileSync(COUNTER_FILE, '0', 'utf8');
+	} else {
+		const priorChain = fs.existsSync(CHAIN_FILE) ? fs.readFileSync(CHAIN_FILE, 'utf8').trim() : '';
+		if (priorChain !== genesisHash || !fs.existsSync(COUNTER_FILE)) {
+			fs.writeFileSync(COUNTER_FILE, '0', 'utf8');
+		}
+		fs.writeFileSync(CHAIN_FILE, genesisHash, 'utf8');
 	}
-	fs.writeFileSync(CHAIN_FILE, genesisHash, 'utf8');
 	try {
 		fs.rmdirSync(LOCK_DIR);
 	} catch {
