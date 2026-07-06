@@ -2,9 +2,10 @@ import { fileURLToPath } from 'url';
 
 import { test as base, type BrowserContext, type Page } from '@playwright/test';
 
-import { buildMockWalletScript, injectMockWalletIntoContext } from './mock-wallet';
+import { injectMockWalletIntoContext } from './mock-wallet';
+import { createWalletContext } from '../helpers/devices';
 import { allocateFreshAccount } from '../helpers/fresh-account';
-import { type HardhatAccount, setBalance } from '../helpers/hardhat';
+import { enableFreshAccount, type HardhatAccount } from '../helpers/hardhat';
 import { AuthPage } from '../pages/AuthPage';
 import { ChatPage } from '../pages/ChatPage';
 import { DashboardPage } from '../pages/DashboardPage';
@@ -123,9 +124,9 @@ export const test = base.extend<SenseAIFixtures>({
 	// eslint-disable-next-line no-empty-pattern
 	freshUserAccount: async ({}, use) => {
 		const account = await allocateFreshAccount();
-		// Pool indices ≥ 20 exceed the node's prefunded range — top up unconditionally
-		// (idempotent, dev node only) so every fresh account can pay gas.
-		await setBalance(account.address, 10_000n * 10n ** 18n);
+		// Pool indices ≥ 20 exceed the node's 20 managed accounts — unconditionally
+		// (idempotent, dev node only) fund them AND impersonate so eth_sendTransaction works.
+		await enableFreshAccount(account.address, 10_000n * 10n ** 18n);
 		await use(account);
 	},
 
@@ -134,8 +135,8 @@ export const test = base.extend<SenseAIFixtures>({
 	 * claimed account — so the page must perform a real mid-session connect.
 	 */
 	freshContext: async ({ browser, freshUserAccount }, use) => {
-		const context = await browser.newContext();
-		await context.addInitScript(buildMockWalletScript(freshUserAccount));
+		// Shared provisioned-context creation — see helpers/devices.ts.
+		const context = await createWalletContext(browser, freshUserAccount);
 		await use(context);
 		await context.close();
 	},

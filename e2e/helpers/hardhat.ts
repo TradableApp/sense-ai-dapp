@@ -76,10 +76,14 @@ export async function getBalance(address: string): Promise<bigint> {
 	return BigInt(hex);
 }
 
-/** Dev-node only: prefund an account (hardhat_setBalance). Fresh-pool indices ≥ 20
- *  are not covered by the node's default 20 prefunded accounts. */
-export async function setBalance(address: string, wei: bigint): Promise<void> {
+/** Dev-node only: make a derived fresh-pool account fully usable. Indices ≥ 20 are
+ *  outside the node's default 20 managed accounts, so they need BOTH an ETH balance
+ *  (hardhat_setBalance) AND node-side signing rights (hardhat_impersonateAccount —
+ *  the mock wallet submits via eth_sendTransaction, which only works for accounts
+ *  the node manages or impersonates; without it: "Unknown account 0x…"). */
+export async function enableFreshAccount(address: string, wei: bigint): Promise<void> {
 	await rpc('hardhat_setBalance', [address, toHex(wei)]);
+	await rpc('hardhat_impersonateAccount', [address]);
 }
 
 export async function mineBlocks(count: number): Promise<void> {
@@ -95,9 +99,56 @@ export async function takeSnapshot(): Promise<string> {
 	return (await rpc('evm_snapshot')) as string;
 }
 
-export async function revertToSnapshot(snapshotId: string): Promise<void> {
-	await rpc('evm_revert', [snapshotId]);
+/** Poll the local subgraph's _meta head until it reaches `target` (or timeout).
+ *  Tolerant: resolves silently if the graph endpoint is unavailable, so
+ *  revert-users don't break in graph-less contexts. */
+async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		try {
+			const res = await fetch('http://localhost:8000/subgraphs/name/sense-ai', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ query: '{_meta{block{number}}}' }),
+			});
+			const body = (await res.json()) as { data?: { _meta?: { block?: { number?: number } } } };
+			const head = body.data?._meta?.block?.number;
+			if (typeof head !== 'number') return; // graph up but no meta — don't block
+			if (head >= target) return;
+		} catch {
+			return; // graph not reachable — nothing to wait for
+		}
+		await new Promise(r => setTimeout(r, 500));
+	}
+	throw new Error(
+		`revertToSnapshot: subgraph did not re-sync to block ${target} within ${timeoutMs}ms — ` +
+			'graph-node reorg backlog; see LOCALNET_SETUP troubleshooting.',
+	);
 }
+
+export async function revertToSnapshot(snapshotId: string): Promise<void> {
+	// evm_revert rewinds the CHAIN but not graph-node: its high-water mark stays at
+	// the orphaned timeline's head, so waitForIndexing() no-ops (already "past" the
+	// target block) and entities from the new timeline never index — every graph
+	// assertion after a bare revert reads PHANTOM pre-revert state. Mine the new
+	// timeline past the old head so graph-node detects the longer canonical chain
+	// and reorgs onto it.
+	const preRevertHead = await getBlockNumber();
+	await rpc('evm_revert', [snapshotId]);
+	const postRevertHead = await getBlockNumber();
+	if (preRevertHead > postRevertHead) {
+		await mineBlocks(preRevertHead - postRevertHead + 2);
+		// …and WAIT for graph-node to unwind + re-sync before the next test runs.
+		// Its reorg machinery processes one block per operation: dozens of
+		// unawaited mini-reorgs queue into an hours-long backlog that strands the
+		// subgraph far behind the chain (observed: 66 blocks), after which answer
+		// hydration — which reads through the subgraph — silently dies suite-wide.
+		// Serializing here keeps each unwind small (seconds) and the subgraph
+		// current for every later spec. Skipped gracefully if the graph isn't up.
+		await waitForGraphHead(await getBlockNumber());
+	}
+}
+
 
 export async function isHardhatRunning(): Promise<boolean> {
 	try {
@@ -184,6 +235,22 @@ export async function fundABLE(
 	toAddress: string,
 	amount: bigint,
 ): Promise<void> {
+	// The deployer's ABLE supply is finite PER CHAIN: every fresh-account claim
+	// transfers some away, and heavy live-chain rerunning can drain it to zero.
+	// When that happens plan activation fails silently and specs die with an
+	// opaque "composer not found" — fail loudly at the source instead.
+	const balData = `0x70a08231${  padAddress(DEPLOYER_ADDRESS).slice(2)}`;
+	const balHex = (await rpc('eth_call', [
+		{ to: tokenAddress, data: balData },
+		'latest',
+	])) as string;
+	if (BigInt(balHex) < amount) {
+		throw new Error(
+			`fundABLE: deployer ABLE depleted (${BigInt(balHex)} < ${amount}). ` +
+				'The chain has been reused past its token supply — restart the stack ' +
+				'(sense-ai-e2e: stop-e2e.sh + start-e2e.sh) for a fresh chain.',
+		);
+	}
 	const data = TRANSFER_SELECTOR + padAddress(toAddress).slice(2) + padUint(amount);
 	const txHash = (await rpc('eth_sendTransaction', [
 		{ from: DEPLOYER_ADDRESS, to: tokenAddress, data },

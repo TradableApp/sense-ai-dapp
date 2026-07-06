@@ -11,11 +11,26 @@ local IPFS gateway. Playwright auto-starts the dApp (`:3002`). Localnet runs **s
 counter resets to acct 2 only when the localnet's genesis hash changes (fresh stack); re-running on
 the same live chain continues deeper into the pool so "fresh" accounts never carry prior-run state
 (conversations, plans). The pool is derived from Hardhat's well-known mnemonic (indices 2..249,
-`e2e/helpers/hardhat.ts`) and each claim is ETH-topped-up via `hardhat_setBalance` — indices ≥ 20
-are beyond the node's 20 prefunded accounts. Sizing note: Playwright retries spawn new workers and
+`e2e/helpers/hardhat.ts`) and each claim runs `enableFreshAccount`: `hardhat_setBalance` (gas) +
+`hardhat_impersonateAccount` (node-side signing — the mock wallet uses `eth_sendTransaction`, which
+fails with "Unknown account" for unimpersonated addresses beyond the node's 20 managed accounts).
+Both are dev-node built-ins; no node or hardhat config is involved. Sizing note: Playwright retries spawn new workers and
 each burns an account, so a full serial run consumes far more than the test count (58+ observed).
 The mock wallet pre-seeds `consentSettings` so the cookie banner never gates tests; the consent
 specs themselves (T-UI-16..18) opt out via `injectMockWallet(page, { seedConsent: false })`.
+
+**Derived-account provisioning** happens automatically at allocation (`allocateFreshAccount` →
+`enableFreshAccount`: `hardhat_setBalance` + `hardhat_impersonateAccount`) and at context creation
+(`createWalletContext`: a Node-side `personal_sign` bridge — impersonation covers transactions
+ONLY, so session-key derivation needs local signing). Both are single-source-of-truth helpers used
+by the fixtures AND `openDevice`; specs never provision manually.
+
+**Full-suite runs are SHARDED** (`sense-ai-e2e/scripts/run-e2e-sharded.sh`): snapshot-revert
+mini-reorgs age graph-node's indexing over a long single-chain run until answer hydration dies for
+late-slot projects (see LOCALNET_SETUP troubleshooting). `revertToSnapshot` mines past the orphaned
+head and waits for subgraph re-sync (which is why snapshot-using projects carry 120s test budgets),
+but chains older than ~45-60 min remain unreliable — the sharded runner keeps every chain young
+while executing all 23 spec files.
 
 ## Layers an e2e test can observe
 

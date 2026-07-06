@@ -95,7 +95,7 @@ test.describe('Governance config indexing (T-GOV-CFG)', () => {
 				c?.branchFee === String(branchFee) &&
 				c?.cancellationFee === String(cancellationFee) &&
 				c?.metadataUpdateFee === String(metadataUpdateFee),
-			{ label: 'FeeConfig reflects all four fees' },
+			{ label: 'FeeConfig reflects all four fees', timeoutMs: 60_000 },
 		);
 	});
 

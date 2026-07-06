@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { FRESH_TEST_ACCOUNTS, type HardhatAccount } from './hardhat';
+import { enableFreshAccount, FRESH_TEST_ACCOUNTS, type HardhatAccount } from './hardhat';
 
 /**
  * Per-test fresh-account allocator.
@@ -120,5 +120,12 @@ export async function allocateFreshAccount(): Promise<HardhatAccount> {
 		}
 		fs.writeFileSync(COUNTER_FILE, String(next + 1), 'utf8');
 		return FRESH_TEST_ACCOUNTS[next];
+	}).then(async account => {
+		// Provision AT ALLOCATION (outside the sync counter lock) so no caller can
+		// hold an unusable account: derived indices (≥ 20) have no ETH and are
+		// unknown to the node — they need a balance and
+		// hardhat_impersonateAccount before any transaction.
+		await enableFreshAccount(account.address, 10_000n * 10n ** 18n);
+		return account;
 	});
 }

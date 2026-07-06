@@ -142,6 +142,12 @@ export function buildMockWalletScript(account: { address: string } = TEST_ACCOUN
           if (typeof window.__mockSignDelayMs === 'number' && window.__mockSignDelayMs > 0) {
             await new Promise(r => setTimeout(r, window.__mockSignDelayMs));
           }
+          // Fresh contexts expose a Node-side signer binding: derived pool
+          // accounts (indices ≥ 20) are unknown to the node (impersonation
+          // covers transactions only), so node-side personal_sign would fail.
+          if (typeof window.__mockPersonalSign === 'function') {
+            return window.__mockPersonalSign(message);
+          }
           return rpc('personal_sign', [message, address || ACCOUNT]);
         }
 
