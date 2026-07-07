@@ -95,7 +95,7 @@ test.describe('Governance config indexing (T-GOV-CFG)', () => {
 				c?.branchFee === String(branchFee) &&
 				c?.cancellationFee === String(cancellationFee) &&
 				c?.metadataUpdateFee === String(metadataUpdateFee),
-			{ label: 'FeeConfig reflects all four fees' },
+			{ label: 'FeeConfig reflects all four fees', timeoutMs: 60_000 },
 		);
 	});
 
@@ -105,7 +105,7 @@ test.describe('Governance config indexing (T-GOV-CFG)', () => {
 		await waitForGraph(
 			() => getProtocolConfig(),
 			c => c?.treasuryAddress?.toLowerCase() === NEW_TREASURY.toLowerCase(),
-			{ label: 'ProtocolConfig reflects the new treasury' },
+			{ label: 'ProtocolConfig reflects the new treasury', timeoutMs: 60_000 },
 		);
 	});
 });

@@ -138,6 +138,11 @@ test.describe('History (T-HIST)', () => {
 		await freshChatPage.assertPromptInputVisible();
 		await freshChatPage.sendPromptAndWaitForResponse('Follow-up message');
 
-		expect(await freshChatPage.userMessages.count()).toBeGreaterThanOrEqual(2);
+		// The follow-up's own round-trip is already confirmed above; the PRIOR
+		// message hydrates asynchronously from history — poll instead of a
+		// single-instant count so hydration timing can't race the assertion.
+		await expect
+			.poll(async () => freshChatPage.userMessages.count(), { timeout: 15_000 })
+			.toBeGreaterThanOrEqual(2);
 	});
 });

@@ -80,11 +80,17 @@ export async function waitForIndexing(targetBlock: number, timeoutMs = 30_000): 
 }
 
 /** Fetches all conversations for a given owner address */
-export async function getConversations(ownerAddress: string): Promise<Array<{ id: string }>> {
-	const data = await graphQuery<{ conversations: Array<{ id: string }> }>(
+export async function getConversations(
+	ownerAddress: string,
+): Promise<Array<{ id: string; lastMessageCreatedAt: string; conversationCID: string }>> {
+	const data = await graphQuery<{
+		conversations: Array<{ id: string; lastMessageCreatedAt: string; conversationCID: string }>;
+	}>(
 		`query($owner: Bytes!) {
       conversations(where: { owner: $owner }, orderBy: lastMessageCreatedAt, orderDirection: desc) {
         id
+        lastMessageCreatedAt
+        conversationCID
       }
     }`,
 		{ owner: ownerAddress.toLowerCase() },
@@ -93,6 +99,28 @@ export async function getConversations(ownerAddress: string): Promise<Array<{ id
 }
 
 /** Fetches pending payments (stuck requests) for a given user */
+/** All payments for a user regardless of lifecycle status. A payment is PENDING
+ *  only between prompt submission and the oracle's answer — with the fast mocked
+ *  oracle it is usually SETTLED by the time a spec queries, so existence checks
+ *  must not filter on PENDING (that made T-GRAPH-02 a race). */
+export async function getPayments(
+	userAddress: string,
+): Promise<Array<{ id: string; amount: string; status: string }>> {
+	const data = await graphQuery<{
+		payments: Array<{ id: string; amount: string; status: string }>;
+	}>(
+		`query($user: Bytes!) {
+      payments(where: { user: $user }) {
+        id
+        amount
+        status
+      }
+    }`,
+		{ user: userAddress.toLowerCase() },
+	);
+	return data.payments;
+}
+
 export async function getPendingPayments(
 	userAddress: string,
 ): Promise<Array<{ id: string; amount: string }>> {

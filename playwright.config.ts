@@ -92,12 +92,20 @@ export default defineConfig({
 			name: 'plan',
 			testMatch: '**/plan.spec.ts',
 			fullyParallel: false,
+			// Snapshot-revert specs now wait for the subgraph to re-sync in afterEach
+			// (each mini-reorg unwind takes seconds; see revertToSnapshot) — the 30s
+			// default would abort the hook mid-wait.
+			timeout: 120_000,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
 			name: 'faucet',
 			testMatch: '**/faucet.spec.ts',
 			fullyParallel: false,
+			// Snapshot-revert specs now wait for the subgraph to re-sync in afterEach
+			// (each mini-reorg unwind takes seconds; see revertToSnapshot) — the 30s
+			// default would abort the hook mid-wait.
+			timeout: 120_000,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
@@ -238,12 +246,19 @@ export default defineConfig({
 		{
 			name: 'security',
 			testMatch: '**/security.spec.ts',
+			// T-SEC-06/08 drive a full prompt round-trip before inspecting storage —
+			// same headroom need as the other answer-flow projects.
+			timeout: 120_000,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
 			name: 'graph',
 			testMatch: '**/graph.spec.ts',
 			fullyParallel: false,
+			// Snapshot-revert specs now wait for the subgraph to re-sync in afterEach
+			// (each mini-reorg unwind takes seconds; see revertToSnapshot) — the 30s
+			// default would abort the hook mid-wait.
+			timeout: 120_000,
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{

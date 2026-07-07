@@ -3,7 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
-import { decodeFunctionResult, encodeFunctionData, parseAbi } from 'viem';
+import { decodeFunctionResult, encodeFunctionData, parseAbi, toHex } from 'viem';
+import { mnemonicToAccount } from 'viem/accounts';
 
 const execFileAsync = promisify(execFile);
 // Sibling repo that owns the contracts + hardhat-upgrades plugin + the OZ upgrades manifest. Anchor on
@@ -23,90 +24,43 @@ let reqId = 1;
 // ── Per-test fresh accounts ───────────────────────────────────────────────────
 // Hardhat's deterministic dev accounts (mnemonic "test test … junk"). Account 0
 // is the deployer/oracle and account 1 is the legacy shared user (see
-// mock-wallet.ts) — both are RESERVED. Accounts 2..19 are unlocked on the node
-// and free for per-test "fresh user" isolation: a test that needs a pristine
+// mock-wallet.ts) — both are RESERVED. Indices 2..249 are derived from the
+// mnemonic for per-test "fresh user" isolation: a test that needs a pristine
 // history + plan claims one (via helpers/fresh-account.ts) so its on-chain state
-// never collides with another test's. 18 accounts comfortably covers the ~10
-// answer-flow tests. PUBLIC Hardhat test keys — NEVER use on any real network.
+// never collides with another test's. The pool is derived rather than hardcoded
+// because a full serial run plus retry-spawned workers can consume more than the
+// node's 20 prefunded accounts (a full run with retries burned through 58).
+// allocateFreshAccount provisions every claim via enableFreshAccount
+// (hardhat_setBalance + hardhat_impersonateAccount) — indices ≥ 20 are unusable
+// without it.
+// PUBLIC Hardhat test keys — NEVER use on any real network.
 export interface HardhatAccount {
 	address: string;
 	privateKey: string;
 }
 
-export const FRESH_TEST_ACCOUNTS: readonly HardhatAccount[] = [
-	{
-		address: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC',
-		privateKey: '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a',
+const HARDHAT_MNEMONIC = 'test test test test test test test test test test test junk';
+const FRESH_POOL_FIRST_INDEX = 2;
+const FRESH_POOL_LAST_INDEX = 249;
+
+export const FRESH_TEST_ACCOUNTS: readonly HardhatAccount[] = Array.from(
+	{ length: FRESH_POOL_LAST_INDEX - FRESH_POOL_FIRST_INDEX + 1 },
+	(_, i) => {
+		const account = mnemonicToAccount(HARDHAT_MNEMONIC, {
+			addressIndex: FRESH_POOL_FIRST_INDEX + i,
+		});
+		const key = account.getHdKey().privateKey;
+		if (!key) {
+			throw new Error(
+				`fresh-account pool: no private key derived for index ${FRESH_POOL_FIRST_INDEX + i} — viem HD derivation contract changed?`,
+			);
+		}
+		return {
+			address: account.address,
+			privateKey: toHex(key),
+		};
 	},
-	{
-		address: '0x90F79bf6EB2c4f870365E785982E1f101E93b906',
-		privateKey: '0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6',
-	},
-	{
-		address: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65',
-		privateKey: '0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a',
-	},
-	{
-		address: '0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc',
-		privateKey: '0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba',
-	},
-	{
-		address: '0x976EA74026E726554dB657fA54763abd0C3a0aa9',
-		privateKey: '0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e',
-	},
-	{
-		address: '0x14dC79964da2C08b23698B3D3cc7Ca32193d9955',
-		privateKey: '0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356',
-	},
-	{
-		address: '0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f',
-		privateKey: '0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97',
-	},
-	{
-		address: '0xa0Ee7A142d267C1f36714E4a8F75612F20a79720',
-		privateKey: '0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6',
-	},
-	{
-		address: '0xBcd4042DE499D14e55001CcbB24a551F3b954096',
-		privateKey: '0xf214f2b2cd398c806f84e317254e0f0b801d0643303237d97a22a48e01628897',
-	},
-	{
-		address: '0x71bE63f3384f5fb98995898A86B02Fb2426c5788',
-		privateKey: '0x701b615bbdfb9de65240bc28bd21bbc0d996645a3dd57e7b12bc2bdf6f192c82',
-	},
-	{
-		address: '0xFABB0ac9d68B0B445fB7357272Ff202C5651694a',
-		privateKey: '0xa267530f49f8280200edf313ee7af6b827f2a8bce2897751d06a843f644967b1',
-	},
-	{
-		address: '0x1CBd3b2770909D4e10f157cABC84C7264073C9Ec',
-		privateKey: '0x47c99abed3324a2707c28affff1267e45918ec8c3f20b8aa892e8b065d2942dd',
-	},
-	{
-		address: '0xdF3e18d64BC6A983f673Ab319CCaE4f1a57C7097',
-		privateKey: '0xc526ee95bf44d8fc405a158bb884d9d1238d99f0612e9f33d006bb0789009aaa',
-	},
-	{
-		address: '0xcd3B766CCDd6AE721141F452C550Ca635964ce71',
-		privateKey: '0x8166f546bab6da521a8369cab06c5d2b9e46670292d85c875ee9ec20e84ffb61',
-	},
-	{
-		address: '0x2546BcD3c84621e976D8185a91A922aE77ECEc30',
-		privateKey: '0xea6c44ac03bff858b476bba40716402b03e41b8e97e276d1baec7c37d42484a0',
-	},
-	{
-		address: '0xbDA5747bFD65F08deb54cb465eB87D40e51B197E',
-		privateKey: '0x689af8efa8c651a91ad287602527f3af2fe9f6501a7ac4b061667b5a93e037fd',
-	},
-	{
-		address: '0xdD2FD4581271e230360230F9337D5c0430Bf44C0',
-		privateKey: '0xde9be858da4a475276426320d5e9262ecfc3ba460bfac56360bfa6c4c28b4ee0',
-	},
-	{
-		address: '0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199',
-		privateKey: '0xdf57089febbacf7ba0bc227dafbffa9fc08a93fdc68e1e42411a14efcf23656e',
-	},
-];
+);
 
 async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
 	const res = await fetch(RPC_URL, {
@@ -129,6 +83,16 @@ export async function getBalance(address: string): Promise<bigint> {
 	return BigInt(hex);
 }
 
+/** Dev-node only: make a derived fresh-pool account fully usable. Indices ≥ 20 are
+ *  outside the node's default 20 managed accounts, so they need BOTH an ETH balance
+ *  (hardhat_setBalance) AND node-side signing rights (hardhat_impersonateAccount —
+ *  the mock wallet submits via eth_sendTransaction, which only works for accounts
+ *  the node manages or impersonates; without it: "Unknown account 0x…"). */
+export async function enableFreshAccount(address: string, wei: bigint): Promise<void> {
+	await rpc('hardhat_setBalance', [address, toHex(wei)]);
+	await rpc('hardhat_impersonateAccount', [address]);
+}
+
 export async function mineBlocks(count: number): Promise<void> {
 	await rpc('hardhat_mine', [`0x${count.toString(16)}`]);
 }
@@ -142,9 +106,59 @@ export async function takeSnapshot(): Promise<string> {
 	return (await rpc('evm_snapshot')) as string;
 }
 
-export async function revertToSnapshot(snapshotId: string): Promise<void> {
-	await rpc('evm_revert', [snapshotId]);
+/** Poll the local subgraph's _meta head until it reaches `target` (or timeout).
+ *  Tolerant: resolves silently if the graph endpoint is unavailable, so
+ *  revert-users don't break in graph-less contexts. */
+async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		try {
+			const res = await fetch('http://localhost:8000/subgraphs/name/sense-ai', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ query: '{_meta{block{number}}}' }),
+				// Per-request abort so a TCP-level stall can't outlive the overall
+				// deadline and wedge afterEach.
+				signal: AbortSignal.timeout(5_000),
+			});
+			const body = (await res.json()) as { data?: { _meta?: { block?: { number?: number } } } };
+			const head = body.data?._meta?.block?.number;
+			if (typeof head !== 'number') return; // graph up but no meta — don't block
+			if (head >= target) return;
+		} catch {
+			return; // graph not reachable — nothing to wait for
+		}
+		await new Promise(r => setTimeout(r, 500));
+	}
+	throw new Error(
+		`revertToSnapshot: subgraph did not re-sync to block ${target} within ${timeoutMs}ms — ` +
+			'graph-node reorg backlog; see LOCALNET_SETUP troubleshooting.',
+	);
 }
+
+export async function revertToSnapshot(snapshotId: string): Promise<void> {
+	// evm_revert rewinds the CHAIN but not graph-node: its high-water mark stays at
+	// the orphaned timeline's head, so waitForIndexing() no-ops (already "past" the
+	// target block) and entities from the new timeline never index — every graph
+	// assertion after a bare revert reads PHANTOM pre-revert state. Mine the new
+	// timeline past the old head so graph-node detects the longer canonical chain
+	// and reorgs onto it.
+	const preRevertHead = await getBlockNumber();
+	await rpc('evm_revert', [snapshotId]);
+	const postRevertHead = await getBlockNumber();
+	if (preRevertHead > postRevertHead) {
+		await mineBlocks(preRevertHead - postRevertHead + 2);
+		// …and WAIT for graph-node to unwind + re-sync before the next test runs.
+		// Its reorg machinery processes one block per operation: dozens of
+		// unawaited mini-reorgs queue into an hours-long backlog that strands the
+		// subgraph far behind the chain (observed: 66 blocks), after which answer
+		// hydration — which reads through the subgraph — silently dies suite-wide.
+		// Serializing here keeps each unwind small (seconds) and the subgraph
+		// current for every later spec. Skipped gracefully if the graph isn't up.
+		await waitForGraphHead(await getBlockNumber());
+	}
+}
+
 
 export async function isHardhatRunning(): Promise<boolean> {
 	try {
@@ -231,6 +245,22 @@ export async function fundABLE(
 	toAddress: string,
 	amount: bigint,
 ): Promise<void> {
+	// The deployer's ABLE supply is finite PER CHAIN: every fresh-account claim
+	// transfers some away, and heavy live-chain rerunning can drain it to zero.
+	// When that happens plan activation fails silently and specs die with an
+	// opaque "composer not found" — fail loudly at the source instead.
+	const balData = `0x70a08231${  padAddress(DEPLOYER_ADDRESS).slice(2)}`;
+	const balHex = (await rpc('eth_call', [
+		{ to: tokenAddress, data: balData },
+		'latest',
+	])) as string;
+	if (BigInt(balHex) < amount) {
+		throw new Error(
+			`fundABLE: deployer ABLE depleted (${BigInt(balHex)} < ${amount}). ` +
+				'The chain has been reused past its token supply — restart the stack ' +
+				'(sense-ai-e2e: stop-e2e.sh + start-e2e.sh) for a fresh chain.',
+		);
+	}
 	const data = TRANSFER_SELECTOR + padAddress(toAddress).slice(2) + padUint(amount);
 	const txHash = (await rpc('eth_sendTransaction', [
 		{ from: DEPLOYER_ADDRESS, to: tokenAddress, data },

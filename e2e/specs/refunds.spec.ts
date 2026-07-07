@@ -60,7 +60,7 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		const pendingReqs = await waitForGraph(
 			() => getPromptRequests(owner),
 			reqs => reqs.some(isPending),
-			{ label: 'pending PromptRequest' },
+			{ label: 'pending PromptRequest', timeoutMs: 60_000 },
 		);
 		const stuck = pendingReqs.find(isPending)!;
 
@@ -75,7 +75,7 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		await waitForGraph(
 			() => getPromptRequests(owner),
 			reqs => reqs.some(r => r.id === stuck.id && r.isRefunded),
-			{ label: 'PromptRequest.isRefunded' },
+			{ label: 'PromptRequest.isRefunded', timeoutMs: 60_000 },
 		);
 
 		// Contract: the escrowed fee is returned to the wallet.

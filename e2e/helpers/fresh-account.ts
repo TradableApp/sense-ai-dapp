@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { FRESH_TEST_ACCOUNTS, type HardhatAccount } from './hardhat';
+import { enableFreshAccount, FRESH_TEST_ACCOUNTS, type HardhatAccount } from './hardhat';
 
 /**
  * Per-test fresh-account allocator.
@@ -52,14 +52,56 @@ async function withCounterLock<T>(fn: () => T): Promise<T> {
 	}
 }
 
+const CHAIN_FILE = `${COUNTER_FILE}.chain`;
+
 /**
- * Reset the allocator to the start of the fresh-account pool. Call ONCE per run
- * (global-setup) so a stale counter from a previous run can't immediately exhaust
- * the pool or skip accounts.
+ * Prepare the allocator for a run. Called ONCE per run (global-setup).
+ *
+ * "Fresh" means fresh ON THIS CHAIN, not fresh per run: accounts claimed by an
+ * earlier run against the SAME localnet still own their on-chain conversations,
+ * and re-issuing them breaks specs that assert exact per-account state (e.g.
+ * T-BRANCH-06/07's conversation counts). So the counter resets to 0 only when
+ * the chain's genesis hash changes (stack was restarted with a fresh chain);
+ * on the same chain the counter continues where the previous run stopped and
+ * simply consumes further into the 2..249 pool. A crashed run's stale lock is
+ * always cleared.
  */
-export function resetFreshAccountAllocator(): void {
+export async function resetFreshAccountAllocator(): Promise<void> {
 	fs.mkdirSync(path.dirname(COUNTER_FILE), { recursive: true });
-	fs.writeFileSync(COUNTER_FILE, '0', 'utf8');
+	// Small retry: this runs early in global-setup and Hardhat may be up but not
+	// yet accepting connections. A transient failure must NOT look like a new
+	// chain — resetting the counter on a live, used chain re-issues accounts and
+	// reintroduces the exact cross-test state collisions this allocator prevents.
+	let genesisHash: string | null = null;
+	for (let attempt = 0; attempt < 3 && genesisHash === null; attempt += 1) {
+		try {
+			const res = await fetch('http://127.0.0.1:8545', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					jsonrpc: '2.0',
+					id: 1,
+					method: 'eth_getBlockByNumber',
+					params: ['0x0', false],
+				}),
+			});
+			genesisHash = ((await res.json()) as { result?: { hash?: string } }).result?.hash ?? null;
+		} catch {
+			await new Promise(r => setTimeout(r, 1_000));
+		}
+	}
+	if (genesisHash === null) {
+		// Node unreachable (E2E_LOCAL_SERVICES unset, or genuinely down — later
+		// checks report that loudly). FAIL SAFE: keep the existing counter so a
+		// transient outage can only waste pool depth, never reuse an account.
+		if (!fs.existsSync(COUNTER_FILE)) fs.writeFileSync(COUNTER_FILE, '0', 'utf8');
+	} else {
+		const priorChain = fs.existsSync(CHAIN_FILE) ? fs.readFileSync(CHAIN_FILE, 'utf8').trim() : '';
+		if (priorChain !== genesisHash || !fs.existsSync(COUNTER_FILE)) {
+			fs.writeFileSync(COUNTER_FILE, '0', 'utf8');
+		}
+		fs.writeFileSync(CHAIN_FILE, genesisHash, 'utf8');
+	}
 	try {
 		fs.rmdirSync(LOCK_DIR);
 	} catch {
@@ -91,5 +133,12 @@ export async function allocateFreshAccount(): Promise<HardhatAccount> {
 		}
 		fs.writeFileSync(COUNTER_FILE, String(next + 1), 'utf8');
 		return FRESH_TEST_ACCOUNTS[next];
+	}).then(async account => {
+		// Provision AT ALLOCATION (outside the sync counter lock) so no caller can
+		// hold an unusable account: derived indices (≥ 20) have no ETH and are
+		// unknown to the node — they need a balance and
+		// hardhat_impersonateAccount before any transaction.
+		await enableFreshAccount(account.address, 10_000n * 10n ** 18n);
+		return account;
 	});
 }

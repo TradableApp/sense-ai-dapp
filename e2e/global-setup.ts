@@ -72,7 +72,7 @@ export default async function globalSetup(): Promise<void> {
 	// Reset the per-test fresh-account allocator once per run. Module counters
 	// don't survive Playwright worker recycling, so the next-account index is
 	// file-persisted (helpers/fresh-account.ts) and must start clean each run.
-	resetFreshAccountAllocator();
+	await resetFreshAccountAllocator();
 
 	// Skip setup if not running local services
 	if (process.env.E2E_LOCAL_SERVICES !== '1') {

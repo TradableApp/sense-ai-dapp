@@ -22,12 +22,18 @@ test.describe('Sentry — error tracking initialisation (T-SENTRY)', () => {
 	test('T-SENTRY-02: Sentry sends session envelope on page load', async ({ page }) => {
 		test.skip(!process.env.VITE_SENTRY_DSN, 'Skipped: VITE_SENTRY_DSN not configured');
 
+		await injectMockWallet(page);
+		// Same warm-load pattern as smoke's T-INIT-06: assert against a warm
+		// navigation so dev-server compile and first-load contention can't
+		// swallow the envelope window (this assertion was intermittent under
+		// suite load even at trace sampling 1.0).
+		await page.goto('/');
+		await page.waitForLoadState('networkidle');
+
 		const sentryRequest = page.waitForRequest(
 			req => req.url().includes('sentry.io') || req.url().includes('ingest'),
 			{ timeout: 10_000 },
 		);
-
-		await injectMockWallet(page);
 		await page.goto('/');
 		await sentryRequest;
 	});

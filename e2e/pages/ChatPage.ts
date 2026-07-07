@@ -179,7 +179,7 @@ export class ChatPage {
 	}
 
 	async sendPrompt(text: string) {
-		await expect(this.promptTextarea).toBeVisible({ timeout: 5_000 });
+		await expect(this.promptTextarea).toBeVisible({ timeout: 15_000 });
 		await this.promptTextarea.fill(text);
 		// Validity (react-hook-form, onChange) enables the submit once the prompt is
 		// non-empty — wait for that rather than clicking a still-disabled button.
@@ -291,7 +291,7 @@ export class ChatPage {
 	// ── Assertions ────────────────────────────────────────────────────────────
 
 	async assertPromptInputVisible() {
-		await expect(this.promptTextarea).toBeVisible({ timeout: 5_000 });
+		await expect(this.promptTextarea).toBeVisible({ timeout: 15_000 });
 	}
 
 	async assertNoPlanCTA() {

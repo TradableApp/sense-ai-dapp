@@ -267,7 +267,7 @@ test.describe('Accessibility basics', () => {
 test.describe('Consent banner', () => {
 	test('T-UI-16: Cookie consent banner appears on first visit', async ({ page }) => {
 		await page.addInitScript(() => localStorage.clear());
-		await injectMockWallet(page);
+		await injectMockWallet(page, { seedConsent: false });
 		await page.goto('/auth');
 
 		await expect(page.getByText('Cookie Settings')).toBeVisible({ timeout: 10_000 });
@@ -275,7 +275,7 @@ test.describe('Consent banner', () => {
 
 	test('T-UI-17: Accepting consent dismisses the banner', async ({ page }) => {
 		await page.addInitScript(() => localStorage.clear());
-		await injectMockWallet(page);
+		await injectMockWallet(page, { seedConsent: false });
 		await page.goto('/auth');
 
 		const banner = page.getByText('Cookie Settings');
@@ -294,13 +294,17 @@ test.describe('Consent banner', () => {
 			const page = await context.newPage();
 
 			await page.addInitScript(() => {
-				const w = window as unknown as { __consentTestInitDone?: boolean };
-				if (!w.__consentTestInitDone) {
+				// One-time clear for "first visit" semantics. Guarded via sessionStorage:
+				// init scripts re-run on EVERY navigation with a FRESH window object, so a
+				// window flag never survives the post-accept reload — the clear would wipe
+				// the just-accepted consent and the banner would correctly reappear.
+				// (Historically masked by the mock wallet re-seeding consent each load.)
+				if (!sessionStorage.getItem('__consentTestInitDone')) {
 					localStorage.clear();
-					w.__consentTestInitDone = true;
+					sessionStorage.setItem('__consentTestInitDone', '1');
 				}
 			});
-			await injectMockWallet(page);
+			await injectMockWallet(page, { seedConsent: false });
 			await page.goto('/auth');
 
 			const acceptButton = page.getByRole('button', { name: /accept all/i });

@@ -2,7 +2,8 @@ import { fileURLToPath } from 'url';
 
 import { test as base, type BrowserContext, type Page } from '@playwright/test';
 
-import { buildMockWalletScript, injectMockWalletIntoContext } from './mock-wallet';
+import { injectMockWalletIntoContext } from './mock-wallet';
+import { createWalletContext } from '../helpers/devices';
 import { allocateFreshAccount } from '../helpers/fresh-account';
 import { type HardhatAccount } from '../helpers/hardhat';
 import { AuthPage } from '../pages/AuthPage';
@@ -122,6 +123,8 @@ export const test = base.extend<SenseAIFixtures>({
 	 */
 	// eslint-disable-next-line no-empty-pattern
 	freshUserAccount: async ({}, use) => {
+		// allocateFreshAccount provisions the account at claim time (balance +
+		// impersonation) — provisioning lives in exactly one place.
 		const account = await allocateFreshAccount();
 		await use(account);
 	},
@@ -131,8 +134,8 @@ export const test = base.extend<SenseAIFixtures>({
 	 * claimed account — so the page must perform a real mid-session connect.
 	 */
 	freshContext: async ({ browser, freshUserAccount }, use) => {
-		const context = await browser.newContext();
-		await context.addInitScript(buildMockWalletScript(freshUserAccount));
+		// Shared provisioned-context creation — see helpers/devices.ts.
+		const context = await createWalletContext(browser, freshUserAccount);
 		await use(context);
 		await context.close();
 	},
