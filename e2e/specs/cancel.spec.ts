@@ -1,13 +1,11 @@
 import { expect, test } from '../fixtures';
+import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { getPromptRequests, waitForGraph } from '../helpers/graph';
-import { activatePlan, fundABLE, increaseTime } from '../helpers/hardhat';
+import { increaseTime } from '../helpers/hardhat';
 
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
 
-const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 // Hold the answer pending well past the cancel window so the cancel always wins the race
 // with the oracle (the oracle's post-delay isJobFinalized re-check then drops the answer).
 const HOLD_MS = 8000;
@@ -16,11 +14,6 @@ const HOLD_MS = 8000;
 // submit and the cancel tx; on localnet (auto-mine, frozen between txs) we must advance
 // EVM time past the window so the cancel can land — mirroring real-chain progression.
 const CANCELLATION_TIMEOUT_S = 3;
-
-async function fundAndActivatePlan(address: string): Promise<void> {
-	await fundABLE(TOKEN_ADDRESS, address, PLAN_ALLOWANCE);
-	await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, address, PLAN_ALLOWANCE);
-}
 
 // Cancel a pending prompt + concurrency. A 2nd prompt cannot be submitted while one is
 // pending (the composer swaps Send→Cancel while isAiThinking). Cancelling debits a

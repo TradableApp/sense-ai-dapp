@@ -1,15 +1,12 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
+import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import {
-	activatePlan,
-	fundABLE,
 	getABLEBalance,
 	revertToSnapshot,
 	takeSnapshot,
 } from '../helpers/hardhat';
 
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
 
@@ -19,12 +16,6 @@ const SKIP_REASON =
 // ABLE" tests (T-FAUCET-01, T-PLAN-11/12) — keep full control of their account's
 // balance. The localnet stateful run is serial (playwright.config workers=1), so
 // these account-0 funding txs never contend. Both accounts are Hardhat-unlocked.
-const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
-
-async function fundAndActivatePlan(address: string = TEST_ACCOUNT.address): Promise<void> {
-	await fundABLE(TOKEN_ADDRESS, address, PLAN_ALLOWANCE);
-	await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, address, PLAN_ALLOWANCE);
-}
 
 test.describe('Chat — prompt input (T-CHAT)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
@@ -37,7 +28,7 @@ test.describe('Chat — prompt input (T-CHAT)', () => {
 
 	test.beforeEach(async () => {
 		snapshotId = await takeSnapshot();
-		await fundAndActivatePlan();
+		await fundAndActivatePlan(TEST_ACCOUNT.address);
 	});
 
 	test.afterEach(async () => {
@@ -176,7 +167,7 @@ test.describe('Chat — error states (T-CHAT-ERR)', () => {
 		snapshotId = await takeSnapshot();
 		// Error tests still need a funded + active plan so submission reaches the
 		// transaction (otherwise the UI blocks at the no-plan CTA before erroring).
-		await fundAndActivatePlan();
+		await fundAndActivatePlan(TEST_ACCOUNT.address);
 	});
 
 	test.afterEach(async () => {

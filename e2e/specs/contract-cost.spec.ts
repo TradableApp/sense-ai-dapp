@@ -1,5 +1,6 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
+import { ABLE, ESCROW_ADDRESS, fundAndActivatePlan, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
 import {
 	activatePlan,
 	fundABLE,
@@ -24,13 +25,9 @@ import {
 // entity), so there is no explicit "price per prompt" label shown to the user
 // before sending. Tracked as a product follow-up.
 
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
 
-const ABLE = (whole: number): bigint => 10n ** 18n * BigInt(whole);
-const PLAN_ALLOWANCE = ABLE(100);
 
 test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
@@ -40,8 +37,7 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 
 	test.beforeEach(async () => {
 		snapshotId = await takeSnapshot();
-		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, TEST_ACCOUNT.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(TEST_ACCOUNT.address);
 	});
 
 	test.afterEach(async () => {
@@ -114,8 +110,7 @@ test.describe('Contract cost change across prompts (T-COST-MULTI)', () => {
 
 	test.beforeEach(async ({ freshUserAccount }) => {
 		originalFee = await getPromptFee(ESCROW_ADDRESS);
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(freshUserAccount.address);
 	});
 
 	test.afterEach(async () => {

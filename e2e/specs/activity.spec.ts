@@ -1,11 +1,9 @@
 import { expect, test } from '../fixtures';
+import { ESCROW_ADDRESS, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
 import { getActivities, waitForGraph } from '../helpers/graph';
 import { activatePlan, fundABLE } from '../helpers/hardhat';
 import { DashboardPage } from '../pages/DashboardPage';
 
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
-const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
 

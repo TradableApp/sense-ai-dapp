@@ -1,5 +1,6 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
+import { ESCROW_ADDRESS, TOKEN_ADDRESS } from '../helpers/contracts';
 import {
 	activatePlan,
 	approveABLE,
@@ -12,8 +13,6 @@ import {
 	takeSnapshot,
 } from '../helpers/hardhat';
 
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + deployed contracts (set E2E_LOCAL_SERVICES=1)';
 

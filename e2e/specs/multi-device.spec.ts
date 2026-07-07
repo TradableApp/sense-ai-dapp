@@ -2,6 +2,7 @@ import { type BrowserContext } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
 import { buildMockWalletScript } from '../fixtures/mock-wallet';
+import { ESCROW_ADDRESS, fundAndActivatePlan, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
 import { openDevice, parseAble } from '../helpers/devices';
 import { allocateFreshAccount } from '../helpers/fresh-account';
 import {
@@ -23,9 +24,6 @@ declare global {
 	}
 }
 
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
-const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 const FAUCET_CREDIT = 10n ** 18n * 50n; // +50 ABLE
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node for the answer round-trip (set E2E_LOCAL_SERVICES=1)';
@@ -52,8 +50,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		browser,
 	}) => {
 		const account = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, account.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, account.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(account.address);
 
 		// Device A creates a conversation (a unique marker so we can identify it on device B).
 		const marker = 'Quokkawump cross-device marker';
@@ -90,8 +87,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 	}) => {
 		// Wallet A creates a conversation.
 		const accountA = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, accountA.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, accountA.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(accountA.address);
 		const deviceA = await openDevice(browser, accountA, openContexts);
 		await deviceA.chat.goto();
 		await deviceA.chat.sendPromptAndWaitForResponse('Wallet A exclusive message');
@@ -121,8 +117,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		browser,
 	}) => {
 		const account = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, account.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, account.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(account.address);
 
 		// Device A creates two conversations.
 		const deviceA = await openDevice(browser, account, openContexts);
@@ -161,8 +156,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		browser,
 	}) => {
 		const account = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, account.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, account.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(account.address);
 
 		const deviceA = await openDevice(browser, account, openContexts);
 		await deviceA.chat.goto();
@@ -196,11 +190,9 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		browser,
 	}) => {
 		const accountA = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, accountA.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, accountA.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(accountA.address);
 		const accountB = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, accountB.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, accountB.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(accountB.address);
 
 		const deviceA = await openDevice(browser, accountA, openContexts);
 		await deviceA.chat.goto();
@@ -295,8 +287,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		// account switch (multi-account injected mock ThirdWeb adopts) — ClickUp 86d3ckacw.
 		test.fixme(true, 'Harness: ThirdWeb v5 does not adopt the mock wallet accountsChanged');
 		const accountA = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, accountA.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, accountA.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(accountA.address);
 		const accountB = await allocateFreshAccount();
 
 		// Connect as wallet A on a SINGLE context, create a conversation, confirm it shows.
@@ -340,8 +331,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		browser,
 	}) => {
 		const account = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, account.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, account.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(account.address);
 
 		// Device A: first an ANSWERED prompt so the Conversation entity exists (ConversationAdded fires
 		// only on the first answer — a never-answered first prompt would have no Conversation to sync),

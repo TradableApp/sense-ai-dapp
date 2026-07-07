@@ -1,12 +1,11 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
+import { ABLE, TOKEN_ADDRESS } from '../helpers/contracts';
 import { fundABLE, getABLEBalance, revertToSnapshot, takeSnapshot } from '../helpers/hardhat';
 
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + deployed contracts (set E2E_LOCAL_SERVICES=1)';
 
-const ABLE = (n: bigint) => 10n ** 18n * n;
 
 test.describe('Localnet faucet (T-FAUCET)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
@@ -68,7 +67,7 @@ test.describe('Localnet faucet (T-FAUCET)', () => {
 
 		// On-chain truth: the balance rose by exactly what the UI reported.
 		const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
-		expect(balanceAfter - balanceBefore).toBe(ABLE(reported));
+		expect(balanceAfter - balanceBefore).toBe(ABLE(Number(reported)));
 		expect(cloudFnHit).toBe(false);
 	});
 
@@ -80,7 +79,7 @@ test.describe('Localnet faucet (T-FAUCET)', () => {
 		// The faucet is gated on "requested limit > wallet balance", NOT "balance == 0".
 		// Seed a non-zero balance below the requested limit so the faucet still appears
 		// and tops the user up — the has-some-ABLE branch that T-FAUCET-01 doesn't cover.
-		const seed = ABLE(50n);
+		const seed = ABLE(50);
 		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, seed);
 		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
 		expect(balanceBefore).toBe(seed);
