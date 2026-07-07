@@ -65,7 +65,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await waitForGraph(
 			() => getConversations(account.address),
 			convs => convs.length === 1,
-			{ label: 'conversation indexed', timeoutMs: 60_000 },
+			{ label: 'conversation indexed' },
 		);
 
 		// Device B — a pristine context (empty IndexedDB) on the SAME wallet — never saw this
@@ -98,7 +98,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await waitForGraph(
 			() => getConversations(accountA.address),
 			convs => convs.length === 1,
-			{ label: "wallet A's conversation indexed", timeoutMs: 60_000 },
+			{ label: "wallet A's conversation indexed" },
 		);
 
 		// Wallet B (a different account, no plan needed to view history) connects fresh.
@@ -133,7 +133,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		const convs = await waitForGraph(
 			() => getConversations(account.address),
 			c => c.length === 2,
-			{ label: 'two conversations indexed', timeoutMs: 60_000 },
+			{ label: 'two conversations indexed' },
 		);
 
 		// A renames the most recent (index 0, newest-first); wait for the new metadata CID to index
@@ -145,7 +145,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await waitForGraph(
 			() => getConversation(renamedConvId),
 			c => c !== null && c.conversationMetadataCID !== before?.conversationMetadataCID,
-			{ label: 'rename metadata indexed', timeoutMs: 60_000 },
+			{ label: 'rename metadata indexed' },
 		);
 
 		// A fresh device B (empty cache → syncs on first mount) sees BOTH conversations + the rename.
@@ -170,7 +170,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		const convs = await waitForGraph(
 			() => getConversations(account.address),
 			c => c.length === 1,
-			{ label: 'conversation indexed', timeoutMs: 60_000 },
+			{ label: 'conversation indexed' },
 		);
 		const convId = convs[0].id;
 		const before = await getConversation(convId);
@@ -182,7 +182,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await waitForGraph(
 			() => getConversation(convId),
 			c => c !== null && c.conversationMetadataCID !== before?.conversationMetadataCID,
-			{ label: 'delete metadata indexed', timeoutMs: 60_000 },
+			{ label: 'delete metadata indexed' },
 		);
 
 		// A fresh device B syncs and HIDES the deleted conversation (it decrypts the deletion flag).
@@ -209,8 +209,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 			() => getConversations(accountA.address),
 			c => c.length === 1,
 			{
-				label: "wallet A's conversation indexed",
-				timeoutMs: 60_000,
+				label: "wallet A's conversation indexed"
 			},
 		);
 
@@ -221,8 +220,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 			() => getConversations(accountB.address),
 			c => c.length === 1,
 			{
-				label: "wallet B's conversation indexed",
-				timeoutMs: 60_000,
+				label: "wallet B's conversation indexed"
 			},
 		);
 
@@ -253,8 +251,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 			() => getConversations(account.address),
 			c => c.length === 1,
 			{
-				label: "device A's spend indexed",
-				timeoutMs: 60_000,
+				label: "device A's spend indexed"
 			},
 		);
 
@@ -366,12 +363,12 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 			waitForGraph(
 				() => getConversations(account.address),
 				convs => convs.length === 1,
-				{ label: 'conversation indexed', timeoutMs: 60_000 },
+				{ label: 'conversation indexed' },
 			),
 			waitForGraph(
 				() => getPromptRequests(account.address),
 				reqs => reqs.some(r => !r.isAnswered && !r.isCancelled && !r.isRefunded),
-				{ label: 'in-flight (unanswered) prompt request indexed', timeoutMs: 60_000 },
+				{ label: 'in-flight (unanswered) prompt request indexed' },
 			),
 		]);
 

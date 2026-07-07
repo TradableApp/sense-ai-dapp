@@ -53,7 +53,7 @@ test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 		await waitForGraph(
 			() => getPromptRequests(owner),
 			reqs => reqs.some(r => r.isCancelled),
-			{ label: 'PromptRequest.isCancelled', timeoutMs: 60_000 },
+			{ label: 'PromptRequest.isCancelled' },
 		);
 
 		// dApp: the pending message is dropped → the composer frees up (Send returns).

@@ -158,7 +158,7 @@ test.describe('Stuck-request auto-detection (T-STUCK)', () => {
 		await waitForGraph(
 			() => getPendingPayments(freshUserAccount.address),
 			payments => payments.length >= 1,
-			{ label: 'pending payment indexed', timeoutMs: 60_000 },
+			{ label: 'pending payment indexed' },
 		);
 
 		// On the dashboard, PlanStatusCard (via useStuckRequests + pendingEscrowCount) raises the
@@ -203,7 +203,7 @@ test.describe('Pending-escrow guards (T-PENDING)', () => {
 		await waitForGraph(
 			() => getPendingPayments(freshUserAccount.address),
 			payments => payments.length >= 1,
-			{ label: 'pending payment indexed', timeoutMs: 60_000 },
+			{ label: 'pending payment indexed' },
 		);
 
 		// Dashboard: useUsagePlan reads pendingEscrowCount on-chain → PlanStatusCard disables the

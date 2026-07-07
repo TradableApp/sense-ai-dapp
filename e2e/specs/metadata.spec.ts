@@ -53,7 +53,7 @@ test.describe('Metadata round-trip (T-META)', () => {
 		await waitForGraph(
 			() => getConversation(convId),
 			c => c != null && c.conversationMetadataCID !== baselineCid,
-			{ label: 'ConversationMetadataUpdated indexed', timeoutMs: 60_000 },
+			{ label: 'ConversationMetadataUpdated indexed' },
 		);
 
 		// dApp: leave and re-enter History (re-mount → re-sync from remote). The new title persists
@@ -92,7 +92,7 @@ test.describe('Metadata round-trip (T-META)', () => {
 		await waitForGraph(
 			() => getConversation(convId),
 			c => c != null && c.conversationMetadataCID !== baselineCid,
-			{ label: 'delete metadata update indexed', timeoutMs: 60_000 },
+			{ label: 'delete metadata update indexed' },
 		);
 
 		// dApp: leave and re-enter History (re-mount → re-sync from remote). It STAYS deleted — the

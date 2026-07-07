@@ -60,7 +60,7 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		const pendingReqs = await waitForGraph(
 			() => getPromptRequests(owner),
 			reqs => reqs.some(isPending),
-			{ label: 'pending PromptRequest', timeoutMs: 60_000 },
+			{ label: 'pending PromptRequest' },
 		);
 		const stuck = pendingReqs.find(isPending)!;
 
@@ -75,7 +75,7 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		await waitForGraph(
 			() => getPromptRequests(owner),
 			reqs => reqs.some(r => r.id === stuck.id && r.isRefunded),
-			{ label: 'PromptRequest.isRefunded', timeoutMs: 60_000 },
+			{ label: 'PromptRequest.isRefunded' },
 		);
 
 		// Contract: the escrowed fee is returned to the wallet.
@@ -127,7 +127,7 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		const pendingReqs = await waitForGraph(
 			() => getPromptRequests(owner),
 			reqs => reqs.some(isPending),
-			{ label: 'pending PromptRequest', timeoutMs: 60_000 },
+			{ label: 'pending PromptRequest' },
 		);
 		const stuck = pendingReqs.find(isPending)!;
 		const balanceWhileStuck = await getABLEBalance(TOKEN_ADDRESS, owner);
@@ -169,7 +169,7 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		await waitForGraph(
 			() => getPromptRequests(owner),
 			reqs => reqs.some(r => r.id === stuck.id && r.isRefunded),
-			{ label: 'PromptRequest.isRefunded (via button)', timeoutMs: 60_000 },
+			{ label: 'PromptRequest.isRefunded (via button)' },
 		);
 		expect(await getABLEBalance(TOKEN_ADDRESS, owner)).toBeGreaterThan(balanceWhileStuck);
 	});

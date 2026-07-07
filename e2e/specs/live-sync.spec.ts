@@ -110,7 +110,7 @@ test.describe('Live cross-device sync (T-LIVE)', () => {
 		await waitForGraph(
 			() => getConversations(account.address),
 			convs => convs.length === 1,
-			{ label: "device B's conversation indexed", timeoutMs: 60_000 },
+			{ label: "device B's conversation indexed" },
 		);
 
 		// Device A's history populates on its own. useConversations polls only every 5 min, so an

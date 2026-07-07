@@ -34,7 +34,7 @@ test.describe('Recent activity feed (T-ACTIVITY)', () => {
 		await waitForGraph(
 			() => getActivities(freshUserAccount.address),
 			acts => acts.some(a => a.type === 'PLAN_UPDATE'),
-			{ label: 'PLAN_UPDATE activity indexed', timeoutMs: 60_000 },
+			{ label: 'PLAN_UPDATE activity indexed' },
 		);
 
 		const dashboard = new DashboardPage(freshPage);
@@ -58,7 +58,7 @@ test.describe('Recent activity feed (T-ACTIVITY)', () => {
 		await waitForGraph(
 			() => getActivities(freshUserAccount.address),
 			acts => acts.some(a => a.type === 'CONVERSATION'),
-			{ label: 'CONVERSATION activity indexed', timeoutMs: 60_000 },
+			{ label: 'CONVERSATION activity indexed' },
 		);
 
 		const dashboard = new DashboardPage(freshPage);
@@ -83,7 +83,7 @@ test.describe('Recent activity feed (T-ACTIVITY)', () => {
 		const acts = await waitForGraph(
 			() => getActivities(freshUserAccount.address),
 			a => a.some(x => x.type === 'CONVERSATION') && a.some(x => x.type === 'PLAN_UPDATE'),
-			{ label: 'both CONVERSATION + PLAN_UPDATE indexed', timeoutMs: 60_000 },
+			{ label: 'both CONVERSATION + PLAN_UPDATE indexed' },
 		);
 
 		// getActivities is orderBy timestamp desc — the prompt (CONVERSATION) is the most recent.

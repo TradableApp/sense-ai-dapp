@@ -95,7 +95,7 @@ test.describe('Governance config indexing (T-GOV-CFG)', () => {
 				c?.branchFee === String(branchFee) &&
 				c?.cancellationFee === String(cancellationFee) &&
 				c?.metadataUpdateFee === String(metadataUpdateFee),
-			{ label: 'FeeConfig reflects all four fees', timeoutMs: 60_000 },
+			{ label: 'FeeConfig reflects all four fees' },
 		);
 	});
 
@@ -105,7 +105,7 @@ test.describe('Governance config indexing (T-GOV-CFG)', () => {
 		await waitForGraph(
 			() => getProtocolConfig(),
 			c => c?.treasuryAddress?.toLowerCase() === NEW_TREASURY.toLowerCase(),
-			{ label: 'ProtocolConfig reflects the new treasury', timeoutMs: 60_000 },
+			{ label: 'ProtocolConfig reflects the new treasury' },
 		);
 	});
 });
@@ -192,8 +192,7 @@ test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
 			() => getFeeConfig(),
 			c => c?.promptFee === String(7n * ABLE),
 			{
-				label: 'new owner fee change indexed',
-				timeoutMs: 60_000,
+				label: 'new owner fee change indexed'
 			},
 		);
 	});
@@ -288,7 +287,7 @@ test.describe('Governance oracle rotation (T-GOV-ORACLE)', () => {
 		await waitForGraph(
 			() => getProtocolConfig(),
 			c => c?.oracleAddress?.toLowerCase() === NEW_ORACLE.toLowerCase(),
-			{ label: 'ProtocolConfig reflects the rotated oracle', timeoutMs: 60_000 },
+			{ label: 'ProtocolConfig reflects the rotated oracle' },
 		);
 	});
 
@@ -329,7 +328,7 @@ test.describe('Governance oracle rotation (T-GOV-ORACLE)', () => {
 		await waitForGraph(
 			() => getPromptRequests(freshUserAccount.address),
 			reqs => reqs.some(isPending),
-			{ label: 'orphaned prompt stays pending (unanswered)', timeoutMs: 60_000 },
+			{ label: 'orphaned prompt stays pending (unanswered)' },
 		);
 		await expect(freshChatPage.assistantMessages).toHaveCount(0);
 	});

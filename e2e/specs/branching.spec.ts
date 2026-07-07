@@ -80,7 +80,7 @@ test.describe('Branching (T-BRANCH)', () => {
 		await waitForGraph(
 			() => getConversations(freshUserAccount.address),
 			convs => convs.length === 2,
-			{ label: 'branched conversation indexed', timeoutMs: 60_000 },
+			{ label: 'branched conversation indexed' },
 		);
 
 		// Reopen the original conversation from history (the branch is most recent at index 0,
@@ -105,7 +105,7 @@ test.describe('Branching (T-BRANCH)', () => {
 		await waitForGraph(
 			() => getConversations(freshUserAccount.address),
 			convs => convs.length === 2,
-			{ label: 'branched conversation indexed', timeoutMs: 60_000 },
+			{ label: 'branched conversation indexed' },
 		);
 
 		// dApp: after a /history mount syncs it, both the original + the branch are listed.
@@ -140,7 +140,7 @@ test.describe('Branching (T-BRANCH)', () => {
 		const lineage = await waitForGraph(
 			() => getConversationsWithLineage(freshUserAccount.address),
 			list => list.length === 2 && list.some(c => c.branchedFrom !== null),
-			{ label: 'branch lineage indexed', timeoutMs: 60_000 },
+			{ label: 'branch lineage indexed' },
 		);
 		const original = lineage.find(c => c.branchedFrom === null);
 		const branch = lineage.find(c => c.branchedFrom !== null);
@@ -162,7 +162,7 @@ test.describe('Branching (T-BRANCH)', () => {
 		const branchMessages = await waitForGraph(
 			() => getMessages(branch!.id),
 			msgs => msgs.length === 2 && msgs.some(m => m.role === 'assistant'),
-			{ label: 'in-branch follow-up messages indexed', timeoutMs: 60_000 },
+			{ label: 'in-branch follow-up messages indexed' },
 		);
 		expect(branchMessages.map(m => m.role)).toEqual(['user', 'assistant']);
 		const answer = branchMessages.find(m => m.role === 'assistant')!;
@@ -199,7 +199,7 @@ test.describe('Branching (T-BRANCH)', () => {
 		await waitForGraph(
 			() => getConversations(freshUserAccount.address),
 			convs => convs.length === 2,
-			{ label: 'first branch (B) indexed', timeoutMs: 60_000 },
+			{ label: 'first branch (B) indexed' },
 		);
 
 		// B → C: branch the branch.
