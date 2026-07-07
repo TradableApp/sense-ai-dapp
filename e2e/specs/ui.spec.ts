@@ -294,10 +294,14 @@ test.describe('Consent banner', () => {
 			const page = await context.newPage();
 
 			await page.addInitScript(() => {
-				const w = window as unknown as { __consentTestInitDone?: boolean };
-				if (!w.__consentTestInitDone) {
+				// One-time clear for "first visit" semantics. Guarded via sessionStorage:
+				// init scripts re-run on EVERY navigation with a FRESH window object, so a
+				// window flag never survives the post-accept reload — the clear would wipe
+				// the just-accepted consent and the banner would correctly reappear.
+				// (Historically masked by the mock wallet re-seeding consent each load.)
+				if (!sessionStorage.getItem('__consentTestInitDone')) {
 					localStorage.clear();
-					w.__consentTestInitDone = true;
+					sessionStorage.setItem('__consentTestInitDone', '1');
 				}
 			});
 			await injectMockWallet(page, { seedConsent: false });

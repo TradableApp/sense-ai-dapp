@@ -89,12 +89,17 @@ test.describe('App initialisation (T-INIT)', () => {
 	test('T-INIT-06: Sentry session envelope fires within 5s of page load', async ({ page }) => {
 		test.skip(!process.env.VITE_SENTRY_DSN, 'Skipped: VITE_SENTRY_DSN not configured');
 
+		await injectMockWallet(page);
+		// Warm-up: this is the first test against a just-spawned Vite dev server —
+		// the initial load pays a 10-20s dep-compile that production never has and
+		// that would swallow the envelope window. Assert against a warm load.
+		await page.goto('/');
+		await page.waitForLoadState('networkidle');
+
 		const sentryRequest = page.waitForRequest(
 			req => req.url().includes('sentry.io') || req.url().includes('ingest'),
 			{ timeout: 10_000 },
 		);
-
-		await injectMockWallet(page);
 		await page.goto('/');
 		await sentryRequest;
 	});
