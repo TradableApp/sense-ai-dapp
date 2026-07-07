@@ -49,9 +49,15 @@ export const FRESH_TEST_ACCOUNTS: readonly HardhatAccount[] = Array.from(
 		const account = mnemonicToAccount(HARDHAT_MNEMONIC, {
 			addressIndex: FRESH_POOL_FIRST_INDEX + i,
 		});
+		const key = account.getHdKey().privateKey;
+		if (!key) {
+			throw new Error(
+				`fresh-account pool: no private key derived for index ${FRESH_POOL_FIRST_INDEX + i} — viem HD derivation contract changed?`,
+			);
+		}
 		return {
 			address: account.address,
-			privateKey: toHex(account.getHdKey().privateKey as Uint8Array),
+			privateKey: toHex(key),
 		};
 	},
 );
@@ -111,6 +117,9 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ query: '{_meta{block{number}}}' }),
+				// Per-request abort so a TCP-level stall can't outlive the overall
+				// deadline and wedge afterEach.
+				signal: AbortSignal.timeout(5_000),
 			});
 			const body = (await res.json()) as { data?: { _meta?: { block?: { number?: number } } } };
 			const head = body.data?._meta?.block?.number;

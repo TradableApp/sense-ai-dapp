@@ -18,6 +18,12 @@ export async function fundAndActivatePlan(
 	address: string,
 	allowance: bigint = PLAN_ALLOWANCE,
 ): Promise<void> {
+	if (!TOKEN_ADDRESS || !ESCROW_ADDRESS) {
+		throw new Error(
+			'fundAndActivatePlan: VITE_TOKEN_CONTRACT_ADDRESS / VITE_ESCROW_CONTRACT_ADDRESS not set — ' +
+				'is the localnet stack up and .env.localnet synced (sense-ai-e2e sync-config)?',
+		);
+	}
 	await fundABLE(TOKEN_ADDRESS, address, allowance);
 	await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, address, allowance);
 }
