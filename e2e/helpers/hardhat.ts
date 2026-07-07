@@ -159,6 +159,25 @@ export async function revertToSnapshot(snapshotId: string): Promise<void> {
 	}
 }
 
+/** Install per-test chain snapshot/revert hooks for a spec. Call ONCE at the
+ *  top of the describe (BEFORE any spec-local beforeEach, so state setup like
+ *  fundAndActivatePlan lands inside the snapshot and is restored by the
+ *  revert). Replaces the hand-rolled snapshotId + beforeEach/afterEach pattern
+ *  that five specs each maintained separately. */
+export function useChainSnapshot(testRunner: {
+	beforeEach: (_fn: () => Promise<void>) => void;
+	afterEach: (_fn: () => Promise<void>) => void;
+}): void {
+	let snapshotId: string;
+	testRunner.beforeEach(async () => {
+		snapshotId = await takeSnapshot();
+	});
+	testRunner.afterEach(async () => {
+		await revertToSnapshot(snapshotId);
+	});
+}
+
+
 
 export async function isHardhatRunning(): Promise<boolean> {
 	try {

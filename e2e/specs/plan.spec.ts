@@ -1,17 +1,15 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 import { ESCROW_ADDRESS, TOKEN_ADDRESS } from '../helpers/contracts';
-import {
-	activatePlan,
+import { activatePlan,
 	approveABLE,
 	fundABLE,
 	getABLEBalance,
 	getAllowance,
 	getEscrowBalance,
 	increaseTime,
-	revertToSnapshot,
-	takeSnapshot,
-} from '../helpers/hardhat';
+	useChainSnapshot,
+	} from '../helpers/hardhat';
 
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + deployed contracts (set E2E_LOCAL_SERVICES=1)';
@@ -20,18 +18,14 @@ test.describe('Spending plan management (T-PLAN)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	let snapshotId: string;
+	useChainSnapshot(test);
 
 	test.beforeEach(async () => {
-		snapshotId = await takeSnapshot();
 		// Fund the user via the localnet "treasury" (deployer transfer) so plan
 		// activation can move real ABLE to escrow — there is no faucet on localnet.
 		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, 10n ** 18n * 100n);
 	});
 
-	test.afterEach(async () => {
-		await revertToSnapshot(snapshotId);
-	});
 
 	test('T-PLAN-01: Dashboard shows onboarding for new user', async ({ dashboardPage }) => {
 		await dashboardPage.goto();
@@ -188,15 +182,7 @@ test.describe('Plan modal validation (T-PLAN-EDGE)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	let snapshotId: string;
 
-	test.beforeEach(async () => {
-		snapshotId = await takeSnapshot();
-	});
-
-	test.afterEach(async () => {
-		await revertToSnapshot(snapshotId);
-	});
 
 	test('T-PLAN-11: Cannot set plan with 0 ABLE', async ({ dashboardPage, planModal }) => {
 		await dashboardPage.goto();

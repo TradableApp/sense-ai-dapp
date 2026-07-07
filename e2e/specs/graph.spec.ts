@@ -2,7 +2,7 @@ import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 import { fundAndActivatePlan } from '../helpers/contracts';
 import { getConversations, getPayments, waitForIndexing } from '../helpers/graph';
-import { getCurrentBlock, revertToSnapshot, takeSnapshot } from '../helpers/hardhat';
+import { getCurrentBlock, useChainSnapshot } from '../helpers/hardhat';
 
 const SKIP_REASON = 'Skipped: requires local Graph node + Hardhat node (set E2E_LOCAL_SERVICES=1)';
 
@@ -11,7 +11,7 @@ const SKIP_REASON = 'Skipped: requires local Graph node + Hardhat node (set E2E_
 test.describe('Graph — subgraph data layer (T-GRAPH)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 
-	let snapshotId: string;
+	useChainSnapshot(test);
 
 
 	// Same self-contained precondition as contract-cost.spec: the chat composer is
@@ -21,13 +21,9 @@ test.describe('Graph — subgraph data layer (T-GRAPH)', () => {
 	// UNDO a plan set earlier in the run. Snapshot FIRST so the revert also returns
 	// the funded ABLE.
 	test.beforeEach(async () => {
-		snapshotId = await takeSnapshot();
 		await fundAndActivatePlan(TEST_ACCOUNT.address);
 	});
 
-	test.afterEach(async () => {
-		await revertToSnapshot(snapshotId);
-	});
 
 	test('T-GRAPH-01: Conversation appears in subgraph after prompt', async ({ chatPage }) => {
 		// The subgraph does NOT roll back on evm_revert: entities from orphaned

@@ -178,8 +178,31 @@ export class ChatPage {
 		await expect(this.userMessages).toHaveCount(0, { timeout: 5_000 });
 	}
 
+	/** Composer visibility with a self-diagnosing failure: the composer is
+	 *  plan-gated, and without this check a missing plan surfaces an opaque
+	 *  "locator not found" a long way from its cause (a full debugging session
+	 *  went into exactly that). */
+	async assertComposerReady() {
+		try {
+			// 15s, not 5s: on a state-heavy localnet chain first render can push past 5s.
+			await expect(this.promptTextarea).toBeVisible({ timeout: 15_000 });
+		} catch (err) {
+			const planGated = await this.page
+				.getByText('Activate Your Agent')
+				.isVisible()
+				.catch(() => false);
+			if (planGated) {
+				throw new Error(
+					"Chat composer is plan-gated: 'Activate Your Agent' is showing — this account has no active plan. " +
+						'Call fundAndActivatePlan(<address>) in beforeEach (e2e/helpers/contracts.ts).',
+				);
+			}
+			throw err;
+		}
+	}
+
 	async sendPrompt(text: string) {
-		await expect(this.promptTextarea).toBeVisible({ timeout: 15_000 });
+		await this.assertComposerReady();
 		await this.promptTextarea.fill(text);
 		// Validity (react-hook-form, onChange) enables the submit once the prompt is
 		// non-empty — wait for that rather than clicking a still-disabled button.

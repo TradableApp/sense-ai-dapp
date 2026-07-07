@@ -1,7 +1,7 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 import { ABLE, TOKEN_ADDRESS } from '../helpers/contracts';
-import { fundABLE, getABLEBalance, revertToSnapshot, takeSnapshot } from '../helpers/hardhat';
+import { fundABLE, getABLEBalance, useChainSnapshot } from '../helpers/hardhat';
 
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + deployed contracts (set E2E_LOCAL_SERVICES=1)';
@@ -11,17 +11,9 @@ test.describe('Localnet faucet (T-FAUCET)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS, 'Skipped: VITE_TOKEN_CONTRACT_ADDRESS not set');
 
-	let snapshotId: string;
-
-	test.beforeEach(async () => {
-		// No funding here on purpose: the faucet only appears when the entered limit
-		// exceeds the wallet balance, so the user must start under-funded.
-		snapshotId = await takeSnapshot();
-	});
-
-	test.afterEach(async () => {
-		await revertToSnapshot(snapshotId);
-	});
+	// No funding in these specs on purpose: the faucet only appears when the
+	// entered limit exceeds the wallet balance, so the user must start under-funded.
+	useChainSnapshot(test);
 
 	test('T-FAUCET-01: faucet funds the user from the localnet treasury without hitting the cloud function', async ({
 		dashboardPage,

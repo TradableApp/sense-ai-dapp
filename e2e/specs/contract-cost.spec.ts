@@ -1,15 +1,13 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 import { ABLE, ESCROW_ADDRESS, fundAndActivatePlan, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
-import {
-	activatePlan,
+import { activatePlan,
 	fundABLE,
 	getABLEBalance,
 	getPromptFee,
 	getSpendingLimit,
-	revertToSnapshot,
 	setPromptFee,
-	takeSnapshot,
+	useChainSnapshot,
 } from '../helpers/hardhat';
 
 // Proves the contract→dApp cost continuity: changing the on-chain per-prompt fee
@@ -33,16 +31,12 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	let snapshotId: string;
+	useChainSnapshot(test);
 
 	test.beforeEach(async () => {
-		snapshotId = await takeSnapshot();
 		await fundAndActivatePlan(TEST_ACCOUNT.address);
 	});
 
-	test.afterEach(async () => {
-		await revertToSnapshot(snapshotId);
-	});
 
 	test('T-COST-01: a changed promptFee is the amount debited per prompt (on-chain)', async ({
 		chatPage,
@@ -153,16 +147,9 @@ test.describe('Insufficient balance blocks an action (T-COST-INSUFFICIENT)', () 
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	let snapshotId: string;
-
-	test.beforeEach(async () => {
-		// Snapshot only — this spec intentionally controls the wallet's balance itself.
-		snapshotId = await takeSnapshot();
-	});
-
-	test.afterEach(async () => {
-		await revertToSnapshot(snapshotId); // also restores the promptFee changed below
-	});
+	// Snapshot only — this spec intentionally controls the wallet's balance
+	// itself; the revert also restores the promptFee changed below.
+	useChainSnapshot(test);
 
 	test('T-COST-04: a prompt fails when the wallet holds less ABLE than the fee', async ({
 		chatPage,

@@ -1,11 +1,9 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
-import {
-	getABLEBalance,
-	revertToSnapshot,
-	takeSnapshot,
-} from '../helpers/hardhat';
+import { getABLEBalance,
+	useChainSnapshot,
+	} from '../helpers/hardhat';
 
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
@@ -21,19 +19,15 @@ test.describe('Chat — prompt input (T-CHAT)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
+	useChainSnapshot(test);
+
 	// The composer (textarea + send) only renders for a user with an active plan;
 	// without one the chat shows the activate-plan CTA (see T-CHAT-13). So even the
 	// input-only tests need the funded + activated precondition.
-	let snapshotId: string;
-
 	test.beforeEach(async () => {
-		snapshotId = await takeSnapshot();
 		await fundAndActivatePlan(TEST_ACCOUNT.address);
 	});
 
-	test.afterEach(async () => {
-		await revertToSnapshot(snapshotId);
-	});
 
 	test('T-CHAT-01: Chat page renders prompt textarea', async ({ chatPage }) => {
 		await chatPage.goto();
@@ -161,18 +155,12 @@ test.describe('Chat — error states (T-CHAT-ERR)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	let snapshotId: string;
-
 	test.beforeEach(async () => {
-		snapshotId = await takeSnapshot();
 		// Error tests still need a funded + active plan so submission reaches the
 		// transaction (otherwise the UI blocks at the no-plan CTA before erroring).
 		await fundAndActivatePlan(TEST_ACCOUNT.address);
 	});
 
-	test.afterEach(async () => {
-		await revertToSnapshot(snapshotId);
-	});
 
 	test('T-CHAT-14: Network disconnect during prompt shows error', async ({
 		chatPage,
