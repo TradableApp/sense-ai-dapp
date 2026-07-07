@@ -1,7 +1,17 @@
 {
 	"extends": "./tsconfig.json",
 	"compilerOptions": {
-		"types": ["node"]
+		"types": [
+			"node"
+		],
+		"target": "ES2022",
+		"lib": [
+			"ES2022",
+			"DOM"
+		]
 	},
-	"include": ["e2e/**/*", "playwright.config.ts"]
+	"include": [
+		"e2e/**/*",
+		"playwright.config.ts"
+	]
 }
