@@ -55,6 +55,7 @@
     "test:e2e:report": "playwright show-report",
     "pretypecheck": "bun run codegen",
     "typecheck": "tsc --noEmit",
+    "typecheck:e2e": "tsc -p tsconfig.e2e.json --noEmit",
     "codegen": "graphql-codegen --config codegen.ts"
   },
   "dependencies": {

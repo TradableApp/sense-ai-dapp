@@ -68,7 +68,7 @@ test.describe('Wallet connection (T-AUTH)', () => {
 		// resolution and fails whenever the name wins. Assert the intent instead:
 		// the page's provider is connected as EXACTLY account #1.
 		const accounts = (await authenticatedPage.evaluate(() =>
-			(window as { ethereum: { request(_args: { method: string }): Promise<string[]> } }).ethereum.request(
+			(window as unknown as { ethereum: { request(_args: { method: string }): Promise<string[]> } }).ethereum.request(
 				{ method: 'eth_accounts' },
 			),
 		)) as string[];

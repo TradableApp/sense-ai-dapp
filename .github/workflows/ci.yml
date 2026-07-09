@@ -39,6 +39,9 @@ jobs:
       - name: Lint
         run: bun run lint
 
+      - name: Typecheck (e2e)
+        run: bun run typecheck:e2e
+
       - name: Test
         run: bun run test
 
