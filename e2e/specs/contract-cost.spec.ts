@@ -1,7 +1,14 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
-import { ABLE, ESCROW_ADDRESS, fundAndActivatePlan, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
-import { activatePlan,
+import {
+	ABLE,
+	ESCROW_ADDRESS,
+	fundAndActivatePlan,
+	PLAN_ALLOWANCE,
+	TOKEN_ADDRESS,
+} from '../helpers/contracts';
+import {
+	activatePlan,
 	fundABLE,
 	getABLEBalance,
 	getPromptFee,
@@ -26,7 +33,6 @@ import { activatePlan,
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
 
-
 test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
@@ -36,7 +42,6 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 	test.beforeEach(async () => {
 		await fundAndActivatePlan(TEST_ACCOUNT.address);
 	});
-
 
 	test('T-COST-01: a changed promptFee is the amount debited per prompt (on-chain)', async ({
 		chatPage,
@@ -85,7 +90,6 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 		await dashboardPage.assertHasPlan();
 		await expect(dashboardPage.spentValue).toHaveText(/\b7\b.*ABLE/, { timeout: 20_000 });
 	});
-
 });
 
 // T-COST-03 needs the FIRST answer to render before the second prompt (the

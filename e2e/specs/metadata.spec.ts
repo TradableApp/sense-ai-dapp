@@ -32,9 +32,13 @@ test.describe('Metadata round-trip (T-META)', () => {
 		await freshChatPage.goto();
 		await freshChatPage.sendPromptAndWaitForResponse('Original title for rename');
 
-		const convs = await waitForGraph(() => getConversations(owner), c => c.length === 1, {
-			label: 'conversation indexed',
-		});
+		const convs = await waitForGraph(
+			() => getConversations(owner),
+			c => c.length === 1,
+			{
+				label: 'conversation indexed',
+			},
+		);
 		const convId = convs[0].id;
 		const before = await getConversation(convId);
 		expect(before).not.toBeNull(); // baseline must exist, else the CID-change check is vacuous
@@ -56,9 +60,12 @@ test.describe('Metadata round-trip (T-META)', () => {
 		// — it isn't just the optimistic local edit.
 		await freshChatPage.goto();
 		await freshHistoryPage.goto();
-		await expect(freshHistoryPage.conversationItems.first()).toContainText('Renamed via roundtrip', {
-			timeout: 15_000,
-		});
+		await expect(freshHistoryPage.conversationItems.first()).toContainText(
+			'Renamed via roundtrip',
+			{
+				timeout: 15_000,
+			},
+		);
 	});
 
 	test('T-META-02: a delete round-trips and stays deleted across a re-sync', async ({
@@ -70,9 +77,13 @@ test.describe('Metadata round-trip (T-META)', () => {
 		await freshChatPage.goto();
 		await freshChatPage.sendPromptAndWaitForResponse('Conversation to delete and re-sync');
 
-		const convs = await waitForGraph(() => getConversations(owner), c => c.length === 1, {
-			label: 'conversation indexed',
-		});
+		const convs = await waitForGraph(
+			() => getConversations(owner),
+			c => c.length === 1,
+			{
+				label: 'conversation indexed',
+			},
+		);
 		const convId = convs[0].id;
 		const before = await getConversation(convId);
 		expect(before).not.toBeNull(); // baseline must exist, else the CID-change check is vacuous

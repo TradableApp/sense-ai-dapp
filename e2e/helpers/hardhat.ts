@@ -354,12 +354,22 @@ export function useChainSnapshot(testRunner: {
 	beforeEach: (_fn: () => Promise<void>) => void;
 	afterEach: (_fn: () => Promise<void>) => void;
 }): void {
-	let snapshotId: string;
+	// `string | undefined`, not `string`: TypeScript's definite-assignment analysis does
+	// not cross the async-callback boundary, so a bare `let snapshotId: string` type-checks
+	// while still being undefined at runtime. If takeSnapshot() throws in beforeEach,
+	// Playwright STILL runs afterEach — reverting to `undefined` then raises a second,
+	// confusing RPC error that buries the real one in the CI log.
+	let snapshotId: string | undefined;
 	testRunner.beforeEach(async () => {
 		snapshotId = await takeSnapshot();
 	});
 	testRunner.afterEach(async () => {
-		await revertToSnapshot(snapshotId);
+		if (snapshotId === undefined) return;
+		// Clear BEFORE awaiting: if the revert itself throws, the id is already spent and
+		// must not be retried by a later hook.
+		const id = snapshotId;
+		snapshotId = undefined;
+		await revertToSnapshot(id);
 	});
 }
 

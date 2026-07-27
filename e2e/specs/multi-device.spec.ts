@@ -2,7 +2,12 @@ import { type BrowserContext } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
 import { buildMockWalletScript } from '../fixtures/mock-wallet';
-import { ESCROW_ADDRESS, fundAndActivatePlan, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
+import {
+	ESCROW_ADDRESS,
+	fundAndActivatePlan,
+	PLAN_ALLOWANCE,
+	TOKEN_ADDRESS,
+} from '../helpers/contracts';
 import { openDevice, parseAble } from '../helpers/devices';
 import { allocateFreshAccount } from '../helpers/fresh-account';
 import {
@@ -201,7 +206,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 			() => getConversations(accountA.address),
 			c => c.length === 1,
 			{
-				label: "wallet A's conversation indexed"
+				label: "wallet A's conversation indexed",
 			},
 		);
 
@@ -212,7 +217,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 			() => getConversations(accountB.address),
 			c => c.length === 1,
 			{
-				label: "wallet B's conversation indexed"
+				label: "wallet B's conversation indexed",
 			},
 		);
 
@@ -243,7 +248,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 			() => getConversations(account.address),
 			c => c.length === 1,
 			{
-				label: "device A's spend indexed"
+				label: "device A's spend indexed",
 			},
 		);
 

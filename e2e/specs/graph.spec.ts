@@ -6,13 +6,10 @@ import { getCurrentBlock, useChainSnapshot } from '../helpers/hardhat';
 
 const SKIP_REASON = 'Skipped: requires local Graph node + Hardhat node (set E2E_LOCAL_SERVICES=1)';
 
-
-
 test.describe('Graph — subgraph data layer (T-GRAPH)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 
 	useChainSnapshot(test);
-
 
 	// Same self-contained precondition as contract-cost.spec: the chat composer is
 	// plan-gated ("Activate Your Agent" renders instead when the shared account has
@@ -23,7 +20,6 @@ test.describe('Graph — subgraph data layer (T-GRAPH)', () => {
 	test.beforeEach(async () => {
 		await fundAndActivatePlan(TEST_ACCOUNT.address);
 	});
-
 
 	test('T-GRAPH-01: Conversation appears in subgraph after prompt', async ({ chatPage }) => {
 		// The subgraph does NOT roll back on evm_revert: entities from orphaned
@@ -44,9 +40,7 @@ test.describe('Graph — subgraph data layer (T-GRAPH)', () => {
 		const after = await getConversations(TEST_ACCOUNT.address);
 		expect(after.length).toBeGreaterThanOrEqual(1);
 		const changed = after.some(c => !beforeCIDs.has(`${c.id}:${c.conversationCID}`));
-		expect(changed, 'the prompt should have created or updated an indexed conversation').toBe(
-			true,
-		);
+		expect(changed, 'the prompt should have created or updated an indexed conversation').toBe(true);
 	});
 
 	test('T-GRAPH-02: Payment entity matches escrow transaction', async ({ chatPage }) => {

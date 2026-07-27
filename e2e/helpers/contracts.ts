@@ -6,7 +6,9 @@ import { activatePlan, fundABLE } from './hardhat';
 export const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
 export const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
 
-export const ABLE = (whole: number): bigint => 10n ** 18n * BigInt(whole);
+// Accepts bigint as well as number so callers holding an on-chain value never need a
+// BigInt -> Number -> BigInt round-trip, which silently truncates above 2^53.
+export const ABLE = (whole: number | bigint): bigint => 10n ** 18n * BigInt(whole);
 export const PLAN_ALLOWANCE = ABLE(100);
 
 /** The chat composer is plan-gated ("Activate Your Agent" renders instead when the

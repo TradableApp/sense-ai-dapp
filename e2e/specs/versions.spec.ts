@@ -11,7 +11,6 @@ import { getPromptFee, getSpendingLimit } from '../helpers/hardhat';
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
 
-
 /** Indexed assistant messages for a conversation, oldest first. */
 async function indexedAnswers(conversationId: string) {
 	return (await getMessages(conversationId)).filter(m => m.role === 'assistant');
@@ -42,7 +41,7 @@ test.describe('Answer versions — regenerate (T-REGEN)', () => {
 			() => getConversations(owner),
 			c => c.length === 1,
 			{
-				label: 'conversation indexed'
+				label: 'conversation indexed',
 			},
 		);
 		const [firstAnswer] = await waitForGraph(
@@ -108,7 +107,7 @@ test.describe('Answer versions — regenerate (T-REGEN)', () => {
 			() => getRegenerationRequests(owner),
 			r => r.length === 1,
 			{
-				label: 'detailed RegenerationRequest indexed'
+				label: 'detailed RegenerationRequest indexed',
 			},
 		);
 	});
@@ -127,7 +126,7 @@ test.describe('Answer versions — regenerate (T-REGEN)', () => {
 			() => getRegenerationRequests(owner),
 			r => r.length === 1,
 			{
-				label: 'concise RegenerationRequest indexed'
+				label: 'concise RegenerationRequest indexed',
 			},
 		);
 	});
@@ -153,7 +152,7 @@ test.describe('Answer versions — edit prompt (T-EDIT)', () => {
 			() => getConversations(owner),
 			c => c.length === 1,
 			{
-				label: 'conversation indexed'
+				label: 'conversation indexed',
 			},
 		);
 		const spendBefore = (await getSpendingLimit(ESCROW_ADDRESS, owner)).spentAmount;

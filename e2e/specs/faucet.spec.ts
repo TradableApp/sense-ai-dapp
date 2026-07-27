@@ -6,7 +6,6 @@ import { fundABLE, getABLEBalance, useChainSnapshot } from '../helpers/hardhat';
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + deployed contracts (set E2E_LOCAL_SERVICES=1)';
 
-
 test.describe('Localnet faucet (T-FAUCET)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS, 'Skipped: VITE_TOKEN_CONTRACT_ADDRESS not set');
@@ -59,7 +58,7 @@ test.describe('Localnet faucet (T-FAUCET)', () => {
 
 		// On-chain truth: the balance rose by exactly what the UI reported.
 		const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
-		expect(balanceAfter - balanceBefore).toBe(ABLE(Number(reported)));
+		expect(balanceAfter - balanceBefore).toBe(ABLE(reported));
 		expect(cloudFnHit).toBe(false);
 	});
 

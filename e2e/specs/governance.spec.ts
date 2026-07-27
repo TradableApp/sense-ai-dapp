@@ -187,7 +187,7 @@ test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
 			() => getFeeConfig(),
 			c => c?.promptFee === String(7n * ABLE),
 			{
-				label: 'new owner fee change indexed'
+				label: 'new owner fee change indexed',
 			},
 		);
 	});

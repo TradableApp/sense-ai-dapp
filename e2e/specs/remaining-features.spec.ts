@@ -1,5 +1,10 @@
 import { expect, test } from '../fixtures';
-import { ESCROW_ADDRESS, fundAndActivatePlan, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
+import {
+	ESCROW_ADDRESS,
+	fundAndActivatePlan,
+	PLAN_ALLOWANCE,
+	TOKEN_ADDRESS,
+} from '../helpers/contracts';
 import { getPendingPayments, waitForGraph } from '../helpers/graph';
 import { fundABLE } from '../helpers/hardhat';
 import { DashboardPage } from '../pages/DashboardPage';
