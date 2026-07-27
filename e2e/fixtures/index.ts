@@ -43,6 +43,10 @@ interface SenseAIFixtures {
 	freshChatPage: ChatPage;
 	/** HistoryPage on the SAME fresh page as `freshChatPage` (both built on `freshPage`) */
 	freshHistoryPage: HistoryPage;
+	/** DashboardPage on the SAME fresh page as the other fresh POMs */
+	freshDashboardPage: DashboardPage;
+	/** PlanModal on the SAME fresh page as the other fresh POMs */
+	freshPlanModal: PlanModal;
 
 	// Page Object Models (available in all tests)
 	authPage: AuthPage;
@@ -171,6 +175,19 @@ export const test = base.extend<SenseAIFixtures>({
 	/** A HistoryPage on the shared `freshPage` (same page as `freshChatPage`). */
 	freshHistoryPage: async ({ freshPage }, use) => {
 		await use(new HistoryPage(freshPage));
+	},
+
+	/** A DashboardPage on the shared `freshPage`. Added so the specs that previously used
+	 *  snapshot/revert around the SHARED account can move to a per-test fresh account —
+	 *  `dashboardPage` is built on `authenticatedPage`, i.e. the shared TEST_ACCOUNT, so it
+	 *  cannot express that isolation (ADR-0002, CU-86d3uqgh7). */
+	freshDashboardPage: async ({ freshPage }, use) => {
+		await use(new DashboardPage(freshPage));
+	},
+
+	/** A PlanModal on the shared `freshPage` (same page as the other fresh POMs). */
+	freshPlanModal: async ({ freshPage }, use) => {
+		await use(new PlanModal(freshPage));
 	},
 
 	// ── Page Object Model fixtures ─────────────────────────────────────────

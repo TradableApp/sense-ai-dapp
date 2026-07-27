@@ -1,12 +1,5 @@
 import { expect, test } from '../fixtures';
-import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
-import {
-	activatePlan,
-	fundABLE,
-	getABLEBalance,
-	revertToSnapshot,
-	takeSnapshot,
-} from '../helpers/hardhat';
+import { activatePlan, fundABLE, getABLEBalance } from '../helpers/hardhat';
 
 const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
 const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
@@ -21,7 +14,7 @@ const SKIP_REASON =
 // these account-0 funding txs never contend. Both accounts are Hardhat-unlocked.
 const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 
-async function fundAndActivatePlan(address: string = TEST_ACCOUNT.address): Promise<void> {
+async function fundAndActivatePlan(address: string): Promise<void> {
 	await fundABLE(TOKEN_ADDRESS, address, PLAN_ALLOWANCE);
 	await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, address, PLAN_ALLOWANCE);
 }
@@ -33,47 +26,42 @@ test.describe('Chat — prompt input (T-CHAT)', () => {
 	// The composer (textarea + send) only renders for a user with an active plan;
 	// without one the chat shows the activate-plan CTA (see T-CHAT-13). So even the
 	// input-only tests need the funded + activated precondition.
-	let snapshotId: string;
-
-	test.beforeEach(async () => {
-		snapshotId = await takeSnapshot();
-		await fundAndActivatePlan();
+	test.beforeEach(async ({ freshUserAccount }) => {
+		await fundAndActivatePlan(freshUserAccount.address);
 	});
 
-	test.afterEach(async () => {
-		await revertToSnapshot(snapshotId);
+	test('T-CHAT-01: Chat page renders prompt textarea', async ({ freshChatPage }) => {
+		await freshChatPage.goto();
+		await freshChatPage.assertPromptInputVisible();
 	});
 
-	test('T-CHAT-01: Chat page renders prompt textarea', async ({ chatPage }) => {
-		await chatPage.goto();
-		await chatPage.assertPromptInputVisible();
+	test('T-CHAT-02: Empty prompt keeps send button disabled', async ({ freshChatPage }) => {
+		await freshChatPage.goto();
+		await freshChatPage.assertPromptInputVisible();
+		await freshChatPage.promptTextarea.fill('');
+		await freshChatPage.assertSendButtonDisabled();
 	});
 
-	test('T-CHAT-02: Empty prompt keeps send button disabled', async ({ chatPage }) => {
-		await chatPage.goto();
-		await chatPage.assertPromptInputVisible();
-		await chatPage.promptTextarea.fill('');
-		await chatPage.assertSendButtonDisabled();
+	test('T-CHAT-03: Whitespace-only prompt keeps send button disabled', async ({
+		freshChatPage,
+	}) => {
+		await freshChatPage.goto();
+		await freshChatPage.assertPromptInputVisible();
+		await freshChatPage.promptTextarea.fill('   \n\t  ');
+		await freshChatPage.assertSendButtonDisabled();
 	});
 
-	test('T-CHAT-03: Whitespace-only prompt keeps send button disabled', async ({ chatPage }) => {
-		await chatPage.goto();
-		await chatPage.assertPromptInputVisible();
-		await chatPage.promptTextarea.fill('   \n\t  ');
-		await chatPage.assertSendButtonDisabled();
+	test('T-CHAT-04: Typing a prompt enables the send button', async ({ freshChatPage }) => {
+		await freshChatPage.goto();
+		await freshChatPage.promptTextarea.fill('What is the market sentiment?');
+		await expect(freshChatPage.submitButton).toBeEnabled({ timeout: 5_000 });
 	});
 
-	test('T-CHAT-04: Typing a prompt enables the send button', async ({ chatPage }) => {
-		await chatPage.goto();
-		await chatPage.promptTextarea.fill('What is the market sentiment?');
-		await expect(chatPage.submitButton).toBeEnabled({ timeout: 5_000 });
-	});
-
-	test('T-CHAT-05: Long prompt (500+ chars) is accepted', async ({ chatPage }) => {
-		await chatPage.goto();
+	test('T-CHAT-05: Long prompt (500+ chars) is accepted', async ({ freshChatPage }) => {
+		await freshChatPage.goto();
 		const longPrompt = 'Analyze the market. '.repeat(30); // ~600 chars
-		await chatPage.promptTextarea.fill(longPrompt);
-		await expect(chatPage.submitButton).toBeEnabled({ timeout: 5_000 });
+		await freshChatPage.promptTextarea.fill(longPrompt);
+		await expect(freshChatPage.submitButton).toBeEnabled({ timeout: 5_000 });
 	});
 });
 
@@ -160,9 +148,11 @@ test.describe('Chat — submission and response (T-CHAT-TX)', () => {
 test.describe('Chat — no active plan (T-CHAT-NOPLAN)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 
-	test('T-CHAT-13: Chat shows activate plan CTA when user has no plan', async ({ chatPage }) => {
-		await chatPage.goto();
-		await chatPage.assertNoPlanCTA();
+	test('T-CHAT-13: Chat shows activate plan CTA when user has no plan', async ({
+		freshChatPage,
+	}) => {
+		await freshChatPage.goto();
+		await freshChatPage.assertNoPlanCTA();
 	});
 });
 
@@ -170,31 +160,24 @@ test.describe('Chat — error states (T-CHAT-ERR)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	let snapshotId: string;
-
-	test.beforeEach(async () => {
-		snapshotId = await takeSnapshot();
+	test.beforeEach(async ({ freshUserAccount }) => {
 		// Error tests still need a funded + active plan so submission reaches the
 		// transaction (otherwise the UI blocks at the no-plan CTA before erroring).
-		await fundAndActivatePlan();
-	});
-
-	test.afterEach(async () => {
-		await revertToSnapshot(snapshotId);
+		await fundAndActivatePlan(freshUserAccount.address);
 	});
 
 	test('T-CHAT-14: Network disconnect during prompt shows error', async ({
-		chatPage,
-		authenticatedPage,
+		freshChatPage,
+		freshPage,
 	}) => {
-		await chatPage.goto();
-		await chatPage.promptTextarea.fill('Test network failure');
+		await freshChatPage.goto();
+		await freshChatPage.promptTextarea.fill('Test network failure');
 
-		const context = authenticatedPage.context();
+		const context = freshPage.context();
 		await context.setOffline(true);
-		await chatPage.submitButton.click();
+		await freshChatPage.submitButton.click();
 
-		await expect(authenticatedPage.getByText(/error|failed|offline|network/i).first()).toBeVisible({
+		await expect(freshPage.getByText(/error|failed|offline|network/i).first()).toBeVisible({
 			timeout: 15_000,
 		});
 
@@ -202,10 +185,10 @@ test.describe('Chat — error states (T-CHAT-ERR)', () => {
 	});
 
 	test('T-CHAT-15: Wallet rejects transaction — can retry', async ({
-		chatPage,
-		authenticatedPage,
+		freshChatPage,
+		freshPage,
 	}) => {
-		await authenticatedPage.addInitScript(`
+		await freshPage.addInitScript(`
 			const orig = window.ethereum?.request;
 			if (orig) {
 				let blocked = true;
@@ -221,11 +204,11 @@ test.describe('Chat — error states (T-CHAT-ERR)', () => {
 			}
 		`);
 
-		await chatPage.goto();
-		await chatPage.sendPrompt('Test wallet rejection');
+		await freshChatPage.goto();
+		await freshChatPage.sendPrompt('Test wallet rejection');
 
-		await expect(
-			authenticatedPage.getByText(/rejected|cancelled|denied|error/i).first(),
-		).toBeVisible({ timeout: 15_000 });
+		await expect(freshPage.getByText(/rejected|cancelled|denied|error/i).first()).toBeVisible({
+			timeout: 15_000,
+		});
 	});
 });
