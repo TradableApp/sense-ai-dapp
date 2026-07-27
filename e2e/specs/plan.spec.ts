@@ -182,7 +182,13 @@ test.describe('Plan modal validation (T-PLAN-EDGE)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-
+	// This block needs no beforeEach of its own, but it DOES need the revert: T-PLAN-13
+	// calls increaseTime(86400 + 60), and without an afterEach that ~24h EVM time
+	// advance persists for the remainder of the serial run — every later spec would
+	// evaluate against a chain a day ahead, which silently invalidates anything
+	// asserting inside a time window (REFUND_TIMEOUT is 1 hour). This block had
+	// snapshot/revert hooks before the fixture refactor; restoring that coverage.
+	useChainSnapshot(test);
 
 	test('T-PLAN-11: Cannot set plan with 0 ABLE', async ({ dashboardPage, planModal }) => {
 		await dashboardPage.goto();

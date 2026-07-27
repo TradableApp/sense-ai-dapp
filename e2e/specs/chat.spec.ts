@@ -155,6 +155,13 @@ test.describe('Chat — error states (T-CHAT-ERR)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
+	// MUST precede the beforeEach below so fundAndActivatePlan lands inside the
+	// snapshot and is undone by the revert. Without it each test inherits the
+	// previous test's already-active plan, so the precondition is wrong from
+	// T-CHAT-15 onwards (this block had its own snapshot/revert hooks before the
+	// fixture refactor — restoring that coverage).
+	useChainSnapshot(test);
+
 	test.beforeEach(async () => {
 		// Error tests still need a funded + active plan so submission reaches the
 		// transaction (otherwise the UI blocks at the no-plan CTA before erroring).
