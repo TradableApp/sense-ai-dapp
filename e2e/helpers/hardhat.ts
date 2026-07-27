@@ -159,13 +159,21 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 	let parseErrorsTotal = 0;
 	let timeouts = 0;
 	// everReachable means "something is listening" and is set by a timeout too. This is
-	// the narrower fact — "we actually received an HTTP response" — which the diagnosis
-	// needs so it cannot claim the endpoint "answered" when it only ever timed out.
-	let everAnswered = false;
-	// MUST reflect only the LATEST poll, not any poll: a transient startup error that
-	// later recovers must not out-rank the real diagnosis. Cleared on every clean
-	// response below. (graphErrors keeps the cumulative count for reporting, since
-	// "errored earlier but recovered" is itself useful context.)
+	// the narrower fact: an HTTP response of ANY kind arrived — including a 502 with an
+	// HTML body. Deliberately NOT "responded usefully": it is set before res.json(), so
+	// a run that returns unparseable bodies every time still counts as having responded,
+	// and the diagnosis correctly reaches "answered but never returned an indexed head —
+	// is the right service on that port?" rather than claiming nothing ever responded.
+	// Moving it after the parse inverts that: a wrong service replying HTML 200 to every
+	// poll would be reported as "never returned a response", which is false and points
+	// at a stalled reorg instead of at the wrong service.
+	let everSentHttpResponse = false;
+	// MUST reflect only the LATEST poll: a transient startup error that later recovers
+	// must not out-rank the real diagnosis. Enforced STRUCTURALLY by clearing it at the
+	// top of every iteration rather than in each exit path — relying on individual
+	// branches to remember has already produced this bug twice (a clean response, then
+	// an unparseable one), and a timeout would have been a third. (graphErrors keeps the
+	// cumulative count for reporting, since "errored earlier but recovered" is context.)
 	let lastGraphError: string | null = null;
 	let graphErrors = 0;
 
@@ -176,6 +184,8 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 		// Lets the catch tell a body-parse failure apart from a connection failure,
 		// so each counter means exactly what its name says.
 		let gotResponse = false;
+		// Only THIS iteration's GraphQL error may survive to the diagnosis.
+		lastGraphError = null;
 		try {
 			const res = await fetch(GRAPH_URL, {
 				method: 'POST',
@@ -192,7 +202,7 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 			// replied to us.
 			gotResponse = true;
 			everReachable = true;
-			everAnswered = true;
+			everSentHttpResponse = true;
 			const body = (await res.json()) as {
 				data?: { _meta?: { block?: { number?: number } } };
 				errors?: Array<{ message: string }>;
@@ -210,12 +220,6 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 			if (body.errors?.length) {
 				lastGraphError = body.errors[0].message;
 				graphErrors += 1;
-			} else {
-				// Clear it: graph-node commonly errors while restarting and then recovers.
-				// Leaving a stale message here would make the diagnosis below announce a
-				// failed subgraph for what is really a reorg stall — confidently wrong on
-				// the most likely sequence (startup race, then stall).
-				lastGraphError = null;
 			}
 			const head = body.data?._meta?.block?.number;
 			// No `_meta` yet (subgraph still deploying) → keep waiting rather than
@@ -264,8 +268,10 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 				// Warn but do NOT return: unlike a connection refusal, sustained parse
 				// errors have a legitimate cause (graph-node serving error pages while
 				// its GraphQL stack comes back up after a reorg), so bailing would
-				// reintroduce the silent skip. `=== ` not `>=` so this fires once
-				// instead of on all ~240 remaining polls.
+				// reintroduce the silent skip. `===` not `>=` so it fires once per
+				// consecutive run rather than on all ~240 remaining polls (the counter
+				// resets on a clean parse, so alternating runs of 5+ can warn again —
+				// which is wanted: each sustained run is separately worth reporting).
 				if (parseErrors === PARSE_ERROR_WARN_AFTER) {
 					console.warn(
 						`[revertToSnapshot] ${GRAPH_URL} returned ${parseErrors} unparseable responses — ` +
@@ -300,7 +306,7 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 		diagnosis = `graph is still reporting "${lastGraphError}" — the subgraph is missing or has FAILED, which is not a reorg backlog.`;
 	} else if (!everReachable) {
 		diagnosis = `nothing answered at ${GRAPH_URL} — check the graph is up and that this URL matches the one the suite queries.`;
-	} else if (!everAnswered) {
+	} else if (!everSentHttpResponse) {
 		diagnosis = `${GRAPH_URL} accepted connections but never returned a response within 15s — graph-node is alive and not answering; suspect a stalled reorg or an OOM.`;
 	} else if (lastHead === null) {
 		diagnosis = `${GRAPH_URL} answered but never returned an indexed head — is the subgraph deployed, and is the right service on that port?`;
