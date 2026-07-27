@@ -116,6 +116,9 @@ export async function takeSnapshot(): Promise<string> {
 	return (await rpc('evm_snapshot')) as string;
 }
 
+/** Consecutive unparseable bodies before warning (once) that the endpoint may be wrong. */
+const PARSE_ERROR_WARN_AFTER = 5;
+
 /** Poll the local subgraph's `_meta` head until it reaches `target`, or fail loudly.
  *
  *  This is the serialization that keeps each revert's mini-reorg small; without it
@@ -142,8 +145,6 @@ export async function takeSnapshot(): Promise<string> {
  *  sleep). Pre-existing — the 5s abort gave the same shape — and harmless here, since
  *  the per-request abort still stops an unbounded stall from wedging afterEach.
  */
-const PARSE_ERROR_WARN_AFTER = 5;
-
 async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	let everReachable = false;
@@ -151,7 +152,12 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 	let connectionFailures = 0;
 	let parseErrors = 0;
 	let timeouts = 0;
+	// MUST reflect only the LATEST poll, not any poll: a transient startup error that
+	// later recovers must not out-rank the real diagnosis. Cleared on every clean
+	// response below. (graphErrors keeps the cumulative count for reporting, since
+	// "errored earlier but recovered" is itself useful context.)
 	let lastGraphError: string | null = null;
+	let graphErrors = 0;
 
 	while (Date.now() < deadline) {
 		// Hoisted so the catch can ask the SIGNAL whether our own timeout fired,
@@ -184,7 +190,16 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 			// transport failure — so without this the loop just sees "no head", waits the
 			// full deadline and then blames a reorg backlog, discarding the one message
 			// that said what was actually wrong. Mirrors graphQuery() in ./graph.
-			if (body.errors?.length) lastGraphError = body.errors[0].message;
+			if (body.errors?.length) {
+				lastGraphError = body.errors[0].message;
+				graphErrors += 1;
+			} else {
+				// Clear it: graph-node commonly errors while restarting and then recovers.
+				// Leaving a stale message here would make the diagnosis below announce a
+				// failed subgraph for what is really a reorg stall — confidently wrong on
+				// the most likely sequence (startup race, then stall).
+				lastGraphError = null;
+			}
 			const head = body.data?._meta?.block?.number;
 			// No `_meta` yet (subgraph still deploying) → keep waiting rather than
 			// assuming it never will have one.
@@ -264,7 +279,7 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 	// from what we actually observed, most specific first.
 	let diagnosis: string;
 	if (lastGraphError) {
-		diagnosis = `graph reported "${lastGraphError}" — the subgraph is missing or has FAILED, which is not a reorg backlog.`;
+		diagnosis = `graph is still reporting "${lastGraphError}" — the subgraph is missing or has FAILED, which is not a reorg backlog.`;
 	} else if (!everReachable) {
 		diagnosis = `nothing answered at ${GRAPH_URL} — check the graph is up and that this URL matches the one the suite queries.`;
 	} else if (lastHead === null) {
@@ -276,7 +291,8 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 	throw new Error(
 		`revertToSnapshot: subgraph did not re-sync to block ${target} within ${timeoutMs}ms ` +
 			`(last observed head: ${lastHead ?? 'none'}, ${timeouts} request timeout(s), ` +
-			`${parseErrors} unparseable response(s), ${connectionFailures} connection failure(s)) — ${diagnosis}`,
+			`${parseErrors} unparseable response(s), ${graphErrors} graph error(s), ` +
+			`${connectionFailures} connection failure(s)) — ${diagnosis}`,
 	);
 }
 
