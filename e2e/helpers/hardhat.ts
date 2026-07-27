@@ -148,16 +148,19 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 				// early is what previously disabled this guard.
 				signal,
 			});
+			// ANY HTTP response proves the endpoint exists, so mark it reachable BEFORE
+			// parsing. graph-node can answer with a non-JSON body while starting up; if
+			// that parse throw were left to the catch it would be miscounted as a
+			// connection failure and could bail as "absent" — an endpoint that just
+			// replied to us.
+			everReachable = true;
 			const body = (await res.json()) as { data?: { _meta?: { block?: { number?: number } } } };
 			const head = body.data?._meta?.block?.number;
+			// No `_meta` yet (subgraph still deploying) → keep waiting rather than
+			// assuming it never will have one.
 			if (typeof head === 'number') {
-				everReachable = true;
 				lastHead = head;
 				if (head >= target) return;
-			} else {
-				// Reachable but no _meta yet (subgraph still deploying). Keep waiting
-				// rather than assuming it will never have one.
-				everReachable = true;
 			}
 		} catch {
 			// Distinguish "graph is slow" from "graph is absent" via the SIGNAL, not the
