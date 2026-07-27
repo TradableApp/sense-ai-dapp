@@ -52,7 +52,9 @@ export const FRESH_TEST_ACCOUNTS: readonly HardhatAccount[] = Array.from(
 		const key = account.getHdKey().privateKey;
 		if (!key) {
 			throw new Error(
-				`fresh-account pool: no private key derived for index ${FRESH_POOL_FIRST_INDEX + i} — viem HD derivation contract changed?`,
+				`fresh-account pool: no private key derived for index ${
+					FRESH_POOL_FIRST_INDEX + i
+				} — viem HD derivation contract changed?`,
 			);
 		}
 		return {
@@ -130,9 +132,13 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 	const deadline = Date.now() + timeoutMs;
 	let everReachable = false;
 	let lastHead: number | null = null;
-	let transientFailures = 0;
+	let connectionFailures = 0;
+	let timeouts = 0;
 
 	while (Date.now() < deadline) {
+		// Hoisted so the catch can ask the SIGNAL whether our own timeout fired,
+		// rather than trying to identify the error — see the catch for why.
+		const signal = AbortSignal.timeout(15_000);
 		try {
 			const res = await fetch('http://localhost:8000/subgraphs/name/sense-ai', {
 				method: 'POST',
@@ -140,7 +146,7 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 				body: JSON.stringify({ query: '{_meta{block{number}}}' }),
 				// 15s, not 5s: a graph-node mid-reorg is slow to answer, and aborting
 				// early is what previously disabled this guard.
-				signal: AbortSignal.timeout(15_000),
+				signal,
 			});
 			const body = (await res.json()) as { data?: { _meta?: { block?: { number?: number } } } };
 			const head = body.data?._meta?.block?.number;
@@ -154,18 +160,37 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 				everReachable = true;
 			}
 		} catch {
-			transientFailures += 1;
-			// Only treat it as "no graph here" if we have NEVER had a good answer and
-			// the failures look like a genuinely absent endpoint. Once the graph has
-			// answered even once, a later failure means it is struggling — which is
-			// precisely when we must keep waiting instead of bailing out.
-			if (!everReachable && transientFailures >= 3) {
-				console.warn(
-					`[revertToSnapshot] subgraph endpoint unreachable after ${transientFailures} attempts — ` +
-						'skipping graph re-sync wait (graph-less context). Graph assertions after this ' +
-						'revert would read phantom state.',
-				);
-				return;
+			// Distinguish "graph is slow" from "graph is absent" via the SIGNAL, not the
+			// error. Error identity is not portable across the runtimes this suite runs
+			// under — measured 2026-07-27:
+			//
+			//                        | Bun            | Node
+			//   AbortSignal.timeout  | TimeoutError   | TypeError
+			//   AbortController.abort| AbortError     | TypeError
+			//   connection refused   | Error          | TypeError
+			//
+			// so a name check (e.g. `err.name === 'AbortError'`) matches nothing on Bun
+			// and cannot discriminate at all on Node. `signal.aborted` is true iff OUR
+			// 15s timeout fired, on every runtime.
+			if (signal.aborted) {
+				// Graph accepted the request but was too slow to answer — that is the
+				// STRUGGLING case, i.e. exactly what this guard exists to wait out.
+				// Counting it toward "absent" is what made the old guard self-disable.
+				timeouts += 1;
+			} else {
+				// A fast, connection-level rejection (refused / DNS) is real evidence of
+				// an absent endpoint. Only bail once we've never had a good answer AND
+				// seen several of these; after even one good answer, a later failure
+				// means it is struggling, so we keep waiting.
+				connectionFailures += 1;
+				if (!everReachable && connectionFailures >= 3) {
+					console.warn(
+						`[revertToSnapshot] subgraph endpoint refused ${connectionFailures} connections — ` +
+							'skipping graph re-sync wait (graph-less context). Graph assertions after this ' +
+							'revert would read phantom state.',
+					);
+					return;
+				}
 			}
 		}
 		await new Promise(r => setTimeout(r, 500));
@@ -175,7 +200,8 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 		`revertToSnapshot: subgraph did not re-sync to block ${target} within ${timeoutMs}ms ` +
 			`(last observed head: ${lastHead ?? 'none'}${
 				everReachable ? '' : ', endpoint never answered'
-			}) — graph-node reorg backlog; see LOCALNET_SETUP troubleshooting.`,
+			}, ${timeouts} request timeout(s), ${connectionFailures} connection failure(s)) — ` +
+			'graph-node reorg backlog; see LOCALNET_SETUP troubleshooting.',
 	);
 }
 
@@ -201,7 +227,6 @@ export async function revertToSnapshot(snapshotId: string): Promise<void> {
 		await waitForGraphHead(await getBlockNumber());
 	}
 }
-
 
 export async function isHardhatRunning(): Promise<boolean> {
 	try {
@@ -292,11 +317,8 @@ export async function fundABLE(
 	// transfers some away, and heavy live-chain rerunning can drain it to zero.
 	// When that happens plan activation fails silently and specs die with an
 	// opaque "composer not found" — fail loudly at the source instead.
-	const balData = `0x70a08231${  padAddress(DEPLOYER_ADDRESS).slice(2)}`;
-	const balHex = (await rpc('eth_call', [
-		{ to: tokenAddress, data: balData },
-		'latest',
-	])) as string;
+	const balData = `0x70a08231${padAddress(DEPLOYER_ADDRESS).slice(2)}`;
+	const balHex = (await rpc('eth_call', [{ to: tokenAddress, data: balData }, 'latest'])) as string;
 	if (BigInt(balHex) < amount) {
 		throw new Error(
 			`fundABLE: deployer ABLE depleted (${BigInt(balHex)} < ${amount}). ` +
