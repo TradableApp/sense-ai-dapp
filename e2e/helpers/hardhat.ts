@@ -106,33 +106,76 @@ export async function takeSnapshot(): Promise<string> {
 	return (await rpc('evm_snapshot')) as string;
 }
 
-/** Poll the local subgraph's _meta head until it reaches `target` (or timeout).
- *  Tolerant: resolves silently if the graph endpoint is unavailable, so
- *  revert-users don't break in graph-less contexts. */
+/** Poll the local subgraph's `_meta` head until it reaches `target`, or fail loudly.
+ *
+ *  This is the serialization that keeps each revert's mini-reorg small; without it
+ *  unawaited reorgs queue into a backlog that strands the subgraph and silently kills
+ *  answer hydration suite-wide (LOCALNET_SETUP troubleshooting).
+ *
+ *  It used to be "tolerant": ANY fetch rejection returned immediately, and the abort
+ *  was 5s. That made the guard SELF-DISABLING exactly when it was needed — once
+ *  graph-node is busy retrying a reorg it answers slowly, the 5s abort trips, the catch
+ *  returns, serialization silently stops, and the next revert compounds the backlog.
+ *  Observed: the subgraph stranded 59 blocks behind on a FRESH chain while this
+ *  function's timeout error never once fired.
+ *
+ *  Now it separates the two cases:
+ *    - graph genuinely absent (connection refused / DNS) → skip once, but SAY SO.
+ *      Graph-less contexts (unit-ish specs that revert but never read the subgraph)
+ *      must not break.
+ *    - graph present but not advancing → keep waiting, then THROW. A stalled
+ *      subgraph is the failure this exists to catch; it must never pass silently.
+ */
 async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
+	let everReachable = false;
+	let lastHead: number | null = null;
+	let transientFailures = 0;
+
 	while (Date.now() < deadline) {
 		try {
 			const res = await fetch('http://localhost:8000/subgraphs/name/sense-ai', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ query: '{_meta{block{number}}}' }),
-				// Per-request abort so a TCP-level stall can't outlive the overall
-				// deadline and wedge afterEach.
-				signal: AbortSignal.timeout(5_000),
+				// 15s, not 5s: a graph-node mid-reorg is slow to answer, and aborting
+				// early is what previously disabled this guard.
+				signal: AbortSignal.timeout(15_000),
 			});
 			const body = (await res.json()) as { data?: { _meta?: { block?: { number?: number } } } };
 			const head = body.data?._meta?.block?.number;
-			if (typeof head !== 'number') return; // graph up but no meta — don't block
-			if (head >= target) return;
+			if (typeof head === 'number') {
+				everReachable = true;
+				lastHead = head;
+				if (head >= target) return;
+			} else {
+				// Reachable but no _meta yet (subgraph still deploying). Keep waiting
+				// rather than assuming it will never have one.
+				everReachable = true;
+			}
 		} catch {
-			return; // graph not reachable — nothing to wait for
+			transientFailures += 1;
+			// Only treat it as "no graph here" if we have NEVER had a good answer and
+			// the failures look like a genuinely absent endpoint. Once the graph has
+			// answered even once, a later failure means it is struggling — which is
+			// precisely when we must keep waiting instead of bailing out.
+			if (!everReachable && transientFailures >= 3) {
+				console.warn(
+					`[revertToSnapshot] subgraph endpoint unreachable after ${transientFailures} attempts — ` +
+						'skipping graph re-sync wait (graph-less context). Graph assertions after this ' +
+						'revert would read phantom state.',
+				);
+				return;
+			}
 		}
 		await new Promise(r => setTimeout(r, 500));
 	}
+
 	throw new Error(
-		`revertToSnapshot: subgraph did not re-sync to block ${target} within ${timeoutMs}ms — ` +
-			'graph-node reorg backlog; see LOCALNET_SETUP troubleshooting.',
+		`revertToSnapshot: subgraph did not re-sync to block ${target} within ${timeoutMs}ms ` +
+			`(last observed head: ${lastHead ?? 'none'}${
+				everReachable ? '' : ', endpoint never answered'
+			}) — graph-node reorg backlog; see LOCALNET_SETUP troubleshooting.`,
 	);
 }
 
