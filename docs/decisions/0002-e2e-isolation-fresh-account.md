@@ -95,9 +95,23 @@ while `T-CANCEL-02`/`04` (no indexed read) passed — 4/4 on subgraph dependence
   `faucet` had kept snapshots: `dashboardPage`/`planModal` are built on `authenticatedPage`,
   i.e. the shared account, so they could not express per-test isolation.
 - **Enforcement, so this cannot drift again:** `e2e/__guards__/adr-0002-snapshot-isolation.test.ts`
-  fails if any spec other than `plan` uses snapshot/revert, and separately fails if `plan`
-  ever gains an indexed read (which would invalidate its exemption). `sense-ai-e2e`'s
-  `run-e2e-sharded.sh` refuses to start if `plan` is placed in a graph-asserting shard.
+  fails if any spec other than `plan` uses snapshot/revert, fails if `plan` ever gains an
+  indexed read (which would invalidate its exemption), and pins the exemption list to exactly
+  `plan.spec.ts` so the guard cannot be defeated by widening the allowlist.
+  `sense-ai-e2e`'s `run-e2e-sharded.sh` refuses to start if `plan` is placed in a
+  graph-asserting shard.
+
+**Correction to the "cross-project invocation" note above.** That note claims "CI's
+per-project matrix already isolates them". That is **false** and was verified so on
+2026-07-27: neither repo runs Playwright in CI at all. `sense-ai-dapp/.github/workflows/ci.yml`
+runs lint, `typecheck:e2e`, vitest and build; `sense-ai-e2e`'s runs shellcheck, actionlint and
+a docker-compose validation. CI never reproduced the wedge because CI never runs these tests.
+
+This matters more than a factual tidy-up. It means there is **no automated safety net** for
+this class of defect — a local sharded run is the only place the full stack is exercised. It is
+also why the enforcement above is a _static vitest guard_ rather than a reliance on the suite
+catching the violation: the guard runs under `bun run test`, so it is the one piece of ADR-0002
+protection that executes in CI on every push.
 
 **Note on the guard's strictness.** It bans snapshot/revert in _any_ non-`plan` spec, not just
 specs that read the subgraph. That is deliberate: the wedge is **global**, so a spec can

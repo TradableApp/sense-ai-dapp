@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { enableFreshAccount, FRESH_TEST_ACCOUNTS, type HardhatAccount } from './hardhat';
+import { enableFreshAccount, FRESH_TEST_ACCOUNTS, type HardhatAccount, RPC_URL } from './hardhat';
 
 /**
  * Per-test fresh-account allocator.
@@ -75,7 +75,7 @@ export async function resetFreshAccountAllocator(): Promise<void> {
 	let genesisHash: string | null = null;
 	for (let attempt = 0; attempt < 3 && genesisHash === null; attempt += 1) {
 		try {
-			const res = await fetch('http://127.0.0.1:8545', {
+			const res = await fetch(RPC_URL, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
