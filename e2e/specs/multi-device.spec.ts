@@ -2,12 +2,7 @@ import { type BrowserContext } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
 import { buildMockWalletScript } from '../fixtures/mock-wallet';
-import {
-	ESCROW_ADDRESS,
-	fundAndActivatePlan,
-	PLAN_ALLOWANCE,
-	TOKEN_ADDRESS,
-} from '../helpers/contracts';
+import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { openDevice, parseAble } from '../helpers/devices';
 import { allocateFreshAccount } from '../helpers/fresh-account';
 import {
@@ -16,7 +11,7 @@ import {
 	getPromptRequests,
 	waitForGraph,
 } from '../helpers/graph';
-import { activatePlan, fundABLE, getABLEBalance } from '../helpers/hardhat';
+import { fundABLE, getABLEBalance } from '../helpers/hardhat';
 import { AuthPage } from '../pages/AuthPage';
 import { ChatPage } from '../pages/ChatPage';
 import { HistoryPage } from '../pages/HistoryPage';
@@ -237,8 +232,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		browser,
 	}) => {
 		const account = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, account.address, PLAN_ALLOWANCE); // 100 ABLE
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, account.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(account.address); // funds + authorises PLAN_ALLOWANCE (100 ABLE)
 
 		// Device A spends from the shared on-chain balance/allowance by sending a prompt.
 		const deviceA = await openDevice(browser, account, openContexts);

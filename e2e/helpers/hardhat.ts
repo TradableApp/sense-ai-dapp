@@ -349,7 +349,14 @@ export async function revertToSnapshot(snapshotId: string): Promise<void> {
  *  top of the describe (BEFORE any spec-local beforeEach, so state setup like
  *  fundAndActivatePlan lands inside the snapshot and is restored by the
  *  revert). Replaces the hand-rolled snapshotId + beforeEach/afterEach pattern
- *  that five specs each maintained separately. */
+ *  that five specs each maintained separately.
+ *
+ *  Pass Playwright's `test` object. The parameter is typed structurally rather than as
+ *  `Pick<TestType<…>, 'beforeEach' | 'afterEach'>` on purpose: it keeps the hook logic
+ *  decoupled from Playwright's fixture generics, so the ordering/guard behaviour can be
+ *  exercised against a plain stub runner. Verified to compile with
+ *  `strictFunctionTypes: true` — a zero-arg callback is assignable to Playwright's
+ *  richer `(args, testInfo)` signature, so this is not relying on method bivariance. */
 export function useChainSnapshot(testRunner: {
 	beforeEach: (_fn: () => Promise<void>) => void;
 	afterEach: (_fn: () => Promise<void>) => void;

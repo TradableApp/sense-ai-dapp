@@ -1,7 +1,6 @@
 import { expect, test } from '../fixtures';
-import { ESCROW_ADDRESS, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
+import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { getActivities, waitForGraph } from '../helpers/graph';
-import { activatePlan, fundABLE } from '../helpers/hardhat';
 import { DashboardPage } from '../pages/DashboardPage';
 
 const SKIP_REASON =
@@ -18,11 +17,10 @@ test.describe('Recent activity feed (T-ACTIVITY)', () => {
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test.beforeEach(async ({ freshUserAccount }) => {
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
 		// Activating a plan calls setSpendingLimit → emits SpendingLimitSet → the subgraph's
 		// handleSpendingLimitSet writes a PLAN_UPDATE Activity. So a plan-bearing dashboard always
 		// has at least this one activity to surface.
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(freshUserAccount.address);
 	});
 
 	test('T-ACTIVITY-01: activating a plan indexes a PLAN_UPDATE activity the dashboard shows as "Spending Limit Updated"', async ({

@@ -6,8 +6,10 @@ import { activatePlan, fundABLE } from './hardhat';
 export const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
 export const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
 
-// Accepts bigint as well as number so callers holding an on-chain value never need a
-// BigInt -> Number -> BigInt round-trip, which silently truncates above 2^53.
+// Scales a WHOLE-TOKEN count to wei. Accepts bigint as well as number so a caller holding
+// a whole-token count as a bigint needs no BigInt -> Number -> BigInt round-trip, which
+// silently truncates above 2^53. NOTE: the argument is whole tokens, never a wei amount —
+// passing an already-scaled on-chain value multiplies by 1e18 a second time.
 export const ABLE = (whole: number | bigint): bigint => 10n ** 18n * BigInt(whole);
 export const PLAN_ALLOWANCE = ABLE(100);
 
