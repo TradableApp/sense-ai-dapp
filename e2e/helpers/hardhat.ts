@@ -6,6 +6,14 @@ import { promisify } from 'node:util';
 import { decodeFunctionResult, encodeFunctionData, parseAbi, toHex } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
 
+// Single source of truth for the subgraph endpoint, shared with the rest of the suite.
+// It is env-overridable (VITE_THE_GRAPH_API_URL) and sync-config.sh builds it from
+// $PORT_GRAPH/$SUBGRAPH_NAME, so hardcoding localhost:8000 here would silently point
+// this poller at nothing the moment either changes — and an unreachable endpoint makes
+// it skip serialization as a "graph-less context" while every other helper queries the
+// real graph. That is the self-disabling this module exists to prevent.
+import { GRAPH_URL } from './graph';
+
 const execFileAsync = promisify(execFile);
 // Sibling repo that owns the contracts + hardhat-upgrades plugin + the OZ upgrades manifest. Anchor on
 // THIS file (e2e/helpers/) rather than process.cwd(), so it resolves correctly no matter where
@@ -134,6 +142,8 @@ export async function takeSnapshot(): Promise<string> {
  *  sleep). Pre-existing — the 5s abort gave the same shape — and harmless here, since
  *  the per-request abort still stops an unbounded stall from wedging afterEach.
  */
+const PARSE_ERROR_WARN_AFTER = 5;
+
 async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	let everReachable = false;
@@ -141,6 +151,7 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 	let connectionFailures = 0;
 	let parseErrors = 0;
 	let timeouts = 0;
+	let lastGraphError: string | null = null;
 
 	while (Date.now() < deadline) {
 		// Hoisted so the catch can ask the SIGNAL whether our own timeout fired,
@@ -150,7 +161,7 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 		// so each counter means exactly what its name says.
 		let gotResponse = false;
 		try {
-			const res = await fetch('http://localhost:8000/subgraphs/name/sense-ai', {
+			const res = await fetch(GRAPH_URL, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ query: '{_meta{block{number}}}' }),
@@ -165,7 +176,15 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 			// replied to us.
 			gotResponse = true;
 			everReachable = true;
-			const body = (await res.json()) as { data?: { _meta?: { block?: { number?: number } } } };
+			const body = (await res.json()) as {
+				data?: { _meta?: { block?: { number?: number } } };
+				errors?: Array<{ message: string }>;
+			};
+			// graph-node reports a MISSING or FAILED subgraph as GraphQL errors, not as a
+			// transport failure — so without this the loop just sees "no head", waits the
+			// full deadline and then blames a reorg backlog, discarding the one message
+			// that said what was actually wrong. Mirrors graphQuery() in ./graph.
+			if (body.errors?.length) lastGraphError = body.errors[0].message;
 			const head = body.data?._meta?.block?.number;
 			// No `_meta` yet (subgraph still deploying) → keep waiting rather than
 			// assuming it never will have one.
@@ -209,6 +228,18 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 				// answer with a non-JSON error page). Tracked separately so the final
 				// message never calls this a connection failure.
 				parseErrors += 1;
+				// Warn but do NOT return: unlike a connection refusal, sustained parse
+				// errors have a legitimate cause (graph-node serving error pages while
+				// its GraphQL stack comes back up after a reorg), so bailing would
+				// reintroduce the silent skip. `=== ` not `>=` so this fires once
+				// instead of on all ~240 remaining polls.
+				if (parseErrors === PARSE_ERROR_WARN_AFTER) {
+					console.warn(
+						`[revertToSnapshot] ${GRAPH_URL} returned ${parseErrors} unparseable responses — ` +
+							'is the right service on that port? Still waiting; graph assertions after ' +
+							'this revert would read phantom state if it never recovers.',
+					);
+				}
 			} else {
 				// A fast, connection-level rejection (refused / DNS) is real evidence of
 				// an absent endpoint. Only bail once we've never had a good answer AND
@@ -228,13 +259,24 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 		await new Promise(r => setTimeout(r, 500));
 	}
 
+	// A reorg backlog is only ONE of the ways this can fail, and naming it
+	// unconditionally sends the reader to the wrong part of LOCALNET_SETUP. Diagnose
+	// from what we actually observed, most specific first.
+	let diagnosis: string;
+	if (lastGraphError) {
+		diagnosis = `graph reported "${lastGraphError}" — the subgraph is missing or has FAILED, which is not a reorg backlog.`;
+	} else if (!everReachable) {
+		diagnosis = `nothing answered at ${GRAPH_URL} — check the graph is up and that this URL matches the one the suite queries.`;
+	} else if (lastHead === null) {
+		diagnosis = `${GRAPH_URL} answered but never returned an indexed head — is the subgraph deployed, and is the right service on that port?`;
+	} else {
+		diagnosis = 'graph-node reorg backlog; see LOCALNET_SETUP troubleshooting.';
+	}
+
 	throw new Error(
 		`revertToSnapshot: subgraph did not re-sync to block ${target} within ${timeoutMs}ms ` +
-			`(last observed head: ${lastHead ?? 'none'}${
-				everReachable ? '' : ', endpoint never answered'
-			}, ${timeouts} request timeout(s), ${parseErrors} unparseable response(s), ` +
-			`${connectionFailures} connection failure(s)) — ` +
-			'graph-node reorg backlog; see LOCALNET_SETUP troubleshooting.',
+			`(last observed head: ${lastHead ?? 'none'}, ${timeouts} request timeout(s), ` +
+			`${parseErrors} unparseable response(s), ${connectionFailures} connection failure(s)) — ${diagnosis}`,
 	);
 }
 
