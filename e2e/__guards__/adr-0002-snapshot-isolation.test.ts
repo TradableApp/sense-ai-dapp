@@ -83,6 +83,18 @@ describe('ADR-0002: evm_snapshot/evm_revert must not be used by a spec that read
 		expect(specs.length).toBeGreaterThan(15);
 	});
 
+	it('the exemption list still contains ONLY plan.spec.ts', () => {
+		// The cheapest way to defeat this guard is to widen the allowlist rather than fix
+		// the spec, and for a spec with no indexed reads of its own the check below would
+		// not object — which is precisely the faucet.spec.ts trap in a new form. Pinning
+		// the list makes widening it a deliberate, reviewable act instead of a one-word
+		// edit. If you are here to add a spec: don't. Migrate it to fresh accounts. The
+		// only reason plan qualifies is `increaseTime`, which a forward-only chain cannot
+		// undo, combined with it reading nothing indexed AND running in its own invocation
+		// (sense-ai-e2e SHARD_PLAN). A new entry would need all three to be true.
+		expect([...PERMITTED_SNAPSHOT_SPECS].sort()).toEqual(['plan.spec.ts']);
+	});
+
 	it('only the permitted spec uses snapshot/revert at all', () => {
 		// Deliberately stricter than "snapshots AND reads the subgraph". The wedge is GLOBAL:
 		// once any revert freezes graph-node, every LATER spec's indexed reads fail, even
