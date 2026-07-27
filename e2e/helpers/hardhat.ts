@@ -193,12 +193,16 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 			gotResponse = true;
 			everReachable = true;
 			everAnswered = true;
-			// Clean response ends any run of parse errors.
-			parseErrors = 0;
 			const body = (await res.json()) as {
 				data?: { _meta?: { block?: { number?: number } } };
 				errors?: Array<{ message: string }>;
 			};
+			// Reset the consecutive run ONLY now that the body has actually parsed.
+			// Resetting on the mere arrival of a response would zero the counter every
+			// iteration and the catch would re-increment it to 1, so the warning below
+			// could never reach its threshold — an unreachable warning is worse than no
+			// warning, because the code reads as though the case were covered.
+			parseErrors = 0;
 			// graph-node reports a MISSING or FAILED subgraph as GraphQL errors, not as a
 			// transport failure — so without this the loop just sees "no head", waits the
 			// full deadline and then blames a reorg backlog, discarding the one message
