@@ -127,18 +127,28 @@ export async function takeSnapshot(): Promise<string> {
  *      must not break.
  *    - graph present but not advancing → keep waiting, then THROW. A stalled
  *      subgraph is the failure this exists to catch; it must never pass silently.
+ *
+ *  `timeoutMs` is a floor on the wait, not a hard ceiling: the deadline is checked at
+ *  the top of the loop, so a request begun just before it expires runs to completion.
+ *  Worst case is `timeoutMs + 15_500ms` (one full per-request abort plus the poll
+ *  sleep). Pre-existing — the 5s abort gave the same shape — and harmless here, since
+ *  the per-request abort still stops an unbounded stall from wedging afterEach.
  */
 async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	let everReachable = false;
 	let lastHead: number | null = null;
 	let connectionFailures = 0;
+	let parseErrors = 0;
 	let timeouts = 0;
 
 	while (Date.now() < deadline) {
 		// Hoisted so the catch can ask the SIGNAL whether our own timeout fired,
 		// rather than trying to identify the error — see the catch for why.
 		const signal = AbortSignal.timeout(15_000);
+		// Lets the catch tell a body-parse failure apart from a connection failure,
+		// so each counter means exactly what its name says.
+		let gotResponse = false;
 		try {
 			const res = await fetch('http://localhost:8000/subgraphs/name/sense-ai', {
 				method: 'POST',
@@ -153,6 +163,7 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 			// that parse throw were left to the catch it would be miscounted as a
 			// connection failure and could bail as "absent" — an endpoint that just
 			// replied to us.
+			gotResponse = true;
 			everReachable = true;
 			const body = (await res.json()) as { data?: { _meta?: { block?: { number?: number } } } };
 			const head = body.data?._meta?.block?.number;
@@ -180,6 +191,24 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 				// STRUGGLING case, i.e. exactly what this guard exists to wait out.
 				// Counting it toward "absent" is what made the old guard self-disable.
 				timeouts += 1;
+				// The endpoint is `localhost`, where connect() either succeeds or is
+				// refused immediately — a 15s wait on loopback cannot be a pending
+				// connection, so something IS listening and simply did not answer in
+				// time. Treat that as proof of reachability, exactly as an HTTP
+				// response is above. Without this, a graph that is slow and THEN dies
+				// (timeouts, then 3 refusals) would trip the bail below and skip
+				// serialization while reporting a "graph-less context" — the silent
+				// self-disabling this function exists to prevent, in miniature.
+				//
+				// Deliberately no early bail on timeouts alone: a listener that never
+				// answers within the full deadline is a BROKEN graph, not an absent
+				// one, and must fail loudly rather than be skipped past.
+				everReachable = true;
+			} else if (gotResponse) {
+				// Responded, but the body would not parse (graph-node restarting can
+				// answer with a non-JSON error page). Tracked separately so the final
+				// message never calls this a connection failure.
+				parseErrors += 1;
 			} else {
 				// A fast, connection-level rejection (refused / DNS) is real evidence of
 				// an absent endpoint. Only bail once we've never had a good answer AND
@@ -203,7 +232,8 @@ async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<vo
 		`revertToSnapshot: subgraph did not re-sync to block ${target} within ${timeoutMs}ms ` +
 			`(last observed head: ${lastHead ?? 'none'}${
 				everReachable ? '' : ', endpoint never answered'
-			}, ${timeouts} request timeout(s), ${connectionFailures} connection failure(s)) — ` +
+			}, ${timeouts} request timeout(s), ${parseErrors} unparseable response(s), ` +
+			`${connectionFailures} connection failure(s)) — ` +
 			'graph-node reorg backlog; see LOCALNET_SETUP troubleshooting.',
 	);
 }
