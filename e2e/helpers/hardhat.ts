@@ -6,6 +6,14 @@ import { promisify } from 'node:util';
 import { decodeFunctionResult, encodeFunctionData, parseAbi, toHex } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
 
+// Single source of truth for the subgraph endpoint, shared with the rest of the suite.
+// It is env-overridable (VITE_THE_GRAPH_API_URL) and sync-config.sh builds it from
+// $PORT_GRAPH/$SUBGRAPH_NAME, so hardcoding localhost:8000 here would silently point
+// this poller at nothing the moment either changes — and an unreachable endpoint makes
+// it skip serialization as a "graph-less context" while every other helper queries the
+// real graph. That is the self-disabling this module exists to prevent.
+import { GRAPH_URL } from './graph';
+
 const execFileAsync = promisify(execFile);
 // Sibling repo that owns the contracts + hardhat-upgrades plugin + the OZ upgrades manifest. Anchor on
 // THIS file (e2e/helpers/) rather than process.cwd(), so it resolves correctly no matter where
@@ -52,7 +60,9 @@ export const FRESH_TEST_ACCOUNTS: readonly HardhatAccount[] = Array.from(
 		const key = account.getHdKey().privateKey;
 		if (!key) {
 			throw new Error(
-				`fresh-account pool: no private key derived for index ${FRESH_POOL_FIRST_INDEX + i} — viem HD derivation contract changed?`,
+				`fresh-account pool: no private key derived for index ${
+					FRESH_POOL_FIRST_INDEX + i
+				} — viem HD derivation contract changed?`,
 			);
 		}
 		return {
@@ -106,33 +116,209 @@ export async function takeSnapshot(): Promise<string> {
 	return (await rpc('evm_snapshot')) as string;
 }
 
-/** Poll the local subgraph's _meta head until it reaches `target` (or timeout).
- *  Tolerant: resolves silently if the graph endpoint is unavailable, so
- *  revert-users don't break in graph-less contexts. */
+/** CONSECUTIVE unparseable bodies before warning (once) that the endpoint may be wrong.
+ *  Consecutive, not cumulative: a wrong service on the port fails every single poll,
+ *  whereas graph-node restarting returns a few error pages and then recovers — and the
+ *  latter is explicitly the case this must NOT warn about. */
+const PARSE_ERROR_WARN_AFTER = 5;
+
+/** Poll the local subgraph's `_meta` head until it reaches `target`, or fail loudly.
+ *
+ *  This is the serialization that keeps each revert's mini-reorg small; without it
+ *  unawaited reorgs queue into a backlog that strands the subgraph and silently kills
+ *  answer hydration suite-wide (LOCALNET_SETUP troubleshooting).
+ *
+ *  It used to be "tolerant": ANY fetch rejection returned immediately, and the abort
+ *  was 5s. That made the guard SELF-DISABLING exactly when it was needed — once
+ *  graph-node is busy retrying a reorg it answers slowly, the 5s abort trips, the catch
+ *  returns, serialization silently stops, and the next revert compounds the backlog.
+ *  Observed: the subgraph stranded 59 blocks behind on a FRESH chain while this
+ *  function's timeout error never once fired.
+ *
+ *  Now it separates the two cases:
+ *    - graph genuinely absent (connection refused / DNS) → skip once, but SAY SO.
+ *      Graph-less contexts (unit-ish specs that revert but never read the subgraph)
+ *      must not break.
+ *    - graph present but not advancing → keep waiting, then THROW. A stalled
+ *      subgraph is the failure this exists to catch; it must never pass silently.
+ *
+ *  `timeoutMs` is a floor on the wait, not a hard ceiling: the deadline is checked at
+ *  the top of the loop, so a request begun just before it expires runs to completion.
+ *  Worst case is `timeoutMs + 15_500ms` (one full per-request abort plus the poll
+ *  sleep). Pre-existing — the 5s abort gave the same shape — and harmless here, since
+ *  the per-request abort still stops an unbounded stall from wedging afterEach.
+ */
 async function waitForGraphHead(target: number, timeoutMs = 120_000): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
+	let everReachable = false;
+	let lastHead: number | null = null;
+	let connectionFailures = 0;
+	// Consecutive, reset by any clean response (see PARSE_ERROR_WARN_AFTER); the
+	// cumulative total is kept separately so the failure message can still report it.
+	let parseErrors = 0;
+	let parseErrorsTotal = 0;
+	let timeouts = 0;
+	// everReachable means "something is listening" and is set by a timeout too. This is
+	// the narrower fact: an HTTP response of ANY kind arrived — including a 502 with an
+	// HTML body. Deliberately NOT "responded usefully": it is set before res.json(), so
+	// a run that returns unparseable bodies every time still counts as having responded,
+	// and the diagnosis correctly reaches "answered but never returned an indexed head —
+	// is the right service on that port?" rather than claiming nothing ever responded.
+	// Moving it after the parse inverts that: a wrong service replying HTML 200 to every
+	// poll would be reported as "never returned a response", which is false and points
+	// at a stalled reorg instead of at the wrong service.
+	let everSentHttpResponse = false;
+	// MUST reflect only the LATEST poll: a transient startup error that later recovers
+	// must not out-rank the real diagnosis. Enforced STRUCTURALLY by clearing it at the
+	// top of every iteration rather than in each exit path — relying on individual
+	// branches to remember has already produced this bug twice (a clean response, then
+	// an unparseable one), and a timeout would have been a third. (graphErrors keeps the
+	// cumulative count for reporting, since "errored earlier but recovered" is context.)
+	let lastGraphError: string | null = null;
+	let graphErrors = 0;
+
 	while (Date.now() < deadline) {
+		// Hoisted so the catch can ask the SIGNAL whether our own timeout fired,
+		// rather than trying to identify the error — see the catch for why.
+		const signal = AbortSignal.timeout(15_000);
+		// Lets the catch tell a body-parse failure apart from a connection failure,
+		// so each counter means exactly what its name says.
+		let gotResponse = false;
+		// Only THIS iteration's GraphQL error may survive to the diagnosis.
+		lastGraphError = null;
 		try {
-			const res = await fetch('http://localhost:8000/subgraphs/name/sense-ai', {
+			const res = await fetch(GRAPH_URL, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ query: '{_meta{block{number}}}' }),
-				// Per-request abort so a TCP-level stall can't outlive the overall
-				// deadline and wedge afterEach.
-				signal: AbortSignal.timeout(5_000),
+				// 15s, not 5s: a graph-node mid-reorg is slow to answer, and aborting
+				// early is what previously disabled this guard.
+				signal,
 			});
-			const body = (await res.json()) as { data?: { _meta?: { block?: { number?: number } } } };
+			// ANY HTTP response proves the endpoint exists, so mark it reachable BEFORE
+			// parsing. graph-node can answer with a non-JSON body while starting up; if
+			// that parse throw were left to the catch it would be miscounted as a
+			// connection failure and could bail as "absent" — an endpoint that just
+			// replied to us.
+			gotResponse = true;
+			everReachable = true;
+			everSentHttpResponse = true;
+			const body = (await res.json()) as {
+				data?: { _meta?: { block?: { number?: number } } };
+				errors?: Array<{ message: string }>;
+			};
+			// Reset the consecutive run ONLY now that the body has actually parsed.
+			// Resetting on the mere arrival of a response would zero the counter every
+			// iteration and the catch would re-increment it to 1, so the warning below
+			// could never reach its threshold — an unreachable warning is worse than no
+			// warning, because the code reads as though the case were covered.
+			parseErrors = 0;
+			// graph-node reports a MISSING or FAILED subgraph as GraphQL errors, not as a
+			// transport failure — so without this the loop just sees "no head", waits the
+			// full deadline and then blames a reorg backlog, discarding the one message
+			// that said what was actually wrong. Mirrors graphQuery() in ./graph.
+			if (body.errors?.length) {
+				lastGraphError = body.errors[0].message;
+				graphErrors += 1;
+			}
 			const head = body.data?._meta?.block?.number;
-			if (typeof head !== 'number') return; // graph up but no meta — don't block
-			if (head >= target) return;
+			// No `_meta` yet (subgraph still deploying) → keep waiting rather than
+			// assuming it never will have one.
+			if (typeof head === 'number') {
+				lastHead = head;
+				if (head >= target) return;
+			}
 		} catch {
-			return; // graph not reachable — nothing to wait for
+			// Distinguish "graph is slow" from "graph is absent" via the SIGNAL, not the
+			// error. Error identity is not portable across the runtimes this suite runs
+			// under — measured 2026-07-27:
+			//
+			//                        | Bun            | Node
+			//   AbortSignal.timeout  | TimeoutError   | TypeError
+			//   AbortController.abort| AbortError     | TypeError
+			//   connection refused   | Error          | TypeError
+			//
+			// so a name check (e.g. `err.name === 'AbortError'`) matches nothing on Bun
+			// and cannot discriminate at all on Node. `signal.aborted` is true iff OUR
+			// 15s timeout fired, on every runtime.
+			if (signal.aborted) {
+				// Graph accepted the request but was too slow to answer — that is the
+				// STRUGGLING case, i.e. exactly what this guard exists to wait out.
+				// Counting it toward "absent" is what made the old guard self-disable.
+				timeouts += 1;
+				// The endpoint is `localhost`, where connect() either succeeds or is
+				// refused immediately — a 15s wait on loopback cannot be a pending
+				// connection, so something IS listening and simply did not answer in
+				// time. Treat that as proof of reachability, exactly as an HTTP
+				// response is above. Without this, a graph that is slow and THEN dies
+				// (timeouts, then 3 refusals) would trip the bail below and skip
+				// serialization while reporting a "graph-less context" — the silent
+				// self-disabling this function exists to prevent, in miniature.
+				//
+				// Deliberately no early bail on timeouts alone: a listener that never
+				// answers within the full deadline is a BROKEN graph, not an absent
+				// one, and must fail loudly rather than be skipped past.
+				everReachable = true;
+			} else if (gotResponse) {
+				// Responded, but the body would not parse (graph-node restarting can
+				// answer with a non-JSON error page). Tracked separately so the final
+				// message never calls this a connection failure.
+				parseErrors += 1;
+				parseErrorsTotal += 1;
+				// Warn but do NOT return: unlike a connection refusal, sustained parse
+				// errors have a legitimate cause (graph-node serving error pages while
+				// its GraphQL stack comes back up after a reorg), so bailing would
+				// reintroduce the silent skip. `===` not `>=` so it fires once per
+				// consecutive run rather than on all ~240 remaining polls (the counter
+				// resets on a clean parse, so alternating runs of 5+ can warn again —
+				// which is wanted: each sustained run is separately worth reporting).
+				if (parseErrors === PARSE_ERROR_WARN_AFTER) {
+					console.warn(
+						`[revertToSnapshot] ${GRAPH_URL} returned ${parseErrors} unparseable responses — ` +
+							'is the right service on that port? Still waiting; graph assertions after ' +
+							'this revert would read phantom state if it never recovers.',
+					);
+				}
+			} else {
+				// A fast, connection-level rejection (refused / DNS) is real evidence of
+				// an absent endpoint. Only bail once we've never had a good answer AND
+				// seen several of these; after even one good answer, a later failure
+				// means it is struggling, so we keep waiting.
+				connectionFailures += 1;
+				if (!everReachable && connectionFailures >= 3) {
+					console.warn(
+						`[revertToSnapshot] subgraph endpoint refused ${connectionFailures} connections — ` +
+							'skipping graph re-sync wait (graph-less context). Graph assertions after this ' +
+							'revert would read phantom state.',
+					);
+					return;
+				}
+			}
 		}
 		await new Promise(r => setTimeout(r, 500));
 	}
+
+	// A reorg backlog is only ONE of the ways this can fail, and naming it
+	// unconditionally sends the reader to the wrong part of LOCALNET_SETUP. Diagnose
+	// from what we actually observed, most specific first.
+	let diagnosis: string;
+	if (lastGraphError) {
+		diagnosis = `graph is still reporting "${lastGraphError}" — the subgraph is missing or has FAILED, which is not a reorg backlog.`;
+	} else if (!everReachable) {
+		diagnosis = `nothing answered at ${GRAPH_URL} — check the graph is up and that this URL matches the one the suite queries.`;
+	} else if (!everSentHttpResponse) {
+		diagnosis = `${GRAPH_URL} accepted connections but never returned a response within 15s — graph-node is alive and not answering; suspect a stalled reorg or an OOM.`;
+	} else if (lastHead === null) {
+		diagnosis = `${GRAPH_URL} answered but never returned an indexed head — is the subgraph deployed, and is the right service on that port?`;
+	} else {
+		diagnosis = 'graph-node reorg backlog; see LOCALNET_SETUP troubleshooting.';
+	}
+
 	throw new Error(
-		`revertToSnapshot: subgraph did not re-sync to block ${target} within ${timeoutMs}ms — ` +
-			'graph-node reorg backlog; see LOCALNET_SETUP troubleshooting.',
+		`revertToSnapshot: subgraph did not re-sync to block ${target} within ${timeoutMs}ms ` +
+			`(last observed head: ${lastHead ?? 'none'}, ${timeouts} request timeout(s), ` +
+			`${parseErrorsTotal} unparseable response(s), ${graphErrors} graph error(s), ` +
+			`${connectionFailures} connection failure(s)) — ${diagnosis}`,
 	);
 }
 
@@ -176,8 +362,6 @@ export function useChainSnapshot(testRunner: {
 		await revertToSnapshot(snapshotId);
 	});
 }
-
-
 
 export async function isHardhatRunning(): Promise<boolean> {
 	try {
@@ -268,11 +452,8 @@ export async function fundABLE(
 	// transfers some away, and heavy live-chain rerunning can drain it to zero.
 	// When that happens plan activation fails silently and specs die with an
 	// opaque "composer not found" — fail loudly at the source instead.
-	const balData = `0x70a08231${  padAddress(DEPLOYER_ADDRESS).slice(2)}`;
-	const balHex = (await rpc('eth_call', [
-		{ to: tokenAddress, data: balData },
-		'latest',
-	])) as string;
+	const balData = `0x70a08231${padAddress(DEPLOYER_ADDRESS).slice(2)}`;
+	const balHex = (await rpc('eth_call', [{ to: tokenAddress, data: balData }, 'latest'])) as string;
 	if (BigInt(balHex) < amount) {
 		throw new Error(
 			`fundABLE: deployer ABLE depleted (${BigInt(balHex)} < ${amount}). ` +
