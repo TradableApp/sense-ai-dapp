@@ -1,7 +1,8 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 import { ESCROW_ADDRESS, TOKEN_ADDRESS } from '../helpers/contracts';
-import { activatePlan,
+import {
+	activatePlan,
 	approveABLE,
 	fundABLE,
 	getABLEBalance,
@@ -9,7 +10,7 @@ import { activatePlan,
 	getEscrowBalance,
 	increaseTime,
 	useChainSnapshot,
-	} from '../helpers/hardhat';
+} from '../helpers/hardhat';
 
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + deployed contracts (set E2E_LOCAL_SERVICES=1)';
@@ -25,7 +26,6 @@ test.describe('Spending plan management (T-PLAN)', () => {
 		// activation can move real ABLE to escrow — there is no faucet on localnet.
 		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, 10n ** 18n * 100n);
 	});
-
 
 	test('T-PLAN-01: Dashboard shows onboarding for new user', async ({ dashboardPage }) => {
 		await dashboardPage.goto();

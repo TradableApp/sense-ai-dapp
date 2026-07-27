@@ -1,9 +1,7 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
-import { getABLEBalance,
-	useChainSnapshot,
-	} from '../helpers/hardhat';
+import { getABLEBalance, useChainSnapshot } from '../helpers/hardhat';
 
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
@@ -27,7 +25,6 @@ test.describe('Chat — prompt input (T-CHAT)', () => {
 	test.beforeEach(async () => {
 		await fundAndActivatePlan(TEST_ACCOUNT.address);
 	});
-
 
 	test('T-CHAT-01: Chat page renders prompt textarea', async ({ chatPage }) => {
 		await chatPage.goto();
@@ -167,7 +164,6 @@ test.describe('Chat — error states (T-CHAT-ERR)', () => {
 		// transaction (otherwise the UI blocks at the no-plan CTA before erroring).
 		await fundAndActivatePlan(TEST_ACCOUNT.address);
 	});
-
 
 	test('T-CHAT-14: Network disconnect during prompt shows error', async ({
 		chatPage,
