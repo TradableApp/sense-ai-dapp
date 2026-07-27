@@ -195,6 +195,10 @@ export class ChatPage {
 				throw new Error(
 					"Chat composer is plan-gated: 'Activate Your Agent' is showing — this account has no active plan. " +
 						'Call fundAndActivatePlan(<address>) in beforeEach (e2e/helpers/contracts.ts).',
+					// Chain the original: the diagnosis explains WHY, but Playwright's own
+					// error carries the locator, timing and trace attachment that make a
+					// flaky run diagnosable. Replacing it outright loses that.
+					{ cause: err },
 				);
 			}
 			throw err;

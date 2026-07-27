@@ -1,6 +1,6 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
-import { ESCROW_ADDRESS, TOKEN_ADDRESS } from '../helpers/contracts';
+import { ESCROW_ADDRESS, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
 import {
 	activatePlan,
 	approveABLE,
@@ -24,7 +24,7 @@ test.describe('Spending plan management (T-PLAN)', () => {
 	test.beforeEach(async () => {
 		// Fund the user via the localnet "treasury" (deployer transfer) so plan
 		// activation can move real ABLE to escrow — there is no faucet on localnet.
-		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, 10n ** 18n * 100n);
+		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, PLAN_ALLOWANCE);
 	});
 
 	test('T-PLAN-01: Dashboard shows onboarding for new user', async ({ dashboardPage }) => {
@@ -225,7 +225,7 @@ test.describe('Plan modal validation (T-PLAN-EDGE)', () => {
 		// Unlike T-PLAN-11/12 (which intentionally start at 0 ABLE to exercise the
 		// zero/exceed guards), this test must actually activate a plan to observe it
 		// expire — so it needs funding. The EDGE describe's beforeEach only snapshots.
-		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, 10n ** 18n * 100n);
+		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, PLAN_ALLOWANCE);
 
 		await dashboardPage.goto();
 		await dashboardPage.getStartedButton.click();

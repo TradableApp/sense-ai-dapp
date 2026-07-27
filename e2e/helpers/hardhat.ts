@@ -351,6 +351,12 @@ export async function revertToSnapshot(snapshotId: string): Promise<void> {
  *  revert). Replaces the hand-rolled snapshotId + beforeEach/afterEach pattern
  *  that five specs each maintained separately.
  *
+ *  SERIAL SUITES ONLY. The snapshot id lives in one closure shared by every test in
+ *  the describe, and evm_snapshot/evm_revert are global to the node — with more than one
+ *  worker, test A's afterEach could revert to test B's snapshot. playwright.config keeps
+ *  the E2E_LOCAL_SERVICES run at workers=1 for exactly this reason; that constraint is
+ *  restated here because this helper is reusable and its signature does not imply it.
+ *
  *  Pass Playwright's `test` object. The parameter is typed structurally rather than as
  *  `Pick<TestType<…>, 'beforeEach' | 'afterEach'>` on purpose: it keeps the hook logic
  *  decoupled from Playwright's fixture generics, so the ordering/guard behaviour can be
