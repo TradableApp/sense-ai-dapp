@@ -31,7 +31,18 @@ export default defineConfig({
 	/** Fail the build on CI if you accidentally left test.only in */
 	forbidOnly: !!process.env.CI,
 
-	retries: process.env.CI ? 2 : 0,
+	/**
+	 * One local retry, two on CI. Local was 0, which had a non-obvious cost: `trace` below
+	 * is 'on-first-retry', so with no retry a LOCAL failure produced NO trace — only a
+	 * screenshot and video. That is why the first sighting of the graph-node wedge
+	 * (CU-86d3uqgh7) could not be diagnosed from its artifacts and needed a live repro.
+	 *
+	 * A retry also makes non-determinism legible: Playwright reports a test that passes on
+	 * the second attempt as FLAKY rather than passed, so it is surfaced rather than hidden.
+	 * Treat "green" as 0 failed AND 0 flaky — a flaky count above zero is a finding, not a
+	 * pass.
+	 */
+	retries: process.env.CI ? 2 : 1,
 
 	/**
 	 * The localnet stateful run shares global chain state across specs — one Hardhat

@@ -1,12 +1,5 @@
 import { expect, test } from '../fixtures';
-import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
-import {
-	ABLE,
-	ESCROW_ADDRESS,
-	fundAndActivatePlan,
-	PLAN_ALLOWANCE,
-	TOKEN_ADDRESS,
-} from '../helpers/contracts';
+import { ABLE, ESCROW_ADDRESS, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
 import {
 	activatePlan,
 	fundABLE,
@@ -14,7 +7,6 @@ import {
 	getPromptFee,
 	getSpendingLimit,
 	setPromptFee,
-	useChainSnapshot,
 } from '../helpers/hardhat';
 
 // Proves the contract→dApp cost continuity: changing the on-chain per-prompt fee
@@ -37,14 +29,25 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	useChainSnapshot(test);
+	// ADR-0002: fresh account per test, no snapshot/revert — `evm_revert` wedges
+	// graph-node's ingestor and freezes the subgraph for the rest of the invocation
+	// (CU-86d3uqgh7). promptFee is GLOBAL on the escrow, so it is captured and restored
+	// forward-only, exactly as T-COST-MULTI and T-COST-REGEN below already do.
+	let originalFee: bigint;
 
-	test.beforeEach(async () => {
-		await fundAndActivatePlan(TEST_ACCOUNT.address);
+	test.beforeEach(async ({ freshUserAccount }) => {
+		originalFee = await getPromptFee(ESCROW_ADDRESS);
+		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+	});
+
+	test.afterEach(async () => {
+		await setPromptFee(ESCROW_ADDRESS, originalFee);
 	});
 
 	test('T-COST-01: a changed promptFee is the amount debited per prompt (on-chain)', async ({
-		chatPage,
+		freshChatPage,
+		freshUserAccount,
 	}) => {
 		const newFee = ABLE(5);
 		const defaultFee = await getPromptFee(ESCROW_ADDRESS);
@@ -53,15 +56,15 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 		await setPromptFee(ESCROW_ADDRESS, newFee);
 		expect(await getPromptFee(ESCROW_ADDRESS)).toBe(newFee);
 
-		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
+		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
 
-		await chatPage.goto();
-		await chatPage.sendPrompt('What is the current market sentiment?');
+		await freshChatPage.goto();
+		await freshChatPage.sendPrompt('What is the current market sentiment?');
 		// Thinking indicator ⇒ the initiatePrompt tx mined and escrowed the fee.
-		await expect(chatPage.thinkingIndicator).toBeVisible({ timeout: 20_000 });
+		await expect(freshChatPage.thinkingIndicator).toBeVisible({ timeout: 20_000 });
 
-		const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, TEST_ACCOUNT.address);
-		const { spentAmount } = await getSpendingLimit(ESCROW_ADDRESS, TEST_ACCOUNT.address);
+		const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		const { spentAmount } = await getSpendingLimit(ESCROW_ADDRESS, freshUserAccount.address);
 
 		// The user is debited exactly the new fee, and the spending-limit "spent"
 		// (what the dApp reads for usage) reflects it.
@@ -70,15 +73,15 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 	});
 
 	test('T-COST-02: the dApp usage dashboard reflects the changed per-prompt cost', async ({
-		chatPage,
-		dashboardPage,
+		freshChatPage,
+		freshDashboardPage,
 	}) => {
 		const newFee = ABLE(7);
 		await setPromptFee(ESCROW_ADDRESS, newFee);
 
-		await chatPage.goto();
-		await chatPage.sendPrompt('Reflect the new cost in my usage');
-		await expect(chatPage.thinkingIndicator).toBeVisible({ timeout: 20_000 });
+		await freshChatPage.goto();
+		await freshChatPage.sendPrompt('Reflect the new cost in my usage');
+		await expect(freshChatPage.thinkingIndicator).toBeVisible({ timeout: 20_000 });
 
 		// useLiveResponse invalidates ['usagePlan'] on any token-costing action;
 		// invalidateQueries refetches the active observer, so the mounted dashboard
@@ -86,9 +89,9 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 		// mark also survives the chat→dashboard unmount, covering a mount-time
 		// refetch — useUsagePlan's 60s staleTime is bypassed by the invalidation, not
 		// relied upon). No reload needed. After one prompt at the new fee, Spent = 7.
-		await dashboardPage.goto();
-		await dashboardPage.assertHasPlan();
-		await expect(dashboardPage.spentValue).toHaveText(/\b7\b.*ABLE/, { timeout: 20_000 });
+		await freshDashboardPage.goto();
+		await freshDashboardPage.assertHasPlan();
+		await expect(freshDashboardPage.spentValue).toHaveText(/\b7\b.*ABLE/, { timeout: 20_000 });
 	});
 });
 
@@ -108,7 +111,8 @@ test.describe('Contract cost change across prompts (T-COST-MULTI)', () => {
 
 	test.beforeEach(async ({ freshUserAccount }) => {
 		originalFee = await getPromptFee(ESCROW_ADDRESS);
-		await fundAndActivatePlan(freshUserAccount.address);
+		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
 	});
 
 	test.afterEach(async () => {
@@ -151,12 +155,24 @@ test.describe('Insufficient balance blocks an action (T-COST-INSUFFICIENT)', () 
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	// Snapshot only — this spec intentionally controls the wallet's balance
-	// itself; the revert also restores the promptFee changed below.
-	useChainSnapshot(test);
+	// No funding hook — this spec intentionally controls the wallet's balance itself, and a
+	// freshly claimed account holds 0 ABLE, which is the state the snapshot used to restore.
+	// The revert also used to undo the promptFee set below; that is now an explicit
+	// forward-only restore, since promptFee is GLOBAL on the escrow (ADR-0002,
+	// CU-86d3uqgh7).
+	let originalFee: bigint;
+
+	test.beforeEach(async () => {
+		originalFee = await getPromptFee(ESCROW_ADDRESS);
+	});
+
+	test.afterEach(async () => {
+		await setPromptFee(ESCROW_ADDRESS, originalFee);
+	});
 
 	test('T-COST-04: a prompt fails when the wallet holds less ABLE than the fee', async ({
-		chatPage,
+		freshChatPage,
+		freshUserAccount,
 	}) => {
 		const fee = ABLE(10);
 		await setPromptFee(ESCROW_ADDRESS, fee);
@@ -164,15 +180,15 @@ test.describe('Insufficient balance blocks an action (T-COST-INSUFFICIENT)', () 
 		// wallet holds LESS than one fee — so initiatePrompt's transferFrom(user, escrow,
 		// fee) reverts ERC20InsufficientBalance, which the dApp surfaces as a toast (with
 		// the localnet faucet). This is the "ran out of ABLE" boundary.
-		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, ABLE(3));
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, TEST_ACCOUNT.address, PLAN_ALLOWANCE);
+		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, ABLE(3));
+		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
 
-		await chatPage.goto();
-		await chatPage.sendPrompt('Not enough ABLE to cover the fee');
+		await freshChatPage.goto();
+		await freshChatPage.sendPrompt('Not enough ABLE to cover the fee');
 
-		await expect(chatPage.insufficientBalanceToast).toBeVisible({ timeout: 15_000 });
+		await expect(freshChatPage.insufficientBalanceToast).toBeVisible({ timeout: 15_000 });
 		// The prompt was rejected, not accepted — no thinking indicator appears.
-		await expect(chatPage.thinkingIndicator).toBeHidden();
+		await expect(freshChatPage.thinkingIndicator).toBeHidden();
 	});
 });
 

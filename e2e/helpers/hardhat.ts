@@ -26,7 +26,13 @@ const AGENT_REPO_DIR = path.resolve(
 	'tokenized-ai-agent',
 );
 
-const RPC_URL = 'http://127.0.0.1:8545';
+// Single source of truth for the chain RPC, mirroring GRAPH_URL in ./graph. sync-config.sh
+// writes VITE_CHAIN_RPC_URL from $PORT_HARDHAT, so hardcoding the port here would create a
+// second source of truth that silently diverges the moment the port changes — every helper
+// in this file would then talk to nothing while the dApp talked to the real chain. That is
+// exactly the failure the hardcoded subgraph URL caused (CU-86d3dwme6): an unreachable
+// endpoint produced a skipped wait rather than an error.
+export const RPC_URL = process.env.VITE_CHAIN_RPC_URL || 'http://127.0.0.1:8545';
 let reqId = 1;
 
 // ── Per-test fresh accounts ───────────────────────────────────────────────────

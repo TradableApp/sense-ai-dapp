@@ -1,82 +1,84 @@
 import { expect, test } from '../fixtures';
-import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
 import { fundAndActivatePlan } from '../helpers/contracts';
 import { getConversations, getPayments, waitForIndexing } from '../helpers/graph';
-import { getCurrentBlock, useChainSnapshot } from '../helpers/hardhat';
+import { getCurrentBlock } from '../helpers/hardhat';
 
 const SKIP_REASON = 'Skipped: requires local Graph node + Hardhat node (set E2E_LOCAL_SERVICES=1)';
 
+// ADR-0002: fresh account per test, never snapshot/revert. This spec asserts directly on
+// the subgraph, so it is the clearest case of the rule — `evm_revert` wedges graph-node's
+// block ingestor on a zero-hash block and the subgraph freezes for the rest of the
+// invocation (CU-86d3uqgh7). A pristine per-test account gives the same isolation on a
+// forward-only chain, and lets these assertions be EXACT rather than the ">= and
+// content-derived-CID" workarounds the shared account previously forced.
 test.describe('Graph — subgraph data layer (T-GRAPH)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 
-	useChainSnapshot(test);
-
-	// Same self-contained precondition as contract-cost.spec: the chat composer is
-	// plan-gated ("Activate Your Agent" renders instead when the shared account has
-	// no active plan), and these specs must not depend on an earlier project having
-	// funded/activated the shared account — plan.spec's afterEach revert can even
-	// UNDO a plan set earlier in the run. Snapshot FIRST so the revert also returns
-	// the funded ABLE.
-	test.beforeEach(async () => {
-		await fundAndActivatePlan(TEST_ACCOUNT.address);
+	// Fund + activate BEFORE the body touches a fresh* page fixture, so the plan is live
+	// when a protected route first loads (the composer is plan-gated). `freshUserAccount`
+	// resolves to the same account the fresh page's wallet impersonates.
+	test.beforeEach(async ({ freshUserAccount }) => {
+		await fundAndActivatePlan(freshUserAccount.address);
 	});
 
-	test('T-GRAPH-01: Conversation appears in subgraph after prompt', async ({ chatPage }) => {
-		// The subgraph does NOT roll back on evm_revert: entities from orphaned
-		// blocks persist, re-created conversations reuse the same id (upsert), and
-		// a post-revert replay is DETERMINISTIC — same id, same block cadence, same
-		// timestamps — so neither count deltas, timestamps, nor id sets can detect
-		// this test's round-trip. The conversation CID is content-derived, so a
-		// unique prompt text guarantees an observable change even under replay.
-		const before = await getConversations(TEST_ACCOUNT.address);
-		const beforeCIDs = new Set(before.map(c => `${c.id}:${c.conversationCID}`));
+	test('T-GRAPH-01: Conversation appears in subgraph after prompt', async ({
+		freshChatPage,
+		freshUserAccount,
+	}) => {
+		// A pristine account has nothing indexed, so this is an exact before/after rather
+		// than a delta hunt.
+		expect(await getConversations(freshUserAccount.address)).toHaveLength(0);
 
-		await chatPage.goto();
-		await chatPage.sendPromptAndWaitForResponse(`Graph indexing test ${Date.now()}`);
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse('Graph indexing test');
 
-		const block = await getCurrentBlock();
-		await waitForIndexing(block);
+		await waitForIndexing(await getCurrentBlock());
 
-		const after = await getConversations(TEST_ACCOUNT.address);
-		expect(after.length).toBeGreaterThanOrEqual(1);
-		const changed = after.some(c => !beforeCIDs.has(`${c.id}:${c.conversationCID}`));
-		expect(changed, 'the prompt should have created or updated an indexed conversation').toBe(true);
+		const after = await getConversations(freshUserAccount.address);
+		expect(after).toHaveLength(1);
+		expect(
+			after[0].conversationCID,
+			'the indexed conversation must carry a content CID',
+		).toBeTruthy();
 	});
 
-	test('T-GRAPH-02: Payment entity matches escrow transaction', async ({ chatPage }) => {
-		await chatPage.goto();
-		await chatPage.sendPromptAndWaitForResponse('Payment entity test');
+	test('T-GRAPH-02: Payment entity matches escrow transaction', async ({
+		freshChatPage,
+		freshUserAccount,
+	}) => {
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse('Payment entity test');
 
-		const block = await getCurrentBlock();
-		await waitForIndexing(block);
+		await waitForIndexing(await getCurrentBlock());
 
-		// The payment is PENDING only until the (fast, mocked) oracle answers — by
-		// this point it is normally SETTLED. The assertion is existence + lifecycle
-		// validity, not a specific transient status.
-		const payments = await getPayments(TEST_ACCOUNT.address);
-		expect(payments.length).toBeGreaterThan(0);
-		// getPayments is unordered — assert SOME payment is in a valid lifecycle
-		// state rather than indexing [0], which the subgraph may fill with an
-		// older entity for this shared account.
-		expect(payments.some(pay => ['PENDING', 'COMPLETE'].includes(pay.status))).toBe(true);
+		// One prompt on a pristine account means exactly one payment — no need to tolerate
+		// unordered results or older entities, which only mattered for the shared account.
+		// The payment is PENDING only until the (fast, mocked) oracle answers, so assert the
+		// lifecycle is valid rather than a specific transient status.
+		const payments = await getPayments(freshUserAccount.address);
+		expect(payments).toHaveLength(1);
+		expect(['PENDING', 'COMPLETE']).toContain(payments[0].status);
 	});
 
 	test('T-GRAPH-03: Subgraph data matches UI conversation list', async ({
-		chatPage,
-		historyPage,
+		freshChatPage,
+		freshHistoryPage,
+		freshUserAccount,
 	}) => {
-		await chatPage.goto();
-		await chatPage.sendPromptAndWaitForResponse('Subgraph UI sync test');
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse('Subgraph UI sync test');
 
-		const block = await getCurrentBlock();
-		await waitForIndexing(block);
+		await waitForIndexing(await getCurrentBlock());
 
-		const subgraphConversations = await getConversations(TEST_ACCOUNT.address);
+		const subgraphConversations = await getConversations(freshUserAccount.address);
+		expect(subgraphConversations).toHaveLength(1);
 
-		await historyPage.goto();
-		const uiCount = await historyPage.conversationItems.count();
-
-		// UI should show at least as many conversations as the subgraph
-		expect(uiCount).toBeGreaterThanOrEqual(subgraphConversations.length);
+		// freshHistoryPage shares the same page as freshChatPage, so this reads the SAME
+		// authenticated session — the UI list must agree exactly with the subgraph now that
+		// the account's history is entirely this test's doing.
+		await freshHistoryPage.goto();
+		await freshHistoryPage.assertConversationCount(subgraphConversations.length, {
+			timeout: 30_000,
+		});
 	});
 });
