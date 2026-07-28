@@ -17,6 +17,7 @@ import {
 	setTreasury,
 	transferOwnership,
 	upgradeEscrowToV2,
+	usePromptFeeRestore,
 } from '../helpers/hardhat';
 
 const AGENT_ADDRESS = process.env.VITE_AGENT_CONTRACT_ADDRESS ?? '';
@@ -112,14 +113,12 @@ test.describe('Governance continuity (T-GOV-CFG)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	let originalPromptFee: bigint | undefined;
+	// Shared fixture rather than a local capture/restore pair — see usePromptFeeRestore in
+	// helpers/hardhat.ts. Registered before the beforeEach below so the capture runs first.
+	usePromptFeeRestore(test, ESCROW_ADDRESS);
+
 	test.beforeEach(async ({ freshUserAccount }) => {
-		originalPromptFee = await getPromptFee(ESCROW_ADDRESS);
 		await fundAndActivatePlan(freshUserAccount.address);
-	});
-	test.afterEach(async () => {
-		// Guard: skip the restore if beforeEach threw before snapshotting (see treasury note above).
-		if (originalPromptFee !== undefined) await setPromptFee(ESCROW_ADDRESS, originalPromptFee);
 	});
 
 	test('T-GOV-CFG-03: the dApp still answers a prompt after a mid-session governance change', async ({

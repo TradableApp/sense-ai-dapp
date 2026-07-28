@@ -24,6 +24,14 @@ const IMPLAUSIBLE_WHOLE_TOKENS = 10n ** 12n;
  * comment cannot be seen.
  */
 export const ABLE = (whole: number | bigint): bigint => {
+	// Validate shape BEFORE converting: BigInt(1.5) throws a native RangeError, which is
+	// accurate but neither names the call site nor says "whole-token count" the way the two
+	// guards below do. ABLE(1.5) type-checks, so this is reachable.
+	if (typeof whole === 'number' && !Number.isInteger(whole)) {
+		throw new Error(
+			`ABLE(${whole}) — argument must be a whole-token count; fractional tokens are not valid.`,
+		);
+	}
 	const asBigInt = BigInt(whole);
 	// Symmetric lower bound. Widening the signature to accept bigint also made ABLE(-1n) valid
 	// TypeScript, and a negative slips past the upper bound to return -1e18 — which then fails

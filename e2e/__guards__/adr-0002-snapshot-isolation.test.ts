@@ -28,7 +28,15 @@ import { describe, expect, it } from 'vitest';
  * nine bot review findings failed to attribute it.
  */
 
-const SPECS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'specs');
+const E2E_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const SPECS_DIR = path.join(E2E_DIR, 'specs');
+
+/** playwright.config.ts's `testDir`, as this guard assumes it. Asserted below rather than
+ *  merely documented: if a second test directory is ever added, or this one moves, specs
+ *  there would escape enforcement entirely — and the "has specs to inspect" count would keep
+ *  passing on the files still in e2e/specs. Enforcing it converts a silent coverage gap into
+ *  a failing test that names the fix. */
+const ASSUMED_TEST_DIR = './e2e/specs';
 
 /** The one spec ADR-0002 exempts, with the reason it qualifies. */
 const PERMITTED_SNAPSHOT_SPECS = new Set(['plan.spec.ts']);
@@ -86,6 +94,19 @@ describe('ADR-0002: evm_snapshot/evm_revert must not be used by a spec that read
 	it('has specs to inspect (guards against a silently-empty guard)', () => {
 		const specs = readSpecs();
 		expect(specs.length).toBeGreaterThan(15);
+	});
+
+	it('playwright still keeps all specs in the single directory this guard scans', () => {
+		const config = readFileSync(path.join(E2E_DIR, '..', 'playwright.config.ts'), 'utf8');
+		const declared = [...config.matchAll(/testDir:\s*'([^']+)'/g)].map(m => m[1]);
+		expect(
+			declared,
+			`This guard scans ${ASSUMED_TEST_DIR} only. playwright.config.ts now declares ` +
+				`${JSON.stringify(declared)}. If a spec directory was added or moved, specs there ` +
+				`escape ADR-0002 enforcement while the spec-count check keeps passing on the files ` +
+				`still in e2e/specs — a silent coverage gap. Point SPECS_DIR at every declared ` +
+				`testDir (make it an array and scan each) and update ASSUMED_TEST_DIR.`,
+		).toEqual([ASSUMED_TEST_DIR]);
 	});
 
 	it('the exemption list still contains ONLY plan.spec.ts', () => {
