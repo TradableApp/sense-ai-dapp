@@ -104,6 +104,13 @@ on every push.
 2. **Distinguish wedge from machine load** by comparing tests that need an _indexed read_ against
    ones that do not, **in the same spec**. Under the wedge the split is exact; under load
    everything slows. Classify per _test_, never per file.
-3. **Copy artifacts out before doing anything else.** `test-results/` is cleared when Playwright
-   starts and `logs/oracle.log` is overwritten per shard — a previous investigation lost the
-   oracle log to the next shard and had to reproduce the failure live.
+3. **Read the archived artifacts — do not go looking in `test-results/`.** `test-results/` is
+   cleared when Playwright STARTS and `logs/*.log` are truncated per shard, so by the time a
+   run finishes only the LAST shard's evidence is still on disk. `run-e2e-sharded.sh` therefore
+   copies each shard's traces, HTML report and service logs to
+   `sense-ai-e2e/artifacts/shard-<1|2|plan>/` before the next shard starts, and prints that path
+   at the end of the run. Look there.
+
+   This applies to **flaky** tests too, and that is the case it exists for: local `retries` is 1,
+   so a flake writes a trace (`trace: 'on-first-retry'`) and still exits 0. Twice now an
+   investigation has reached for that evidence after the run and found it gone.
