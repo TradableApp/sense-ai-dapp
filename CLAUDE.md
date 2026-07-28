@@ -8,17 +8,38 @@ Frontend dApp for SenseAI — the AI Agent providing sentiment and fundamental o
 
 ## Scripts
 
-| Command | Purpose |
-|---------|---------|
-| `bun run dev` | Start dev server on port 3002 (localnet mode) |
-| `bun run dev:testnet` | Dev server against Base Sepolia testnet |
-| `bun run build` | Production build (mainnet) |
-| `bun run build:testnet` | Build against testnet |
-| `bun run lint` / `bun run lint:fix` | ESLint |
-| `bun run format` | Prettier |
-| `bun run sync-contracts` | Copy ABI files from `able-contracts` and `tokenized-ai-agent` repos |
+| Command                             | Purpose                                                             |
+| ----------------------------------- | ------------------------------------------------------------------- |
+| `bun run dev`                       | Start dev server on port 3002 (localnet mode)                       |
+| `bun run dev:testnet`               | Dev server against Base Sepolia testnet                             |
+| `bun run build`                     | Production build (mainnet)                                          |
+| `bun run build:testnet`             | Build against testnet                                               |
+| `bun run lint` / `bun run lint:fix` | ESLint                                                              |
+| `bun run format`                    | Prettier                                                            |
+| `bun run sync-contracts`            | Copy ABI files from `able-contracts` and `tokenized-ai-agent` repos |
+| `bun run test`                      | Vitest unit tests + the `e2e/__guards__/` static guards             |
+| `bun run typecheck:e2e`             | Type-check the Playwright suite (separate tsconfig)                 |
+| `bun run test:e2e`                  | Playwright — **see the warning below before running this directly** |
 
-No test suite configured — validate via `bun run build` and browser testing.
+## Testing
+
+Two suites, two runners:
+
+- **Vitest** (`bun run test`) — unit tests under `src/`, plus the static guards in
+  `e2e/__guards__/`. Runs in CI on every push.
+- **Playwright** (`e2e/specs/`) — full-stack e2e against a live localnet (Hardhat + contracts +
+  mock oracle + graph-node + IPFS). **Not run in CI at all** — a local run is the only place the
+  full stack is exercised.
+
+**Before writing, moving, or debugging any e2e spec, read
+[`docs/E2E-ISOLATION-MODEL.md`](docs/E2E-ISOLATION-MODEL.md).** It is short, and it exists
+because the isolation rules are not guessable: `evm_revert` permanently wedges graph-node and
+freezes the subgraph, so a snapshot in one spec silently breaks _other_ spec files in a way that
+looks like flakiness.
+
+**Do not run `bunx playwright test` over the whole suite for a verdict** — use
+`cd ../sense-ai-e2e && bash scripts/run-e2e-sharded.sh`, which is the supported protocol. A
+single invocation reproduces the wedge described above.
 
 ## Architecture
 
@@ -54,6 +75,7 @@ All conversation and message data is encrypted client-side with the user's `sess
 ### Blockchain Interaction Pattern
 
 All write operations go through `src/hooks/useChatMutations.jsx`. Every mutation:
+
 1. Symmetrically encrypts the payload with the user's `sessionKey`.
 2. Asymmetrically encrypts the session key for the TEE oracle using `VITE_ORACLE_PUBLIC_KEY`.
 3. Calls a contract method on `EVMAIAgentEscrow` via Thirdweb (`sendAndConfirmTransaction`).
@@ -63,17 +85,18 @@ Contracts are configured in `src/config/contracts.js` keyed by `chainId`, popula
 
 ### Redux Store (`src/store/`)
 
-| Slice | Responsibility |
-|-------|---------------|
-| `appSlice` | Firebase/Thirdweb init status, app-level errors |
-| `chatSlice` | Active conversation ID, in-memory messages, rename modal state |
-| `deviceSlice` | Screen dimensions, orientation, PWA/Telegram detection |
-| `uiSlice` | UI-level state (sidebar, modals) |
-| `asyncSlice` | Async operation tracking |
+| Slice         | Responsibility                                                 |
+| ------------- | -------------------------------------------------------------- |
+| `appSlice`    | Firebase/Thirdweb init status, app-level errors                |
+| `chatSlice`   | Active conversation ID, in-memory messages, rename modal state |
+| `deviceSlice` | Screen dimensions, orientation, PWA/Telegram detection         |
+| `uiSlice`     | UI-level state (sidebar, modals)                               |
+| `asyncSlice`  | Async operation tracking                                       |
 
 ### Feature Modules (`src/features/`)
 
 Each feature is self-contained with its own components:
+
 - `auth/` — wallet connect screen, protected route guard, session key derivation
 - `chat/` — main chat interface, submits prompts via `useChatMutations`
 - `history/` — conversation list with rename/delete
@@ -104,11 +127,11 @@ Production builds strip `console.log/info/debug` but keep `console.error/warn` f
 
 This dApp is the user-facing layer of the SenseAI stack. It depends on three sibling repos:
 
-| Sibling | Role |
-|---------|------|
-| `tokenized-ai-agent` | Provides `EVMAIAgent` and `EVMAIAgentEscrow` contracts that handle all writes |
-| `sense-ai-subgraph` | Provides the GraphQL API for all read queries (conversations, messages, prompt status, activity) |
-| `able-contracts` | Provides `AbleToken` — the ERC20 payment token users must approve before prompting |
+| Sibling              | Role                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------ |
+| `tokenized-ai-agent` | Provides `EVMAIAgent` and `EVMAIAgentEscrow` contracts that handle all writes                    |
+| `sense-ai-subgraph`  | Provides the GraphQL API for all read queries (conversations, messages, prompt status, activity) |
+| `able-contracts`     | Provides `AbleToken` — the ERC20 payment token users must approve before prompting               |
 
 ### ABI Sync Process
 
@@ -128,18 +151,20 @@ Run this whenever contracts change. Stale ABIs produce silent parse failures whe
 ### Critical ABI Contract
 
 `PromptSubmitted` event param order (enforced by contract tests in `tokenized-ai-agent`):
+
 ```
 (address indexed user, uint256 indexed conversationId, uint256 indexed promptMessageId,
  uint256 answerMessageId, bytes encryptedPayload, bytes roflEncryptedKey)
 ```
+
 `answerMessageId` is at **param index 3** (0-based, non-indexed). `useChatMutations.jsx` reads it at this index from the receipt log. If this ever changes, both the subgraph and dApp must be updated in lockstep.
 
 ### Protocol Constants
 
-| Constant | Value | Where used |
-|----------|-------|-----------|
-| `CANCELLATION_TIMEOUT_MS` | 3 000 ms (3 s) | Cancel button disable countdown |
-| `REFUND_TIMEOUT_MS` | 3 600 000 ms (1 h) | Refund eligibility display |
+| Constant                  | Value              | Where used                      |
+| ------------------------- | ------------------ | ------------------------------- |
+| `CANCELLATION_TIMEOUT_MS` | 3 000 ms (3 s)     | Cancel button disable countdown |
+| `REFUND_TIMEOUT_MS`       | 3 600 000 ms (1 h) | Refund eligibility display      |
 
 These are hardcoded in `EVMAIAgentEscrow`. Do not guess at them — verify against the contract.
 
@@ -155,14 +180,14 @@ These are hardcoded in `EVMAIAgentEscrow`. Do not guess at them — verify again
 
 The following changes are planned for `sense-ai-dapp` after Phase 2 is merged:
 
-| Change | Detail |
-|--------|--------|
-| **Bun** | ✅ Done — `npm` replaced with Bun (`bun.lock` committed, CI runs on Bun 1.3.14). |
-| **viem** | Add as explicit direct dependency (ThirdWeb v5 exposes viem's ABI utils; explicit dep makes tree-shaking clear and allows direct use). |
-| **Remove ethers.js** | Remove `ethers` from `package.json` and all import sites. Replace with ThirdWeb v5 / viem equivalents. |
-| **TypeScript migration** | Migrate from `.jsx`/`.js` to `.tsx`/`.ts`. Add `tsconfig.json`. |
-| **GraphQL codegen** | Add `@graphql-codegen/cli` to auto-generate typed query hooks from `schema.graphql` + `.graphql` query files. |
-| **NO wagmi** | ThirdWeb v5 already ships wagmi-equivalent React hooks. Do not add wagmi as a separate dependency. |
+| Change                   | Detail                                                                                                                                 |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Bun**                  | ✅ Done — `npm` replaced with Bun (`bun.lock` committed, CI runs on Bun 1.3.14).                                                       |
+| **viem**                 | Add as explicit direct dependency (ThirdWeb v5 exposes viem's ABI utils; explicit dep makes tree-shaking clear and allows direct use). |
+| **Remove ethers.js**     | Remove `ethers` from `package.json` and all import sites. Replace with ThirdWeb v5 / viem equivalents.                                 |
+| **TypeScript migration** | Migrate from `.jsx`/`.js` to `.tsx`/`.ts`. Add `tsconfig.json`.                                                                        |
+| **GraphQL codegen**      | Add `@graphql-codegen/cli` to auto-generate typed query hooks from `schema.graphql` + `.graphql` query files.                          |
+| **NO wagmi**             | ThirdWeb v5 already ships wagmi-equivalent React hooks. Do not add wagmi as a separate dependency.                                     |
 
 Vitest remains the test runner after Phase 3 — it integrates with the Vite pipeline (aliases, plugins, env). Bun adoption brings speed to install/run via `bun run vitest` without needing to change the test framework.
 
