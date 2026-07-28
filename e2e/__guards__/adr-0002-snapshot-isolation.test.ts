@@ -80,8 +80,19 @@ function readSpecs(): SpecFacts[] {
 		.sort()
 		.map(file => {
 			const src = readFileSync(path.join(SPECS_DIR, file), 'utf8');
-			// Strip comments so prose mentioning a helper can't trip the guard.
-			const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+			// Strip comments AND string literals before matching. Comments first, so an
+			// apostrophe inside prose cannot unbalance the string stripping. Without the string
+			// pass, a marker name appearing inside a literal — e.g.
+			// `const MSG = 'sendPromptAndWaitForResponse is called internally'` — would count as
+			// an indexed read and falsely fail the exemption-honesty check on plan.spec.ts.
+			// Stripping strings can only remove false positives: a marker that appears solely
+			// inside a literal is not a call.
+			const code = src
+				.replace(/\/\*[\s\S]*?\*\//g, '')
+				.replace(/(^|[^:])\/\/.*$/gm, '$1')
+				.replace(/`(?:\\.|[^`\\])*`/g, '``')
+				.replace(/'(?:\\.|[^'\\])*'/g, "''")
+				.replace(/"(?:\\.|[^"\\])*"/g, '""');
 			return {
 				file,
 				snapshotCalls: SNAPSHOT_MARKERS.filter(m => code.includes(m)),
@@ -98,7 +109,10 @@ describe('ADR-0002: evm_snapshot/evm_revert must not be used by a spec that read
 
 	it('playwright still keeps all specs in the single directory this guard scans', () => {
 		const config = readFileSync(path.join(E2E_DIR, '..', 'playwright.config.ts'), 'utf8');
-		const declared = [...config.matchAll(/testDir:\s*'([^']+)'/g)].map(m => m[1]);
+		// Either quote style: a Prettier config change (or a hand edit) to double quotes would
+		// otherwise yield [] and report "now declares []", which reads as "no testDir found"
+		// rather than "wrong quote style" — a misleading failure on a guard whose job is clarity.
+		const declared = [...config.matchAll(/testDir:\s*['"]([^'"]+)['"]/g)].map(m => m[1]);
 		expect(
 			declared,
 			`This guard scans ${ASSUMED_TEST_DIR} only. playwright.config.ts now declares ` +
