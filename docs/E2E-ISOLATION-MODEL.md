@@ -66,8 +66,15 @@ account holds **zero ABLE** by construction — several specs depend on that.
 ## Running the suite
 
 ```bash
-cd sense-ai-e2e && bash scripts/run-e2e-sharded.sh
+cd sense-ai-e2e && tmux new-session -s e2e 'bash scripts/run-e2e-sharded.sh'
 ```
+
+**The runner refuses to start outside tmux/screen**, and that is not ceremony. The run takes
+~70 minutes and owns the ports, the chain and the Docker stack for all of it, so if the caller
+dies — closed terminal, dropped SSH, an agent harness reaping its child — the run dies partway
+and leaves the stack up for the next one to trip over. Detach with `Ctrl-b d`; it keeps running.
+Reattach with `tmux attach -t e2e`. (`E2E_ALLOW_NO_TMUX=1` overrides, only for a caller that
+already supervises the run.)
 
 Three invocations, fresh stack between each: two graph-asserting shards plus `plan` alone.
 

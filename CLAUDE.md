@@ -37,9 +37,17 @@ because the isolation rules are not guessable: `evm_revert` permanently wedges g
 freezes the subgraph, so a snapshot in one spec silently breaks _other_ spec files in a way that
 looks like flakiness.
 
-**Do not run `bunx playwright test` over the whole suite for a verdict** — use
-`cd ../sense-ai-e2e && bash scripts/run-e2e-sharded.sh`, which is the supported protocol. A
-single invocation reproduces the wedge described above.
+**Do not run `bunx playwright test` over the whole suite for a verdict** — use the supported
+protocol, which must be started inside tmux (the runner refuses otherwise):
+
+```bash
+cd ../sense-ai-e2e && tmux new-session -s e2e 'bash scripts/run-e2e-sharded.sh'
+```
+
+A single `playwright test` invocation reproduces the wedge described above. The tmux
+requirement is because the run takes ~70 minutes and owns the ports, chain and Docker stack
+throughout — if the caller dies (closed terminal, dropped SSH, an agent harness reaping its
+child) the run dies partway and leaves the stack up. Detach with `Ctrl-b d`; it keeps running.
 
 ## Architecture
 
