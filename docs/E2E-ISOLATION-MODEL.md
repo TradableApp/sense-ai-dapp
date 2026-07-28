@@ -111,6 +111,10 @@ on every push.
    `sense-ai-e2e/artifacts/shard-<1|2|plan>/` before the next shard starts, and prints that path
    at the end of the run. Look there.
 
-   This applies to **flaky** tests too, and that is the case it exists for: local `retries` is 1,
-   so a flake writes a trace (`trace: 'on-first-retry'`) and still exits 0. Twice now an
-   investigation has reached for that evidence after the run and found it gone.
+   This applies to **flaky** tests too, and that is the case it exists for: a flake still exits 0,
+   so nothing prompts you to go looking. Twice now an investigation has reached for that evidence
+   after the run and found it gone.
+
+   Locally `trace` is `'retain-on-failure'`, which keeps the trace of the attempt that **failed**.
+   Do not "simplify" it back to `'on-first-retry'` — that records during the RETRY, so a flaky
+   test leaves you a trace of the attempt that passed and nothing from the one that didn't.

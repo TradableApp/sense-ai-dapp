@@ -32,10 +32,13 @@ export default defineConfig({
 	forbidOnly: !!process.env.CI,
 
 	/**
-	 * One local retry, two on CI. Local was 0, which had a non-obvious cost: `trace` below
-	 * is 'on-first-retry', so with no retry a LOCAL failure produced NO trace — only a
+	 * One local retry, two on CI. Local was 0, which had a non-obvious cost: `trace` was
+	 * 'on-first-retry', so with no retry a LOCAL failure produced NO trace — only a
 	 * screenshot and video. That is why the first sighting of the graph-node wedge
 	 * (CU-86d3uqgh7) could not be diagnosed from its artifacts and needed a live repro.
+	 * (Local `trace` is now 'retain-on-failure' — see the note on it below — so a local
+	 * failure is captured whether or not it is retried. The retry is still what makes
+	 * non-determinism VISIBLE, which is the point below.)
 	 *
 	 * A retry also makes non-determinism legible: Playwright reports a test that passes on
 	 * the second attempt as FLAKY rather than passed, so it is surfaced rather than hidden.
@@ -64,7 +67,20 @@ export default defineConfig({
 		/** Default assertion timeout — tight enough to catch regressions */
 		actionTimeout: 15_000,
 		navigationTimeout: 30_000,
-		trace: 'on-first-retry',
+		/**
+		 * 'on-first-retry' records the trace DURING the retry — so for a flaky test you keep a
+		 * trace of the attempt that PASSED, and nothing from the one that failed. That is the
+		 * wrong way round for the only failure mode this suite actually has left: both of the
+		 * 2026-07-27 runs finished 0 failed / 1 flaky, and neither flake could be attributed,
+		 * because the failing attempt left only an error-context.md with no page snapshot.
+		 *
+		 * 'retain-on-failure' records every attempt and discards the passing ones, so the FAILING
+		 * attempt is what survives. The extra cost is small here because `video` below already
+		 * pays the record-everything price on the same policy — this only makes trace consistent
+		 * with it. CI keeps 'on-first-retry' (CI runs no Playwright today, so this is about not
+		 * silently imposing tracing overhead if it ever does).
+		 */
+		trace: process.env.CI ? 'on-first-retry' : 'retain-on-failure',
 		screenshot: 'only-on-failure',
 		video: 'retain-on-failure',
 		viewport: { width: 1280, height: 800 },
