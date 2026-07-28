@@ -59,7 +59,8 @@ subgraph, so the reorg is harmless _to itself_.
   that runs _later in the same invocation_ indexes its first assertion against the still-wedged
   graph-node → an empty/stale read (e.g. `T-ACTIVITY-01` failing with `Last value: []` while
   `T-ACTIVITY-02/03`, running later, recover). Run the `plan` project in its own invocation; CI's
-  per-project matrix already isolates them, but a local `--project=plan --project=activity` combined
+  per-project matrix already isolates them **[CORRECTION 2026-07-27: this is FALSE — CI runs no
+  Playwright at all; see the Amendment below]**, but a local `--project=plan --project=activity` combined
   run reproduces the wedge. (Combined with the per-invocation allocator reset above, this means:
   graph-asserting projects want their own fresh-stack invocation, separate from `plan`.)
 - **Migration:** `refunds` was migrated first; `history` and `branching` follow (this ADR is the
