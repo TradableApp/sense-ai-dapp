@@ -1,3 +1,9 @@
+// @vitest-environment node
+//
+// Static analysis over source files: pure Node APIs, zero browser APIs. The repo default
+// is happy-dom, which works here only incidentally (it layers on Node rather than
+// replacing it) and misrepresents what this file needs. Set per-file rather than via
+// config, since environmentMatchGlobs is deprecated in this vitest version.
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

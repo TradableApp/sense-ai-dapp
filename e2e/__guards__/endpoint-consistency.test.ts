@@ -1,3 +1,9 @@
+// @vitest-environment node
+//
+// Static analysis over source files: pure Node APIs, zero browser APIs. The repo default
+// is happy-dom, which works here only incidentally (it layers on Node rather than
+// replacing it) and misrepresents what this file needs. Set per-file rather than via
+// config, since environmentMatchGlobs is deprecated in this vitest version.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,9 +34,19 @@ function read(rel: string): string {
 	return readFileSync(path.join(E2E_DIR, rel), 'utf8');
 }
 
-/** Every `process.env.X || '<literal>'` pair in a file, as [envVar, literal]. */
+/** Every `process.env.X || '<literal>'` (or `??`) pair in a file, as [envVar, literal].
+ *
+ *  Both operators are matched deliberately. They are NOT equivalent — `||` falls through on any
+ *  falsy value including `''`, while `??` only on null/undefined — and `??` is the
+ *  strictly-correct choice for an env var that could legitimately be empty. A
+ *  `prefer-nullish-coalescing` lint rule would autofix to `??`, and a guard that then matched
+ *  nothing would fail with "should define exactly one …", which reads as "the fallback is
+ *  missing" rather than "the operator changed". Matching both keeps the failure honest. */
 function envFallbacks(src: string): Array<[string, string]> {
-	return [...src.matchAll(/process\.env\.(\w+)\s*\|\|\s*['"]([^'"]+)['"]/g)].map(m => [m[1], m[2]]);
+	return [...src.matchAll(/process\.env\.(\w+)\s*(?:\|\||\?\?)\s*['"]([^'"]+)['"]/g)].map(m => [
+		m[1],
+		m[2],
+	]);
 }
 
 describe('localnet endpoints have one source of truth', () => {

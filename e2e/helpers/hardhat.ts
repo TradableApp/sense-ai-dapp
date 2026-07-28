@@ -701,7 +701,16 @@ export async function transferOwnership(
  *
  *  Call ONCE at the top of the describe, BEFORE any beforeEach that changes the fee — hooks
  *  run in registration order, so the capture must be registered first. Same ordering contract
- *  as useChainSnapshot, and unenforceable by types for the same reason. */
+ *  as useChainSnapshot, and unenforceable by types for the same reason.
+ *
+ *  LIMITATION, inherent to forward-only restoration: if the restoring setPromptFee itself
+ *  throws (RPC down, ownership lost), the escrow keeps the test-modified fee and every later
+ *  describe inherits it. Those specs then assert against the wrong fee, which can read as a
+ *  silent wrong value rather than a loud failure pointing here. A chain revert would not have
+ *  this hole — but a revert wedges graph-node, which is why this exists (ADR-0002). The
+ *  mitigation is the failure being loud at the source: the throw propagates out of afterEach
+ *  and fails that test, so the run does not continue silently. If this ever bites in practice,
+ *  the fix is a run-level assertion that the fee matches its expected default between shards. */
 export function usePromptFeeRestore(
 	testRunner: {
 		beforeEach: (_fn: () => Promise<void>) => void;
