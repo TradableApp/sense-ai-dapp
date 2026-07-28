@@ -33,7 +33,7 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 	// graph-node's ingestor and freezes the subgraph for the rest of the invocation
 	// (CU-86d3uqgh7). promptFee is GLOBAL on the escrow, so it is captured and restored
 	// forward-only, exactly as T-COST-MULTI and T-COST-REGEN below already do.
-	let originalFee: bigint;
+	let originalFee: bigint | undefined;
 
 	test.beforeEach(async ({ freshUserAccount }) => {
 		originalFee = await getPromptFee(ESCROW_ADDRESS);
@@ -42,7 +42,17 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 	});
 
 	test.afterEach(async () => {
-		await setPromptFee(ESCROW_ADDRESS, originalFee);
+		// `bigint | undefined`, not `bigint`: TypeScript's definite-assignment analysis does
+		// not cross the async-hook boundary, so this is undefined at runtime until beforeEach
+		// completes. Playwright runs afterEach even when beforeEach THROWS, so an unguarded
+		// restore would call setPromptFee(escrow, undefined) and bury the real failure under a
+		// second, confusing error. Same guard as useChainSnapshot in helpers/hardhat.ts.
+		if (originalFee === undefined) return;
+		// Clear before awaiting: the value is spent once we commit to restoring it, so a
+		// throwing restore cannot leave a stale fee for a later hook to re-apply.
+		const fee = originalFee;
+		originalFee = undefined;
+		await setPromptFee(ESCROW_ADDRESS, fee); // forward-only restore (global fee)
 	});
 
 	test('T-COST-01: a changed promptFee is the amount debited per prompt (on-chain)', async ({
@@ -107,7 +117,7 @@ test.describe('Contract cost change across prompts (T-COST-MULTI)', () => {
 	// promptFee is GLOBAL on the escrow, so capture and restore it forward-only (no
 	// chain revert) — otherwise the fee this test sets leaks into any later project
 	// that assumes the default.
-	let originalFee: bigint;
+	let originalFee: bigint | undefined;
 
 	test.beforeEach(async ({ freshUserAccount }) => {
 		originalFee = await getPromptFee(ESCROW_ADDRESS);
@@ -116,7 +126,17 @@ test.describe('Contract cost change across prompts (T-COST-MULTI)', () => {
 	});
 
 	test.afterEach(async () => {
-		await setPromptFee(ESCROW_ADDRESS, originalFee);
+		// `bigint | undefined`, not `bigint`: TypeScript's definite-assignment analysis does
+		// not cross the async-hook boundary, so this is undefined at runtime until beforeEach
+		// completes. Playwright runs afterEach even when beforeEach THROWS, so an unguarded
+		// restore would call setPromptFee(escrow, undefined) and bury the real failure under a
+		// second, confusing error. Same guard as useChainSnapshot in helpers/hardhat.ts.
+		if (originalFee === undefined) return;
+		// Clear before awaiting: the value is spent once we commit to restoring it, so a
+		// throwing restore cannot leave a stale fee for a later hook to re-apply.
+		const fee = originalFee;
+		originalFee = undefined;
+		await setPromptFee(ESCROW_ADDRESS, fee); // forward-only restore (global fee)
 	});
 
 	test('T-COST-03: two different fees debit their respective amounts across prompts', async ({
@@ -160,14 +180,24 @@ test.describe('Insufficient balance blocks an action (T-COST-INSUFFICIENT)', () 
 	// The revert also used to undo the promptFee set below; that is now an explicit
 	// forward-only restore, since promptFee is GLOBAL on the escrow (ADR-0002,
 	// CU-86d3uqgh7).
-	let originalFee: bigint;
+	let originalFee: bigint | undefined;
 
 	test.beforeEach(async () => {
 		originalFee = await getPromptFee(ESCROW_ADDRESS);
 	});
 
 	test.afterEach(async () => {
-		await setPromptFee(ESCROW_ADDRESS, originalFee);
+		// `bigint | undefined`, not `bigint`: TypeScript's definite-assignment analysis does
+		// not cross the async-hook boundary, so this is undefined at runtime until beforeEach
+		// completes. Playwright runs afterEach even when beforeEach THROWS, so an unguarded
+		// restore would call setPromptFee(escrow, undefined) and bury the real failure under a
+		// second, confusing error. Same guard as useChainSnapshot in helpers/hardhat.ts.
+		if (originalFee === undefined) return;
+		// Clear before awaiting: the value is spent once we commit to restoring it, so a
+		// throwing restore cannot leave a stale fee for a later hook to re-apply.
+		const fee = originalFee;
+		originalFee = undefined;
+		await setPromptFee(ESCROW_ADDRESS, fee); // forward-only restore (global fee)
 	});
 
 	test('T-COST-04: a prompt fails when the wallet holds less ABLE than the fee', async ({
@@ -200,14 +230,24 @@ test.describe('Insufficient balance blocks regenerate (T-COST-REGEN)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	let originalFee: bigint;
+	let originalFee: bigint | undefined;
 
 	test.beforeEach(async () => {
 		originalFee = await getPromptFee(ESCROW_ADDRESS);
 	});
 
 	test.afterEach(async () => {
-		await setPromptFee(ESCROW_ADDRESS, originalFee); // forward-only restore (global fee)
+		// `bigint | undefined`, not `bigint`: TypeScript's definite-assignment analysis does
+		// not cross the async-hook boundary, so this is undefined at runtime until beforeEach
+		// completes. Playwright runs afterEach even when beforeEach THROWS, so an unguarded
+		// restore would call setPromptFee(escrow, undefined) and bury the real failure under a
+		// second, confusing error. Same guard as useChainSnapshot in helpers/hardhat.ts.
+		if (originalFee === undefined) return;
+		// Clear before awaiting: the value is spent once we commit to restoring it, so a
+		// throwing restore cannot leave a stale fee for a later hook to re-apply.
+		const fee = originalFee;
+		originalFee = undefined;
+		await setPromptFee(ESCROW_ADDRESS, fee); // forward-only restore (global fee)
 	});
 
 	test('T-COST-05: regenerate fails once the wallet can no longer cover the fee', async ({

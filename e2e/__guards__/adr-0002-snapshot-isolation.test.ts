@@ -62,8 +62,13 @@ interface SpecFacts {
 }
 
 function readSpecs(): SpecFacts[] {
-	return readdirSync(SPECS_DIR)
-		.filter(f => f.endsWith('.spec.ts'))
+	// Recursive: readdirSync is shallow by default, so a spec moved into a subdirectory
+	// (specs/cost/contract-cost.spec.ts) would silently escape enforcement — and the
+	// minimum-count check below would still pass while the top-level count stayed high.
+	// A guard that can silently stop covering files is the failure class this PR exists to
+	// remove.
+	return readdirSync(SPECS_DIR, { recursive: true })
+		.filter((f): f is string => typeof f === 'string' && f.endsWith('.spec.ts'))
 		.sort()
 		.map(file => {
 			const src = readFileSync(path.join(SPECS_DIR, file), 'utf8');

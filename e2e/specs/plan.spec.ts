@@ -19,6 +19,10 @@ test.describe('Spending plan management (T-PLAN)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
+	// MUST precede any beforeEach that changes chain state: Playwright registers hooks in
+	// declaration order, so the snapshot has to be taken BEFORE the funding below or the
+	// revert would leave the account unfunded and the next test would fail for an unrelated
+	// reason. Not enforceable by types — see the useChainSnapshot jsdoc.
 	useChainSnapshot(test);
 
 	test.beforeEach(async () => {
@@ -188,6 +192,10 @@ test.describe('Plan modal validation (T-PLAN-EDGE)', () => {
 	// evaluate against a chain a day ahead, which silently invalidates anything
 	// asserting inside a time window (REFUND_TIMEOUT is 1 hour). This block had
 	// snapshot/revert hooks before the fixture refactor; restoring that coverage.
+	// MUST precede any beforeEach that changes chain state: Playwright registers hooks in
+	// declaration order, so the snapshot has to be taken BEFORE the funding below or the
+	// revert would leave the account unfunded and the next test would fail for an unrelated
+	// reason. Not enforceable by types — see the useChainSnapshot jsdoc.
 	useChainSnapshot(test);
 
 	test('T-PLAN-11: Cannot set plan with 0 ABLE', async ({ dashboardPage, planModal }) => {
