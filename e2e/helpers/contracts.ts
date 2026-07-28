@@ -25,6 +25,13 @@ const IMPLAUSIBLE_WHOLE_TOKENS = 10n ** 12n;
  */
 export const ABLE = (whole: number | bigint): bigint => {
 	const asBigInt = BigInt(whole);
+	// Symmetric lower bound. Widening the signature to accept bigint also made ABLE(-1n) valid
+	// TypeScript, and a negative slips past the upper bound to return -1e18 — which then fails
+	// deep inside fundABLE or the contract as an opaque revert rather than here at the call
+	// site. There is no legitimate negative token amount.
+	if (asBigInt < 0n) {
+		throw new Error(`ABLE(${asBigInt}) — argument must be a non-negative whole-token count.`);
+	}
 	if (asBigInt >= IMPLAUSIBLE_WHOLE_TOKENS) {
 		throw new Error(
 			`ABLE(${asBigInt}) — argument is whole TOKENS, not wei. ${asBigInt} whole tokens is ` +

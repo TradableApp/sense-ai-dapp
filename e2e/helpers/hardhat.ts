@@ -691,6 +691,44 @@ export async function transferOwnership(
  * Set the per-prompt fee as a SPECIFIC sender (not the default deployer) — used to assert that the
  * new owner can set fees and the old owner can no longer (the call reverts and this promise rejects).
  */
+/** Capture the escrow's global promptFee before each test and restore it after — the
+ *  forward-only equivalent of a chain revert for a value that fresh accounts cannot isolate.
+ *
+ *  Extracted because the guard below was duplicated in FOUR describe blocks of
+ *  contract-cost.spec.ts, which is the same drift surface useChainSnapshot was extracted to
+ *  remove: a fix applied to one copy would not reach the other three, and this guard is
+ *  safety-critical (an unrestored fee leaks into every later spec that assumes the default).
+ *
+ *  Call ONCE at the top of the describe, BEFORE any beforeEach that changes the fee — hooks
+ *  run in registration order, so the capture must be registered first. Same ordering contract
+ *  as useChainSnapshot, and unenforceable by types for the same reason. */
+export function usePromptFeeRestore(
+	testRunner: {
+		beforeEach: (_fn: () => Promise<void>) => void;
+		afterEach: (_fn: () => Promise<void>) => void;
+	},
+	escrowAddress: string,
+): void {
+	// `bigint | undefined`, not `bigint`: definite-assignment analysis does not cross the
+	// async-hook boundary, so this is undefined at runtime until the capture completes.
+	// Playwright runs afterEach even when beforeEach THROWS, so an unguarded restore would
+	// call setPromptFee(escrow, undefined) and bury the real failure under a second error.
+	let originalFee: bigint | undefined;
+
+	testRunner.beforeEach(async () => {
+		originalFee = await getPromptFee(escrowAddress);
+	});
+
+	testRunner.afterEach(async () => {
+		if (originalFee === undefined) return;
+		// Clear BEFORE awaiting: the value is spent once we commit to restoring it, so a
+		// throwing restore cannot leave a stale fee for a later hook to re-apply.
+		const fee = originalFee;
+		originalFee = undefined;
+		await setPromptFee(escrowAddress, fee);
+	});
+}
+
 export async function setPromptFeeFrom(
 	escrowAddress: string,
 	fromAddress: string,

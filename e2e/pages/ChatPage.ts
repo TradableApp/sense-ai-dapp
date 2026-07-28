@@ -187,14 +187,16 @@ export class ChatPage {
 			// 15s, not 5s: on a state-heavy localnet chain first render can push past 5s.
 			await expect(this.promptTextarea).toBeVisible({ timeout: 15_000 });
 		} catch (err) {
-			// isVisible() resolves false for an absent element rather than throwing, so this
-			// catch only ever fires on a GENUINE error (page crashed, context torn down). It
-			// must not swallow that silently: the original composer error is still the one
-			// worth reporting, so keep re-throwing it, but say that the gate probe itself
-			// failed — otherwise a crashed page is indistinguishable from "not plan-gated".
+			// Reached on EVERY composer timeout — the normal failure path, not an exceptional
+			// one. Determine whether the plan gate is the reason, and if so replace the opaque
+			// locator error with a diagnostic that names the cause and the fix.
 			const planGated = await this.page
 				.getByText('Activate Your Agent')
 				.isVisible()
+				// isVisible() resolves false for an absent element rather than throwing, so THIS
+				// catch only fires on a genuine page/context error (crash, torn-down context).
+				// It must not swallow that silently — but the original composer error is still
+				// the one worth reporting, so warn and then let it be re-thrown below.
 				.catch((probeErr: unknown) => {
 					console.warn(
 						`[assertComposerReady] plan-gate probe failed (${probeErr}) — cannot tell whether ` +
