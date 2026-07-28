@@ -26,7 +26,13 @@ const AGENT_REPO_DIR = path.resolve(
 	'tokenized-ai-agent',
 );
 
-const RPC_URL = 'http://127.0.0.1:8545';
+// Single source of truth for the chain RPC, mirroring GRAPH_URL in ./graph. sync-config.sh
+// writes VITE_CHAIN_RPC_URL from $PORT_HARDHAT, so hardcoding the port here would create a
+// second source of truth that silently diverges the moment the port changes — every helper
+// in this file would then talk to nothing while the dApp talked to the real chain. That is
+// exactly the failure the hardcoded subgraph URL caused (CU-86d3dwme6): an unreachable
+// endpoint produced a skipped wait rather than an error.
+export const RPC_URL = process.env.VITE_CHAIN_RPC_URL || 'http://127.0.0.1:8545';
 let reqId = 1;
 
 // ── Per-test fresh accounts ───────────────────────────────────────────────────
@@ -345,6 +351,47 @@ export async function revertToSnapshot(snapshotId: string): Promise<void> {
 	}
 }
 
+/** Install per-test chain snapshot/revert hooks for a spec. Call ONCE at the
+ *  top of the describe (BEFORE any spec-local beforeEach, so state setup like
+ *  fundAndActivatePlan lands inside the snapshot and is restored by the
+ *  revert). Replaces the hand-rolled snapshotId + beforeEach/afterEach pattern
+ *  that five specs each maintained separately.
+ *
+ *  SERIAL SUITES ONLY. The snapshot id lives in one closure shared by every test in
+ *  the describe, and evm_snapshot/evm_revert are global to the node — with more than one
+ *  worker, test A's afterEach could revert to test B's snapshot. playwright.config keeps
+ *  the E2E_LOCAL_SERVICES run at workers=1 for exactly this reason; that constraint is
+ *  restated here because this helper is reusable and its signature does not imply it.
+ *
+ *  Pass Playwright's `test` object. The parameter is typed structurally rather than as
+ *  `Pick<TestType<…>, 'beforeEach' | 'afterEach'>` on purpose: it keeps the hook logic
+ *  decoupled from Playwright's fixture generics, so the ordering/guard behaviour can be
+ *  exercised against a plain stub runner. Verified to compile with
+ *  `strictFunctionTypes: true` — a zero-arg callback is assignable to Playwright's
+ *  richer `(args, testInfo)` signature, so this is not relying on method bivariance. */
+export function useChainSnapshot(testRunner: {
+	beforeEach: (_fn: () => Promise<void>) => void;
+	afterEach: (_fn: () => Promise<void>) => void;
+}): void {
+	// `string | undefined`, not `string`: TypeScript's definite-assignment analysis does
+	// not cross the async-callback boundary, so a bare `let snapshotId: string` type-checks
+	// while still being undefined at runtime. If takeSnapshot() throws in beforeEach,
+	// Playwright STILL runs afterEach — reverting to `undefined` then raises a second,
+	// confusing RPC error that buries the real one in the CI log.
+	let snapshotId: string | undefined;
+	testRunner.beforeEach(async () => {
+		snapshotId = await takeSnapshot();
+	});
+	testRunner.afterEach(async () => {
+		if (snapshotId === undefined) return;
+		// Clear BEFORE awaiting: if the revert itself throws, the id is already spent and
+		// must not be retried by a later hook.
+		const id = snapshotId;
+		snapshotId = undefined;
+		await revertToSnapshot(id);
+	});
+}
+
 export async function isHardhatRunning(): Promise<boolean> {
 	try {
 		await getBlockNumber();
@@ -644,6 +691,53 @@ export async function transferOwnership(
  * Set the per-prompt fee as a SPECIFIC sender (not the default deployer) — used to assert that the
  * new owner can set fees and the old owner can no longer (the call reverts and this promise rejects).
  */
+/** Capture the escrow's global promptFee before each test and restore it after — the
+ *  forward-only equivalent of a chain revert for a value that fresh accounts cannot isolate.
+ *
+ *  Extracted because the guard below was duplicated in FOUR describe blocks of
+ *  contract-cost.spec.ts, which is the same drift surface useChainSnapshot was extracted to
+ *  remove: a fix applied to one copy would not reach the other three, and this guard is
+ *  safety-critical (an unrestored fee leaks into every later spec that assumes the default).
+ *
+ *  Call ONCE at the top of the describe, BEFORE any beforeEach that changes the fee — hooks
+ *  run in registration order, so the capture must be registered first. Same ordering contract
+ *  as useChainSnapshot, and unenforceable by types for the same reason.
+ *
+ *  LIMITATION, inherent to forward-only restoration: if the restoring setPromptFee itself
+ *  throws (RPC down, ownership lost), the escrow keeps the test-modified fee and every later
+ *  describe inherits it. Those specs then assert against the wrong fee, which can read as a
+ *  silent wrong value rather than a loud failure pointing here. A chain revert would not have
+ *  this hole — but a revert wedges graph-node, which is why this exists (ADR-0002). The
+ *  mitigation is the failure being loud at the source: the throw propagates out of afterEach
+ *  and fails that test, so the run does not continue silently. If this ever bites in practice,
+ *  the fix is a run-level assertion that the fee matches its expected default between shards. */
+export function usePromptFeeRestore(
+	testRunner: {
+		beforeEach: (_fn: () => Promise<void>) => void;
+		afterEach: (_fn: () => Promise<void>) => void;
+	},
+	escrowAddress: string,
+): void {
+	// `bigint | undefined`, not `bigint`: definite-assignment analysis does not cross the
+	// async-hook boundary, so this is undefined at runtime until the capture completes.
+	// Playwright runs afterEach even when beforeEach THROWS, so an unguarded restore would
+	// call setPromptFee(escrow, undefined) and bury the real failure under a second error.
+	let originalFee: bigint | undefined;
+
+	testRunner.beforeEach(async () => {
+		originalFee = await getPromptFee(escrowAddress);
+	});
+
+	testRunner.afterEach(async () => {
+		if (originalFee === undefined) return;
+		// Clear BEFORE awaiting: the value is spent once we commit to restoring it, so a
+		// throwing restore cannot leave a stale fee for a later hook to re-apply.
+		const fee = originalFee;
+		originalFee = undefined;
+		await setPromptFee(escrowAddress, fee);
+	});
+}
+
 export async function setPromptFeeFrom(
 	escrowAddress: string,
 	fromAddress: string,

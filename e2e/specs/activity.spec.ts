@@ -1,11 +1,8 @@
 import { expect, test } from '../fixtures';
+import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { getActivities, waitForGraph } from '../helpers/graph';
-import { activatePlan, fundABLE } from '../helpers/hardhat';
 import { DashboardPage } from '../pages/DashboardPage';
 
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
-const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
 
@@ -20,11 +17,10 @@ test.describe('Recent activity feed (T-ACTIVITY)', () => {
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test.beforeEach(async ({ freshUserAccount }) => {
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
 		// Activating a plan calls setSpendingLimit → emits SpendingLimitSet → the subgraph's
 		// handleSpendingLimitSet writes a PLAN_UPDATE Activity. So a plan-bearing dashboard always
 		// has at least this one activity to surface.
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(freshUserAccount.address);
 	});
 
 	test('T-ACTIVITY-01: activating a plan indexes a PLAN_UPDATE activity the dashboard shows as "Spending Limit Updated"', async ({
@@ -34,7 +30,7 @@ test.describe('Recent activity feed (T-ACTIVITY)', () => {
 		await waitForGraph(
 			() => getActivities(freshUserAccount.address),
 			acts => acts.some(a => a.type === 'PLAN_UPDATE'),
-			{ label: 'PLAN_UPDATE activity indexed', timeoutMs: 60_000 },
+			{ label: 'PLAN_UPDATE activity indexed' },
 		);
 
 		const dashboard = new DashboardPage(freshPage);
@@ -58,7 +54,7 @@ test.describe('Recent activity feed (T-ACTIVITY)', () => {
 		await waitForGraph(
 			() => getActivities(freshUserAccount.address),
 			acts => acts.some(a => a.type === 'CONVERSATION'),
-			{ label: 'CONVERSATION activity indexed', timeoutMs: 60_000 },
+			{ label: 'CONVERSATION activity indexed' },
 		);
 
 		const dashboard = new DashboardPage(freshPage);
@@ -83,7 +79,7 @@ test.describe('Recent activity feed (T-ACTIVITY)', () => {
 		const acts = await waitForGraph(
 			() => getActivities(freshUserAccount.address),
 			a => a.some(x => x.type === 'CONVERSATION') && a.some(x => x.type === 'PLAN_UPDATE'),
-			{ label: 'both CONVERSATION + PLAN_UPDATE indexed', timeoutMs: 60_000 },
+			{ label: 'both CONVERSATION + PLAN_UPDATE indexed' },
 		);
 
 		// getActivities is orderBy timestamp desc — the prompt (CONVERSATION) is the most recent.

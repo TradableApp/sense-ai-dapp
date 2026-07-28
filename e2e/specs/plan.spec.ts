@@ -1,5 +1,6 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
+import { ESCROW_ADDRESS, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
 import {
 	activatePlan,
 	approveABLE,
@@ -8,12 +9,9 @@ import {
 	getAllowance,
 	getEscrowBalance,
 	increaseTime,
-	revertToSnapshot,
-	takeSnapshot,
+	useChainSnapshot,
 } from '../helpers/hardhat';
 
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + deployed contracts (set E2E_LOCAL_SERVICES=1)';
 
@@ -21,17 +19,16 @@ test.describe('Spending plan management (T-PLAN)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	let snapshotId: string;
+	// MUST precede any beforeEach that changes chain state: Playwright registers hooks in
+	// declaration order, so the snapshot has to be taken BEFORE the funding below or the
+	// revert would leave the account unfunded and the next test would fail for an unrelated
+	// reason. Not enforceable by types — see the useChainSnapshot jsdoc.
+	useChainSnapshot(test);
 
 	test.beforeEach(async () => {
-		snapshotId = await takeSnapshot();
 		// Fund the user via the localnet "treasury" (deployer transfer) so plan
 		// activation can move real ABLE to escrow — there is no faucet on localnet.
-		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, 10n ** 18n * 100n);
-	});
-
-	test.afterEach(async () => {
-		await revertToSnapshot(snapshotId);
+		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, PLAN_ALLOWANCE);
 	});
 
 	test('T-PLAN-01: Dashboard shows onboarding for new user', async ({ dashboardPage }) => {
@@ -189,15 +186,17 @@ test.describe('Plan modal validation (T-PLAN-EDGE)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	let snapshotId: string;
-
-	test.beforeEach(async () => {
-		snapshotId = await takeSnapshot();
-	});
-
-	test.afterEach(async () => {
-		await revertToSnapshot(snapshotId);
-	});
+	// This block needs no beforeEach of its own, but it DOES need the revert: T-PLAN-13
+	// calls increaseTime(86400 + 60), and without an afterEach that ~24h EVM time
+	// advance persists for the remainder of the serial run — every later spec would
+	// evaluate against a chain a day ahead, which silently invalidates anything
+	// asserting inside a time window (REFUND_TIMEOUT is 1 hour). This block had
+	// snapshot/revert hooks before the fixture refactor; restoring that coverage.
+	// MUST precede any beforeEach that changes chain state: Playwright registers hooks in
+	// declaration order, so the snapshot has to be taken BEFORE the funding below or the
+	// revert would leave the account unfunded and the next test would fail for an unrelated
+	// reason. Not enforceable by types — see the useChainSnapshot jsdoc.
+	useChainSnapshot(test);
 
 	test('T-PLAN-11: Cannot set plan with 0 ABLE', async ({ dashboardPage, planModal }) => {
 		await dashboardPage.goto();
@@ -234,7 +233,7 @@ test.describe('Plan modal validation (T-PLAN-EDGE)', () => {
 		// Unlike T-PLAN-11/12 (which intentionally start at 0 ABLE to exercise the
 		// zero/exceed guards), this test must actually activate a plan to observe it
 		// expire — so it needs funding. The EDGE describe's beforeEach only snapshots.
-		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, 10n ** 18n * 100n);
+		await fundABLE(TOKEN_ADDRESS, TEST_ACCOUNT.address, PLAN_ALLOWANCE);
 
 		await dashboardPage.goto();
 		await dashboardPage.getStartedButton.click();

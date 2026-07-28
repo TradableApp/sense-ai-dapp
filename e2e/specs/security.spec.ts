@@ -2,13 +2,10 @@ import { test as base, expect } from '@playwright/test';
 
 import { test } from '../fixtures';
 import { injectMockWallet } from '../fixtures/mock-wallet';
-import { activatePlan, fundABLE } from '../helpers/hardhat';
+import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 
 const SKIP_REASON =
 	'Skipped: requires Hardhat node for wallet signing and storage inspection (set E2E_LOCAL_SERVICES=1)';
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
-const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 
 test.describe('Security — route protection (T-SEC-ROUTE)', () => {
 	const unauthTest = base;
@@ -92,8 +89,7 @@ test.describe('Security — encryption at rest and in transit (T-SEC-CRYPTO)', (
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test.beforeEach(async ({ freshUserAccount }) => {
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(freshUserAccount.address);
 	});
 
 	test('T-SEC-06: No plaintext prompts in IndexedDB', async ({ freshChatPage, freshPage }) => {

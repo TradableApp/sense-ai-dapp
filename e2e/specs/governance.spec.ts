@@ -1,8 +1,7 @@
 import { expect, test } from '../fixtures';
+import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { getFeeConfig, getPromptRequests, getProtocolConfig, waitForGraph } from '../helpers/graph';
 import {
-	activatePlan,
-	fundABLE,
 	getABLEBalance,
 	getOracle,
 	getOwner,
@@ -18,12 +17,10 @@ import {
 	setTreasury,
 	transferOwnership,
 	upgradeEscrowToV2,
+	usePromptFeeRestore,
 } from '../helpers/hardhat';
 
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
 const AGENT_ADDRESS = process.env.VITE_AGENT_CONTRACT_ADDRESS ?? '';
-const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 const ABLE = 10n ** 18n;
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + escrow + Graph node (set E2E_LOCAL_SERVICES=1)';
@@ -95,7 +92,7 @@ test.describe('Governance config indexing (T-GOV-CFG)', () => {
 				c?.branchFee === String(branchFee) &&
 				c?.cancellationFee === String(cancellationFee) &&
 				c?.metadataUpdateFee === String(metadataUpdateFee),
-			{ label: 'FeeConfig reflects all four fees', timeoutMs: 60_000 },
+			{ label: 'FeeConfig reflects all four fees' },
 		);
 	});
 
@@ -105,7 +102,7 @@ test.describe('Governance config indexing (T-GOV-CFG)', () => {
 		await waitForGraph(
 			() => getProtocolConfig(),
 			c => c?.treasuryAddress?.toLowerCase() === NEW_TREASURY.toLowerCase(),
-			{ label: 'ProtocolConfig reflects the new treasury', timeoutMs: 60_000 },
+			{ label: 'ProtocolConfig reflects the new treasury' },
 		);
 	});
 });
@@ -116,15 +113,12 @@ test.describe('Governance continuity (T-GOV-CFG)', () => {
 	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	let originalPromptFee: bigint | undefined;
+	// Shared fixture rather than a local capture/restore pair — see usePromptFeeRestore in
+	// helpers/hardhat.ts. Registered before the beforeEach below so the capture runs first.
+	usePromptFeeRestore(test, ESCROW_ADDRESS);
+
 	test.beforeEach(async ({ freshUserAccount }) => {
-		originalPromptFee = await getPromptFee(ESCROW_ADDRESS);
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
-	});
-	test.afterEach(async () => {
-		// Guard: skip the restore if beforeEach threw before snapshotting (see treasury note above).
-		if (originalPromptFee !== undefined) await setPromptFee(ESCROW_ADDRESS, originalPromptFee);
+		await fundAndActivatePlan(freshUserAccount.address);
 	});
 
 	test('T-GOV-CFG-03: the dApp still answers a prompt after a mid-session governance change', async ({
@@ -193,7 +187,6 @@ test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
 			c => c?.promptFee === String(7n * ABLE),
 			{
 				label: 'new owner fee change indexed',
-				timeoutMs: 60_000,
 			},
 		);
 	});
@@ -202,8 +195,7 @@ test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
 		freshUserAccount,
 		freshChatPage,
 	}) => {
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(freshUserAccount.address);
 
 		await freshChatPage.goto();
 		await transferOwnership(ESCROW_ADDRESS, NEW_OWNER); // ownership changes while the session is live
@@ -224,8 +216,7 @@ test.describe('Governance treasury routing (T-GOV-TREAS)', () => {
 	let originalTreasury: string;
 	test.beforeEach(async ({ freshUserAccount }) => {
 		originalTreasury = await getTreasury(ESCROW_ADDRESS);
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(freshUserAccount.address);
 	});
 	test.afterEach(async () => {
 		await setTreasury(ESCROW_ADDRESS, originalTreasury);
@@ -288,7 +279,7 @@ test.describe('Governance oracle rotation (T-GOV-ORACLE)', () => {
 		await waitForGraph(
 			() => getProtocolConfig(),
 			c => c?.oracleAddress?.toLowerCase() === NEW_ORACLE.toLowerCase(),
-			{ label: 'ProtocolConfig reflects the rotated oracle', timeoutMs: 60_000 },
+			{ label: 'ProtocolConfig reflects the rotated oracle' },
 		);
 	});
 
@@ -304,8 +295,7 @@ test.describe('Governance oracle rotation (T-GOV-ORACLE)', () => {
 		// therefore NOT zero-downtime. This locks in the known risk until the planned multi-oracle
 		// (ORACLE_ROLE) + shared-key design (Option B) lands; the orphaned prompt is recoverable via
 		// refund exactly like a stuck prompt (T-REFUND-01 / T-STUCK-01).
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(freshUserAccount.address);
 
 		await freshChatPage.goto();
 		// The oracle holds the answer for 20s (mock sentinel), giving a deterministic window to rotate
@@ -329,7 +319,7 @@ test.describe('Governance oracle rotation (T-GOV-ORACLE)', () => {
 		await waitForGraph(
 			() => getPromptRequests(freshUserAccount.address),
 			reqs => reqs.some(isPending),
-			{ label: 'orphaned prompt stays pending (unanswered)', timeoutMs: 60_000 },
+			{ label: 'orphaned prompt stays pending (unanswered)' },
 		);
 		await expect(freshChatPage.assistantMessages).toHaveCount(0);
 	});
@@ -349,8 +339,7 @@ test.describe('Governance UUPS upgrade (T-GOV-UPGRADE)', () => {
 		freshUserAccount,
 		freshChatPage,
 	}) => {
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(freshUserAccount.address);
 
 		// Pre-upgrade state: the user's spending limit is set in the escrow's storage.
 		const before = await getSpendingLimit(ESCROW_ADDRESS, freshUserAccount.address);

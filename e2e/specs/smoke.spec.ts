@@ -133,12 +133,18 @@ test.describe('App initialisation (T-INIT)', () => {
 		await page.goto('/');
 		await page.waitForLoadState('networkidle');
 
+		// Browser-emitted noise, not application errors. `requestStorageAccess` is
+		// Chromium's Storage Access API refusing a cross-site storage request — it comes
+		// from Thirdweb's in-app-wallet iframe, is absent from our own source entirely,
+		// and is denied by design in a context with no prior user gesture. It belongs in
+		// the same bucket as the others here.
 		const meaningful = consoleErrors.filter(
 			e =>
 				!e.includes('ResizeObserver') &&
 				!e.includes('favicon') &&
 				!e.includes('Failed to load resource') &&
-				!e.includes('screen.orientation'),
+				!e.includes('screen.orientation') &&
+				!e.includes('requestStorageAccess'),
 		);
 		expect(meaningful).toHaveLength(0);
 	});

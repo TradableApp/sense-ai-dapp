@@ -69,7 +69,10 @@ export async function getIndexedBlockNumber(): Promise<number> {
  * Polls the Graph node until it has indexed up to `targetBlock`.
  * Useful for waiting after a transaction is mined.
  */
-export async function waitForIndexing(targetBlock: number, timeoutMs = 30_000): Promise<void> {
+// Default 60s: the documented rule ("any graph wait that follows a round-trip
+// in a serial project needs 60s, not 30s") is now the default rather than a
+// per-site option — indexing lag scales with suite position and chain age.
+export async function waitForIndexing(targetBlock: number, timeoutMs = 60_000): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
 		const current = await getIndexedBlockNumber();
@@ -369,7 +372,7 @@ export async function getActivities(userAddress: string, first = 20): Promise<In
 export async function waitForGraph<T>(
 	query: () => Promise<T>,
 	predicate: (_value: T) => boolean,
-	{ timeoutMs = 30_000, label = 'condition' }: { timeoutMs?: number; label?: string } = {},
+	{ timeoutMs = 60_000, label = 'condition' }: { timeoutMs?: number; label?: string } = {},
 ): Promise<T> {
 	const deadline = Date.now() + timeoutMs;
 	let last: T | undefined;

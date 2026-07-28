@@ -15,7 +15,12 @@ export const DEPLOYER_ACCOUNT = {
 	address: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
 };
 
-export const HARDHAT_RPC = 'http://127.0.0.1:8545';
+// Kept as its own env read rather than importing helpers/hardhat: this module only depends
+// on @playwright/test and is stringified into a browser init script, so pulling in viem and
+// node:child_process here would be disproportionate. It reads the SAME variable that
+// sync-config.sh writes, so it cannot diverge in value from helpers/hardhat's canonical
+// RPC_URL — only the fallback literal is duplicated, and both are the localnet default.
+export const HARDHAT_RPC = process.env.VITE_CHAIN_RPC_URL || 'http://127.0.0.1:8545';
 export const CHAIN_ID_HEX = '0x7a69'; // 31337
 export const CHAIN_ID = 31337;
 

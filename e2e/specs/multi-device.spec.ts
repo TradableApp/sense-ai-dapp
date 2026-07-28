@@ -2,6 +2,7 @@ import { type BrowserContext } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
 import { buildMockWalletScript } from '../fixtures/mock-wallet';
+import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { openDevice, parseAble } from '../helpers/devices';
 import { allocateFreshAccount } from '../helpers/fresh-account';
 import {
@@ -10,7 +11,7 @@ import {
 	getPromptRequests,
 	waitForGraph,
 } from '../helpers/graph';
-import { activatePlan, fundABLE, getABLEBalance } from '../helpers/hardhat';
+import { fundABLE, getABLEBalance } from '../helpers/hardhat';
 import { AuthPage } from '../pages/AuthPage';
 import { ChatPage } from '../pages/ChatPage';
 import { HistoryPage } from '../pages/HistoryPage';
@@ -23,9 +24,6 @@ declare global {
 	}
 }
 
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
-const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 const FAUCET_CREDIT = 10n ** 18n * 50n; // +50 ABLE
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node for the answer round-trip (set E2E_LOCAL_SERVICES=1)';
@@ -52,8 +50,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		browser,
 	}) => {
 		const account = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, account.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, account.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(account.address);
 
 		// Device A creates a conversation (a unique marker so we can identify it on device B).
 		const marker = 'Quokkawump cross-device marker';
@@ -65,7 +62,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await waitForGraph(
 			() => getConversations(account.address),
 			convs => convs.length === 1,
-			{ label: 'conversation indexed', timeoutMs: 60_000 },
+			{ label: 'conversation indexed' },
 		);
 
 		// Device B — a pristine context (empty IndexedDB) on the SAME wallet — never saw this
@@ -90,15 +87,14 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 	}) => {
 		// Wallet A creates a conversation.
 		const accountA = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, accountA.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, accountA.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(accountA.address);
 		const deviceA = await openDevice(browser, accountA, openContexts);
 		await deviceA.chat.goto();
 		await deviceA.chat.sendPromptAndWaitForResponse('Wallet A exclusive message');
 		await waitForGraph(
 			() => getConversations(accountA.address),
 			convs => convs.length === 1,
-			{ label: "wallet A's conversation indexed", timeoutMs: 60_000 },
+			{ label: "wallet A's conversation indexed" },
 		);
 
 		// Wallet B (a different account, no plan needed to view history) connects fresh.
@@ -121,8 +117,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		browser,
 	}) => {
 		const account = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, account.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, account.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(account.address);
 
 		// Device A creates two conversations.
 		const deviceA = await openDevice(browser, account, openContexts);
@@ -133,7 +128,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		const convs = await waitForGraph(
 			() => getConversations(account.address),
 			c => c.length === 2,
-			{ label: 'two conversations indexed', timeoutMs: 60_000 },
+			{ label: 'two conversations indexed' },
 		);
 
 		// A renames the most recent (index 0, newest-first); wait for the new metadata CID to index
@@ -145,7 +140,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await waitForGraph(
 			() => getConversation(renamedConvId),
 			c => c !== null && c.conversationMetadataCID !== before?.conversationMetadataCID,
-			{ label: 'rename metadata indexed', timeoutMs: 60_000 },
+			{ label: 'rename metadata indexed' },
 		);
 
 		// A fresh device B (empty cache → syncs on first mount) sees BOTH conversations + the rename.
@@ -161,8 +156,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		browser,
 	}) => {
 		const account = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, account.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, account.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(account.address);
 
 		const deviceA = await openDevice(browser, account, openContexts);
 		await deviceA.chat.goto();
@@ -170,7 +164,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		const convs = await waitForGraph(
 			() => getConversations(account.address),
 			c => c.length === 1,
-			{ label: 'conversation indexed', timeoutMs: 60_000 },
+			{ label: 'conversation indexed' },
 		);
 		const convId = convs[0].id;
 		const before = await getConversation(convId);
@@ -182,7 +176,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await waitForGraph(
 			() => getConversation(convId),
 			c => c !== null && c.conversationMetadataCID !== before?.conversationMetadataCID,
-			{ label: 'delete metadata indexed', timeoutMs: 60_000 },
+			{ label: 'delete metadata indexed' },
 		);
 
 		// A fresh device B syncs and HIDES the deleted conversation (it decrypts the deletion flag).
@@ -196,11 +190,9 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		browser,
 	}) => {
 		const accountA = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, accountA.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, accountA.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(accountA.address);
 		const accountB = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, accountB.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, accountB.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(accountB.address);
 
 		const deviceA = await openDevice(browser, accountA, openContexts);
 		await deviceA.chat.goto();
@@ -210,7 +202,6 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 			c => c.length === 1,
 			{
 				label: "wallet A's conversation indexed",
-				timeoutMs: 60_000,
 			},
 		);
 
@@ -222,7 +213,6 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 			c => c.length === 1,
 			{
 				label: "wallet B's conversation indexed",
-				timeoutMs: 60_000,
 			},
 		);
 
@@ -242,8 +232,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		browser,
 	}) => {
 		const account = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, account.address, PLAN_ALLOWANCE); // 100 ABLE
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, account.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(account.address); // funds + authorises PLAN_ALLOWANCE (100 ABLE)
 
 		// Device A spends from the shared on-chain balance/allowance by sending a prompt.
 		const deviceA = await openDevice(browser, account, openContexts);
@@ -254,7 +243,6 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 			c => c.length === 1,
 			{
 				label: "device A's spend indexed",
-				timeoutMs: 60_000,
 			},
 		);
 
@@ -298,8 +286,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		// account switch (multi-account injected mock ThirdWeb adopts) — ClickUp 86d3ckacw.
 		test.fixme(true, 'Harness: ThirdWeb v5 does not adopt the mock wallet accountsChanged');
 		const accountA = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, accountA.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, accountA.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(accountA.address);
 		const accountB = await allocateFreshAccount();
 
 		// Connect as wallet A on a SINGLE context, create a conversation, confirm it shows.
@@ -343,8 +330,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		browser,
 	}) => {
 		const account = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, account.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, account.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(account.address);
 
 		// Device A: first an ANSWERED prompt so the Conversation entity exists (ConversationAdded fires
 		// only on the first answer — a never-answered first prompt would have no Conversation to sync),
@@ -366,12 +352,12 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 			waitForGraph(
 				() => getConversations(account.address),
 				convs => convs.length === 1,
-				{ label: 'conversation indexed', timeoutMs: 60_000 },
+				{ label: 'conversation indexed' },
 			),
 			waitForGraph(
 				() => getPromptRequests(account.address),
 				reqs => reqs.some(r => !r.isAnswered && !r.isCancelled && !r.isRefunded),
-				{ label: 'in-flight (unanswered) prompt request indexed', timeoutMs: 60_000 },
+				{ label: 'in-flight (unanswered) prompt request indexed' },
 			),
 		]);
 

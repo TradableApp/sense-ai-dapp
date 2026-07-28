@@ -1,9 +1,6 @@
 import { expect, test } from '../fixtures';
-import { activatePlan, fundABLE } from '../helpers/hardhat';
+import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
-const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node for the answer round-trip (set E2E_LOCAL_SERVICES=1)';
 
@@ -18,8 +15,7 @@ test.describe('Reasoning & sources rendering (T-REASON)', () => {
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test.beforeEach(async ({ freshUserAccount }) => {
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(freshUserAccount.address);
 	});
 
 	test('T-REASON-01: an answer renders its reasoning steps and sources', async ({

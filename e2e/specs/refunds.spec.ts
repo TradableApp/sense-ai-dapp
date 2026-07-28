@@ -1,8 +1,7 @@
 import { expect, test } from '../fixtures';
+import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { getPromptRequests, waitForGraph } from '../helpers/graph';
 import {
-	activatePlan,
-	fundABLE,
 	getABLEBalance,
 	getLatestBlockTimestamp,
 	increaseTime,
@@ -10,10 +9,7 @@ import {
 } from '../helpers/hardhat';
 import { DashboardPage } from '../pages/DashboardPage';
 
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
 const REFUND_TIMEOUT_S = 3600; // 1 hour — matches EVMAIAgentEscrow REFUND_TIMEOUT
-const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + escrow contract + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
 
@@ -40,8 +36,7 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test.beforeEach(async ({ freshUserAccount }) => {
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(freshUserAccount.address);
 	});
 
 	test('T-REFUND-01: a stuck prompt is refundable after the timeout — fee returned + indexed', async ({
@@ -60,7 +55,7 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		const pendingReqs = await waitForGraph(
 			() => getPromptRequests(owner),
 			reqs => reqs.some(isPending),
-			{ label: 'pending PromptRequest', timeoutMs: 60_000 },
+			{ label: 'pending PromptRequest' },
 		);
 		const stuck = pendingReqs.find(isPending)!;
 
@@ -75,7 +70,7 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		await waitForGraph(
 			() => getPromptRequests(owner),
 			reqs => reqs.some(r => r.id === stuck.id && r.isRefunded),
-			{ label: 'PromptRequest.isRefunded', timeoutMs: 60_000 },
+			{ label: 'PromptRequest.isRefunded' },
 		);
 
 		// Contract: the escrowed fee is returned to the wallet.
@@ -127,7 +122,7 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		const pendingReqs = await waitForGraph(
 			() => getPromptRequests(owner),
 			reqs => reqs.some(isPending),
-			{ label: 'pending PromptRequest', timeoutMs: 60_000 },
+			{ label: 'pending PromptRequest' },
 		);
 		const stuck = pendingReqs.find(isPending)!;
 		const balanceWhileStuck = await getABLEBalance(TOKEN_ADDRESS, owner);
@@ -169,7 +164,7 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		await waitForGraph(
 			() => getPromptRequests(owner),
 			reqs => reqs.some(r => r.id === stuck.id && r.isRefunded),
-			{ label: 'PromptRequest.isRefunded (via button)', timeoutMs: 60_000 },
+			{ label: 'PromptRequest.isRefunded (via button)' },
 		);
 		expect(await getABLEBalance(TOKEN_ADDRESS, owner)).toBeGreaterThan(balanceWhileStuck);
 	});

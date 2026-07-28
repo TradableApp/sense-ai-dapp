@@ -1,12 +1,15 @@
 import { expect, test } from '../fixtures';
+import {
+	ESCROW_ADDRESS,
+	fundAndActivatePlan,
+	PLAN_ALLOWANCE,
+	TOKEN_ADDRESS,
+} from '../helpers/contracts';
 import { getPendingPayments, waitForGraph } from '../helpers/graph';
-import { activatePlan, fundABLE } from '../helpers/hardhat';
+import { fundABLE } from '../helpers/hardhat';
 import { DashboardPage } from '../pages/DashboardPage';
 import { PlanModal } from '../pages/PlanModal';
 
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
-const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
 // The ThemeProvider is mounted in main.tsx with storageKey="senseai-ui-theme" (NOT the component's
@@ -139,8 +142,7 @@ test.describe('Stuck-request auto-detection (T-STUCK)', () => {
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test.beforeEach(async ({ freshUserAccount }) => {
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(freshUserAccount.address);
 	});
 
 	test('T-STUCK-01: the dashboard auto-detects a pending (stuck) prompt and surfaces the refund affordance', async ({
@@ -158,7 +160,7 @@ test.describe('Stuck-request auto-detection (T-STUCK)', () => {
 		await waitForGraph(
 			() => getPendingPayments(freshUserAccount.address),
 			payments => payments.length >= 1,
-			{ label: 'pending payment indexed', timeoutMs: 60_000 },
+			{ label: 'pending payment indexed' },
 		);
 
 		// On the dashboard, PlanStatusCard (via useStuckRequests + pendingEscrowCount) raises the
@@ -178,8 +180,7 @@ test.describe('Pending-escrow guards (T-PENDING)', () => {
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test.beforeEach(async ({ freshUserAccount }) => {
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(freshUserAccount.address);
 	});
 
 	// While any prompt's escrow is still unsettled (pendingEscrowCount > 0), changing the spending
@@ -203,7 +204,7 @@ test.describe('Pending-escrow guards (T-PENDING)', () => {
 		await waitForGraph(
 			() => getPendingPayments(freshUserAccount.address),
 			payments => payments.length >= 1,
-			{ label: 'pending payment indexed', timeoutMs: 60_000 },
+			{ label: 'pending payment indexed' },
 		);
 
 		// Dashboard: useUsagePlan reads pendingEscrowCount on-chain → PlanStatusCard disables the

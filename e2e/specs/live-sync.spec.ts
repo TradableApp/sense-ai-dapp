@@ -1,14 +1,11 @@
 import { type BrowserContext } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
+import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { openDevice, parseAble } from '../helpers/devices';
 import { allocateFreshAccount } from '../helpers/fresh-account';
 import { getConversations, waitForGraph } from '../helpers/graph';
-import { activatePlan, fundABLE } from '../helpers/hardhat';
 
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
-const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node for the answer round-trip (set E2E_LOCAL_SERVICES=1)';
 
@@ -56,8 +53,7 @@ test.describe('Live cross-device sync (T-LIVE)', () => {
 			'Idle cross-device live sync not guaranteed — usagePlan has no poll backstop; see file header + CU-86d3dvxdy / ADR-0005.',
 		);
 		const account = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, account.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, account.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(account.address);
 
 		// Device A sits idle on the dashboard with a fresh plan — spent is 0 ABLE and never touched
 		// here (A never navigates, clicks, or refocuses after this point).
@@ -92,8 +88,7 @@ test.describe('Live cross-device sync (T-LIVE)', () => {
 			'Idle cross-device live sync not guaranteed — conversations only reconverge on the 5-min poll; see file header + CU-86d3dvxdy / ADR-0005.',
 		);
 		const account = await allocateFreshAccount();
-		await fundABLE(TOKEN_ADDRESS, account.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, account.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(account.address);
 
 		// Device A sits idle on /history with no conversations (and never re-navigates after this).
 		const deviceA = await openDevice(browser, account, openContexts);
@@ -110,7 +105,7 @@ test.describe('Live cross-device sync (T-LIVE)', () => {
 		await waitForGraph(
 			() => getConversations(account.address),
 			convs => convs.length === 1,
-			{ label: "device B's conversation indexed", timeoutMs: 60_000 },
+			{ label: "device B's conversation indexed" },
 		);
 
 		// Device A's history populates on its own. useConversations polls only every 5 min, so an

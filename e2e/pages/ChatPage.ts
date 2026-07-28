@@ -178,8 +178,48 @@ export class ChatPage {
 		await expect(this.userMessages).toHaveCount(0, { timeout: 5_000 });
 	}
 
+	/** Composer visibility with a self-diagnosing failure: the composer is
+	 *  plan-gated, and without this check a missing plan surfaces an opaque
+	 *  "locator not found" a long way from its cause (a full debugging session
+	 *  went into exactly that). */
+	async assertComposerReady() {
+		try {
+			// 15s, not 5s: on a state-heavy localnet chain first render can push past 5s.
+			await expect(this.promptTextarea).toBeVisible({ timeout: 15_000 });
+		} catch (err) {
+			// Reached on EVERY composer timeout — the normal failure path, not an exceptional
+			// one. Determine whether the plan gate is the reason, and if so replace the opaque
+			// locator error with a diagnostic that names the cause and the fix.
+			const planGated = await this.page
+				.getByText('Activate Your Agent')
+				.isVisible()
+				// isVisible() resolves false for an absent element rather than throwing, so THIS
+				// catch only fires on a genuine page/context error (crash, torn-down context).
+				// It must not swallow that silently — but the original composer error is still
+				// the one worth reporting, so warn and then let it be re-thrown below.
+				.catch((probeErr: unknown) => {
+					console.warn(
+						`[assertComposerReady] plan-gate probe failed (${probeErr}) — cannot tell whether ` +
+							'the composer was plan-gated; reporting the original composer error below.',
+					);
+					return false;
+				});
+			if (planGated) {
+				throw new Error(
+					"Chat composer is plan-gated: 'Activate Your Agent' is showing — this account has no active plan. " +
+						'Call fundAndActivatePlan(<address>) in beforeEach (e2e/helpers/contracts.ts).',
+					// Chain the original: the diagnosis explains WHY, but Playwright's own
+					// error carries the locator, timing and trace attachment that make a
+					// flaky run diagnosable. Replacing it outright loses that.
+					{ cause: err },
+				);
+			}
+			throw err;
+		}
+	}
+
 	async sendPrompt(text: string) {
-		await expect(this.promptTextarea).toBeVisible({ timeout: 15_000 });
+		await this.assertComposerReady();
 		await this.promptTextarea.fill(text);
 		// Validity (react-hook-form, onChange) enables the submit once the prompt is
 		// non-empty — wait for that rather than clicking a still-disabled button.

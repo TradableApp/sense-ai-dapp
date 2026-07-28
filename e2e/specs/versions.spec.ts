@@ -1,23 +1,15 @@
 import { expect, test } from '../fixtures';
+import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import {
 	getConversations,
 	getMessages,
 	getRegenerationRequests,
 	waitForGraph,
 } from '../helpers/graph';
-import { activatePlan, fundABLE, getPromptFee, getSpendingLimit } from '../helpers/hardhat';
+import { getPromptFee, getSpendingLimit } from '../helpers/hardhat';
 
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
-
-const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
-
-async function fundAndActivatePlan(address: string): Promise<void> {
-	await fundABLE(TOKEN_ADDRESS, address, PLAN_ALLOWANCE);
-	await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, address, PLAN_ALLOWANCE);
-}
 
 /** Indexed assistant messages for a conversation, oldest first. */
 async function indexedAnswers(conversationId: string) {
@@ -50,7 +42,6 @@ test.describe('Answer versions — regenerate (T-REGEN)', () => {
 			c => c.length === 1,
 			{
 				label: 'conversation indexed',
-				timeoutMs: 60_000,
 			},
 		);
 		const [firstAnswer] = await waitForGraph(
@@ -117,7 +108,6 @@ test.describe('Answer versions — regenerate (T-REGEN)', () => {
 			r => r.length === 1,
 			{
 				label: 'detailed RegenerationRequest indexed',
-				timeoutMs: 60_000,
 			},
 		);
 	});
@@ -137,7 +127,6 @@ test.describe('Answer versions — regenerate (T-REGEN)', () => {
 			r => r.length === 1,
 			{
 				label: 'concise RegenerationRequest indexed',
-				timeoutMs: 60_000,
 			},
 		);
 	});
@@ -164,7 +153,6 @@ test.describe('Answer versions — edit prompt (T-EDIT)', () => {
 			c => c.length === 1,
 			{
 				label: 'conversation indexed',
-				timeoutMs: 60_000,
 			},
 		);
 		const spendBefore = (await getSpendingLimit(ESCROW_ADDRESS, owner)).spentAmount;

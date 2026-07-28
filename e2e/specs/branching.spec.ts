@@ -1,4 +1,5 @@
 import { expect, test } from '../fixtures';
+import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import {
 	getConversations,
 	getConversationsWithLineage,
@@ -6,11 +7,7 @@ import {
 	getPromptRequests,
 	waitForGraph,
 } from '../helpers/graph';
-import { activatePlan, fundABLE } from '../helpers/hardhat';
 
-const TOKEN_ADDRESS = process.env.VITE_TOKEN_CONTRACT_ADDRESS ?? '';
-const ESCROW_ADDRESS = process.env.VITE_ESCROW_CONTRACT_ADDRESS ?? '';
-const PLAN_ALLOWANCE = 10n ** 18n * 100n; // 100 ABLE
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node for multi-turn conversations (set E2E_LOCAL_SERVICES=1)';
 
@@ -27,8 +24,7 @@ test.describe('Branching (T-BRANCH)', () => {
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test.beforeEach(async ({ freshUserAccount }) => {
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundAndActivatePlan(freshUserAccount.address);
 	});
 
 	test('T-BRANCH-01: the branch button appears on an AI response', async ({ freshChatPage }) => {
@@ -80,7 +76,7 @@ test.describe('Branching (T-BRANCH)', () => {
 		await waitForGraph(
 			() => getConversations(freshUserAccount.address),
 			convs => convs.length === 2,
-			{ label: 'branched conversation indexed', timeoutMs: 60_000 },
+			{ label: 'branched conversation indexed' },
 		);
 
 		// Reopen the original conversation from history (the branch is most recent at index 0,
@@ -105,7 +101,7 @@ test.describe('Branching (T-BRANCH)', () => {
 		await waitForGraph(
 			() => getConversations(freshUserAccount.address),
 			convs => convs.length === 2,
-			{ label: 'branched conversation indexed', timeoutMs: 60_000 },
+			{ label: 'branched conversation indexed' },
 		);
 
 		// dApp: after a /history mount syncs it, both the original + the branch are listed.
@@ -140,7 +136,7 @@ test.describe('Branching (T-BRANCH)', () => {
 		const lineage = await waitForGraph(
 			() => getConversationsWithLineage(freshUserAccount.address),
 			list => list.length === 2 && list.some(c => c.branchedFrom !== null),
-			{ label: 'branch lineage indexed', timeoutMs: 60_000 },
+			{ label: 'branch lineage indexed' },
 		);
 		const original = lineage.find(c => c.branchedFrom === null);
 		const branch = lineage.find(c => c.branchedFrom !== null);
@@ -162,7 +158,7 @@ test.describe('Branching (T-BRANCH)', () => {
 		const branchMessages = await waitForGraph(
 			() => getMessages(branch!.id),
 			msgs => msgs.length === 2 && msgs.some(m => m.role === 'assistant'),
-			{ label: 'in-branch follow-up messages indexed', timeoutMs: 60_000 },
+			{ label: 'in-branch follow-up messages indexed' },
 		);
 		expect(branchMessages.map(m => m.role)).toEqual(['user', 'assistant']);
 		const answer = branchMessages.find(m => m.role === 'assistant')!;
@@ -199,7 +195,7 @@ test.describe('Branching (T-BRANCH)', () => {
 		await waitForGraph(
 			() => getConversations(freshUserAccount.address),
 			convs => convs.length === 2,
-			{ label: 'first branch (B) indexed', timeoutMs: 60_000 },
+			{ label: 'first branch (B) indexed' },
 		);
 
 		// B → C: branch the branch.
