@@ -303,6 +303,16 @@ export default defineConfig({
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
+			name: 'brain',
+			testMatch: '**/brain.spec.ts',
+			fullyParallel: false,
+			// Each test does a full prompt -> answer round-trip before the ledger even exists to
+			// read, then polls Postgres for the write that follows escrow settlement -- same
+			// headroom as the other answer-flow projects.
+			timeout: 180_000,
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
 			name: 'mobile',
 			testMatch: '**/ui.spec.ts',
 			use: { ...devices['Pixel 5'] },
