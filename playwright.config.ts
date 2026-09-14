@@ -313,6 +313,16 @@ export default defineConfig({
 			use: { ...devices['Desktop Chrome'] },
 		},
 		{
+			name: 'brain-real',
+			testMatch: '**/brain-substance.spec.ts',
+			fullyParallel: false,
+			// Opt-in only (E2E_REAL_AI=1) and never part of a default run: these drive REAL model
+			// calls. A real completion is slower and far more variable than the mock oracle's
+			// canned answer, so the headroom is the largest in the suite.
+			timeout: 300_000,
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
 			name: 'mobile',
 			testMatch: '**/ui.spec.ts',
 			use: { ...devices['Pixel 5'] },
