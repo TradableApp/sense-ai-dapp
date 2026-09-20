@@ -388,6 +388,20 @@ export async function waitForGraph<T>(
 		}
 		await new Promise(r => setTimeout(r, 1_000));
 	} while (Date.now() < deadline);
+
+	// One final read after the deadline — the loop queries, sleeps, THEN tests the deadline, so
+	// an entity indexed during that last sleep was never seen and the wait threw with data that
+	// had already arrived. On a subgraph that lags the chain by a block or two this is a real
+	// race on a healthy stack, and it presents as a FLAKY test rather than an honest failure,
+	// which is the hardest kind to attribute. (Found via the copy of this helper in brain.ts;
+	// the bug was here first and backs the indexing waits in activity/graph/history/refunds.)
+	try {
+		last = await query();
+		if (predicate(last)) return last;
+	} catch (err) {
+		lastError = err;
+	}
+
 	const tail = lastError ? ` (last error: ${String(lastError)})` : '';
 	throw new Error(
 		`waitForGraph: ${label} not met within ${timeoutMs}ms. Last value: ${JSON.stringify(

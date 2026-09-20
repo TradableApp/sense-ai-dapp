@@ -155,6 +155,20 @@ export async function waitForLedger(
 		}
 		await new Promise(r => setTimeout(r, 1_000));
 	} while (Date.now() < deadline);
+
+	// One final read after the deadline. The loop queries, sleeps, THEN tests the deadline,
+	// so a row written during that last sleep would never be seen: at t=59.1s the predicate
+	// fails, we sleep, the oracle writes at t=59.5s, and at t=60.1s the loop exits and throws
+	// with data that is already there. Since the ledger write trails escrow settlement by an
+	// unbounded-but-small amount, that is a real race on a HEALTHY stack — it would surface as
+	// a flaky test rather than an honest failure.
+	try {
+		last = await getOracleLedgerRows(wallet);
+		if (predicate(last)) return last;
+	} catch (err) {
+		lastError = err;
+	}
+
 	const tail = lastError ? ` (last error: ${String(lastError)})` : '';
 	throw new Error(
 		`waitForLedger: ${label} not met within ${timeoutMs}ms. Last rows: ${JSON.stringify(last)}${tail}`,

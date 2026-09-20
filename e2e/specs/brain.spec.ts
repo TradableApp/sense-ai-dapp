@@ -44,6 +44,13 @@ test.describe('Brain activity ledger (T-BRAIN)', () => {
 		// `oracle:<kind>:<answerMessageId>`. A second row for one answer would mean the seed had
 		// stopped being unique per answer — which is the bug that prefix exists to prevent, and it
 		// would be invisible to a `some()` assertion.
+		//
+		// Scope of what this proves: it DETECTS a broken dedup (two rows fail the length check)
+		// but does not PROVOKE one. A true collision needs the same kind AND the same
+		// answerMessageId — a regeneration mints a new id, and the case the `oracle:` prefix
+		// actually guards is an oracle-internal retry recording `answer_failed` then `answer`.
+		// Neither is reachable from the dApp layer these specs drive; provoking it deliberately
+		// belongs in an oracle-side unit test.
 		expect(answers).toHaveLength(1);
 		expect(answers[0].platform).toBe('oracle');
 		expect(answers[0].content_hash).toBeTruthy();

@@ -95,6 +95,11 @@ test.describe('Brain market context reaches the answer (T-BRAIN-AI)', () => {
 		// The mock oracle's deterministic answer must never satisfy this suite: if it does, the
 		// opt-in did not take effect and every assertion above is being graded against a canned
 		// string rather than a model.
-		expect(text).not.toMatch(/mock|placeholder|lorem ipsum/i);
+		//
+		// Matched against the ACTUAL canned text (aiAgentOracle.js:1276), not the bare word
+		// "mock". Market prose says "markets mocked the pivot" and "a mock relief rally" in
+		// complete innocence, and a real answer failing on that would be a false accusation
+		// that looks exactly like a genuine one.
+		expect(text).not.toMatch(/^\[MOCK\]|deterministic mock response for local testing/i);
 	});
 });
