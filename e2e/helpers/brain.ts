@@ -41,7 +41,12 @@ export interface BrainPgConfig {
  */
 export function readBrainPgConfig(): BrainPgConfig | null {
 	const host = process.env.E2E_BRAIN_PG_HOST;
-	const port = Number(process.env.E2E_BRAIN_PG_PORT);
+	// Read the raw string first: `Number('')` is 0, and `Number.isInteger(0)` is true, so an
+	// empty E2E_BRAIN_PG_PORT would sail through the guard below and yield `{ port: 0 }`.
+	// pg then fails at connect with an opaque socket error instead of the clean skip an
+	// absent config is supposed to produce.
+	const rawPort = process.env.E2E_BRAIN_PG_PORT;
+	const port = Number(rawPort);
 	const database = process.env.E2E_BRAIN_PG_DATABASE;
 	const user = process.env.E2E_BRAIN_PG_USER;
 	const password = process.env.E2E_BRAIN_PG_PASSWORD;
@@ -51,7 +56,10 @@ export function readBrainPgConfig(): BrainPgConfig | null {
 
 	if (
 		!host ||
+		!rawPort ||
 		!Number.isInteger(port) ||
+		port < 1 ||
+		port > 65535 ||
 		!database ||
 		!user ||
 		!password ||
@@ -72,10 +80,21 @@ export const BRAIN_PG_SKIP_REASON =
  *
  * A fresh client per call, not a pool: these specs make a handful of queries
  * across a ~79-minute suite, and a pool held open across tests is one more
- * thing to leak into teardown. `rejectUnauthorized: false` mirrors the oracle's
- * own `sslmode=verify-ca` + `uselibpqcompat=true` — the CA chain IS verified
- * (via `ca`), the hostname is not, because the throwaway server certificate is
- * issued for the container, not for `localhost`.
+ * thing to leak into teardown.
+ *
+ * TLS: this is `sslmode=verify-ca` semantics — verify the CA chain, skip the
+ * hostname. In Node that is `rejectUnauthorized: true` (which is what actually
+ * consults `ca`) plus a `checkServerIdentity` that returns undefined to waive
+ * the hostname check alone. The hostname must be waived because the throwaway
+ * server certificate is issued for the compose service name, not for the
+ * `127.0.0.1` we dial — the same reason the oracle passes `uselibpqcompat=true`.
+ *
+ * It previously said `rejectUnauthorized: false`, with a comment asserting the
+ * CA chain was still verified. That was wrong: `rejectUnauthorized: false`
+ * suppresses chain, expiry AND hostname checks, and makes `ca` inert — so the
+ * helper was accepting any certificate from anyone while claiming otherwise.
+ * Low practical risk against a loopback throwaway database, but this file is the
+ * worked example someone will copy when wiring a real mTLS client.
  */
 export async function brainQuery<T extends Record<string, unknown>>(
 	sql: string,
@@ -90,11 +109,16 @@ export async function brainQuery<T extends Record<string, unknown>>(
 		database: cfg.database,
 		user: cfg.user,
 		password: cfg.password,
+		// Fail fast and legibly. Without it an unreachable host blocks in connect() until
+		// the OS TCP timeout (~75s on macOS), which eats most of the 180s test budget and
+		// then reports a generic Playwright timeout instead of "cannot reach the database".
+		connectionTimeoutMillis: 10_000,
 		ssl: {
 			ca: readFileSync(cfg.serverCaPath, 'utf8'),
 			cert: readFileSync(cfg.clientCertPath, 'utf8'),
 			key: readFileSync(cfg.clientKeyPath, 'utf8'),
-			rejectUnauthorized: false,
+			rejectUnauthorized: true,
+			checkServerIdentity: () => undefined,
 		},
 	});
 	await client.connect();
