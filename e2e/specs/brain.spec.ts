@@ -53,7 +53,13 @@ test.describe('Brain activity ledger (T-BRAIN)', () => {
 		// belongs in an oracle-side unit test.
 		expect(answers).toHaveLength(1);
 		expect(answers[0].platform).toBe('oracle');
-		expect(answers[0].content_hash).toBeTruthy();
+		// Shape, not just presence: `content_hash` is sha256(contentSeed) truncated to 32 hex
+		// chars, and the unique index that makes the dedup above work is on exactly that
+		// column. `toBeTruthy()` would also accept a UUID, a raw seed string or a stray 'x'.
+		// The seed itself (`oracle:answer:<answerMessageId>`) is NOT recoverable from here —
+		// it hashes one-way and the id is not carried in metadata — so the seed format is
+		// pinned oracle-side in answerActivity.test.js, not from the dApp.
+		expect(answers[0].content_hash).toMatch(/^[0-9a-f]{32}$/);
 	});
 
 	test('T-BRAIN-02: the ledger row carries the conversation and prompt ids the answer settled against', async ({
@@ -74,8 +80,12 @@ test.describe('Brain activity ledger (T-BRAIN)', () => {
 		// present and numeric-stringy proves the oracle passed the real ids through rather than
 		// the `null`s `recordAnswerActivity` falls back to when its caller omits them — a
 		// degradation that would otherwise look identical to a healthy row.
-		expect(answer?.metadata).toBeTruthy();
-		const metadata = answer?.metadata as { conversationId?: unknown; promptMessageId?: unknown };
+		// Stated explicitly rather than leaning on `?.`: the waitForLedger predicate above
+		// guarantees an answer row, but that invariant is invisible here, and `answer?.metadata`
+		// would report a missing ROW as a missing METADATA field.
+		expect(answer, 'waitForLedger predicate guarantees an answer row').toBeDefined();
+		expect(answer!.metadata).toBeTruthy();
+		const metadata = answer!.metadata as { conversationId?: unknown; promptMessageId?: unknown };
 		expect(String(metadata.conversationId ?? '')).toMatch(/^\d+$/);
 		expect(String(metadata.promptMessageId ?? '')).toMatch(/^\d+$/);
 	});

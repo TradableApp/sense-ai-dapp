@@ -25,6 +25,13 @@ test.describe('Brain market context reaches the answer (T-BRAIN-AI)', () => {
 	// an empty database, the oracle answers with no market block at all, and "the answer does
 	// not mention ZQXR-9" would then be a true statement about nothing. Fail here, loudly, with
 	// the cause named — rather than three tests failing somewhere the cause is invisible.
+	// Safe to call brainQuery unguarded here: Playwright does NOT run beforeAll when every
+	// test in the describe is skipped by a describe-level test.skip. Verified empirically
+	// against the pinned 1.59.1 — an all-skipped describe whose beforeAll throws reports
+	// "2 skipped" and never enters the hook. Deliberately NOT wrapped in an
+	// `if (!readBrainPgConfig()) return` guard: that would also swallow the canary check in
+	// a run where the config IS present but the cache was never seeded, which is precisely
+	// the failure this hook exists to make loud.
 	test.beforeAll(async () => {
 		const canary = await brainQuery(
 			`SELECT 1 FROM senseai.market_news WHERE provider_id = 'seed-canary-001' AND tldr IS NOT NULL`,
