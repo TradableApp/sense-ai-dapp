@@ -13,6 +13,8 @@ import type { FirebasePerformance } from 'firebase/performance';
 
 import { loadState } from '@/lib/browserStorage';
 
+import { shouldUseAppCheckDebugToken } from './appCheckDebug';
+
 const firebaseConfig = {
 	apiKey: import.meta.env.VITE_API_KEY,
 	authDomain: import.meta.env.VITE_AUTH_DOMAIN,
@@ -44,7 +46,16 @@ const initialiseFirebase = () => {
 	try {
 		firebaseApp = initializeApp(firebaseConfig);
 
-		if (import.meta.env.DEV || import.meta.env.VITE_APP_DEBUG) {
+		// A debug token bypasses App Check entirely, so the decision is NOT left to an env var
+		// alone — see shouldUseAppCheckDebugToken for why a production build can never opt in.
+		if (
+			shouldUseAppCheckDebugToken({
+				dev: import.meta.env.DEV,
+				mode: import.meta.env.MODE,
+				debugFlag: import.meta.env.VITE_APP_DEBUG,
+				token: import.meta.env.VITE_APP_CHECK_DEBUG_TOKEN,
+			})
+		) {
 			(window as unknown as Record<string, unknown>).FIREBASE_APPCHECK_DEBUG_TOKEN =
 				import.meta.env.VITE_APP_CHECK_DEBUG_TOKEN;
 		}

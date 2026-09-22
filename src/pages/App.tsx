@@ -19,6 +19,7 @@ import ProtectedRoute from '@/features/auth/ProtectedRoute';
 import { useSession } from '@/features/auth/SessionProvider';
 import useNetwork from '@/hooks/useNetwork';
 import { loadState, saveState } from '@/lib/browserStorage';
+import { loadTelegramWebApp } from '@/lib/telegramWebApp';
 import { setAppError, setFirebaseReady, setThirdwebReady } from '@/store/appSlice';
 import { setDeviceInfo, setDeviceScreen, setPwa } from '@/store/deviceSlice';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
@@ -94,13 +95,16 @@ export default function App() {
 	}, [handleDeviceScreen]);
 
 	useEffect(() => {
-		// Initialize Telegram Mini App
-		if ((window as any).Telegram?.WebApp) {
-			const tg = (window as any).Telegram.WebApp;
+		// Initialize Telegram Mini App. The SDK is fetched on demand rather than by a blocking
+		// <script> in index.html, so this resolves null — without any network request — for the
+		// overwhelming majority of sessions, which do not come from Telegram.
+		let cancelled = false;
+		loadTelegramWebApp().then(tg => {
+			if (cancelled || !tg) return;
 			tg.ready(); // Hides the Telegram loading spinner
-			tg.expand(); // Forces the app to open to full height
+			tg.expand?.(); // Forces the app to open to full height
 			dispatch(setPwa(true)); // Treats the Telegram environment as a PWA/Native App
-		}
+		});
 
 		if (loadState('consentSettings') === null) {
 			setShowConsent(true);
@@ -134,6 +138,12 @@ export default function App() {
 		};
 
 		getDevice();
+
+		return () => {
+			// The SDK load is async now, so a StrictMode remount must not let a resolved promise
+			// from the discarded effect dispatch into the live one.
+			cancelled = true;
+		};
 	}, [dispatch]);
 
 	// PostHog Identification Logic

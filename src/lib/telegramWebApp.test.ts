@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { isTelegramContext, loadTelegramWebApp, TELEGRAM_SDK_URL } from './telegramWebApp';
+import {
+	isTelegramContext,
+	loadTelegramWebApp,
+	resetTelegramWebAppLoader,
+	TELEGRAM_SDK_URL,
+} from './telegramWebApp';
 
 /**
  * The Telegram Mini App SDK was loaded from telegram.org by a blocking <script> in index.html —
@@ -12,6 +17,9 @@ import { isTelegramContext, loadTelegramWebApp, TELEGRAM_SDK_URL } from './teleg
  */
 
 function resetWindow() {
+	// The loader memoises its in-flight promise so StrictMode's double effect injects one script;
+	// each test therefore has to clear it explicitly.
+	resetTelegramWebAppLoader();
 	window.location.hash = '';
 	delete (window as unknown as Record<string, unknown>).Telegram;
 	delete (window as unknown as Record<string, unknown>).TelegramWebviewProxy;
@@ -93,8 +101,8 @@ describe('loadTelegramWebApp', () => {
 	it('injects the SDK only once across repeated calls', async () => {
 		window.location.hash = '#tgWebAppData=query_id%3DAAH';
 
-		void loadTelegramWebApp();
-		void loadTelegramWebApp();
+		loadTelegramWebApp();
+		loadTelegramWebApp();
 
 		expect(document.querySelectorAll(`script[src="${TELEGRAM_SDK_URL}"]`)).toHaveLength(1);
 	});
