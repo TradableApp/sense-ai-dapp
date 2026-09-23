@@ -13,6 +13,8 @@ import type { FirebasePerformance } from 'firebase/performance';
 
 import { loadState } from '@/lib/browserStorage';
 
+import shouldInitialiseAppCheck from './appCheck';
+
 const firebaseConfig = {
 	apiKey: import.meta.env.VITE_API_KEY,
 	authDomain: import.meta.env.VITE_AUTH_DOMAIN,
@@ -49,14 +51,27 @@ const initialiseFirebase = () => {
 				import.meta.env.VITE_APP_CHECK_DEBUG_TOKEN;
 		}
 
-		// Initialize App Check to protect backend resources
-		const appCheck = initializeAppCheck(firebaseApp, {
-			provider: new ReCaptchaEnterpriseProvider(import.meta.env.VITE_RECAPTCHA_SITE_KEY),
-			// Optional argument. If true, the SDK automatically refreshes App Check
-			// tokens as needed.
-			isTokenAutoRefreshEnabled: true,
-		});
-		firebaseExports.appCheck = appCheck;
+		// Initialize App Check to protect backend resources — but only when there is a site key
+		// to attest with. See shouldInitialiseAppCheck: with a blank key this does not provide
+		// weaker protection, it provides none, and reCAPTCHA reports the failure asynchronously
+		// from its own injected script, so it escapes this try/catch as a bare console error.
+		// Every deployed build sets the key, so nothing that could have worked stops working.
+		if (shouldInitialiseAppCheck(import.meta.env.VITE_RECAPTCHA_SITE_KEY)) {
+			const appCheck = initializeAppCheck(firebaseApp, {
+				provider: new ReCaptchaEnterpriseProvider(import.meta.env.VITE_RECAPTCHA_SITE_KEY),
+				// Optional argument. If true, the SDK automatically refreshes App Check
+				// tokens as needed.
+				isTokenAutoRefreshEnabled: true,
+			});
+			firebaseExports.appCheck = appCheck;
+		} else {
+			// warn, not error: an unconfigured local or CI environment is an expected state, and
+			// this must not itself trip the console-error checks the guard exists to unblock.
+			console.warn(
+				'[firebase] VITE_RECAPTCHA_SITE_KEY is not set — App Check is disabled for this ' +
+					'build. Calls to App Check-enforced backends will be rejected.',
+			);
+		}
 
 		// Initialize Analytics and get a reference to the service
 		if (typeof window !== 'undefined') {
