@@ -56,9 +56,14 @@ const initialiseFirebase = () => {
 		// weaker protection, it provides none, and reCAPTCHA reports the failure asynchronously
 		// from its own injected script, so it escapes this try/catch as a bare console error.
 		// Every deployed build sets the key, so nothing that could have worked stops working.
-		if (shouldInitialiseAppCheck(import.meta.env.VITE_RECAPTCHA_SITE_KEY)) {
+		// Bound ONCE, so the value that is checked and the value that is used cannot diverge:
+		// shouldInitialiseAppCheck trims, and passing the raw env var to the provider meant a key
+		// of ' 6Lc-real ' passed the guard and reached reCAPTCHA with the whitespace still on it.
+		const recaptchaSiteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY?.trim();
+
+		if (shouldInitialiseAppCheck(recaptchaSiteKey)) {
 			const appCheck = initializeAppCheck(firebaseApp, {
-				provider: new ReCaptchaEnterpriseProvider(import.meta.env.VITE_RECAPTCHA_SITE_KEY),
+				provider: new ReCaptchaEnterpriseProvider(recaptchaSiteKey),
 				// Optional argument. If true, the SDK automatically refreshes App Check
 				// tokens as needed.
 				isTokenAutoRefreshEnabled: true,
