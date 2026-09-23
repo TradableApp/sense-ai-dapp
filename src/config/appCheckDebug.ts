@@ -15,8 +15,16 @@
  * the environment, and no flag can override it.
  */
 
-/** Build modes that must never carry a debug token, whatever else is set. */
-const PRODUCTION_MODES = ['production', 'mainnet'];
+/**
+ * The ONLY build modes that may carry a debug token.
+ *
+ * An allowlist, not a list of production modes to refuse. A denylist fails OPEN: the next mode
+ * anyone adds — `staging`, `prod`, a preview channel — is eligible by default, and the failure
+ * is silent, surfacing whenever someone notices a debug token sitting in a deployed bundle.
+ * Here a new mode has to be added deliberately, and the cost of forgetting is a developer
+ * wondering why their debug token is ignored.
+ */
+const DEBUGGABLE_MODES = ['development', 'localnet', 'testnet'];
 
 export interface AppCheckDebugEnv {
 	/** `import.meta.env.DEV` */
@@ -35,9 +43,9 @@ export function shouldUseAppCheckDebugToken({
 	debugFlag,
 	token,
 }: AppCheckDebugEnv): boolean {
-	// Checked FIRST and unconditionally: a production build is never eligible, even if DEV is
-	// somehow true. This is the line the old gate did not have.
-	if (PRODUCTION_MODES.includes(mode)) return false;
+	// Checked FIRST and unconditionally: anything not on the allowlist is treated as production,
+	// even if DEV is somehow true. This is the line the old gate did not have.
+	if (!DEBUGGABLE_MODES.includes(mode)) return false;
 
 	// No token means there is nothing to install; the old code assigned `undefined` to
 	// window.FIREBASE_APPCHECK_DEBUG_TOKEN, which reads as "debug requested" to the SDK.

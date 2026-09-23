@@ -41,4 +41,23 @@ describe('shouldUseAppCheckDebugToken', () => {
 	it('refuses when neither DEV nor the debug flag is set', () => {
 		expect(shouldUseAppCheckDebugToken({ dev: false, mode: 'testnet', debugFlag: undefined, token: 'tok' })).toBe(false);
 	});
+
+	// A list of modes to REFUSE fails open: the next mode anyone adds is eligible by default,
+	// and the failure is silent — a shipped App Check bypass, discovered by whoever finds the
+	// token in the bundle. Listing the modes that may debug fails closed instead, so a new mode
+	// has to be added deliberately.
+	it.each(['staging', 'prod', 'mainnet-preview', 'preprod', 'canary', ''])(
+		'REFUSES an unrecognised build mode %j',
+		(mode) => {
+			expect(shouldUseAppCheckDebugToken({ dev: false, mode, debugFlag: '1', token: 'tok' })).toBe(
+				false,
+			);
+		},
+	);
+
+	it('still refuses an unrecognised mode even when DEV is true', () => {
+		expect(
+			shouldUseAppCheckDebugToken({ dev: true, mode: 'staging', debugFlag: '1', token: 'tok' }),
+		).toBe(false);
+	});
 });
