@@ -18,9 +18,15 @@ describe('shouldUseAppCheckDebugToken', () => {
 		expect(shouldUseAppCheckDebugToken({ dev: true, mode: 'development', debugFlag: '1', token: 'tok' })).toBe(true);
 	});
 
-	it('allows an explicitly flagged non-production build', () => {
-		expect(shouldUseAppCheckDebugToken({ dev: false, mode: 'localnet', debugFlag: '1', token: 'tok' })).toBe(true);
-		expect(shouldUseAppCheckDebugToken({ dev: false, mode: 'testnet', debugFlag: '1', token: 'tok' })).toBe(true);
+	// BEHAVIOUR DELIBERATELY CHANGED, not a weakened assertion. This case previously expected a
+	// flagged localnet/testnet BUILD to carry a debug token. It must not: build:testnet is what
+	// deploys to the sense-ai-app-staging and sense-ai-app-dev hosting targets, so that artefact
+	// reaches real browsers. Debug tokens are now confined to the dev server, which is never
+	// deployed. The original intent -- "a flag can enable debugging outside production" -- is
+	// preserved below for the dev server, which is where it was actually useful.
+	it('REFUSES a flagged non-production BUILD, because builds get deployed', () => {
+		expect(shouldUseAppCheckDebugToken({ dev: false, mode: 'localnet', debugFlag: '1', token: 'tok' })).toBe(false);
+		expect(shouldUseAppCheckDebugToken({ dev: false, mode: 'testnet', debugFlag: '1', token: 'tok' })).toBe(false);
 	});
 
 	it('REFUSES in a production build even when the debug flag is set', () => {
@@ -58,6 +64,55 @@ describe('shouldUseAppCheckDebugToken', () => {
 	it('still refuses an unrecognised mode even when DEV is true', () => {
 		expect(
 			shouldUseAppCheckDebugToken({ dev: true, mode: 'staging', debugFlag: '1', token: 'tok' }),
+		).toBe(false);
+	});
+
+	// THE BUG THE EARLIER GATES ALL SHARED. Vite inlines VITE_* as STRINGS, so the env files'
+	// `VITE_APP_DEBUG=false` arrives as the string "false" -- which is truthy. Every previous
+	// version of this gate ended in `Boolean(dev || debugFlag)` and therefore evaluated to TRUE
+	// for a build that had explicitly disabled debugging. Verified against a real `build:testnet`
+	// bundle: the token was inlined and assigned to window.
+	//
+	// No earlier test caught it because they all passed '1' or undefined -- never the literal
+	// value every real env file actually sets.
+	it.each(['false', 'FALSE', '0', 'no', 'off'])(
+		'REFUSES when the debug flag is the string %j, which is truthy in JS',
+		(debugFlag) => {
+			expect(
+				shouldUseAppCheckDebugToken({ dev: false, mode: 'testnet', debugFlag, token: 'tok' }),
+			).toBe(false);
+		},
+	);
+
+	// testnet is a DEPLOYED mode: build:testnet feeds the sense-ai-app-staging and
+	// sense-ai-app-dev hosting targets in .firebaserc. A built artefact is served to real
+	// browsers, so it must never carry a bypass token however the flag is set.
+	it.each(['localnet', 'testnet', 'mainnet', 'production'])(
+		'REFUSES in a BUILD of mode %s, however the flag is set',
+		(mode) => {
+			expect(
+				shouldUseAppCheckDebugToken({ dev: false, mode, debugFlag: 'true', token: 'tok' }),
+			).toBe(false);
+			expect(
+				shouldUseAppCheckDebugToken({ dev: false, mode, debugFlag: true, token: 'tok' }),
+			).toBe(false);
+		},
+	);
+
+	// The dev server is the one thing that is never deployed, and DEV is set by Vite itself
+	// rather than by an env file, so no .env can forge it.
+	it('allows the dev server, which is never deployed', () => {
+		expect(
+			shouldUseAppCheckDebugToken({ dev: true, mode: 'localnet', debugFlag: undefined, token: 'tok' }),
+		).toBe(true);
+		expect(
+			shouldUseAppCheckDebugToken({ dev: true, mode: 'testnet', debugFlag: '1', token: 'tok' }),
+		).toBe(true);
+	});
+
+	it('honours an explicit opt-out even on the dev server', () => {
+		expect(
+			shouldUseAppCheckDebugToken({ dev: true, mode: 'localnet', debugFlag: 'false', token: 'tok' }),
 		).toBe(false);
 	});
 });
