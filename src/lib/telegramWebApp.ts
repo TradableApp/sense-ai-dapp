@@ -75,13 +75,11 @@ export function loadTelegramWebApp(): Promise<TelegramWebApp | null> {
 			);
 		};
 		script.onerror = () => {
-			// Clear the memo so a later call can retry. The memo is there to stop StrictMode's
-			// double effect injecting two scripts, not to record an outage for the life of the
-			// page — leaving it set strands a Mini App user on a cached null after one timeout.
-			// The dead tag goes with it, so retries replace it rather than accumulate.
-			// Resolve FIRST. This runs in an event handler, not the executor, so a throw here does
-			// not reject the promise — it escapes and leaves the promise permanently unsettled,
-			// hanging every awaiting caller. Cleanup must not be able to do that.
+			// Clear the memo so a later call can retry: it exists to stop StrictMode's double
+			// effect injecting two scripts, not to strand a Mini App user on a cached null for
+			// the life of the page after one timeout. The dead tag goes with it.
+			// resolve() must precede remove(): this runs in an event handler, so a throw escapes
+			// rather than rejecting, leaving the promise unsettled and every caller hung.
 			pending = null;
 			resolve(null);
 			script.remove();

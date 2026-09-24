@@ -106,9 +106,9 @@ export default function App() {
 				tg.expand?.(); // Forces the app to open to full height
 				dispatch(setPwa(true)); // Treats the Telegram environment as a PWA/Native App
 			})
-			// The loader resolves null on every failure path, but that contract is not visible
-			// here. A rejection would escape React's error boundary, which does not catch them.
-			.catch(() => {});
+			// Catches throws from the callback above — tg.ready()/expand() on an SDK in an
+			// unexpected state. The loader itself resolves null rather than rejecting.
+			.catch(err => console.warn('[telegramWebApp] Mini App init failed:', err));
 
 		if (loadState('consentSettings') === null) {
 			setShowConsent(true);
