@@ -67,9 +67,33 @@ describe('isTelegramContext', () => {
 		expect(isTelegramContext()).toBe(true);
 	});
 
+	// Telegram appends whichever tgWebApp* params the launch carries. A deep link opened with
+	// startapp can arrive with only tgWebAppStartParam, and enumerating the three we happened to
+	// know about meant that launch looked like an ordinary web visit — the SDK never loads and the
+	// Mini App silently does not start.
+	it.each([
+		['tgWebAppStartParam', '#tgWebAppStartParam=ref_abc'],
+		['tgWebAppThemeParams', '#tgWebAppThemeParams=%7B%7D'],
+		['a param Telegram has not invented yet', '#tgWebAppSomethingNew=1'],
+	])('detects %s', (_label, hash) => {
+		window.location.hash = hash;
+		expect(isTelegramContext()).toBe(true);
+	});
+
 	it('is not fooled by an unrelated hash', () => {
 		window.location.hash = '#/chat/tgWebApp-lookalike';
 
+		expect(isTelegramContext()).toBe(false);
+	});
+	// The widened alternation must not cost the anchors: a route whose text merely contains
+	// "tgWebApp" is not a Telegram launch, and matching one would hand a third-party origin
+	// script execution on an ordinary visit.
+	it.each([
+		['no delimiter prefix', '#/settings/tgWebAppData=x'],
+		['lowercase after the prefix', '#tgwebappdata=x'],
+		['no uppercase segment', '#tgWebApp=x'],
+	])('still refuses %s', (_label, hash) => {
+		window.location.hash = hash;
 		expect(isTelegramContext()).toBe(false);
 	});
 });

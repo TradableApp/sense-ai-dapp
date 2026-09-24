@@ -23,9 +23,11 @@ export interface TelegramWebApp {
  * Are we running as a Telegram Mini App?
  *
  * Three independent signals, because no single one covers every client:
- *   - the launch hash Telegram appends (`tgWebAppData` on open, `tgWebAppPlatform` on some
- *     clients). Matched with a delimiter prefix so an ordinary route containing the text
- *     "tgWebApp" cannot trigger a third-party script load;
+ *   - the launch hash Telegram appends (`tgWebAppData`, `tgWebAppStartParam`, and others
+ *     depending on how the app was opened). Matched on the family rather than a list of names:
+ *     enumerating them missed a deep link that arrives carrying only `tgWebAppStartParam`. The
+ *     `[#&]` delimiter and the required uppercase segment keep an ordinary route containing the
+ *     text "tgWebApp" from triggering a third-party script load;
  *   - `TelegramWebviewProxy`, injected by Telegram's native in-app webview;
  *   - `__telegram__initParams` in sessionStorage, which the SDK persists — this is what keeps
  *     the Mini App working after an in-app navigation drops the hash.
@@ -33,7 +35,7 @@ export interface TelegramWebApp {
 export function isTelegramContext(): boolean {
 	try {
 		const hash = window.location.hash ?? '';
-		if (/[#&]tgWebApp(Data|Platform|Version)=/.test(hash)) return true;
+		if (/[#&]tgWebApp[A-Z][^&=]*=/.test(hash)) return true;
 
 		if ((window as unknown as Record<string, unknown>).TelegramWebviewProxy) return true;
 
@@ -77,9 +79,12 @@ export function loadTelegramWebApp(): Promise<TelegramWebApp | null> {
 			// double effect injecting two scripts, not to record an outage for the life of the
 			// page — leaving it set strands a Mini App user on a cached null after one timeout.
 			// The dead tag goes with it, so retries replace it rather than accumulate.
+			// Resolve FIRST. This runs in an event handler, not the executor, so a throw here does
+			// not reject the promise — it escapes and leaves the promise permanently unsettled,
+			// hanging every awaiting caller. Cleanup must not be able to do that.
 			pending = null;
-			script.remove();
 			resolve(null);
+			script.remove();
 		};
 		document.head.appendChild(script);
 	});

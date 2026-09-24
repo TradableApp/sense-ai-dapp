@@ -99,12 +99,16 @@ export default function App() {
 		// <script> in index.html, so this resolves null — without any network request — for the
 		// overwhelming majority of sessions, which do not come from Telegram.
 		let cancelled = false;
-		loadTelegramWebApp().then(tg => {
-			if (cancelled || !tg) return;
-			tg.ready(); // Hides the Telegram loading spinner
-			tg.expand?.(); // Forces the app to open to full height
-			dispatch(setPwa(true)); // Treats the Telegram environment as a PWA/Native App
-		});
+		loadTelegramWebApp()
+			.then(tg => {
+				if (cancelled || !tg) return;
+				tg.ready(); // Hides the Telegram loading spinner
+				tg.expand?.(); // Forces the app to open to full height
+				dispatch(setPwa(true)); // Treats the Telegram environment as a PWA/Native App
+			})
+			// The loader resolves null on every failure path, but that contract is not visible
+			// here. A rejection would escape React's error boundary, which does not catch them.
+			.catch(() => {});
 
 		if (loadState('consentSettings') === null) {
 			setShowConsent(true);
