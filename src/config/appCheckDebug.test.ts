@@ -52,20 +52,18 @@ describe('shouldUseAppCheckDebugToken', () => {
 	// and the failure is silent — a shipped App Check bypass, discovered by whoever finds the
 	// token in the bundle. Listing the modes that may debug fails closed instead, so a new mode
 	// has to be added deliberately.
+	//
+	// Run with dev: true on purpose. `!dev` returns first, so a dev: false case here would be
+	// asserting the dev gate six times over and would still pass if 'prod' were added to the
+	// allowlist. Builds are covered by the dev: false cases above.
 	it.each(['staging', 'prod', 'mainnet-preview', 'preprod', 'canary', ''])(
-		'REFUSES an unrecognised build mode %j',
+		'REFUSES an unrecognised mode %j even on the dev server',
 		(mode) => {
-			expect(shouldUseAppCheckDebugToken({ dev: false, mode, debugFlag: '1', token: 'tok' })).toBe(
+			expect(shouldUseAppCheckDebugToken({ dev: true, mode, debugFlag: '1', token: 'tok' })).toBe(
 				false,
 			);
 		},
 	);
-
-	it('still refuses an unrecognised mode even when DEV is true', () => {
-		expect(
-			shouldUseAppCheckDebugToken({ dev: true, mode: 'staging', debugFlag: '1', token: 'tok' }),
-		).toBe(false);
-	});
 
 	// THE BUG THE EARLIER GATES ALL SHARED. Vite inlines VITE_* as STRINGS, so the env files'
 	// `VITE_APP_DEBUG=false` arrives as the string "false" -- which is truthy. Every previous
