@@ -72,9 +72,21 @@ export function initPosthog() {
 	});
 	posthog.register_once({ host: window.location.host });
 
-	if (import.meta.env.VITE_POSTHOG_DEBUG_SECRET) {
+	// NOT a secret, and no longer named like one. Every VITE_* value is INLINED into the client
+	// bundle at build time, so this string ships to every visitor in plain text and is readable
+	// with view-source. It was registered as a super property called `debug_secret`, which meant
+	// it was also attached to every event PostHog received.
+	//
+	// PostHog's own position is that there is nothing private on the client: the project API key
+	// is public by design, and its write-only ingestion endpoint is what makes that safe. The
+	// legitimate use of a value like this is LABELLING internal traffic so it can be filtered out
+	// of product analytics, which needs no confidentiality at all.
+	//
+	// So it is renamed to say what it is. If anything here ever needs to be genuinely secret, it
+	// cannot live in the frontend bundle under any name.
+	if (import.meta.env.VITE_POSTHOG_DEBUG_LABEL) {
 		posthog.register({
-			debug_secret: import.meta.env.VITE_POSTHOG_DEBUG_SECRET,
+			debug_label: import.meta.env.VITE_POSTHOG_DEBUG_LABEL,
 		});
 	}
 

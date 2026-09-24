@@ -162,6 +162,9 @@
     "vite-plugin-svgr": "^4.5.0",
     "vitest": "^3.2.0"
   },
+  "overrides": {
+    "elliptic": "^6.6.1"
+  },
   "trustedDependencies": [
     "@firebase/util",
     "core-js",

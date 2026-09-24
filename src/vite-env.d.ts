@@ -25,7 +25,8 @@ interface ImportMetaEnv {
 	readonly VITE_MESSAGING_SENDER_ID: string;
 	readonly VITE_ORACLE_PUBLIC_KEY: string;
 	readonly VITE_ORACLE_WEBSOCKET_URL: string;
-	readonly VITE_POSTHOG_DEBUG_SECRET: string;
+	/** Public build label for filtering internal traffic. Inlined into the bundle — never a secret. */
+	readonly VITE_POSTHOG_DEBUG_LABEL: string;
 	readonly VITE_PROJECT_ID: string;
 	readonly VITE_PUBLIC_POSTHOG_HOST: string;
 	readonly VITE_PUBLIC_POSTHOG_KEY: string;

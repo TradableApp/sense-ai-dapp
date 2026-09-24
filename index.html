@@ -13,7 +13,12 @@
 			rel="stylesheet"
 		/>
 
-		<script src="https://telegram.org/js/telegram-web-app.js"></script>
+		<!--
+			The Telegram Mini App SDK is NOT loaded here. It used to be, which gave telegram.org
+			script execution in this page's context for every visitor on every load, whether or not
+			they came from Telegram. It is now loaded on demand by src/lib/telegramWebApp.ts, only
+			when the launch actually is a Mini App session.
+		-->
 
 		<!-- This script is required for some web3 libraries -->
 		<script>
