@@ -69,11 +69,18 @@ export function loadTelegramWebApp(): Promise<TelegramWebApp | null> {
 		script.async = true;
 		script.onload = () => {
 			resolve(
-				(window as unknown as { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp ??
-					null,
+				(window as unknown as { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp ?? null,
 			);
 		};
-		script.onerror = () => resolve(null);
+		script.onerror = () => {
+			// Clear the memo so a later call can retry. The memo is there to stop StrictMode's
+			// double effect injecting two scripts, not to record an outage for the life of the
+			// page — leaving it set strands a Mini App user on a cached null after one timeout.
+			// The dead tag goes with it, so retries replace it rather than accumulate.
+			pending = null;
+			script.remove();
+			resolve(null);
+		};
 		document.head.appendChild(script);
 	});
 

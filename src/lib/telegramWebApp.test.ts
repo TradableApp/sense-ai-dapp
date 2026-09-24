@@ -86,9 +86,7 @@ describe('loadTelegramWebApp', () => {
 		window.location.hash = '#tgWebAppData=query_id%3DAAH';
 
 		const pending = loadTelegramWebApp();
-		const script = document.querySelector<HTMLScriptElement>(
-			`script[src="${TELEGRAM_SDK_URL}"]`,
-		);
+		const script = document.querySelector<HTMLScriptElement>(`script[src="${TELEGRAM_SDK_URL}"]`);
 		expect(script, 'SDK script was not injected').not.toBeNull();
 
 		// Stand in for the real SDK, which defines window.Telegram before firing onload.
@@ -112,11 +110,40 @@ describe('loadTelegramWebApp', () => {
 		window.location.hash = '#tgWebAppData=query_id%3DAAH';
 
 		const pending = loadTelegramWebApp();
-		const script = document.querySelector<HTMLScriptElement>(
-			`script[src="${TELEGRAM_SDK_URL}"]`,
-		);
+		const script = document.querySelector<HTMLScriptElement>(`script[src="${TELEGRAM_SDK_URL}"]`);
 		script?.onerror?.(new Event('error'));
 
 		expect(await pending).toBeNull();
+	});
+
+	// A failed load must not be permanent. The memo exists so StrictMode's double effect injects
+	// one script, not to record "telegram.org was unreachable once" for the life of the page.
+	// Without clearing it, a Mini App user whose first load times out is stuck on a cached null
+	// until a full reload — every later call returns the poisoned promise without retrying.
+	it('retries after a failed load rather than caching the failure', async () => {
+		window.location.hash = '#tgWebAppData=query_id%3DAAH';
+
+		const first = loadTelegramWebApp();
+		document
+			.querySelector<HTMLScriptElement>(`script[src="${TELEGRAM_SDK_URL}"]`)
+			?.onerror?.(new Event('error'));
+		expect(await first).toBeNull();
+
+		// The failed script is cleaned up, so a retry is a fresh injection rather than a
+		// second tag accumulating on every attempt.
+		expect(document.querySelectorAll(`script[src="${TELEGRAM_SDK_URL}"]`)).toHaveLength(0);
+
+		const second = loadTelegramWebApp();
+		const retryScript = document.querySelector<HTMLScriptElement>(
+			`script[src="${TELEGRAM_SDK_URL}"]`,
+		);
+
+		expect(retryScript, 'no retry attempted — the failure was cached').not.toBeNull();
+
+		const webApp = { ready: () => {} };
+		(window as unknown as Record<string, unknown>).Telegram = { WebApp: webApp };
+		retryScript?.onload?.(new Event('load'));
+
+		expect(await second).toBe(webApp);
 	});
 });
