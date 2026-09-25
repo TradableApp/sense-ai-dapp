@@ -3,7 +3,7 @@
 interface ImportMetaEnv {
 	readonly VITE_AGENT_CONTRACT_ADDRESS: string;
 	readonly VITE_API_KEY: string;
-	readonly VITE_APP_CHECK_DEBUG_TOKEN: string;
+	readonly VITE_APP_CHECK_DEBUG_TOKEN: string | undefined;
 	readonly VITE_APP_DEBUG: string;
 	readonly VITE_APP_ID: string;
 	readonly VITE_APP_VERSION: string;
