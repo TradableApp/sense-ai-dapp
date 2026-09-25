@@ -83,8 +83,8 @@ const initialiseFirebase = () => {
 			// warn, not error: an unconfigured local or CI environment is an expected state, and
 			// this must not itself trip the console-error checks the guard exists to unblock.
 			console.warn(
-				'[firebase] VITE_RECAPTCHA_SITE_KEY is not set — App Check is disabled for this ' +
-					'build. Calls to App Check-enforced backends will be rejected.',
+				'[firebase] VITE_RECAPTCHA_SITE_KEY is not set or is blank — App Check is disabled ' +
+					'for this build. Calls to App Check-enforced backends will be rejected.',
 			);
 		}
 

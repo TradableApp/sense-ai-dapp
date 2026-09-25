@@ -20,7 +20,7 @@
  * nothing for a configured one: every deployed build sets the key, so App Check still
  * initialises everywhere it could have worked.
  */
-export default function shouldInitialiseAppCheck(siteKey: string | undefined): boolean {
+export default function shouldInitialiseAppCheck(siteKey: string | undefined): siteKey is string {
 	// Trimmed, because a whitespace-only value is as unusable as an empty one and arrives the
 	// same way — an env file with `VITE_RECAPTCHA_SITE_KEY= ` or a quoting mistake.
 	return Boolean(siteKey && siteKey.trim());
