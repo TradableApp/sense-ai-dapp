@@ -3,7 +3,7 @@
 interface ImportMetaEnv {
 	readonly VITE_AGENT_CONTRACT_ADDRESS: string;
 	readonly VITE_API_KEY: string;
-	readonly VITE_APP_CHECK_DEBUG_TOKEN: string;
+	readonly VITE_APP_CHECK_DEBUG_TOKEN: string | undefined;
 	readonly VITE_APP_DEBUG: string;
 	readonly VITE_APP_ID: string;
 	readonly VITE_APP_VERSION: string;
@@ -30,7 +30,7 @@ interface ImportMetaEnv {
 	readonly VITE_PROJECT_ID: string;
 	readonly VITE_PUBLIC_POSTHOG_HOST: string;
 	readonly VITE_PUBLIC_POSTHOG_KEY: string;
-	readonly VITE_RECAPTCHA_SITE_KEY: string;
+	readonly VITE_RECAPTCHA_SITE_KEY: string | undefined;
 	readonly VITE_SENTRY_DSN: string | undefined;
 	readonly VITE_SENTRY_ENVIRONMENT: string | undefined;
 	readonly VITE_STORAGE_BUCKET: string;
