@@ -93,3 +93,84 @@ describe('EVMAIAgentEscrow ABI — cancelPrompt and processRefund', () => {
 		expect(fn.inputs[0]).toMatchObject({ name: '_answerMessageId', type: 'uint256' });
 	});
 });
+
+/**
+ * THE ENTRIES THAT WENT MISSING FOR TWELVE DAYS.
+ *
+ * able-contracts#24 and tokenized-ai-agent#86 both merged 2026-09-24. Their regenerated ABIs were
+ * never committed here, so `main` shipped a token ABI with no two-step ownership transfer and an
+ * escrow ABI that could not decode a SafeERC20 failure — while this file stayed green throughout.
+ *
+ * It stayed green because every assertion above enumerates entries we already knew about, and an
+ * enumeration cannot notice something that was never added to it. These cases pin the specific
+ * regression; `SOURCE.json` is what makes the general case inspectable.
+ */
+describe('AbleToken ABI — Ownable2Step surface (able-contracts#24)', () => {
+	const raw = loadAbi('AbleToken.json');
+	const abi = Array.isArray(raw) ? raw : raw.abi ?? [];
+	const find = (type: string, name: string) =>
+		abi.find((x: unknown) => (x as any).type === type && (x as any).name === name);
+
+	// Without these two the dApp cannot complete an ownership transfer at all — the functions are
+	// on-chain but absent from the ABI, so viem has nothing to encode.
+	it('acceptOwnership exists', () => {
+		expect(find('function', 'acceptOwnership')).toBeDefined();
+	});
+
+	it('pendingOwner exists', () => {
+		expect(find('function', 'pendingOwner')).toBeDefined();
+	});
+
+	it('OwnershipTransferStarted event exists', () => {
+		expect(find('event', 'OwnershipTransferStarted')).toBeDefined();
+	});
+
+	// Decodability, not callability: renounceOwnership now reverts with this, and without the entry
+	// the user sees an undecodable blob instead of a reason.
+	it('OwnershipCannotBeRenounced error exists', () => {
+		expect(find('error', 'OwnershipCannotBeRenounced')).toBeDefined();
+	});
+
+	it('has a constructor entry (implementation locked via _disableInitializers)', () => {
+		expect(abi.some((x: unknown) => (x as any).type === 'constructor')).toBe(true);
+	});
+});
+
+describe('EVMAIAgentEscrow ABI — SafeERC20 surface (tokenized-ai-agent#86)', () => {
+	const raw = loadAbi('EVMAIAgentEscrow.json');
+	const abi = Array.isArray(raw) ? raw : raw.abi ?? [];
+
+	it('SafeERC20FailedOperation error exists', () => {
+		const entry = abi.find(
+			(x: unknown) => (x as any).type === 'error' && (x as any).name === 'SafeERC20FailedOperation',
+		);
+		expect(entry).toBeDefined();
+	});
+});
+
+/**
+ * SOURCE.json records which upstream commit each ABI came from — the same pin-the-upstream-commit
+ * pattern this org already uses for the Brain (EXPECTED_BRAIN_SHA).
+ *
+ * It cannot prove an ABI is current: artifacts are gitignored build output in both contract repos,
+ * so nothing here can fetch a canonical copy without compiling Hardhat inside a frontend CI. What
+ * it does is make the question ANSWERABLE — compare the recorded SHA against the repo's default
+ * branch. Before it existed the only way to notice drift was to happen to run a local build.
+ */
+describe('SOURCE.json — upstream provenance for every committed ABI', () => {
+	const manifest = loadAbi('SOURCE.json');
+	const abiFiles = ['AbleToken.json', 'EVMAIAgent.json', 'EVMAIAgentEscrow.json'];
+
+	it.each(abiFiles)('%s records a repo and a full commit SHA', file => {
+		const entry = manifest.sources?.[file];
+		expect(entry, `${file} has no entry in SOURCE.json`).toBeDefined();
+		expect(entry.repo).toMatch(/^TradableApp\//);
+		expect(entry.commit).toMatch(/^[0-9a-f]{40}$/);
+	});
+
+	// Guards the guard: a manifest listing ABIs we no longer ship, or missing ones we do, is a
+	// manifest nobody can trust to answer the staleness question.
+	it('lists exactly the ABI files that are committed', () => {
+		expect(Object.keys(manifest.sources).sort()).toEqual([...abiFiles].sort());
+	});
+});

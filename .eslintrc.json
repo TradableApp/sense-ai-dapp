@@ -19,23 +19,50 @@
 		}
 	},
 	"rules": {
-		"import/no-unresolved": ["error", { "ignore": ["\\.svg\\?react$"] }],
-		"sort-imports": ["error", { "ignoreCase": true, "ignoreDeclarationSort": true }],
+		"import/no-unresolved": [
+			"error",
+			{
+				"ignore": ["\\.svg\\?react$"]
+			}
+		],
+		"sort-imports": [
+			"error",
+			{
+				"ignoreCase": true,
+				"ignoreDeclarationSort": true
+			}
+		],
 		"import/order": [
 			"error",
 			{
 				"groups": ["builtin", "external", "internal"],
-				"pathGroups": [{ "pattern": "react", "group": "external", "position": "before" }],
+				"pathGroups": [
+					{
+						"pattern": "react",
+						"group": "external",
+						"position": "before"
+					}
+				],
 				"pathGroupsExcludedImportTypes": ["react"],
 				"newlines-between": "always",
-				"alphabetize": { "order": "asc", "caseInsensitive": true }
+				"alphabetize": {
+					"order": "asc",
+					"caseInsensitive": true
+				}
 			}
 		],
-		"react/jsx-filename-extension": [1, { "extensions": [".js", ".jsx", ".tsx"] }],
+		"react/jsx-filename-extension": [
+			1,
+			{
+				"extensions": [".js", ".jsx", ".tsx"]
+			}
+		],
 		"react-hooks/rules-of-hooks": "error",
 		"react-hooks/exhaustive-deps": [
 			"error",
-			{ "enableDangerousAutofixThisMayCauseInfiniteLoops": true }
+			{
+				"enableDangerousAutofixThisMayCauseInfiniteLoops": true
+			}
 		],
 		"react/prop-types": "off",
 		"react/require-default-props": "off",
@@ -43,7 +70,12 @@
 		"react/jsx-no-useless-fragment": "off",
 		"jsx-a11y/label-has-associated-control": "off",
 		"global-require": "off",
-		"no-underscore-dangle": ["error", { "allowAfterThis": true }],
+		"no-underscore-dangle": [
+			"error",
+			{
+				"allowAfterThis": true
+			}
+		],
 		"class-methods-use-this": "off",
 		"react/no-unescaped-entities": "off",
 		"react/jsx-props-no-spreading": "off",
@@ -87,7 +119,10 @@
 		{
 			"files": ["**/*.ts", "**/*.tsx"],
 			"parser": "@typescript-eslint/parser",
-			"parserOptions": { "ecmaVersion": "latest", "sourceType": "module" }
+			"parserOptions": {
+				"ecmaVersion": "latest",
+				"sourceType": "module"
+			}
 		},
 		{
 			"files": [
@@ -101,15 +136,28 @@
 				"**/*.spec.tsx"
 			],
 			"rules": {
-				"import/no-extraneous-dependencies": ["error", { "devDependencies": true }],
+				"import/no-extraneous-dependencies": [
+					"error",
+					{
+						"devDependencies": true
+					}
+				],
 				"import/first": "off"
 			}
 		},
 		{
 			"files": ["e2e/**/*.ts", "playwright.config.ts"],
-			"env": { "browser": false, "node": true },
+			"env": {
+				"browser": false,
+				"node": true
+			},
 			"rules": {
-				"import/no-extraneous-dependencies": ["error", { "devDependencies": true }],
+				"import/no-extraneous-dependencies": [
+					"error",
+					{
+						"devDependencies": true
+					}
+				],
 				"import/prefer-default-export": "off",
 				"import/first": "off",
 				"no-underscore-dangle": "off",
@@ -134,5 +182,6 @@
 		"FileReader": true,
 		"Blob": true,
 		"navigator": true
-	}
+	},
+	"ignorePatterns": ["playwright-report", "test-results", "coverage"]
 }
