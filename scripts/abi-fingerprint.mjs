@@ -31,5 +31,6 @@ if (process.argv[1] && process.argv[1].endsWith('abi-fingerprint.mjs')) {
 		process.stderr.write('usage: abi-fingerprint.mjs <artifact.json>\n');
 		process.exit(1);
 	}
-	process.stdout.write(fingerprintFile(file));
+	// Trailing newline: $() strips it for the shell caller, and interactive use gets a clean prompt.
+	process.stdout.write(`${fingerprintFile(file)}\n`);
 }

@@ -4,7 +4,7 @@ import path from 'path';
 
 import { describe, expect, it } from 'vitest';
 
-import { abiFingerprint } from '../../../scripts/abi-fingerprint.mjs';
+import { abiFingerprint } from '#scripts/abi-fingerprint.mjs';
 
 
 const abiDir = path.resolve(import.meta.dirname);
