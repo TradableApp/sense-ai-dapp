@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { createHash } from 'crypto';
 import { readFileSync } from 'fs';
 import path from 'path';
 
@@ -8,6 +9,18 @@ const abiDir = path.resolve(import.meta.dirname);
 
 function loadAbi(filename: string) {
 	return JSON.parse(readFileSync(path.join(abiDir, filename), 'utf8'));
+}
+
+/**
+ * Fingerprint of the INTERFACE, not of the file.
+ *
+ * Hashing the bytes would red on a `prettier --write`, which changes nothing anyone depends on and
+ * would train people to re-run the sync to silence a formatting diff. Hashing the parsed `abi`
+ * survives reformatting — key order inside each entry is preserved by both Hardhat and Prettier —
+ * while still differing the moment an entry is added, removed or altered.
+ */
+function abiFingerprint(artifact: { abi: unknown }) {
+	return createHash('sha256').update(JSON.stringify(artifact.abi)).digest('hex');
 }
 
 describe('EVMAIAgent ABI — PromptSubmitted event', () => {
@@ -166,6 +179,20 @@ describe('SOURCE.json — upstream provenance for every committed ABI', () => {
 		expect(entry, `${file} has no entry in SOURCE.json`).toBeDefined();
 		expect(entry.repo).toMatch(/^TradableApp\//);
 		expect(entry.commit).toMatch(/^[0-9a-f]{40}$/);
+	});
+
+	// The commit pin alone is attestable only by process: `cp`ing a freshly-compiled ABI over one
+	// of these and committing leaves the pin describing the WRONG upstream commit, and every
+	// assertion above still passes because the format is untouched. The fingerprint closes that —
+	// it is written by the sync script from the file it just copied, so an ABI that arrived by any
+	// other route no longer matches what the manifest says it is.
+	it.each(abiFiles)('%s matches the interface fingerprint recorded for it', file => {
+		const entry = manifest.sources?.[file];
+		expect(entry.abiSha256, `${file} has no abiSha256 in SOURCE.json`).toMatch(/^[0-9a-f]{64}$/);
+		expect(
+			abiFingerprint(loadAbi(file)),
+			`${file} does not match its recorded fingerprint — re-run \`bun run sync-contracts\``,
+		).toBe(entry.abiSha256);
 	});
 
 	// Guards the guard: a manifest listing ABIs we no longer ship, or missing ones we do, is a

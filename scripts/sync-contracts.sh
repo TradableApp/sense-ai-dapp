@@ -11,6 +11,12 @@
 # Brain (EXPECTED_BRAIN_SHA). It does not prevent drift; it makes drift answerable in one look.
 set -eu
 
+# Anchor to the repo root before resolving anything. Every path below is relative — the sibling
+# repos via `..`, the destination via `./src` — so invoking this as `sh scripts/sync-contracts.sh`
+# from anywhere but the root would look for the siblings in the wrong place and copy to the wrong
+# place. `bun run sync-contracts` happens to set the CWD for us; nothing else does.
+cd "$(dirname "$0")/.." || exit 1
+
 R="${REPOS_ROOT:-..}"
 ABI_DIR="./src/lib/abi"
 
@@ -38,6 +44,21 @@ for repo in able-contracts tokenized-ai-agent; do
   fi
 done
 
+# Fingerprint the INTERFACE each ABI exposes, so the manifest attests the files it names rather
+# than merely sitting beside them. Without it, `cp`ing a freshly-compiled ABI into place and
+# committing leaves the recorded commit describing something else entirely, with a green suite.
+# Hashing the parsed `abi` rather than the bytes keeps `prettier --write` from reddening the test
+# over whitespace nobody depends on.
+fingerprint() {
+  bun -e 'const a=require("fs").readFileSync(process.argv[1],"utf8");
+          process.stdout.write(require("crypto").createHash("sha256")
+            .update(JSON.stringify(JSON.parse(a).abi)).digest("hex"))' "$1"
+}
+
+ABLE_FP=$(fingerprint "$ABI_DIR/AbleToken.json")
+AGENT_FP=$(fingerprint "$ABI_DIR/EVMAIAgent.json")
+ESCROW_FP=$(fingerprint "$ABI_DIR/EVMAIAgentEscrow.json")
+
 cat > "$ABI_DIR/SOURCE.json" <<JSON
 {
   "_comment": [
@@ -46,14 +67,17 @@ cat > "$ABI_DIR/SOURCE.json" <<JSON
     "Before this file existed, the only way to notice drift was to diff against a local build —",
     "which is why AbleToken and EVMAIAgentEscrow sat 12 days stale behind able-contracts#24 and",
     "tokenized-ai-agent#86 with a green suite the whole time.",
-    "To check for drift: compare these SHAs against the default branch of each repo."
+    "To check for drift: compare these SHAs against the default branch of each repo.",
+    "abiSha256 is sha256 of JSON.stringify(artifact.abi) — the interface, not the file, so",
+    "reformatting does not break it. abi-sync.test.ts recomputes and compares it, which is what",
+    "stops an ABI arriving by any route other than this script."
   ],
   "sources": {
-    "AbleToken.json":        { "repo": "TradableApp/able-contracts",     "commit": "$ABLE_SHA" },
-    "EVMAIAgent.json":       { "repo": "TradableApp/tokenized-ai-agent", "commit": "$TA_SHA" },
-    "EVMAIAgentEscrow.json": { "repo": "TradableApp/tokenized-ai-agent", "commit": "$TA_SHA" }
+    "AbleToken.json":        { "repo": "TradableApp/able-contracts",     "commit": "$ABLE_SHA", "abiSha256": "$ABLE_FP" },
+    "EVMAIAgent.json":       { "repo": "TradableApp/tokenized-ai-agent", "commit": "$TA_SHA", "abiSha256": "$AGENT_FP" },
+    "EVMAIAgentEscrow.json": { "repo": "TradableApp/tokenized-ai-agent", "commit": "$TA_SHA", "abiSha256": "$ESCROW_FP" }
   }
 }
 JSON
 
-echo "ABIs synced. able-contracts=${ABLE_SHA%${ABLE_SHA#???????}} tokenized-ai-agent=${TA_SHA%${TA_SHA#???????}}"
+printf 'ABIs synced. able-contracts=%.7s tokenized-ai-agent=%.7s\n' "$ABLE_SHA" "$TA_SHA"
