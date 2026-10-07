@@ -11,10 +11,14 @@
 # Brain (EXPECTED_BRAIN_SHA). It does not prevent drift; it makes drift answerable in one look.
 set -eu
 
-# Anchor to the repo root before resolving anything. Every path below is relative — the sibling
-# repos via `..`, the destination via `./src` — so invoking this as `sh scripts/sync-contracts.sh`
-# from anywhere but the root would look for the siblings in the wrong place and copy to the wrong
-# place. `bun run sync-contracts` happens to set the CWD for us; nothing else does.
+# Anchor to the repo root, because every path below is relative — the siblings via `..`, the
+# destination via `./src`. This makes the script independent of the caller's directory: `$0`
+# carries whatever path was used to reach it, so `dirname "$0"/..` resolves to the repo root for
+# a relative, absolute or subdirectory invocation alike.
+#
+# The one form it cannot fix is `sh < scripts/sync-contracts.sh`. Redirected input leaves `$0` as
+# the shell's own name, `dirname` yields `.`, and the cd lands one above the caller's directory.
+# Invoke it by path (or via `bun run sync-contracts`), not on stdin.
 cd "$(dirname "$0")/.." || exit 1
 
 R="${REPOS_ROOT:-..}"
