@@ -1,9 +1,11 @@
 // @vitest-environment node
-import { createHash } from 'crypto';
 import { readdirSync, readFileSync } from 'fs';
 import path from 'path';
 
 import { describe, expect, it } from 'vitest';
+
+import { abiFingerprint } from '../../../scripts/abi-fingerprint.mjs';
+
 
 const abiDir = path.resolve(import.meta.dirname);
 
@@ -11,17 +13,11 @@ function loadAbi(filename: string) {
 	return JSON.parse(readFileSync(path.join(abiDir, filename), 'utf8'));
 }
 
-/**
- * Fingerprint of the INTERFACE, not of the file.
- *
- * Hashing the bytes would red on a `prettier --write`, which changes nothing anyone depends on and
- * would train people to re-run the sync to silence a formatting diff. Hashing the parsed `abi`
- * survives reformatting — key order inside each entry is preserved by both Hardhat and Prettier —
- * while still differing the moment an entry is added, removed or altered.
- */
-function abiFingerprint(artifact: { abi: unknown }) {
-	return createHash('sha256').update(JSON.stringify(artifact.abi)).digest('hex');
-}
+/* abiFingerprint is imported from the same module sync-contracts.sh calls, rather than
+   reimplemented here. The manifest's correctness used to rest on two copies of this hash
+   agreeing — a near-identical helper in each. Sharing it means the test can still catch what
+   matters (an ABI that did not come through the sync) while no longer being able to disagree
+   with the writer about how the hash is computed. */
 
 describe('EVMAIAgent ABI — PromptSubmitted event', () => {
 	const raw = loadAbi('EVMAIAgent.json');

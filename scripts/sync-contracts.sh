@@ -72,7 +72,15 @@ for repo in able-contracts tokenized-ai-agent; do
   # noisy when it has since landed. Best-effort, because being offline must not fail a sync that
   # otherwise needs no network.
   git -C "$R/$repo" fetch --quiet origin 2>/dev/null || true
-  _default=$(git -C "$R/$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || echo "origin/main")
+  _default=$(git -C "$R/$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+  if [ -z "$_default" ]; then
+    # A clone without a remote HEAD is common, and assuming origin/main silently would make the
+    # ancestry warning permanently WRONG on any repo whose default is not main — a warning that
+    # always fires is one people learn to scroll past, which costs us the time it does matter.
+    echo "note: $repo has no remote HEAD set; assuming origin/main for the branch check." >&2
+    echo "      Run: git -C $R/$repo remote set-head origin -a" >&2
+    _default="origin/main"
+  fi
   if ! git -C "$R/$repo" merge-base --is-ancestor HEAD "$_default" 2>/dev/null; then
     echo "warning: $repo HEAD is not on $_default — SOURCE.json would record a commit that cannot be" >&2
     echo "         found on the default branch, which is how the manifest is meant to be checked." >&2
@@ -85,15 +93,7 @@ done
 # Hashing the parsed `abi` rather than the bytes keeps `prettier --write` from reddening the test
 # over whitespace nobody depends on.
 fingerprint() {
-  # ESM imports, not require(): package.json declares "type": "module". Bun happens to expose a
-  # CJS shim in `bun -e` regardless, but relying on that would make this the one place in the
-  # repo written against an undocumented escape hatch. Matches how abi-sync.test.ts imports the
-  # same two modules. `bun -e <code> <arg>` puts the argument at process.argv[1].
-  bun -e 'import { readFileSync } from "fs";
-          import { createHash } from "crypto";
-          process.stdout.write(createHash("sha256")
-            .update(JSON.stringify(JSON.parse(readFileSync(process.argv[1], "utf8")).abi))
-            .digest("hex"))' "$1"
+  bun scripts/abi-fingerprint.mjs "$1"
 }
 
 # Fingerprint the SOURCE artifacts, not the copies. `cp` is a byte copy so the values are
