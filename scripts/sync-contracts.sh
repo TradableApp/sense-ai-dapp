@@ -47,6 +47,20 @@ for src in "$AGENT_SRC" "$ESCROW_SRC" "$ABLE_SRC"; do
   fi
 done
 
+# WHAT THESE SHAs DO AND DO NOT ATTEST.
+#
+# This is the sibling's checkout AT SYNC TIME. It is not proof the artifacts were compiled from
+# it: `artifacts/` is gitignored build output that this script only COPIES, never rebuilds, so
+# compiling at commit A and then checking out commit B records B beside an ABI from A. The
+# dirty-tree warning below does not catch it — the tree is clean at B.
+#
+# The integrity half is unaffected: `abiSha256` is computed from the bytes actually committed, so
+# the manifest is never wrong about WHICH INTERFACE is in this repo, only about where it came
+# from. Treat a surprising SHA as a prompt to recompile and re-sync rather than as a fact.
+#
+# The complete fix is to compile the siblings here instead of requiring pre-built artifacts, which
+# would make the pairing true by construction. That needs each sibling's toolchain installed and
+# is a larger change than this script's job; left as a follow-up.
 ABLE_SHA=$(git -C "$R/able-contracts" rev-parse HEAD)
 TA_SHA=$(git -C "$R/tokenized-ai-agent" rev-parse HEAD)
 
@@ -115,6 +129,9 @@ cat > "$ABI_DIR/SOURCE.json" <<JSON
     "which is why AbleToken and EVMAIAgentEscrow sat 12 days stale behind able-contracts#24 and",
     "tokenized-ai-agent#86 with a green suite the whole time.",
     "To check for drift: compare these SHAs against the default branch of each repo.",
+    "The commit is the sibling's checkout when sync ran; it does not prove the ABI was compiled",
+    "from it, since artifacts/ is copied rather than rebuilt. abiSha256 below is computed from the",
+    "committed bytes and is exact — so a surprising commit means recompile and re-sync, not panic.",
     "abiSha256 is sha256 of JSON.stringify(artifact.abi) — the interface, not the file, so",
     "reformatting does not break it. abi-sync.test.ts recomputes and compares it, which is what",
     "stops an ABI arriving by any route other than this script."
