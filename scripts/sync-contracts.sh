@@ -66,6 +66,12 @@ for repo in able-contracts tokenized-ai-agent; do
   if [ -n "$(git -C "$R/$repo" status --porcelain)" ]; then
     echo "warning: $repo has uncommitted changes — the recorded commit may not describe these ABIs." >&2
   fi
+  # Refresh first: the ancestry test below compares against origin/main, a LOCAL remote-tracking
+  # ref that reflects the last fetch rather than the remote. On a repo nobody has fetched lately
+  # that makes the warning unreliable in both directions — silent when HEAD really is off-branch,
+  # noisy when it has since landed. Best-effort, because being offline must not fail a sync that
+  # otherwise needs no network.
+  git -C "$R/$repo" fetch --quiet origin 2>/dev/null || true
   _default=$(git -C "$R/$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || echo "origin/main")
   if ! git -C "$R/$repo" merge-base --is-ancestor HEAD "$_default" 2>/dev/null; then
     echo "warning: $repo HEAD is not on $_default — SOURCE.json would record a commit that cannot be" >&2
