@@ -107,7 +107,17 @@ done
 # Hashing the parsed `abi` rather than the bytes keeps `prettier --write` from reddening the test
 # over whitespace nobody depends on.
 fingerprint() {
-  bun scripts/abi-fingerprint.mjs "$1"
+  _fp=$(bun scripts/abi-fingerprint.mjs "$1")
+  # Reject an empty result rather than writing it. abi-fingerprint.mjs decides it is being run
+  # as a CLI by checking its own filename, so a renamed or symlinked copy exits 0 having printed
+  # nothing — and "abiSha256": "" would sail into SOURCE.json. The test would catch it a step
+  # later with "does not match its recorded fingerprint", pointing at the ABI rather than at the
+  # script that produced no hash.
+  if [ -z "$_fp" ]; then
+    echo "error: fingerprint of $1 came back empty — is scripts/abi-fingerprint.mjs intact?" >&2
+    exit 1
+  fi
+  printf '%s\n' "$_fp"
 }
 
 # Fingerprint the SOURCE artifacts, not the copies. `cp` is a byte copy so the values are
@@ -131,7 +141,7 @@ cat > "$ABI_DIR/SOURCE.json" <<JSON
     "To check for drift: compare these SHAs against the default branch of each repo.",
     "The commit is the sibling's checkout when sync ran; it does not prove the ABI was compiled",
     "from it, since artifacts/ is copied rather than rebuilt. abiSha256 below is computed from the",
-    "committed bytes and is exact — so a surprising commit means recompile and re-sync, not panic.",
+    "abi array (see below) and is exact — so a surprising commit means recompile and re-sync.",
     "abiSha256 is sha256 of JSON.stringify(artifact.abi) — the interface, not the file, so",
     "reformatting does not break it. abi-sync.test.ts recomputes and compares it, which is what",
     "stops an ABI arriving by any route other than this script."

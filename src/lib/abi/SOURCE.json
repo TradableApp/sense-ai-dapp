@@ -8,7 +8,7 @@
     "To check for drift: compare these SHAs against the default branch of each repo.",
     "The commit is the sibling's checkout when sync ran; it does not prove the ABI was compiled",
     "from it, since artifacts/ is copied rather than rebuilt. abiSha256 below is computed from the",
-    "committed bytes and is exact — so a surprising commit means recompile and re-sync, not panic.",
+    "abi array (see below) and is exact — so a surprising commit means recompile and re-sync.",
     "abiSha256 is sha256 of JSON.stringify(artifact.abi) — the interface, not the file, so",
     "reformatting does not break it. abi-sync.test.ts recomputes and compares it, which is what",
     "stops an ABI arriving by any route other than this script."
