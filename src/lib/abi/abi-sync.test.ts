@@ -184,6 +184,9 @@ describe('SOURCE.json — upstream provenance for every committed ABI', () => {
 	// other route no longer matches what the manifest says it is.
 	it.each(abiFiles)('%s matches the interface fingerprint recorded for it', file => {
 		const entry = manifest.sources?.[file];
+		// Same guard as the sibling case above: without it a missing key throws a bare TypeError
+		// from the next line and Vitest never prints the message that would name the file.
+		expect(entry, `${file} has no entry in SOURCE.json`).toBeDefined();
 		expect(entry.abiSha256, `${file} has no abiSha256 in SOURCE.json`).toMatch(/^[0-9a-f]{64}$/);
 		expect(
 			abiFingerprint(loadAbi(file)),
