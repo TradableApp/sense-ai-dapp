@@ -1,4 +1,7 @@
 codegen.ts
+coverage/
 dist/
 node_modules/
+playwright-report/
 src/lib/graph/generated.ts
+test-results/

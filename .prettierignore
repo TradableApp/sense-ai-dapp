@@ -18,3 +18,9 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Generated contract artifacts. `bun run sync-contracts` writes these verbatim from the sibling
+# repos' Hardhat output and composes SOURCE.json with deliberate column alignment. Prettier would
+# rewrite all of it, so every `bun run format` left a dirty tree that the next sync silently
+# reverted — churn with no reader. abi-sync.test.ts is NOT generated and stays formatted.
+src/lib/abi/*.json
