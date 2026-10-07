@@ -47,57 +47,29 @@ for src in "$AGENT_SRC" "$ESCROW_SRC" "$ABLE_SRC"; do
   fi
 done
 
-# WHAT THESE SHAs DO AND DO NOT ATTEST.
-#
-# This is the sibling's checkout AT SYNC TIME. It is not proof the artifacts were compiled from
-# it: `artifacts/` is gitignored build output that this script only COPIES, never rebuilds, so
-# compiling at commit A and then checking out commit B records B beside an ABI from A. The
-# dirty-tree warning below does not catch it — the tree is clean at B.
-#
-# The integrity half is unaffected: `abiSha256` is computed from the bytes actually committed, so
-# the manifest is never wrong about WHICH INTERFACE is in this repo, only about where it came
-# from. Treat a surprising SHA as a prompt to recompile and re-sync rather than as a fact.
-#
-# The complete fix is to compile the siblings here instead of requiring pre-built artifacts, which
-# would make the pairing true by construction. That needs each sibling's toolchain installed and
-# is a larger change than this script's job; left as a follow-up.
+# The sibling's checkout AT SYNC TIME — not proof the artifacts were compiled from it, since this
+# script copies `artifacts/` rather than rebuilding it. abiSha256 still pins WHICH interface is
+# committed; only the provenance is soft. Compiling the siblings here would make the pairing true
+# by construction, and is left as a follow-up.
 ABLE_SHA=$(git -C "$R/able-contracts" rev-parse HEAD)
 TA_SHA=$(git -C "$R/tokenized-ai-agent" rev-parse HEAD)
 
-# Warn rather than fail on a source tree that cannot be cited.
+# Warn when the compiled artifacts cannot be honestly attributed to the recorded commit.
 #
-# SOURCE.json tells its reader to "compare these SHAs against the default branch of each repo",
-# so a SHA that is NOT on the default branch silently breaks the one thing the manifest is for.
-# Both cases below produce exactly that:
+# Only the dirty-tree case is checkable here. A dirty tree means the ABI may include uncommitted
+# work that no SHA describes, which makes the manifest's commit field wrong in a way the reader
+# cannot detect.
 #
-#   dirty tree    - the compiled ABI includes uncommitted work no SHA describes;
-#   feature branch - the SHA is real but unreachable from the default branch, and may never land.
-#
-# The second is easy to hit without noticing: sibling repos sit checked out on whatever branch
-# their last task left them on. Warn rather than fail — the ABI bytes are still whatever was
-# compiled, and refusing to sync would be worse than syncing with a caveat.
+# There used to be an origin/main ancestry check beside this. It was removed because it was
+# silent in exactly the case this script exists for: `merge-base --is-ancestor HEAD origin/main`
+# passes for ANY merged commit, including one from a year ago, so artifacts compiled from a long
+# stale checkout produced no warning at all while a feature branch produced a loud one. A check
+# that fires on the harmless case and stays quiet on the harmful one trains people to ignore it.
+# It also fetched from the network on every run, swallowing failures, which made its own result
+# untrustworthy offline.
 for repo in able-contracts tokenized-ai-agent; do
-  if [ -n "$(git -C "$R/$repo" status --porcelain)" ]; then
+  if [ -n "$(git -C "$R/$repo" status --porcelain --untracked-files=no)" ]; then
     echo "warning: $repo has uncommitted changes — the recorded commit may not describe these ABIs." >&2
-  fi
-  # Refresh first: the ancestry test below compares against origin/main, a LOCAL remote-tracking
-  # ref that reflects the last fetch rather than the remote. On a repo nobody has fetched lately
-  # that makes the warning unreliable in both directions — silent when HEAD really is off-branch,
-  # noisy when it has since landed. Best-effort, because being offline must not fail a sync that
-  # otherwise needs no network.
-  git -C "$R/$repo" fetch --quiet origin 2>/dev/null || true
-  _default=$(git -C "$R/$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
-  if [ -z "$_default" ]; then
-    # A clone without a remote HEAD is common, and assuming origin/main silently would make the
-    # ancestry warning permanently WRONG on any repo whose default is not main — a warning that
-    # always fires is one people learn to scroll past, which costs us the time it does matter.
-    echo "note: $repo has no remote HEAD set; assuming origin/main for the branch check." >&2
-    echo "      Run: git -C $R/$repo remote set-head origin -a" >&2
-    _default="origin/main"
-  fi
-  if ! git -C "$R/$repo" merge-base --is-ancestor HEAD "$_default" 2>/dev/null; then
-    echo "warning: $repo HEAD is not on $_default — SOURCE.json would record a commit that cannot be" >&2
-    echo "         found on the default branch, which is how the manifest is meant to be checked." >&2
   fi
 done
 
