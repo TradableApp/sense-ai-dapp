@@ -50,9 +50,15 @@ done
 # Hashing the parsed `abi` rather than the bytes keeps `prettier --write` from reddening the test
 # over whitespace nobody depends on.
 fingerprint() {
-  bun -e 'const a=require("fs").readFileSync(process.argv[1],"utf8");
-          process.stdout.write(require("crypto").createHash("sha256")
-            .update(JSON.stringify(JSON.parse(a).abi)).digest("hex"))' "$1"
+  # ESM imports, not require(): package.json declares "type": "module". Bun happens to expose a
+  # CJS shim in `bun -e` regardless, but relying on that would make this the one place in the
+  # repo written against an undocumented escape hatch. Matches how abi-sync.test.ts imports the
+  # same two modules. `bun -e <code> <arg>` puts the argument at process.argv[1].
+  bun -e 'import { readFileSync } from "fs";
+          import { createHash } from "crypto";
+          process.stdout.write(createHash("sha256")
+            .update(JSON.stringify(JSON.parse(readFileSync(process.argv[1], "utf8")).abi))
+            .digest("hex"))' "$1"
 }
 
 ABLE_FP=$(fingerprint "$ABI_DIR/AbleToken.json")

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { createHash } from 'crypto';
-import { readFileSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import path from 'path';
 
 import { describe, expect, it } from 'vitest';
@@ -197,7 +197,16 @@ describe('SOURCE.json — upstream provenance for every committed ABI', () => {
 
 	// Guards the guard: a manifest listing ABIs we no longer ship, or missing ones we do, is a
 	// manifest nobody can trust to answer the staleness question.
+	//
+	// Reads the DIRECTORY rather than comparing against `abiFiles` above. Comparing two constants
+	// in the same file only restates them: a fourth ABI committed here without being added to
+	// `abiFiles` would satisfy it while going unmentioned by the manifest entirely, which is the
+	// precise case the assertion claims to catch.
 	it('lists exactly the ABI files that are committed', () => {
-		expect(Object.keys(manifest.sources).sort()).toEqual([...abiFiles].sort());
+		const onDisk = readdirSync(abiDir)
+			.filter(f => f.endsWith('.json') && f !== 'SOURCE.json')
+			.sort();
+		expect(onDisk).toEqual([...abiFiles].sort()); // the constant above has not drifted either
+		expect(Object.keys(manifest.sources).sort()).toEqual(onDisk);
 	});
 });
