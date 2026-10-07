@@ -20,27 +20,56 @@ cd "$(dirname "$0")/.." || exit 1
 R="${REPOS_ROOT:-..}"
 ABI_DIR="./src/lib/abi"
 
-for pair in \
-  "$R/tokenized-ai-agent/artifacts/contracts/EVMAIAgent.sol/EVMAIAgent.json" \
-  "$R/tokenized-ai-agent/artifacts/contracts/EVMAIAgentEscrow.sol/EVMAIAgentEscrow.json" \
-  "$R/able-contracts/artifacts/contracts/AbleToken.sol/AbleToken.json"
-do
-  if [ ! -f "$pair" ]; then
-    echo "error: canonical artifact missing: $pair" >&2
+AGENT_SRC="$R/tokenized-ai-agent/artifacts/contracts/EVMAIAgent.sol/EVMAIAgent.json"
+ESCROW_SRC="$R/tokenized-ai-agent/artifacts/contracts/EVMAIAgentEscrow.sol/EVMAIAgentEscrow.json"
+ABLE_SRC="$R/able-contracts/artifacts/contracts/AbleToken.sol/AbleToken.json"
+
+# VALIDATE EVERYTHING BEFORE WRITING ANYTHING.
+#
+# The copy loop used to run first and fingerprinting after it. Anything failing in between — `bun`
+# absent from PATH, an artifact that would not parse — left NEW ABI bytes on disk beside a
+# SOURCE.json still describing the OLD ones. The manifest would then be confidently wrong, and the
+# test fires "does not match its recorded fingerprint — re-run bun run sync-contracts", sending
+# whoever hit it back into the script that just failed rather than at the actual cause.
+#
+# So the order is: prove bun runs, prove every artifact exists and parses, take the fingerprints,
+# and only then touch the destination.
+command -v bun > /dev/null 2>&1 || {
+  echo "error: bun is required to fingerprint the ABIs — see https://bun.sh" >&2
+  exit 1
+}
+
+for src in "$AGENT_SRC" "$ESCROW_SRC" "$ABLE_SRC"; do
+  if [ ! -f "$src" ]; then
+    echo "error: canonical artifact missing: $src" >&2
     echo "       compile the sibling repo first (its artifacts/ is gitignored build output)." >&2
     exit 1
   fi
-  cp "$pair" "$ABI_DIR/"
 done
 
 ABLE_SHA=$(git -C "$R/able-contracts" rev-parse HEAD)
 TA_SHA=$(git -C "$R/tokenized-ai-agent" rev-parse HEAD)
 
-# Warn rather than fail on a dirty source tree: the ABI is still whatever was compiled, but the
-# recorded SHA would not fully describe it.
+# Warn rather than fail on a source tree that cannot be cited.
+#
+# SOURCE.json tells its reader to "compare these SHAs against the default branch of each repo",
+# so a SHA that is NOT on the default branch silently breaks the one thing the manifest is for.
+# Both cases below produce exactly that:
+#
+#   dirty tree    - the compiled ABI includes uncommitted work no SHA describes;
+#   feature branch - the SHA is real but unreachable from the default branch, and may never land.
+#
+# The second is easy to hit without noticing: sibling repos sit checked out on whatever branch
+# their last task left them on. Warn rather than fail — the ABI bytes are still whatever was
+# compiled, and refusing to sync would be worse than syncing with a caveat.
 for repo in able-contracts tokenized-ai-agent; do
   if [ -n "$(git -C "$R/$repo" status --porcelain)" ]; then
     echo "warning: $repo has uncommitted changes — the recorded commit may not describe these ABIs." >&2
+  fi
+  _default=$(git -C "$R/$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || echo "origin/main")
+  if ! git -C "$R/$repo" merge-base --is-ancestor HEAD "$_default" 2>/dev/null; then
+    echo "warning: $repo HEAD is not on $_default — SOURCE.json would record a commit that cannot be" >&2
+    echo "         found on the default branch, which is how the manifest is meant to be checked." >&2
   fi
 done
 
@@ -61,9 +90,15 @@ fingerprint() {
             .digest("hex"))' "$1"
 }
 
-ABLE_FP=$(fingerprint "$ABI_DIR/AbleToken.json")
-AGENT_FP=$(fingerprint "$ABI_DIR/EVMAIAgent.json")
-ESCROW_FP=$(fingerprint "$ABI_DIR/EVMAIAgentEscrow.json")
+# Fingerprint the SOURCE artifacts, not the copies. `cp` is a byte copy so the values are
+# identical either way, but reading the source means a malformed artifact aborts here, with the
+# destination still untouched. Under `set -e` a failing fingerprint ends the script.
+ABLE_FP=$(fingerprint "$ABLE_SRC")
+AGENT_FP=$(fingerprint "$AGENT_SRC")
+ESCROW_FP=$(fingerprint "$ESCROW_SRC")
+
+# Past this line the destination changes.
+cp "$AGENT_SRC" "$ESCROW_SRC" "$ABLE_SRC" "$ABI_DIR/"
 
 cat > "$ABI_DIR/SOURCE.json" <<JSON
 {
