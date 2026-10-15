@@ -14,8 +14,8 @@
     "stops an ABI arriving by any route other than this script."
   ],
   "sources": {
-    "AbleToken.json":        { "repo": "TradableApp/able-contracts",     "commit": "7314253f7cdc41d5f87633eaad94108ad904bca5", "abiSha256": "0e946fec2d5af22bde9c62529017e2693e8eec2fbe821de0a6dec9833ca1f063" },
-    "EVMAIAgent.json":       { "repo": "TradableApp/tokenized-ai-agent", "commit": "98af51b960062cdf9ea590fbbf28c82d15ba4bd7", "abiSha256": "03231d8208af9eeeb38135fc51e1756f1ccb0623879eea358f11a61453038428" },
-    "EVMAIAgentEscrow.json": { "repo": "TradableApp/tokenized-ai-agent", "commit": "98af51b960062cdf9ea590fbbf28c82d15ba4bd7", "abiSha256": "58c49fada0da94ca77d77812e2831bd7f9cb8bd047f3a11d6b22ca765d6dbd3b" }
+    "AbleToken.json":        { "repo": "TradableApp/able-contracts",     "commit": "53f368fd67d2c75002c5659397216d2b9086e572", "abiSha256": "0e946fec2d5af22bde9c62529017e2693e8eec2fbe821de0a6dec9833ca1f063" },
+    "EVMAIAgent.json":       { "repo": "TradableApp/tokenized-ai-agent", "commit": "1ce71d3e93bd6f4dfd29cc3078b9d169067b1d75", "abiSha256": "03231d8208af9eeeb38135fc51e1756f1ccb0623879eea358f11a61453038428" },
+    "EVMAIAgentEscrow.json": { "repo": "TradableApp/tokenized-ai-agent", "commit": "1ce71d3e93bd6f4dfd29cc3078b9d169067b1d75", "abiSha256": "58c49fada0da94ca77d77812e2831bd7f9cb8bd047f3a11d6b22ca765d6dbd3b" }
   }
 }
