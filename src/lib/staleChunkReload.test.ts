@@ -43,7 +43,8 @@ function makeDeps(overrides: Partial<Parameters<typeof handlePreloadError>[1]> =
 
 describe('handlePreloadError', () => {
 	it('reloads once on the first stale-chunk failure and records when it did so', () => {
-		const deps = makeDeps();
+		const storage = makeStorage();
+		const deps = makeDeps({ storage });
 		const event = makeEvent();
 
 		const outcome = handlePreloadError(event, deps);
@@ -51,7 +52,7 @@ describe('handlePreloadError', () => {
 		expect(outcome).toBe('reloaded');
 		expect(deps.reload).toHaveBeenCalledTimes(1);
 		expect(event.defaultPrevented).toBe(true);
-		expect(deps.storage.setItem).toHaveBeenCalledWith(STALE_CHUNK_RELOAD_KEY, '1000000');
+		expect(storage.setItem).toHaveBeenCalledWith(STALE_CHUNK_RELOAD_KEY, '1000000');
 		expect(deps.report).toHaveBeenCalledTimes(1);
 	});
 

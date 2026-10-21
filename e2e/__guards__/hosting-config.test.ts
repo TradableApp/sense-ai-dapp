@@ -37,9 +37,9 @@ interface Hosting {
 	headers: HeaderRule[];
 }
 
-const hosting = (JSON.parse(readFileSync(path.join(ROOT, 'firebase.json'), 'utf8')) as {
+const { hosting } = JSON.parse(readFileSync(path.join(ROOT, 'firebase.json'), 'utf8')) as {
 	hosting: Hosting;
-}).hosting;
+};
 
 const ASSETS_GLOB = '/assets/**';
 const NOT_ASSETS_GLOB = '!/assets/**';
