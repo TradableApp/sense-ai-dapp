@@ -32,8 +32,7 @@ export interface StaleChunkReloadDeps {
 
 export type PreloadErrorEvent = Event & { payload?: unknown };
 
-const readLastReloadAt = (storage: ReloadStorage | null): number | null => {
-	if (!storage) return null;
+const readLastReloadAt = (storage: ReloadStorage): number | null => {
 	const raw = storage.getItem(STALE_CHUNK_RELOAD_KEY);
 	if (raw === null) return null;
 	const parsed = Number(raw);
@@ -55,6 +54,12 @@ export function handlePreloadError(
 	const reason = describePayload(event.payload);
 	const now = deps.now();
 
+	// No storage means no way to bound a reload loop: surface the error instead.
+	if (!deps.storage) {
+		deps.report('stale chunk: storage unavailable, not reloading', { reason });
+		return 'suppressed';
+	}
+
 	let lastReloadAt: number | null;
 	try {
 		lastReloadAt = readLastReloadAt(deps.storage);
@@ -74,7 +79,7 @@ export function handlePreloadError(
 	}
 
 	try {
-		deps.storage?.setItem(STALE_CHUNK_RELOAD_KEY, String(now));
+		deps.storage.setItem(STALE_CHUNK_RELOAD_KEY, String(now));
 	} catch {
 		deps.report('stale chunk: could not record reload, not reloading', { reason });
 		return 'suppressed';
