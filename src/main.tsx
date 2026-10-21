@@ -15,6 +15,7 @@ import { ThemeProvider } from '@/components/ThemeProvider';
 import { Toaster } from '@/components/ui/sonner';
 import { initPosthog } from '@/config/posthog';
 import { initSentry } from '@/config/sentry';
+import { installStaleChunkReload } from '@/lib/staleChunkReload';
 import App from '@/pages/App';
 
 import SessionProvider from './features/auth/SessionProvider';
@@ -23,6 +24,10 @@ import './index.css';
 
 // Initialize Sentry before render
 initSentry();
+
+// Recover from stale hashed chunks after a deploy (one guarded reload) before any lazy
+// route can fail — after Sentry so the breadcrumb lands in the right session.
+installStaleChunkReload();
 
 // Initialize PostHog before render
 initPosthog();
