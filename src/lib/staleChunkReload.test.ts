@@ -96,6 +96,15 @@ describe('handlePreloadError', () => {
 		expect(event.defaultPrevented).toBe(false);
 	});
 
+	it('fails safe when storage is null: no reload, error surfaces', () => {
+		const deps = makeDeps({ storage: null });
+		const event = makeEvent();
+
+		expect(handlePreloadError(event, deps)).toBe('suppressed');
+		expect(deps.reload).not.toHaveBeenCalled();
+		expect(event.defaultPrevented).toBe(false);
+	});
+
 	it('treats a corrupt stored timestamp as no prior reload', () => {
 		const deps = makeDeps({ storage: makeStorage({ [STALE_CHUNK_RELOAD_KEY]: 'garbage' }) });
 
