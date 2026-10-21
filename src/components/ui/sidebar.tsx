@@ -126,14 +126,14 @@ const Sidebar = React.forwardRef<
 		<div
 			ref={ref}
 			className={cn(
-				'peer absolute inset-y-0 z-10 hidden h-svh w-[--sidebar-width] transition-all ease-in-out data-[state=collapsed]:w-[calc(var(--sidebar-width)-var(--collapsed-var))] md:peer-[[data-variant=floating]]:left-0 md:peer-[[data-variant=floating]]:z-40 md:peer-[[data-variant=floating]]:ml-0 md:peer-[[data-variant=floating]]:rounded-r-lg md:peer-[[data-variant=floating]]:border md:peer-[[data-variant=floating]]:shadow-lg',
+				'peer absolute inset-y-0 z-10 hidden h-svh w-[--sidebar-width] overflow-hidden transition-[width] duration-200 ease-in-out data-[collapsible=offcanvas]:w-0 data-[collapsible=offcanvas]:border-r-0 data-[collapsible=icon]:w-[calc(var(--sidebar-width)/2)] md:peer-[[data-variant=floating]]:left-0 md:peer-[[data-variant=floating]]:z-40 md:peer-[[data-variant=floating]]:ml-0 md:peer-[[data-variant=floating]]:rounded-r-lg md:peer-[[data-variant=floating]]:border md:peer-[[data-variant=floating]]:shadow-lg',
 				side === 'right' && 'right-0',
 				variant === 'floating' &&
 					'absolute left-0 top-0 hidden border border-sidebar-border bg-sidebar p-4 shadow-md md:block',
 				variant === 'inset' &&
 					'absolute left-0 top-0 z-0 hidden border-r border-sidebar-border bg-sidebar md:block',
 				collapsible === 'icon' &&
-					'absolute left-0 top-0 hidden w-[calc(var(--sidebar-width)/2)] border-r border-sidebar-border md:flex md:flex-col',
+					'absolute left-0 top-0 hidden border-r border-sidebar-border md:flex md:flex-col',
 				className,
 			)}
 			data-state={state}
@@ -194,11 +194,18 @@ const SidebarRail = React.forwardRef<
 });
 SidebarRail.displayName = 'SidebarRail';
 
+// The sidebar is absolutely positioned with no spacer, so the inset offsets itself by the
+// sidebar's current width via peer selectors: full width while expanded, half in icon mode,
+// none when an offcanvas sidebar is collapsed. Mobile never renders the sidebar, so no peer
+// matches and the margin stays 0. Keep these in step with the width rules on `Sidebar`.
 const SidebarInset = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
 	({ className, ...props }, ref) => (
 		<main
 			ref={ref}
-			className={cn('flex h-full flex-1 flex-col overflow-hidden', className)}
+			className={cn(
+				'flex h-full flex-1 flex-col overflow-hidden transition-[margin] duration-200 ease-in-out md:peer-data-[state=expanded]:ml-[--sidebar-width] md:peer-data-[collapsible=icon]:ml-[calc(var(--sidebar-width)/2)]',
+				className,
+			)}
 			{...props}
 		/>
 	),
