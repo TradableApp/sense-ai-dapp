@@ -1,9 +1,9 @@
 import { ConnectButton } from 'thirdweb/react';
 
+import senseaiLogo from '@/assets/logos/senseai-logo.svg';
 import { SidebarMenu, SidebarMenuItem } from '@/components/ui/sidebar';
 import { SUPPORTED_TOKENS } from '@/config/contracts';
 import { client, deploymentChain, wallets } from '@/config/thirdweb';
-import senseaiLogo from '@/senseai-logo.svg';
 
 export default function NavUser() {
 	return (

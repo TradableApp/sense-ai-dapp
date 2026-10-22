@@ -12,6 +12,7 @@ import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
+import senseaiLogo from '@/assets/logos/senseai-logo.svg';
 import {
 	Conversation,
 	ConversationContent,
@@ -49,7 +50,6 @@ import {
 	getMessagesForConversation,
 	regenerateAssistantResponse,
 } from '@/lib/dataService';
-import senseaiLogo from '@/senseai-logo.svg';
 import {
 	type ActiveMessage,
 	appendLiveMessages,
