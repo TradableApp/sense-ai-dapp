@@ -66,8 +66,10 @@ function hasPendingAnswer(messages: unknown): boolean {
  * cannot name the conversation, so the active chat is refreshed on any pending-count
  * move — the same thing the pending-answer fallback poll (effect 3) already does.
  *
- * Known gap: a paid action submitted and fulfilled inside one 2 s tick nets to the same
- * count and is not seen; the pending-answer poll covers the active chat for that case.
+ * A submit-and-fulfil inside one 2 s tick nets the count out but still leaves
+ * `spentAmount` higher, so it is seen as a change. Branch and rename fees are paid directly
+ * (count unchanged); their oracle fulfilment moves no escrow state, so the sync queue's
+ * schedule runs long enough to catch it on a later refetch.
  */
 export default function useLiveResponse() {
 	const activeWallet = useActiveWallet();
@@ -127,51 +129,58 @@ export default function useLiveResponse() {
 
 		isSyncingRef.current = true;
 
-		const schedule: number[] = [2000, 3000, 5000, 5000, 5000];
+		// The first steps absorb indexer lag; the tail keeps refetching long enough to catch
+		// an oracle fulfilment (branch, rename) that moves no escrow state of its own.
+		const schedule: number[] = [2000, 3000, 5000, 5000, 5000, 10000, 10000, 15000, 15000];
 		let attempt = 0;
 
-		while (keysToInvalidateRef.current.size > 0) {
-			if (resetBackoffRef.current) {
-				attempt = 0;
-				resetBackoffRef.current = false;
-			}
-			const delay = schedule[Math.min(attempt, schedule.length - 1)];
+		try {
+			while (keysToInvalidateRef.current.size > 0) {
+				if (resetBackoffRef.current) {
+					attempt = 0;
+					resetBackoffRef.current = false;
+				}
+				const delay = schedule[Math.min(attempt, schedule.length - 1)];
 
-			// eslint-disable-next-line no-await-in-loop
-			await wait(delay);
-
-			const uniqueKeys = Array.from(keysToInvalidateRef.current).map(k => JSON.parse(k as string));
-
-			const hasMessagesKey = uniqueKeys.some(k => k[0] === 'messages');
-			const hasConversationsKey = uniqueKeys.some(k => k[0] === 'conversations');
-
-			// TODO: Workaround — when message-related queries are invalidated, also inject the
-			// generic 'conversations' key into the sync queue. This ensures that queries like
-			// `activeConversationMetadata` (which depend on conversations data) are refreshed
-			// even when only message content changes. This is a temporary measure until query
-			// keys are unified under a shared namespace (e.g., all queries keyed by conversation).
-			if (hasMessagesKey && !hasConversationsKey) {
-				uniqueKeys.push(['conversations']);
-			}
-
-			if (uniqueKeys.length > 0) {
 				// eslint-disable-next-line no-await-in-loop
-				await Promise.all(
-					// `unknown[]` to match addInvalidationKey + TanStack's QueryKey — structured keys like
-					// the wallet-balance key carry an object element, not just primitives.
-					uniqueKeys.map((key: unknown[]) => queryClient.invalidateQueries({ queryKey: key })),
-				);
-			}
+				await wait(delay);
 
-			attempt += 1;
+				// Snapshot the batch: keys that arrive during the awaits below belong to the
+				// next pass and must survive this pass's clean-up.
+				const batch = Array.from(keysToInvalidateRef.current);
+				const uniqueKeys = batch.map(k => JSON.parse(k));
 
-			// Each change gets the full schedule (indexer lag), then the queue drains.
-			if (attempt >= schedule.length) {
-				keysToInvalidateRef.current.clear();
+				const hasMessagesKey = uniqueKeys.some(k => k[0] === 'messages');
+				const hasConversationsKey = uniqueKeys.some(k => k[0] === 'conversations');
+
+				// TODO: Workaround — when message-related queries are invalidated, also inject the
+				// generic 'conversations' key into the sync queue. This ensures that queries like
+				// `activeConversationMetadata` (which depend on conversations data) are refreshed
+				// even when only message content changes. This is a temporary measure until query
+				// keys are unified under a shared namespace (e.g., all queries keyed by conversation).
+				if (hasMessagesKey && !hasConversationsKey) {
+					uniqueKeys.push(['conversations']);
+				}
+
+				if (uniqueKeys.length > 0) {
+					// eslint-disable-next-line no-await-in-loop
+					await Promise.all(
+						// `unknown[]` to match addInvalidationKey + TanStack's QueryKey — structured keys like
+						// the wallet-balance key carry an object element, not just primitives.
+						uniqueKeys.map((key: unknown[]) => queryClient.invalidateQueries({ queryKey: key })),
+					);
+				}
+
+				attempt += 1;
+
+				// Each change gets the full schedule, then its batch drains — only its batch.
+				if (attempt >= schedule.length) {
+					batch.forEach(k => keysToInvalidateRef.current.delete(k));
+				}
 			}
+		} finally {
+			isSyncingRef.current = false;
 		}
-
-		isSyncingRef.current = false;
 	}, [queryClient]);
 
 	// --- 2. Escrow state poller ---
@@ -214,7 +223,15 @@ export default function useLiveResponse() {
 					ownerAddress,
 					activeConversationId: activeConversationIdRef.current,
 				}).forEach(addInvalidationKey);
-				processSyncQueue();
+				processSyncQueue().catch((error: unknown) => {
+					console.warn('[useLiveResponse] sync queue failed', error);
+					Sentry.addBreadcrumb({
+						category: 'rpc.poll',
+						level: 'warning',
+						message: 'live poll: sync queue failed',
+						data: { reason: error instanceof Error ? error.message : String(error) },
+					});
+				});
 			},
 			report: (message, data) =>
 				Sentry.addBreadcrumb({ category: 'rpc.poll', level: 'warning', message, data }),

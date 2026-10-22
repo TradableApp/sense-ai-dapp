@@ -115,6 +115,15 @@ export function createStatePoller(deps: StatePollerDeps): StatePoller {
 		}, delayMs);
 	}
 
+	/** A failing change handler is the app's problem, not the RPC's: report, never back off. */
+	function notify(change: SnapshotChange) {
+		try {
+			deps.onChange(change);
+		} catch (error) {
+			deps.report('live poll: change handler failed', { reason: describeError(error) });
+		}
+	}
+
 	async function probe() {
 		const myGeneration = generation;
 		inFlight = true;
@@ -126,10 +135,11 @@ export function createStatePoller(deps: StatePollerDeps): StatePoller {
 				deps.report('live poll: recovered', { failures });
 				failures = 0;
 			}
-			if (baseline !== null && serializeSnapshot(baseline) !== serializeSnapshot(next)) {
-				deps.onChange({ prev: baseline, next });
-			}
+			const prev = baseline;
 			baseline = next;
+			if (prev !== null && serializeSnapshot(prev) !== serializeSnapshot(next)) {
+				notify({ prev, next });
+			}
 			schedule(intervalMs);
 		} catch (error) {
 			if (!running || myGeneration !== generation) return;
@@ -190,8 +200,15 @@ export interface InvalidationContext {
 
 /**
  * Map an escrow-state change onto the query keys the contract events used to invalidate.
- * The counter cannot name the conversation, so the active chat is refreshed on any
- * pending-count move; the existing sync queue dedupes and spaces the refetches.
+ *
+ * Every change refreshes the plan, balance, activity, conversation list and the active
+ * chat. The snapshot cannot tell a limit change from a direct payment (branch and
+ * metadata-update fees move `spentAmount` without touching the pending count, and the
+ * oracle's fulfilment of those touches no escrow state at all), so the conversation
+ * surfaces are always included; the sync queue's schedule then covers the fulfilment
+ * window. A falling pending count means something resolved (answer, cancel, refund), so
+ * stuck requests are refreshed too. The counter cannot name the conversation; the sync
+ * queue dedupes and spaces the refetches.
  */
 export function deriveInvalidations(
 	prev: EscrowSnapshot,
@@ -200,20 +217,17 @@ export function deriveInvalidations(
 ): unknown[][] {
 	if (serializeSnapshot(prev) === serializeSnapshot(next)) return [];
 
-	const keys: unknown[][] = [['usagePlan'], ctx.tokenBalanceKey, ['recentActivity']];
-
-	if (next.pendingEscrowCount === prev.pendingEscrowCount) {
-		// Only the spending limit moved: set, cancelled, or a fee adjusted it.
-		return keys;
-	}
-
-	keys.push(['conversations']);
+	const keys: unknown[][] = [
+		['usagePlan'],
+		ctx.tokenBalanceKey,
+		['recentActivity'],
+		['conversations'],
+	];
 	if (ctx.activeConversationId) {
 		// Messages key deliberately omits sessionKey — see CLAUDE.md "Data Layer".
 		keys.push(['messages', ctx.activeConversationId, ctx.ownerAddress]);
 	}
 	if (next.pendingEscrowCount < prev.pendingEscrowCount) {
-		// Something resolved: an answer landed, or a prompt was cancelled/refunded.
 		keys.push(['stuckRequests']);
 	}
 	return keys;

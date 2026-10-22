@@ -359,10 +359,19 @@ describe('deriveInvalidations', () => {
 	});
 
 	it('refreshes the same set when only the spending limit changes (indistinguishable from a direct payment)', () => {
-		const keys = deriveInvalidations(snap(), snap({ allowance: 500n, expiresAt: 1_900_000_000n }), ctx);
+		const keys = deriveInvalidations(
+			snap(),
+			snap({ allowance: 500n, expiresAt: 1_900_000_000n }),
+			ctx,
+		);
 
 		expect(keys).toEqual(
-			expect.arrayContaining([['usagePlan'], ['recentActivity'], tokenBalanceKey, ['conversations']]),
+			expect.arrayContaining([
+				['usagePlan'],
+				['recentActivity'],
+				tokenBalanceKey,
+				['conversations'],
+			]),
 		);
 		expect(keys).not.toContainEqual(['stuckRequests']);
 	});

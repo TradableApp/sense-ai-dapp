@@ -22,8 +22,10 @@ import { describe, expect, it } from 'vitest';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SRC = path.join(ROOT, 'src');
 
-// Import specifiers and call sites only; prose in comments may name them.
-const FORBIDDEN = /\b(useContractEvents|watchContractEvents|getContractEvents)\b\s*(\(|,|\})/;
+// Any identifier use (import, aliased import, call); prose in comments may name them.
+const FORBIDDEN = /\b(useContractEvents|watchContractEvents|getContractEvents)\b/;
+const stripComments = (source: string) =>
+	source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
 
 function listSourceFiles(dir: string): string[] {
 	return readdirSync(dir).flatMap(name => {
@@ -39,7 +41,7 @@ describe('no log watchers in src/', () => {
 	it('never imports or calls a thirdweb contract-event watcher', () => {
 		const offenders = listSourceFiles(SRC).filter(file => {
 			const source = readFileSync(file, 'utf8');
-			return FORBIDDEN.test(source);
+			return FORBIDDEN.test(stripComments(source));
 		});
 
 		expect(offenders.map(f => path.relative(ROOT, f))).toEqual([]);
