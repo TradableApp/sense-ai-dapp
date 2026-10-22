@@ -20,7 +20,7 @@ import {
 } from './liveStateProbe';
 import { getTokenBalanceQueryKey } from './useTokenBalance';
 
-// How often the fallback poll re-checks for a pending answer (see effect 6).
+// How often the fallback poll re-checks for a pending answer (see effect 3).
 const PENDING_ANSWER_POLL_MS = 4_000;
 
 interface CachedMessage {
@@ -85,7 +85,7 @@ export default function useLiveResponse() {
 	);
 
 	// The in-memory thread (source of truth for what's displayed). The fallback
-	// poll (effect 6) reads pending state from here via a ref — not from the query
+	// poll (effect 3) reads pending state from here via a ref — not from the query
 	// cache — because an optimistic follow-up placeholder lands in Redux before the
 	// messages query refetches, and a same-conversation follow-up keeps the same
 	// query key (so the cache wouldn't reflect the new pending answer).
@@ -141,14 +141,15 @@ export default function useLiveResponse() {
 					attempt = 0;
 					resetBackoffRef.current = false;
 				}
+				// Snapshot the batch BEFORE waiting: keys that arrive during the wait or the
+				// refetches below belong to the next pass (full schedule, attempt reset via
+				// resetBackoffRef) and must survive this pass's drain.
+				const batch = Array.from(keysToInvalidateRef.current);
 				const delay = schedule[Math.min(attempt, schedule.length - 1)];
 
 				// eslint-disable-next-line no-await-in-loop
 				await wait(delay);
 
-				// Snapshot the batch: keys that arrive during the awaits below belong to the
-				// next pass and must survive this pass's clean-up.
-				const batch = Array.from(keysToInvalidateRef.current);
 				const uniqueKeys = batch.map(k => JSON.parse(k));
 
 				const hasMessagesKey = uniqueKeys.some(k => k[0] === 'messages');
