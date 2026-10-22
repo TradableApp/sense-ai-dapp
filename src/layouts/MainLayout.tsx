@@ -2,6 +2,7 @@ import { HelpCircle, LifeBuoy, Send } from 'lucide-react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { ConnectButton } from 'thirdweb/react';
 
+import senseaiLogo from '@/assets/logos/senseai-logo.svg';
 import ThemeToggle from '@/components/ThemeToggle';
 import {
 	Breadcrumb,
@@ -26,7 +27,6 @@ import useMobile from '@/hooks/useMobile';
 import AppSidebar from '@/layouts/components/AppSidebar';
 import MobileNav from '@/layouts/components/MobileNav';
 import { cn } from '@/lib/utils';
-import senseaiLogo from '@/senseai-logo.svg';
 import { useAppDispatch } from '@/store/hooks';
 import { openModal } from '@/store/uiSlice';
 

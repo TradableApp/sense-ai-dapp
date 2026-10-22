@@ -1,14 +1,14 @@
 import { Navigate } from 'react-router-dom';
 import { ConnectButton, useActiveAccount } from 'thirdweb/react';
 
+import senseaiTextLogoBlack from '@/assets/logos/senseai-logo-full-black.svg';
+import senseaiTextLogoWhite from '@/assets/logos/senseai-logo-full-white.svg';
+import senseaiLogo from '@/assets/logos/senseai-logo.svg';
 import TradableLogo from '@/components/icons/TradableLogo';
 import XLogo from '@/components/icons/XLogo';
 import RainbowLabel from '@/components/magicui/rainbow-label';
 import { SUPPORTED_TOKENS } from '@/config/contracts';
 import { client, deploymentChain, wallets } from '@/config/thirdweb';
-import senseaiLogo from '@/senseai-logo.svg';
-import senseaiTextLogoBlack from '@/senseai-text-logo-black-purple.svg';
-import senseaiTextLogoWhite from '@/senseai-text-logo-white-purple.svg';
 import { useAppDispatch } from '@/store/hooks';
 import { openModal } from '@/store/uiSlice';
 

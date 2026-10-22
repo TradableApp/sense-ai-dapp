@@ -2,6 +2,7 @@ import type { HTMLAttributes } from 'react';
 
 import { BarChart2, History, LifeBuoy, MessageCircle, Send } from 'lucide-react';
 
+import senseaiLogo from '@/assets/logos/senseai-logo.svg';
 import { Separator } from '@/components/ui/separator';
 import {
 	Sidebar,
@@ -15,7 +16,6 @@ import {
 import NavMain from '@/layouts/components/nav/NavMain';
 import NavSecondary from '@/layouts/components/nav/NavSecondary';
 import NavUser from '@/layouts/components/nav/NavUser';
-import senseaiLogo from '@/senseai-logo.svg';
 
 const navData = {
 	main: [
