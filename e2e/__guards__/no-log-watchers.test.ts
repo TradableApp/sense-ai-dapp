@@ -23,7 +23,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const SRC = path.join(ROOT, 'src');
 
 // Any identifier use (import, aliased import, call); prose in comments may name them.
-const FORBIDDEN = /\b(useContractEvents|watchContractEvents|getContractEvents)\b/;
+// thirdweb's event hooks plus viem's log APIs and the raw RPC method.
+const FORBIDDEN =
+	/\b(useContractEvents|watchContractEvents|getContractEvents|watchContractEvent|watchEvent|getLogs|eth_getLogs)\b/;
 const stripComments = (source: string) =>
 	source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
 

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import * as Sentry from '@sentry/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getContract, readContract } from 'thirdweb';
-import { useActiveWallet } from 'thirdweb/react';
+import { useActiveWalletChain } from 'thirdweb/react';
 
 import { CONTRACTS } from '@/config/contracts';
 import { client, deploymentChain } from '@/config/thirdweb';
@@ -72,8 +72,9 @@ function hasPendingAnswer(messages: unknown): boolean {
  * schedule runs long enough to catch it on a later refetch.
  */
 export default function useLiveResponse() {
-	const activeWallet = useActiveWallet();
-	const chain = activeWallet?.getChain();
+	// Reactive: a wallet chain switch remounts the poller (via escrowContract) instead of
+	// leaving it polling the previous chain's escrow.
+	const chain = useActiveWalletChain();
 	const chainId = chain?.id;
 	const queryClient = useQueryClient();
 	const { ownerAddress } = useSession();

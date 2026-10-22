@@ -244,6 +244,58 @@ describe('createStatePoller', () => {
 		poller.stop();
 	});
 
+	it('a catch-up probe on wake reports what changed while the tab was hidden', async () => {
+		let hidden = false;
+		const read = vi
+			.fn<() => Promise<EscrowSnapshot>>()
+			.mockResolvedValueOnce(snap())
+			.mockResolvedValue(snap({ pendingEscrowCount: 1n, spentAmount: 15n }));
+		const { deps, poller } = makePoller({ read, isHidden: () => hidden });
+
+		poller.start();
+		await flush();
+		hidden = true;
+		await vi.advanceTimersByTimeAsync(LIVE_POLL_INTERVAL_MS * 3); // ticks skipped
+		hidden = false;
+		poller.wake();
+		await flush();
+
+		expect(deps.onChange).toHaveBeenCalledTimes(1);
+		expect(deps.onChange).toHaveBeenCalledWith({
+			prev: snap(),
+			next: snap({ pendingEscrowCount: 1n, spentAmount: 15n }),
+		});
+		poller.stop();
+	});
+
+	it('finishes an in-flight probe when the tab hides mid-read, then pauses', async () => {
+		let hidden = false;
+		let resolveRead: ((_s: EscrowSnapshot) => void) | undefined;
+		const read = vi
+			.fn<() => Promise<EscrowSnapshot>>()
+			.mockResolvedValueOnce(snap())
+			.mockImplementationOnce(
+				() =>
+					new Promise<EscrowSnapshot>(resolve => {
+						resolveRead = resolve;
+					}),
+			)
+			.mockResolvedValue(snap({ pendingEscrowCount: 2n }));
+		const { deps, poller } = makePoller({ read, isHidden: () => hidden });
+
+		poller.start();
+		await flush();
+		await vi.advanceTimersByTimeAsync(LIVE_POLL_INTERVAL_MS); // second read in flight
+		hidden = true;
+		resolveRead?.(snap({ pendingEscrowCount: 1n }));
+		await flush();
+
+		expect(deps.onChange).toHaveBeenCalledTimes(1); // the in-flight result still counts
+		await vi.advanceTimersByTimeAsync(LIVE_POLL_INTERVAL_MS * 3);
+		expect(deps.read).toHaveBeenCalledTimes(2); // then no reads while hidden
+		poller.stop();
+	});
+
 	it('wake while visible and idle does not double-probe inside the same interval', async () => {
 		const { deps, poller } = makePoller();
 
