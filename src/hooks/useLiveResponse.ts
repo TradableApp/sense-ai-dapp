@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
+import * as Sentry from '@sentry/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { getContract } from 'thirdweb';
-import { useActiveWallet, useContractEvents } from 'thirdweb/react';
+import { getContract, readContract } from 'thirdweb';
+import { useActiveWallet } from 'thirdweb/react';
 
 import { CONTRACTS } from '@/config/contracts';
 import { client, deploymentChain } from '@/config/thirdweb';
@@ -11,22 +12,13 @@ import { wait } from '@/lib/utils';
 import { useAppSelector } from '@/store/hooks';
 import type { RootState } from '@/store/store';
 
-import { AGENT_EVENT_NAMES, deriveEvents, ESCROW_EVENT_NAMES } from './liveResponseEvents';
+import {
+	createStatePoller,
+	deriveInvalidations,
+	ESCROW_PROBE_METHODS,
+	type EscrowSnapshot,
+} from './liveStateProbe';
 import { getTokenBalanceQueryKey } from './useTokenBalance';
-
-interface AgentEventArgs {
-	user?: `0x${string}`;
-	conversationId?: bigint;
-	originalConversationId?: bigint;
-	messageId?: bigint;
-	answerMessageId?: bigint;
-	promptMessageId?: bigint;
-}
-
-interface EscrowEventArgs {
-	user?: `0x${string}`;
-	escrowId?: bigint;
-}
 
 // How often the fallback poll re-checks for a pending answer (see effect 6).
 const PENDING_ANSWER_POLL_MS = 4_000;
@@ -55,34 +47,34 @@ function hasPendingAnswer(messages: unknown): boolean {
 }
 
 /**
- * Listens for live blockchain events to ensure cross-device synchronization and real-time UI updates.
+ * Keeps the UI in sync with the user's on-chain activity, across devices, without watching
+ * contract logs.
  *
- * It handles events for:
- * - User Actions (Costing Tokens):
- *   - `PromptSubmitted`: A new question is asked. (Updates usage plan, creates pending message).
- *   - `RegenerationRequested`: An answer is re-rolled. (Updates usage plan, creates pending message).
- *   - `BranchRequested`: A conversation is forked. (Updates usage plan).
- *   - `MetadataUpdateRequested`: A conversation is renamed/deleted. (Updates usage plan).
+ * Instead of subscribing to eleven agent/escrow events (one `eth_getLogs` per event per
+ * block on the public RPC — the 429 storm of sense-ai-dapp#77, and impossible on
+ * mainnet.base.org, which refuses `eth_getLogs`), the hook polls two cheap `eth_call`s
+ * once per block through `liveStateProbe`:
  *
- * - Oracle Fulfillments (State Changes):
- *   - `AnswerMessageAdded`: An AI response is delivered. (Resolves pending message).
- *   - `ConversationBranched`: The new forked conversation is created. (Updates conversation list).
- *   - `ConversationMetadataUpdated`: The rename/delete is confirmed. (Updates conversation list).
+ * - `pendingEscrowCount(user)` moves UP on every paid action from any device (prompt,
+ *   regeneration, branch, metadata update) and DOWN when the oracle fulfils it or the user
+ *   cancels / is refunded. This is the signal the Prompt*, Regeneration*, Branch*,
+ *   Metadata*, AnswerMessageAdded, PromptCancelled and PaymentRefunded events carried.
+ * - `spendingLimits(user)` moves on SpendingLimitSet / SpendingLimitCancelled (and on fees).
  *
- * - User Cancellations/Refunds:
- *   - `PromptCancelled`: A pending prompt is cancelled by the user. (Updates usage plan, resolves pending message).
- *   - `PaymentRefunded`: A stuck prompt is refunded. (Updates usage plan, resolves pending message).
+ * A change maps onto the same TanStack Query invalidations the events used to drive
+ * (`deriveInvalidations`), fed through the retry/backoff sync queue below. The counter
+ * cannot name the conversation, so the active chat is refreshed on any pending-count
+ * move — the same thing the pending-answer fallback poll (effect 3) already does.
  *
- * - Plan Management:
- *   - `SpendingLimitSet`: User sets a new allowance. (Updates usage plan).
- *   - `SpendingLimitCancelled`: User revokes allowance. (Updates usage plan).
+ * Known gap: a paid action submitted and fulfilled inside one 2 s tick nets to the same
+ * count and is not seen; the pending-answer poll covers the active chat for that case.
  */
 export default function useLiveResponse() {
 	const activeWallet = useActiveWallet();
 	const chain = activeWallet?.getChain();
 	const chainId = chain?.id;
 	const queryClient = useQueryClient();
-	const { sessionKey, ownerAddress } = useSession();
+	const { ownerAddress } = useSession();
 
 	// Get active conversation from Redux Store
 	const activeConversationId = useAppSelector(
@@ -105,76 +97,19 @@ export default function useLiveResponse() {
 	const tokenAddress = contractConfig?.token?.address;
 	const targetChain = chainId === deploymentChain.id ? deploymentChain : chain;
 
-	// Memoize contracts to prevent unnecessary re-initialization
-	const { agentContract, escrowContract } = useMemo(() => {
-		if (!contractConfig || !targetChain) {
-			return { agentContract: null, escrowContract: null };
-		}
-
-		const agent = getContract({
-			client,
-			chain: targetChain,
-			address: contractConfig.agent.address,
-			abi: contractConfig.agent.abi as Parameters<typeof getContract>[0]['abi'],
-		});
-
-		const escrow = getContract({
+	// Memoize the escrow contract to prevent unnecessary re-initialization
+	const escrowContract = useMemo(() => {
+		if (!contractConfig || !targetChain) return null;
+		return getContract({
 			client,
 			chain: targetChain,
 			address: contractConfig.escrow.address,
 			abi: contractConfig.escrow.abi as Parameters<typeof getContract>[0]['abi'],
 		});
-		return { agentContract: agent, escrowContract: escrow };
 	}, [contractConfig, targetChain]);
 
-	// --- 1. Prepare Events ---
-	// deriveEvents builds the watchers (see liveResponseEvents.ts). It prepends the
-	// `event ` keyword the bare viem signature lacks — without it thirdweb's
-	// prepareEvent threw UnknownSignatureError and no events were watched at all.
-	const agentEvents = useMemo(
-		() =>
-			contractConfig?.agent?.abi ? deriveEvents(contractConfig.agent.abi, AGENT_EVENT_NAMES) : [],
-		[contractConfig?.agent?.abi],
-	);
-
-	const escrowEvents = useMemo(
-		() =>
-			contractConfig?.escrow?.abi
-				? deriveEvents(contractConfig.escrow.abi, ESCROW_EVENT_NAMES)
-				: [],
-		[contractConfig?.escrow?.abi],
-	);
-
-	// --- 2. Listeners ---
-	// useIndexer:false → query events straight from RPC. thirdweb's Insight indexer
-	// isn't available on every chain (e.g. localnet 31337), and the "insight
-	// unavailable → fallback" round-trip just adds latency/noise; the fallback poll
-	// below covers any events RPC watching misses (see effect 6).
-	const { data: agentLog, isLoading: isAgentLoading } = useContractEvents({
-		contract: agentContract!,
-		events: agentEvents,
-		enabled: !!agentContract && agentEvents.length > 0,
-		watch: true,
-		useIndexer: false,
-	});
-
-	const { data: escrowLog, isLoading: isEscrowLoading } = useContractEvents({
-		contract: escrowContract!,
-		events: escrowEvents,
-		enabled: !!escrowContract && escrowEvents.length > 0,
-		watch: true,
-		useIndexer: false,
-	});
-
-	// --- 3. State Management for Sync Queue ---
-	const prevAgentCountRef = useRef(0);
-	const prevEscrowCountRef = useRef(0);
-	const processedEventKeysRef = useRef(new Set<string>()); // De-duplication Set
-	const isInitializedRef = useRef(false); // Startup check
-
-	// The Queue State
+	// --- 1. Sync queue state ---
 	const isSyncingRef = useRef(false);
-	const pendingMessageIdsRef = useRef(new Set<string>());
 	const keysToInvalidateRef = useRef(new Set<string>());
 	const resetBackoffRef = useRef(false);
 
@@ -224,275 +159,90 @@ export default function useLiveResponse() {
 				await Promise.all(
 					// `unknown[]` to match addInvalidationKey + TanStack's QueryKey — structured keys like
 					// the wallet-balance key carry an object element, not just primitives.
-					uniqueKeys.map((key: unknown[]) =>
-						queryClient.invalidateQueries({ queryKey: key }),
-					),
+					uniqueKeys.map((key: unknown[]) => queryClient.invalidateQueries({ queryKey: key })),
 				);
-			}
-
-			if (
-				pendingMessageIdsRef.current.size > 0 &&
-				activeConversationId &&
-				sessionKey &&
-				ownerAddress
-			) {
-				const queryKey = ['messages', activeConversationId, ownerAddress];
-				const cachedMessages = (queryClient.getQueryData(queryKey) || []) as Array<{
-					id: string;
-					content: string | null;
-					status: string;
-				}>;
-				const messageMap = new Map(cachedMessages.map(m => [m.id, m]));
-
-				const resolvedIds: string[] = [];
-				pendingMessageIdsRef.current.forEach(id => {
-					const msg = messageMap.get(id);
-
-					// Stop syncing if content exists OR if status is cancelled/refunded
-					if (
-						msg &&
-						(msg.content !== null || msg.status === 'cancelled' || msg.status === 'refunded')
-					) {
-						resolvedIds.push(id);
-					}
-				});
-
-				resolvedIds.forEach(id => pendingMessageIdsRef.current.delete(id));
-
-				if (resolvedIds.length > 0) {
-					// Resolved message IDs
-				}
-
-				if (pendingMessageIdsRef.current.size === 0) {
-					const msgKeyStr = JSON.stringify(queryKey);
-					keysToInvalidateRef.current.delete(msgKeyStr);
-				}
 			}
 
 			attempt += 1;
 
-			const isWaitingForSpecifics = pendingMessageIdsRef.current.size > 0;
-			const maxGenericAttempts = 5;
-			const maxSpecificAttempts = 15;
-
-			if (!isWaitingForSpecifics && attempt >= maxGenericAttempts) {
-				keysToInvalidateRef.current.clear();
-			} else if (attempt > maxSpecificAttempts) {
-				console.warn('[useLiveResponse] Timeout waiting for sync.');
-				pendingMessageIdsRef.current.clear();
+			// Each change gets the full schedule (indexer lag), then the queue drains.
+			if (attempt >= schedule.length) {
 				keysToInvalidateRef.current.clear();
 			}
 		}
 
 		isSyncingRef.current = false;
-	}, [activeConversationId, queryClient, sessionKey, ownerAddress]);
+	}, [queryClient]);
 
-	// --- 4. Initialization Effect ---
-	// Prevents processing old historical events on page load
+	// --- 2. Escrow state poller ---
+	// The active conversation is read through a ref so switching chats does not restart the
+	// poller (and lose its baseline).
+	const activeConversationIdRef = useRef(activeConversationId);
+	activeConversationIdRef.current = activeConversationId;
+
+	const tokenBalanceKey = useMemo(
+		() => getTokenBalanceQueryKey(chainId, ownerAddress ?? undefined, tokenAddress),
+		[chainId, ownerAddress, tokenAddress],
+	);
+
 	useEffect(() => {
-		if (isInitializedRef.current) return;
+		if (!escrowContract || !ownerAddress) return undefined;
 
-		if (!isAgentLoading && agentLog) {
-			prevAgentCountRef.current = agentLog.length;
-		}
-		if (!isEscrowLoading && escrowLog) {
-			prevEscrowCountRef.current = escrowLog.length;
-		}
+		// Two reads issued in the same tick → thirdweb batches them into ONE JSON-RPC POST.
+		const read = async (): Promise<EscrowSnapshot> => {
+			const [limit, pendingEscrowCount] = await Promise.all([
+				readContract({
+					contract: escrowContract,
+					method: ESCROW_PROBE_METHODS.spendingLimits,
+					params: [ownerAddress],
+				}),
+				readContract({
+					contract: escrowContract,
+					method: ESCROW_PROBE_METHODS.pendingEscrowCount,
+					params: [ownerAddress],
+				}),
+			]);
+			const [allowance, spentAmount, expiresAt] = limit;
+			return { pendingEscrowCount, allowance, spentAmount, expiresAt };
+		};
 
-		if (!isAgentLoading && !isEscrowLoading) {
-			isInitializedRef.current = true;
-		}
-	}, [agentLog, escrowLog, isAgentLoading, isEscrowLoading]);
+		const poller = createStatePoller({
+			read,
+			onChange: ({ prev, next }) => {
+				deriveInvalidations(prev, next, {
+					tokenBalanceKey,
+					ownerAddress,
+					activeConversationId: activeConversationIdRef.current,
+				}).forEach(addInvalidationKey);
+				processSyncQueue();
+			},
+			report: (message, data) =>
+				Sentry.addBreadcrumb({ category: 'rpc.poll', level: 'warning', message, data }),
+			isHidden: () => document.visibilityState === 'hidden',
+			random: Math.random,
+		});
 
-	// --- 5. Main Event Processor ---
-	useEffect(() => {
-		if (!isInitializedRef.current || !ownerAddress) return;
+		const onVisibilityChange = () => {
+			if (document.visibilityState === 'visible') poller.wake();
+		};
+		document.addEventListener('visibilitychange', onVisibilityChange);
+		poller.start();
 
-		let newWorkDetected = false;
+		return () => {
+			document.removeEventListener('visibilitychange', onVisibilityChange);
+			poller.stop();
+		};
+	}, [addInvalidationKey, escrowContract, ownerAddress, processSyncQueue, tokenBalanceKey]);
 
-		// --- HANDLE AGENT EVENTS ---
-		if (agentLog && agentLog.length > prevAgentCountRef.current) {
-			const newEvents = agentLog.slice(prevAgentCountRef.current);
-			newEvents.forEach(e => {
-				// DE-DUPLICATION CHECK
-				const eventKey = `${e.transactionHash}-${e.logIndex}`;
-				if (processedEventKeysRef.current.has(eventKey)) return;
-				processedEventKeysRef.current.add(eventKey);
-
-				const { eventName } = e;
-				const args = e.args as AgentEventArgs;
-
-				// Direct ownership check for all events that include the `user` parameter
-				if (
-					eventName === 'PromptSubmitted' ||
-					eventName === 'RegenerationRequested' ||
-					eventName === 'ConversationBranched' ||
-					eventName === 'BranchRequested' ||
-					eventName === 'MetadataUpdateRequested'
-				) {
-					if (args.user?.toLowerCase() !== ownerAddress.toLowerCase()) {
-						return; // Ignore event from other users
-					}
-				}
-
-				// Invalidate usagePlan AND tokenBalance for ANY action that costs tokens
-				if (
-					eventName === 'PromptSubmitted' ||
-					eventName === 'RegenerationRequested' ||
-					eventName === 'BranchRequested' ||
-					eventName === 'MetadataUpdateRequested'
-				) {
-					addInvalidationKey(['usagePlan']);
-					addInvalidationKey(getTokenBalanceQueryKey(chainId, ownerAddress, tokenAddress));
-					addInvalidationKey(['recentActivity']);
-					addInvalidationKey(['conversations']);
-					newWorkDetected = true;
-				}
-
-				// Invalidate conversation list for structural changes
-				if (eventName === 'ConversationBranched' || eventName === 'ConversationMetadataUpdated') {
-					addInvalidationKey(['conversations']);
-					newWorkDetected = true;
-				}
-
-				// Indirect ownership check for events filtered by active conversation
-				if (activeConversationId) {
-					const isRelevant =
-						args.conversationId?.toString() === activeConversationId ||
-						args.originalConversationId?.toString() === activeConversationId;
-
-					if (
-						isRelevant &&
-						(eventName === 'AnswerMessageAdded' ||
-							eventName === 'PromptSubmitted' ||
-							eventName === 'RegenerationRequested')
-					) {
-						if (eventName === 'AnswerMessageAdded') {
-							addInvalidationKey(['usagePlan']);
-						}
-
-						const msgId =
-							eventName === 'AnswerMessageAdded'
-								? args.messageId?.toString()
-								: eventName === 'RegenerationRequested'
-								? args.answerMessageId?.toString()
-								: args.promptMessageId?.toString();
-
-						if (msgId) {
-							const queryKey = ['messages', activeConversationId, ownerAddress];
-
-							addInvalidationKey(['conversations']);
-
-							const cachedMessages = (queryClient.getQueryData(queryKey) || []) as Array<{
-								id: string;
-								content: string | null;
-								status: string;
-							}>;
-							const existingMsg = cachedMessages.find(m => m.id === msgId);
-
-							// If the message doesn't exist OR is still pending/thinking, add to watch list
-							if (
-								!existingMsg ||
-								(existingMsg.content === null &&
-									existingMsg.status !== 'cancelled' &&
-									existingMsg.status !== 'refunded')
-							) {
-								addInvalidationKey(queryKey);
-								pendingMessageIdsRef.current.add(msgId);
-								newWorkDetected = true;
-							}
-						}
-					}
-				}
-			});
-			prevAgentCountRef.current = agentLog.length;
-		}
-
-		// --- HANDLE ESCROW EVENTS ---
-		if (escrowLog && escrowLog.length > prevEscrowCountRef.current) {
-			const newEvents = escrowLog.slice(prevEscrowCountRef.current);
-			newEvents.forEach(e => {
-				const { eventName, transactionHash, logIndex } = e;
-				const args = e.args as EscrowEventArgs;
-
-				// DE-DUPLICATION CHECK
-				const eventKey = `${transactionHash}-${logIndex}`;
-				if (processedEventKeysRef.current.has(eventKey)) return;
-				processedEventKeysRef.current.add(eventKey);
-
-				// Handle Plan Management Events
-				if (eventName === 'SpendingLimitSet' || eventName === 'SpendingLimitCancelled') {
-					if (args.user?.toLowerCase() === ownerAddress.toLowerCase()) {
-						addInvalidationKey(['usagePlan']);
-						addInvalidationKey(['recentActivity']);
-						addInvalidationKey(getTokenBalanceQueryKey(chainId, ownerAddress, tokenAddress));
-						newWorkDetected = true;
-					}
-				}
-
-				if (eventName === 'PromptCancelled') {
-					if (args.user?.toLowerCase() === ownerAddress.toLowerCase()) {
-						addInvalidationKey(['stuckRequests']);
-						addInvalidationKey(['usagePlan']);
-						addInvalidationKey(getTokenBalanceQueryKey(chainId, ownerAddress, tokenAddress));
-						addInvalidationKey(['recentActivity']);
-
-						// Only invalidate the chat if it's the one we are currently looking at
-						if (activeConversationId) {
-							addInvalidationKey(['conversations']);
-							addInvalidationKey(['messages', activeConversationId, ownerAddress]);
-						}
-						newWorkDetected = true;
-					}
-				}
-
-				if (eventName === 'PaymentRefunded') {
-					const stuckKey = ['stuckRequests', chainId, ownerAddress];
-					const stuckList = (queryClient.getQueryData(stuckKey) || []) as Array<{ id: string }>;
-					if (stuckList.some(s => s.id === args.escrowId?.toString())) {
-						addInvalidationKey(['stuckRequests']);
-						addInvalidationKey(['usagePlan']);
-						addInvalidationKey(getTokenBalanceQueryKey(chainId, ownerAddress, tokenAddress));
-						addInvalidationKey(['recentActivity']);
-
-						if (activeConversationId) {
-							addInvalidationKey(['conversations']);
-							addInvalidationKey(['messages', activeConversationId, ownerAddress]);
-						}
-						newWorkDetected = true;
-					}
-				}
-			});
-			prevEscrowCountRef.current = escrowLog.length;
-		}
-
-		if (newWorkDetected) {
-			processSyncQueue();
-		}
-	}, [
-		activeConversationId,
-		addInvalidationKey,
-		agentLog,
-		chainId,
-		escrowLog,
-		ownerAddress,
-		processSyncQueue,
-		queryClient,
-		sessionKey,
-		tokenAddress,
-	]);
-
-	// --- 6. Fallback poll for a pending answer ---
-	// Live delivery via useContractEvents is best-effort: thirdweb's Insight indexer
-	// isn't available on every chain (e.g. localnet 31337 → RPC fallback), and even
-	// on public RPCs event filters are stateful and intermittently miss events
-	// (wevm/wagmi#3883 — "not every event" on Sepolia). A missed/late
-	// AnswerMessageAdded would otherwise leave a prompt stuck on "Thinking…" forever.
+	// --- 3. Fallback poll for a pending answer ---
+	// The state poller is best-effort: it backs off under RPC pressure, pauses while the
+	// tab is hidden, and cannot see a submit-and-fulfil that nets out inside one tick. A
+	// missed/late answer would otherwise leave a prompt stuck on "Thinking…" forever.
 	// While the active conversation has an outstanding (content-less) assistant
-	// message, re-run the same refreshes the event would trigger: the conversation
+	// message, re-run the same refreshes a change would trigger: the conversation
 	// sync (which hydrates the answer into the cache) and the messages query (which
 	// renders it). The poll is self-limiting — it does nothing once the answer lands
-	// — so it adds no steady-state load. The live event stays the fast path.
+	// — so it adds no steady-state load. The state poller stays the fast path.
 	useEffect(() => {
 		if (!activeConversationId || !ownerAddress) return undefined;
 

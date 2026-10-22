@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	createStatePoller,
 	deriveInvalidations,
+	ESCROW_PROBE_METHODS,
 	type EscrowSnapshot,
 	LIVE_POLL_INTERVAL_MS,
 	LIVE_POLL_JITTER_RATIO,
@@ -10,6 +11,7 @@ import {
 	serializeSnapshot,
 	type StatePollerDeps,
 } from '@/hooks/liveStateProbe';
+import escrowAbiJson from '@/lib/abi/EVMAIAgentEscrow.json';
 
 // User journey: as a user with the dashboard open, I want the app to notice my on-chain
 // activity (a prompt answered, a prompt submitted from my phone, a limit changed) within
@@ -42,6 +44,38 @@ const flush = async () => {
 	await Promise.resolve();
 	await Promise.resolve();
 };
+
+describe('ESCROW_PROBE_METHODS', () => {
+	// Coupling test: the literals the poller reads with must match the synced ABI, so a
+	// contract change that renames or reshapes either getter fails here, not in production.
+	interface AbiParam {
+		name: string;
+		type: string;
+	}
+	interface AbiItem {
+		type: string;
+		name?: string;
+		stateMutability?: string;
+		inputs?: AbiParam[];
+		outputs?: AbiParam[];
+	}
+	const signatureOf = (name: string) => {
+		const item = (escrowAbiJson.abi as AbiItem[]).find(
+			entry => entry.type === 'function' && entry.name === name,
+		);
+		if (!item) throw new Error(`ABI has no function ${name}`);
+		const inputs = (item.inputs ?? []).map(i => i.type).join(',');
+		const outputs = (item.outputs ?? [])
+			.map(o => (o.name ? `${o.type} ${o.name}` : o.type))
+			.join(', ');
+		return `function ${name}(${inputs}) ${item.stateMutability} returns (${outputs})`;
+	};
+
+	it('matches the synced EVMAIAgentEscrow ABI', () => {
+		expect(ESCROW_PROBE_METHODS.spendingLimits).toBe(signatureOf('spendingLimits'));
+		expect(ESCROW_PROBE_METHODS.pendingEscrowCount).toBe(signatureOf('pendingEscrowCount'));
+	});
+});
 
 describe('serializeSnapshot', () => {
 	it('is stable for equal snapshots and differs when any field changes', () => {

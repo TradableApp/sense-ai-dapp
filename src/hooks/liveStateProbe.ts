@@ -27,6 +27,17 @@ export const LIVE_POLL_MAX_BACKOFF_MS = 60_000;
 /** Jitter added on top of a backoff delay, as a fraction of that delay. */
 export const LIVE_POLL_JITTER_RATIO = 0.25;
 
+/**
+ * The two escrow views the poller reads, as thirdweb method signatures (typed returns, no
+ * ABI lookup at runtime). Both are auto-generated public mapping getters on
+ * EVMAIAgentEscrow; the test suite checks these literals against the synced ABI.
+ */
+export const ESCROW_PROBE_METHODS = {
+	spendingLimits:
+		'function spendingLimits(address) view returns (uint256 allowance, uint256 spentAmount, uint256 expiresAt)',
+	pendingEscrowCount: 'function pendingEscrowCount(address) view returns (uint256)',
+} as const;
+
 export interface EscrowSnapshot {
 	pendingEscrowCount: bigint;
 	allowance: bigint;
