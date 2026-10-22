@@ -256,6 +256,30 @@ describe('createStatePoller', () => {
 		poller.stop();
 	});
 
+	it('reports a throwing change handler without backing off or replaying the change', async () => {
+		const read = vi
+			.fn<() => Promise<EscrowSnapshot>>()
+			.mockResolvedValueOnce(snap())
+			.mockResolvedValue(snap({ pendingEscrowCount: 1n }));
+		const onChange = vi.fn<StatePollerDeps['onChange']>().mockImplementationOnce(() => {
+			throw new Error('invalidate blew up');
+		});
+		const { deps, poller } = makePoller({ read, onChange });
+
+		poller.start();
+		await flush();
+		await vi.advanceTimersByTimeAsync(LIVE_POLL_INTERVAL_MS); // change → handler throws
+		expect(deps.report).toHaveBeenLastCalledWith(
+			'live poll: change handler failed',
+			expect.objectContaining({ reason: 'invalidate blew up' }),
+		);
+
+		await vi.advanceTimersByTimeAsync(LIVE_POLL_INTERVAL_MS); // same snapshot again
+		expect(deps.read).toHaveBeenCalledTimes(3); // no backoff: still on the 2 s cadence
+		expect(onChange).toHaveBeenCalledTimes(1); // baseline advanced; not replayed
+		poller.stop();
+	});
+
 	it('stop cancels the next tick and ignores an in-flight result', async () => {
 		let resolveRead: ((_s: EscrowSnapshot) => void) | undefined;
 		const read = vi
@@ -317,17 +341,29 @@ describe('deriveInvalidations', () => {
 		expect(keys).toContainEqual(['conversations']);
 	});
 
-	it('refreshes only plan-related queries when the spending limit changes with no pending action', () => {
-		const keys = deriveInvalidations(
-			snap(),
-			snap({ allowance: 500n, expiresAt: 1_900_000_000n }),
-			ctx,
-		);
+	it('refreshes the conversation list and active chat on a direct payment (branch, rename) that leaves the count unchanged', () => {
+		// Branch and metadata-update fees are paid directly: spentAmount rises but
+		// pendingEscrowCount does not, and the oracle's fulfilment touches no escrow state.
+		const keys = deriveInvalidations(snap(), snap({ spentAmount: 12n }), ctx);
 
 		expect(keys).toEqual(
-			expect.arrayContaining([['usagePlan'], ['recentActivity'], tokenBalanceKey]),
+			expect.arrayContaining([
+				['usagePlan'],
+				tokenBalanceKey,
+				['recentActivity'],
+				['conversations'],
+				['messages', '7', '0xabc'],
+			]),
 		);
-		expect(keys).not.toContainEqual(['conversations']);
+		expect(keys).not.toContainEqual(['stuckRequests']);
+	});
+
+	it('refreshes the same set when only the spending limit changes (indistinguishable from a direct payment)', () => {
+		const keys = deriveInvalidations(snap(), snap({ allowance: 500n, expiresAt: 1_900_000_000n }), ctx);
+
+		expect(keys).toEqual(
+			expect.arrayContaining([['usagePlan'], ['recentActivity'], tokenBalanceKey, ['conversations']]),
+		);
 		expect(keys).not.toContainEqual(['stuckRequests']);
 	});
 
