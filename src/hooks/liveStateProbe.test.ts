@@ -8,6 +8,7 @@ import {
 	LIVE_POLL_JITTER_RATIO,
 	LIVE_POLL_MAX_BACKOFF_MS,
 	serializeSnapshot,
+	type StatePollerDeps,
 } from '@/hooks/liveStateProbe';
 
 // User journey: as a user with the dashboard open, I want the app to notice my on-chain
@@ -23,11 +24,11 @@ const snap = (overrides: Partial<EscrowSnapshot> = {}): EscrowSnapshot => ({
 	...overrides,
 });
 
-function makePoller(overrides: Partial<Parameters<typeof createStatePoller>[0]> = {}) {
+function makePoller(overrides: Partial<StatePollerDeps> = {}) {
 	const deps = {
-		read: vi.fn<[], Promise<EscrowSnapshot>>().mockResolvedValue(snap()),
-		onChange: vi.fn(),
-		report: vi.fn(),
+		read: vi.fn<() => Promise<EscrowSnapshot>>().mockResolvedValue(snap()),
+		onChange: vi.fn<StatePollerDeps['onChange']>(),
+		report: vi.fn<StatePollerDeps['report']>(),
 		isHidden: () => false,
 		random: () => 0,
 		...overrides,
@@ -85,7 +86,7 @@ describe('createStatePoller', () => {
 
 	it('reports a change once with the previous and next snapshots', async () => {
 		const read = vi
-			.fn<[], Promise<EscrowSnapshot>>()
+			.fn<() => Promise<EscrowSnapshot>>()
 			.mockResolvedValueOnce(snap())
 			.mockResolvedValueOnce(snap({ pendingEscrowCount: 1n, spentAmount: 15n }))
 			.mockResolvedValue(snap({ pendingEscrowCount: 1n, spentAmount: 15n }));
@@ -105,7 +106,7 @@ describe('createStatePoller', () => {
 
 	it('backs off exponentially on failure, reports a breadcrumb each time, and never rejects', async () => {
 		const read = vi
-			.fn<[], Promise<EscrowSnapshot>>()
+			.fn<() => Promise<EscrowSnapshot>>()
 			.mockResolvedValueOnce(snap())
 			.mockRejectedValueOnce(new Error('RPC request failed with status 429'))
 			.mockRejectedValueOnce(new Error('RPC request failed with status 429'))
@@ -144,7 +145,7 @@ describe('createStatePoller', () => {
 
 	it('resets to the base interval after recovery', async () => {
 		const read = vi
-			.fn<[], Promise<EscrowSnapshot>>()
+			.fn<() => Promise<EscrowSnapshot>>()
 			.mockResolvedValueOnce(snap())
 			.mockRejectedValueOnce(new Error('boom'))
 			.mockResolvedValue(snap());
@@ -163,10 +164,11 @@ describe('createStatePoller', () => {
 
 	it('caps the backoff and adds bounded jitter', async () => {
 		const read = vi
-			.fn<[], Promise<EscrowSnapshot>>()
+			.fn<() => Promise<EscrowSnapshot>>()
 			.mockResolvedValueOnce(snap())
 			.mockRejectedValue(new Error('down'));
-		const { deps, poller } = makePoller({ read, random: () => 1 });
+		const report = vi.fn<StatePollerDeps['report']>();
+		const { poller } = makePoller({ read, random: () => 1, report });
 
 		poller.start();
 		await flush();
@@ -175,9 +177,9 @@ describe('createStatePoller', () => {
 			// eslint-disable-next-line no-await-in-loop
 			await vi.advanceTimersByTimeAsync(LIVE_POLL_MAX_BACKOFF_MS * (1 + LIVE_POLL_JITTER_RATIO));
 		}
-		const delays = deps.report.mock.calls
+		const delays = report.mock.calls
 			.filter(([message]) => message === 'live poll: read failed, backing off')
-			.map(([, data]) => (data as { nextDelayMs: number }).nextDelayMs);
+			.map(([, data]) => data.nextDelayMs as number);
 
 		expect(delays.length).toBeGreaterThanOrEqual(6);
 		expect(Math.max(...delays)).toBeLessThanOrEqual(
@@ -221,9 +223,9 @@ describe('createStatePoller', () => {
 	});
 
 	it('stop cancels the next tick and ignores an in-flight result', async () => {
-		let resolveRead: ((s: EscrowSnapshot) => void) | undefined;
+		let resolveRead: ((_s: EscrowSnapshot) => void) | undefined;
 		const read = vi
-			.fn<[], Promise<EscrowSnapshot>>()
+			.fn<() => Promise<EscrowSnapshot>>()
 			.mockResolvedValueOnce(snap())
 			.mockImplementationOnce(
 				() =>
@@ -251,7 +253,11 @@ describe('deriveInvalidations', () => {
 	const ctx = { tokenBalanceKey, ownerAddress: '0xabc', activeConversationId: '7' };
 
 	it('refreshes plan, balance, activity, conversations and the active chat when a paid action starts', () => {
-		const keys = deriveInvalidations(snap(), snap({ pendingEscrowCount: 1n, spentAmount: 15n }), ctx);
+		const keys = deriveInvalidations(
+			snap(),
+			snap({ pendingEscrowCount: 1n, spentAmount: 15n }),
+			ctx,
+		);
 
 		expect(keys).toEqual(
 			expect.arrayContaining([
@@ -266,7 +272,11 @@ describe('deriveInvalidations', () => {
 	});
 
 	it('also refreshes stuck requests when a pending action resolves (answer, cancel, refund)', () => {
-		const keys = deriveInvalidations(snap({ pendingEscrowCount: 2n }), snap({ pendingEscrowCount: 1n }), ctx);
+		const keys = deriveInvalidations(
+			snap({ pendingEscrowCount: 2n }),
+			snap({ pendingEscrowCount: 1n }),
+			ctx,
+		);
 
 		expect(keys).toContainEqual(['stuckRequests']);
 		expect(keys).toContainEqual(['messages', '7', '0xabc']);
@@ -274,7 +284,11 @@ describe('deriveInvalidations', () => {
 	});
 
 	it('refreshes only plan-related queries when the spending limit changes with no pending action', () => {
-		const keys = deriveInvalidations(snap(), snap({ allowance: 500n, expiresAt: 1_900_000_000n }), ctx);
+		const keys = deriveInvalidations(
+			snap(),
+			snap({ allowance: 500n, expiresAt: 1_900_000_000n }),
+			ctx,
+		);
 
 		expect(keys).toEqual(
 			expect.arrayContaining([['usagePlan'], ['recentActivity'], tokenBalanceKey]),
