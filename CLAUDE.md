@@ -78,7 +78,7 @@ All conversation and message data is encrypted client-side with the user's `sess
 
 **TanStack Query** (`@tanstack/react-query`) manages server/blockchain state. The conversations key includes `sessionKey` for per-wallet data isolation: `['conversations', sessionKey, ownerAddress]`. The **messages** key does NOT include `sessionKey` — it is `['messages', conversationId, ownerAddress]` (see `Chat.tsx` / `useLiveResponse.ts`). Any code invalidating the messages query MUST use this exact key; adding `sessionKey` makes the invalidation a silent no-op (which previously stranded cancelled-prompt placeholders).
 
-**`src/hooks/useLiveResponse.js`** — subscribes to on-chain events (via `useContractEvents` from Thirdweb) and orchestrates a retry/backoff sync queue that invalidates TanStack Query caches when blockchain state changes. This is the real-time update mechanism.
+**`src/hooks/useLiveResponse.ts`** — the real-time update mechanism. It does NOT watch contract logs: on Base's public RPC that is one `eth_getLogs` per event per block (the #77 429 storm) and mainnet.base.org refuses `eth_getLogs` outright. Instead `src/hooks/liveStateProbe.ts` polls two `eth_call`s once per block (`pendingEscrowCount(user)`, `spendingLimits(user)`) batched into one request, and a change drives the retry/backoff sync queue that invalidates TanStack Query caches. Backoff on 429, pause while hidden. The `e2e/__guards__/no-log-watchers` guard forbids reintroducing `useContractEvents`.
 
 ### Blockchain Interaction Pattern
 
@@ -116,7 +116,7 @@ Each feature is self-contained with its own components:
 ### Key Hooks (`src/hooks/`)
 
 - `useChatMutations` — all blockchain write operations (prompt, regenerate, branch, metadata, cancel, refund)
-- `useLiveResponse` — real-time blockchain event listener and query invalidation
+- `useLiveResponse` — real-time on-chain state poller (no log watching) and query invalidation
 - `useConversations` / `useUsagePlan` / `useTokenBalance` — TanStack Query wrappers for on-chain reads
 - `useFirestoreDocumentListener` / `useFirestoreCollectionListener` — Firebase Firestore real-time listeners
 - `useStuckRequests` — detects pending prompts older than 1 hour eligible for refund
