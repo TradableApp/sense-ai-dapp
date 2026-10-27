@@ -10,6 +10,9 @@ export default defineConfig({
 			// abi-sync.test.ts needs scripts/abi-fingerprint.mjs — the same implementation the sync
 			// script runs — so scripts/ gets an alias of its own rather than a ../../../ escape.
 			'#scripts': path.resolve(__dirname, './scripts'),
+			// vite-plugin-pwa provides this virtual module only inside the Vite build; tests get an
+			// inert stand-in so the update prompt stays importable (and mockable) under vitest.
+			'virtual:pwa-register/react': path.resolve(__dirname, './src/test/pwaRegisterStub.ts'),
 		},
 	},
 	test: {

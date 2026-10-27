@@ -13,6 +13,7 @@ import { CrashDisplay } from '@/components/ErrorBoundary';
 import PostHogPageViewTracker from '@/components/PostHogPageViewTracker';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { Toaster } from '@/components/ui/sonner';
+import UpdatePrompt from '@/components/UpdatePrompt';
 import { initPosthog } from '@/config/posthog';
 import { initSentry } from '@/config/sentry';
 import { installStaleChunkReload } from '@/lib/staleChunkReload';
@@ -48,6 +49,8 @@ createRoot(document.getElementById('root')!).render(
 										<PostHogPageViewTracker />
 										<App />
 										<Toaster position="bottom-right" closeButton />
+										{/* Offers service-worker updates; never reloads during a wallet flow */}
+										<UpdatePrompt />
 									</SessionProvider>
 								</ThemeProvider>
 							</PostHogProvider>
