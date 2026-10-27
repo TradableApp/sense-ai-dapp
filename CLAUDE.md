@@ -82,6 +82,10 @@ All conversation and message data is encrypted client-side with the user's `sess
 
 **`src/hooks/useLiveResponse.ts`** — the real-time update mechanism. It does NOT watch contract logs: on Base's public RPC that is one `eth_getLogs` per event per block (the #77 429 storm) and mainnet.base.org refuses `eth_getLogs` outright. Instead `src/hooks/liveStateProbe.ts` polls two `eth_call`s once per block (`pendingEscrowCount(user)`, `spendingLimits(user)`) batched into one request, and a change drives the retry/backoff sync queue that invalidates TanStack Query caches. Backoff on 429, pause while hidden. The `e2e/__guards__/no-log-watchers` guard forbids reintroducing `useContractEvents`.
 
+### PWA Updates
+
+The service worker is registered in `prompt` mode (`vite.config.ts`), never the self-reloading mode — the `e2e/__guards__/pwa-prompt-mode` guard pins this. `src/components/UpdatePrompt.tsx` (mounted next to the `Toaster` in `main.tsx`) turns a waiting worker into a "new version" toast whose Reload action calls `updateServiceWorker(true)`. The toast is deferred, or withdrawn, while `useIsMutating() > 0` or the session status is `deriving`, so a reload can never abort a wallet signature. `src/lib/staleChunkReload.ts` is the separate crash-recovery path for a lazy chunk that 404s after a deploy. Under vitest the virtual register module resolves to `src/test/pwaRegisterStub.ts`.
+
 ### Blockchain Interaction Pattern
 
 All write operations go through `src/hooks/useChatMutations.jsx`. Every mutation:
