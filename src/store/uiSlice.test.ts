@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import uiReducer, { closeModal, openModal, type UiState } from './uiSlice';
+import uiReducer, { closeModal, openModal, setStorageDegraded, type UiState } from './uiSlice';
 
 const initialState: UiState = {
 	priorityModal: { type: null, props: {} },
 	overlayModal: { type: null, props: {} },
 	currentModal: { type: null, props: {} },
+	storageDegraded: false,
 };
 
 describe('uiSlice', () => {
@@ -108,6 +109,21 @@ describe('uiSlice', () => {
 		it('is a no-op if specified type does not match any open modal', () => {
 			const state = uiReducer(initialState, closeModal('nonexistent'));
 			expect(state).toEqual(initialState);
+		});
+	});
+
+	describe('setStorageDegraded', () => {
+		// Set by useConversations after each sync pass from the count of payloads that could
+		// not be fetched from any source; read by StorageUnavailableBanner.
+		it('flags payload storage as degraded', () => {
+			const state = uiReducer(initialState, setStorageDegraded(true));
+			expect(state.storageDegraded).toBe(true);
+			expect(state.currentModal).toEqual(initialState.currentModal);
+		});
+
+		it('clears the flag once a sync pass fetched everything', () => {
+			const degraded: UiState = { ...initialState, storageDegraded: true };
+			expect(uiReducer(degraded, setStorageDegraded(false)).storageDegraded).toBe(false);
 		});
 	});
 });
