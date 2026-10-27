@@ -11,13 +11,19 @@
  *      `null`, so a transient outage (`unavailable`) is distinguishable from a payload
  *      that genuinely does not exist (`not-found`) and can be surfaced to the user.
  *
+ *      `not-found` is only reported when EVERY source answered definitively: if any source
+ *      was exhausted on retriable errors the result is `unavailable`, even when another
+ *      source said 404, because that source may simply not have the payload yet (the
+ *      gateway lags fresh uploads; the mirror lags the gateway). Holding the sync cursor
+ *      for one more pass is cheaper than stranding a conversation.
+ *
  *      Integrity: payloads are AES-GCM ciphertext, so a tampered or truncated body from
  *      any source fails authenticated decryption in the caller and is discarded.
  *
  *      The `e2e/__guards__/no-raw-storage-gateways` guard keeps the host names in here.
  */
 
-import { backoffDelayMs } from '@/hooks/liveStateProbe';
+import { backoffDelayMs } from '@/lib/backoff';
 
 export type PayloadSource = 'mirror' | 'gateway';
 

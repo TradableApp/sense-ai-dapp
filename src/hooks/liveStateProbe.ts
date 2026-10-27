@@ -20,12 +20,14 @@
  * `useLiveResponse` wires it to thirdweb and TanStack Query.
  */
 
+import { BACKOFF_JITTER_RATIO, backoffDelayMs, MAX_BACKOFF_MS } from '@/lib/backoff';
+
 /** Base block time on mainnet and Sepolia. One probe per block is "within one block". */
 export const LIVE_POLL_INTERVAL_MS = 2_000;
-/** Upper bound for the failure backoff. */
-export const LIVE_POLL_MAX_BACKOFF_MS = 60_000;
+/** Upper bound for the failure backoff (shared with the payload resolver, see lib/backoff). */
+export const LIVE_POLL_MAX_BACKOFF_MS = MAX_BACKOFF_MS;
 /** Jitter added on top of a backoff delay, as a fraction of that delay. */
-export const LIVE_POLL_JITTER_RATIO = 0.25;
+export const LIVE_POLL_JITTER_RATIO = BACKOFF_JITTER_RATIO;
 
 /**
  * The two escrow views the poller reads, as thirdweb method signatures (typed returns, no
@@ -76,15 +78,7 @@ export const serializeSnapshot = (s: EscrowSnapshot): string =>
 const describeError = (error: unknown): string =>
 	error instanceof Error ? error.message : String(error);
 
-/** Delay after `attempt` consecutive failures: doubles from the interval, capped, jittered. */
-export const backoffDelayMs = (
-	attempt: number,
-	intervalMs: number,
-	random: () => number,
-): number => {
-	const base = Math.min(intervalMs * 2 ** attempt, LIVE_POLL_MAX_BACKOFF_MS);
-	return Math.round(base * (1 + LIVE_POLL_JITTER_RATIO * random()));
-};
+export { backoffDelayMs };
 
 export function createStatePoller(deps: StatePollerDeps): StatePoller {
 	const intervalMs = deps.intervalMs ?? LIVE_POLL_INTERVAL_MS;

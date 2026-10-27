@@ -318,4 +318,37 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 		// or The Graph would never serve it again and it would be stranded empty.
 		expect(mockDb.userMetadata.put).not.toHaveBeenCalled();
 	});
+
+	it('still reports the unavailable count when a later step throws', async () => {
+		// Mirror serves the conversation and metadata, the message is unavailable, and
+		// then the cache write blows up: the caller must not be told "all clear".
+		const CID_MISSING = `bafkr6i${'n'.repeat(52)}`;
+		const encrypted = await encryptData(sessionKey, { title: 'conv', createdAt: 1_700_000 });
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string) =>
+				String(url) === `${MIRROR}${CID_ANSWER}`
+					? { ok: true, status: 200, text: async () => encrypted }
+					: { ok: false, status: 503, text: async () => '' },
+			),
+		);
+		graphRequestMock.mockResolvedValue({
+			conversations: [
+				{
+					id: CONV_ID,
+					conversationCID: CID_ANSWER,
+					conversationMetadataCID: CID_ANSWER,
+					lastMessageCreatedAt: '1700',
+					messages: [{ id: 'm-answer', messageCID: CID_MISSING, createdAt: '1700' }],
+					promptRequests: [],
+				},
+			],
+		});
+		mockDb.conversations.bulkPut.mockRejectedValue(new Error('IndexedDB is closed'));
+
+		const syncWithRemote = await importSync();
+
+		await expect(syncWithRemote(sessionKey, OWNER)).resolves.toEqual({ unavailablePayloads: 1 });
+		expect(mockDb.userMetadata.put).not.toHaveBeenCalled();
+	});
 });

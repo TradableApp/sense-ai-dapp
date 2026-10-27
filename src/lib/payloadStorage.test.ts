@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { backoffDelayMs } from '@/hooks/liveStateProbe';
+import { backoffDelayMs } from '@/lib/backoff';
 
 import {
 	fetchPayload,
@@ -197,6 +197,21 @@ describe('fetchPayload', () => {
 			ok: false,
 			reason: 'unavailable',
 		});
+	});
+
+	it('is unavailable, not not-found, when the mirror is exhausted and the gateway then 404s', async () => {
+		// The gateway's 404 is not authoritative while another source could not be asked
+		// properly: fresh uploads reach the two sources at different times. Reporting
+		// 'unavailable' holds the sync cursor so the payload is retried next pass.
+		const { deps, calls } = makeDeps(async url =>
+			url.startsWith(MIRROR) ? response(503) : response(404),
+		);
+
+		await expect(fetchPayload(AUTONOMYS_CID, config, deps)).resolves.toEqual({
+			ok: false,
+			reason: 'unavailable',
+		});
+		expect(calls()).toHaveLength(PAYLOAD_RETRY_ATTEMPTS + 1);
 	});
 
 	it('rejects an unsupported id without a network call', async () => {

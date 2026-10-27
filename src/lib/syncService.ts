@@ -35,9 +35,20 @@ const PAYLOAD_STORAGE_CONFIG: PayloadStorageConfig = {
 	storageGatewayUrl: import.meta.env.VITE_STORAGE_GATEWAY_URL,
 };
 
+/**
+ * Per-attempt ceiling on a payload fetch. Without it a connection that opens but stalls
+ * holds a hydration promise for the OS TCP timeout, times every retry; with it a stall
+ * is just another retriable network failure.
+ */
+const PAYLOAD_FETCH_TIMEOUT_MS = 10_000;
+
 const payloadFetchDeps: PayloadFetchDeps = {
 	// Late-bound so the active global fetch is used, not the one at module load.
-	fetch: (...args) => fetch(...args),
+	fetch: (input, init) =>
+		fetch(input, {
+			...init,
+			signal: init?.signal ?? AbortSignal.timeout(PAYLOAD_FETCH_TIMEOUT_MS),
+		}),
 	report: (message, data) =>
 		Sentry.addBreadcrumb({ category: 'storage.fetch', level: 'warning', message, data }),
 	wait: ms =>
@@ -305,6 +316,11 @@ export default async function syncWithRemote(
 	// Guard against running without a valid session.
 	if (!sessionKey || !ownerAddress) return NOTHING_UNAVAILABLE;
 
+	// Declared outside the try so a failure after hydration (e.g. a bulkPut) still reports
+	// what hydration found — returning 0 there would clear the "unavailable" banner while
+	// storage is in fact down.
+	let unavailablePayloads = 0;
+
 	try {
 		// 1. Get the last known sync timestamp from our local state (Milliseconds).
 		const lastSync = await getLastSyncedAt(sessionKey, ownerAddress);
@@ -403,7 +419,7 @@ export default async function syncWithRemote(
 
 			const messageResults = await Promise.all(messageHydrationPromises);
 
-			const unavailablePayloads =
+			const convUnavailablePayloads =
 				Number(convPayload.unavailable) +
 				Number(metadataPayload.unavailable) +
 				messageResults.reduce((sum, r) => sum + r.unavailablePayloads, 0);
@@ -486,7 +502,7 @@ export default async function syncWithRemote(
 						messages: allMessages,
 						searchDeltas: [],
 						cancelledAnswerIds,
-						unavailablePayloads,
+						unavailablePayloads: convUnavailablePayloads,
 					};
 				}
 			}
@@ -499,15 +515,12 @@ export default async function syncWithRemote(
 				searchDeltas: messageResults
 					.map((r: { searchDelta: unknown }) => r.searchDelta)
 					.filter(Boolean) as unknown[],
-				unavailablePayloads,
+				unavailablePayloads: convUnavailablePayloads,
 			};
 		});
 
 		const hydratedData = await Promise.all(hydrationPromises);
-		const unavailablePayloads = hydratedData.reduce(
-			(sum, item) => sum + item.unavailablePayloads,
-			0,
-		);
+		unavailablePayloads = hydratedData.reduce((sum, item) => sum + item.unavailablePayloads, 0);
 		if (unavailablePayloads > 0) {
 			// One line per pass, not one per CID: the per-attempt detail is in the Sentry
 			// breadcrumbs that payloadStorage leaves.
@@ -623,6 +636,6 @@ export default async function syncWithRemote(
 	} catch (error) {
 		console.error('[syncService] A critical error occurred during the sync process:', error);
 		// We do not update the timestamp on failure, ensuring the process will be retried.
-		return NOTHING_UNAVAILABLE;
+		return { unavailablePayloads };
 	}
 }
