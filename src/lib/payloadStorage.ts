@@ -95,8 +95,11 @@ export function resolvePayloadSources(
 			: [];
 	}
 
+	// Legacy Arweave/Irys ids pre-date the mirror and the oracle never writes them to it
+	// (the hook runs on Autonomys uploads only), so asking the mirror would be a guaranteed
+	// miss and a wasted round-trip. Revisit if the mirror ever starts holding them.
 	if (ARWEAVE_ID.test(cid)) {
-		return [...mirror, { source: 'gateway', url: `https://gateway.irys.xyz/${cid}` }];
+		return [{ source: 'gateway', url: `https://gateway.irys.xyz/${cid}` }];
 	}
 
 	return [];

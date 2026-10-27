@@ -42,23 +42,20 @@ const PAYLOAD_STORAGE_CONFIG: PayloadStorageConfig = {
  */
 const PAYLOAD_FETCH_TIMEOUT_MS = 10_000;
 
-/**
- * `AbortSignal.timeout()` only arrived in Safari 17.4; an AbortController plus a timer is
- * the same thing on every browser the app supports, so the fallback IS the implementation.
- */
-const timeoutSignal = (ms: number): AbortSignal => {
-	const controller = new AbortController();
-	setTimeout(() => controller.abort(), ms);
-	return controller.signal;
-};
-
 const payloadFetchDeps: PayloadFetchDeps = {
 	// Late-bound so the active global fetch is used, not the one at module load.
-	fetch: (input, init) =>
-		fetch(input, {
-			...init,
-			signal: init?.signal ?? timeoutSignal(PAYLOAD_FETCH_TIMEOUT_MS),
-		}),
+	// `AbortSignal.timeout()` only arrived in Safari 17.4, so the timeout is an
+	// AbortController whose timer is cleared as soon as the request settles — the same
+	// property the native version has, on every browser the app supports.
+	fetch: async (input, init) => {
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), PAYLOAD_FETCH_TIMEOUT_MS);
+		try {
+			return await fetch(input, { ...init, signal: init?.signal ?? controller.signal });
+		} finally {
+			clearTimeout(timer);
+		}
+	},
 	report: (message, data) =>
 		Sentry.addBreadcrumb({ category: 'storage.fetch', level: 'warning', message, data }),
 	wait: ms =>
@@ -86,7 +83,8 @@ interface HydratedPayload {
 	unavailable: boolean;
 }
 
-const EMPTY_PAYLOAD: HydratedPayload = { value: null, unavailable: false };
+// Returned by reference from two early exits, so frozen like NOTHING_UNAVAILABLE.
+const EMPTY_PAYLOAD: HydratedPayload = Object.freeze({ value: null, unavailable: false });
 
 // --- Internal Helper Functions ---
 

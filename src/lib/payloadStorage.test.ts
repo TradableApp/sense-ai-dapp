@@ -64,9 +64,8 @@ describe('resolvePayloadSources', () => {
 		]);
 	});
 
-	it('routes legacy Arweave ids through the mirror then the Irys gateway', () => {
+	it('sends legacy Arweave ids to the Irys gateway only — the mirror never holds them', () => {
 		expect(resolvePayloadSources(ARWEAVE_CID, { mirrorUrl: MIRROR })).toEqual([
-			{ source: 'mirror', url: `${MIRROR}${ARWEAVE_CID}` },
 			{ source: 'gateway', url: `https://gateway.irys.xyz/${ARWEAVE_CID}` },
 		]);
 	});
