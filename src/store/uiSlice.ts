@@ -17,6 +17,8 @@ export interface UiState {
 	 * Set by useConversations from the sync result; read by StorageUnavailableBanner.
 	 */
 	storageDegraded: boolean;
+	/** The user dismissed the banner for the current outage. Cleared when storage recovers. */
+	storageDegradedDismissed: boolean;
 }
 
 const initialState: UiState = {
@@ -28,6 +30,7 @@ const initialState: UiState = {
 	overlayModal: { type: null, props: {} },
 	currentModal: { type: null, props: {} },
 	storageDegraded: false,
+	storageDegradedDismissed: false,
 };
 
 export const uiSlice = createSlice({
@@ -71,10 +74,18 @@ export const uiSlice = createSlice({
 		/** Flags (or clears) the "history temporarily unavailable" state after a sync pass. */
 		setStorageDegraded: (state, action: PayloadAction<boolean>) => {
 			state.storageDegraded = action.payload;
+			// Recovery re-arms the banner so the next outage is announced again.
+			if (!action.payload) state.storageDegradedDismissed = false;
+		},
+
+		/** Hides the banner for the current outage, in every place it is rendered. */
+		dismissStorageDegraded: state => {
+			state.storageDegradedDismissed = true;
 		},
 	},
 });
 
-export const { openModal, closeModal, setStorageDegraded } = uiSlice.actions;
+export const { openModal, closeModal, setStorageDegraded, dismissStorageDegraded } =
+	uiSlice.actions;
 
 export default uiSlice.reducer;

@@ -88,11 +88,12 @@ export function resolvePayloadSources(
 ): PayloadSourceUrl[] {
 	if (!cid) return [];
 
-	const mirror: PayloadSourceUrl[] = config.mirrorUrl
-		? [{ source: 'mirror', url: `${withTrailingSlash(config.mirrorUrl)}${cid}` }]
-		: [];
-
+	// The mirror holds Autonomys ids only (the oracle's write-through hook runs on Autonomys
+	// uploads), so it is a source for that branch alone.
 	if (AUTONOMYS_CID.test(cid)) {
+		const mirror: PayloadSourceUrl[] = config.mirrorUrl
+			? [{ source: 'mirror', url: `${withTrailingSlash(config.mirrorUrl)}${cid}` }]
+			: [];
 		return [...mirror, { source: 'gateway', url: `https://gateway.autonomys.xyz/file/${cid}` }];
 	}
 

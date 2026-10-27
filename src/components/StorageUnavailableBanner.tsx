@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react';
-
 import { CloudOff, X } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { useAppSelector } from '@/store/hooks';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import { dismissStorageDegraded } from '@/store/uiSlice';
 
 interface StorageUnavailableBannerProps {
 	className?: string;
@@ -14,16 +13,14 @@ interface StorageUnavailableBannerProps {
 /**
  * Shown while the last sync pass left conversation payloads that no storage source could
  * serve (`ui.storageDegraded`). The sync keeps retrying on its own schedule, so the banner
- * is informational: dismissing hides it for the current outage only, and it re-arms once a
- * pass succeeds so a later outage is announced again.
+ * is informational. Dismissal lives in the store too: the banner is rendered in both Chat
+ * and History, and a dismissal must hold across that navigation. It re-arms when a pass
+ * succeeds (see `setStorageDegraded`), so a later outage is announced again.
  */
 export default function StorageUnavailableBanner({ className }: StorageUnavailableBannerProps) {
 	const isDegraded = useAppSelector(state => state.ui.storageDegraded);
-	const [isDismissed, setIsDismissed] = useState(false);
-
-	useEffect(() => {
-		if (!isDegraded) setIsDismissed(false);
-	}, [isDegraded]);
+	const isDismissed = useAppSelector(state => state.ui.storageDegradedDismissed);
+	const dispatch = useAppDispatch();
 
 	if (!isDegraded || isDismissed) return null;
 
@@ -45,7 +42,7 @@ export default function StorageUnavailableBanner({ className }: StorageUnavailab
 				variant="ghost"
 				size="icon"
 				aria-label="Dismiss"
-				onClick={() => setIsDismissed(true)}
+				onClick={() => dispatch(dismissStorageDegraded())}
 				className="absolute right-2 top-2 size-7 text-amber-900/70 hover:bg-amber-500/15 hover:text-amber-950 dark:text-amber-100/70 dark:hover:text-amber-50"
 			>
 				<X className="size-4" />

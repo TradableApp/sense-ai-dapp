@@ -6,14 +6,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import StorageUnavailableBanner from '@/components/StorageUnavailableBanner';
 import uiReducer, { setStorageDegraded } from '@/store/uiSlice';
 
-function renderBanner() {
-	const store = configureStore({ reducer: { ui: uiReducer } });
-	render(
+function renderBanner(store = configureStore({ reducer: { ui: uiReducer } })) {
+	const view = render(
 		<Provider store={store}>
 			<StorageUnavailableBanner />
 		</Provider>,
 	);
-	return store;
+	return Object.assign(store, { unmount: view.unmount });
 }
 
 const banner = () => screen.queryByRole('alert');
@@ -45,6 +44,20 @@ describe('StorageUnavailableBanner', () => {
 		act(() => {
 			store.dispatch(setStorageDegraded(true));
 		});
+		expect(banner()).toBeNull();
+	});
+
+	it('keeps a dismissal across a remount — Chat and History share one outage', () => {
+		// The banner is rendered independently in Chat and History; navigating between them
+		// unmounts one instance and mounts another, and the dismissal must survive that.
+		const store = renderBanner();
+		act(() => {
+			store.dispatch(setStorageDegraded(true));
+		});
+		fireEvent.click(screen.getByRole('button', { name: /dismiss/i }));
+		store.unmount();
+
+		renderBanner(store);
 		expect(banner()).toBeNull();
 	});
 
