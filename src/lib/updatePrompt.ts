@@ -23,7 +23,10 @@ export interface UpdatePromptInputs {
 	readonly isBusy: boolean;
 }
 
-export function decideUpdatePrompt({ needRefresh, isBusy }: UpdatePromptInputs): UpdatePromptDecision {
+export function decideUpdatePrompt({
+	needRefresh,
+	isBusy,
+}: UpdatePromptInputs): UpdatePromptDecision {
 	if (!needRefresh) return 'none';
 	return isBusy ? 'defer' : 'show';
 }

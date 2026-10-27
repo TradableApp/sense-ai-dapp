@@ -37,14 +37,20 @@ export default function UpdatePrompt() {
 	const isBusy = pendingMutations > 0 || status === 'deriving';
 	const decision = decideUpdatePrompt({ needRefresh, isBusy });
 
-	// Whether our toast is currently on screen, and whether a dismissal in progress is ours
-	// (a withdrawal) rather than the user's. sonner may route a programmatic dismiss through
-	// onDismiss as well; a withdrawal must keep needRefresh so the prompt can come back.
+	// Whether our toast is on screen, which showing it is (a generation per toast() call), and
+	// which generation we withdrew. sonner reports a programmatic dismiss through onDismiss
+	// too, but only after React re-renders the toast with its delete flag — asynchronously —
+	// so the callback checks its own generation against the withdrawn one instead of a flag
+	// that would have been reset by then. A withdrawal must keep needRefresh so the prompt
+	// can come back once the wallet flow settles.
 	const showingRef = useRef(false);
-	const withdrawingRef = useRef(false);
+	const generationRef = useRef(0);
+	const withdrawnGenerationRef = useRef<number | null>(null);
 
 	useEffect(() => {
 		if (decision === 'show') {
+			generationRef.current += 1;
+			const generation = generationRef.current;
 			toast('A new version of SenseAI is ready.', {
 				id: UPDATE_TOAST_ID,
 				duration: Infinity,
@@ -53,13 +59,20 @@ export default function UpdatePrompt() {
 					label: 'Reload',
 					onClick: () => {
 						breadcrumb('update accepted, reloading through the waiting worker');
-						updateServiceWorker(true).catch((error: unknown) =>
-							breadcrumb('update failed to activate', { error: String(error) }),
-						);
+						updateServiceWorker(true).catch((error: unknown) => {
+							// The action click already closed the prompt; without this the user has
+							// no way back to the new build until the next navigation.
+							breadcrumb('update failed to activate', { error: String(error) });
+							showingRef.current = false;
+							toast.error('The update could not be applied.', {
+								description: 'Reload the page to get the new version.',
+								action: { label: 'Reload', onClick: () => window.location.reload() },
+							});
+						});
 					},
 				},
 				onDismiss: () => {
-					if (withdrawingRef.current) return;
+					if (withdrawnGenerationRef.current === generation) return;
 					breadcrumb('update dismissed by the user');
 					setNeedRefresh(false);
 				},
@@ -71,9 +84,8 @@ export default function UpdatePrompt() {
 
 		if (decision === 'defer') {
 			if (showingRef.current) {
-				withdrawingRef.current = true;
+				withdrawnGenerationRef.current = generationRef.current;
 				toast.dismiss(UPDATE_TOAST_ID);
-				withdrawingRef.current = false;
 				showingRef.current = false;
 				breadcrumb('update prompt withdrawn: wallet flow in flight');
 			} else {

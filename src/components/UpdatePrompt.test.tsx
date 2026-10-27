@@ -37,6 +37,7 @@ vi.mock('@/features/auth/SessionProvider', () => ({
 const toastMock = vi.hoisted(() =>
 	Object.assign(vi.fn<(_message: string, _options?: ToastOptions) => void>(), {
 		dismiss: vi.fn(),
+		error: vi.fn<(_message: string, _options?: ToastOptions) => void>(),
 	}),
 );
 vi.mock('@/components/ui/sonner', () => ({ toast: toastMock }));
@@ -52,11 +53,15 @@ function renderPrompt(client = new QueryClient()) {
 			<UpdatePrompt />
 		</QueryClientProvider>,
 	);
-	return { client, rerender: () => view.rerender(
-		<QueryClientProvider client={client}>
-			<UpdatePrompt />
-		</QueryClientProvider>,
-	) };
+	return {
+		client,
+		rerender: () =>
+			view.rerender(
+				<QueryClientProvider client={client}>
+					<UpdatePrompt />
+				</QueryClientProvider>,
+			),
+	};
 }
 
 /**
@@ -155,21 +160,60 @@ describe('UpdatePrompt', () => {
 		expect(toastMock).toHaveBeenCalledTimes(1);
 	});
 
-	it('withdraws a showing toast when a wallet flow starts, so Reload cannot interrupt it', async () => {
+	// sonner reports a programmatic dismiss through onDismiss as well, after React re-renders
+	// the toast with its delete flag. A withdrawal must never be mistaken for the user
+	// declining, whatever the timing, or the prompt would not come back after the flow.
+	const dismissTimings: Array<[string, (_cb: () => void) => void]> = [
+		['synchronously', cb => cb()],
+		[
+			'on a later tick',
+			cb => {
+				setTimeout(cb, 0);
+			},
+		],
+		['never', () => {}],
+	];
+	it.each(dismissTimings)(
+		'withdraws a showing toast when a wallet flow starts (sonner calls onDismiss %s) and brings it back',
+		async (_timing, schedule) => {
+			sw.needRefresh = true;
+			const client = new QueryClient();
+			renderPrompt(client);
+			expect(toastMock).toHaveBeenCalledTimes(1);
+			toastMock.dismiss.mockImplementation(() => {
+				const { onDismiss } = lastToastOptions();
+				schedule(() => onDismiss?.());
+			});
+
+			const finish = startPendingMutation(client);
+			await waitFor(() => expect(toastMock.dismiss).toHaveBeenCalledWith(UPDATE_TOAST_ID));
+			await new Promise<void>(resolve => {
+				setTimeout(resolve, 0);
+			});
+			expect(sw.setNeedRefresh).not.toHaveBeenCalledWith(false);
+
+			finish();
+			await waitFor(() => expect(toastMock).toHaveBeenCalledTimes(2));
+
+			// The returned prompt still honours a real dismissal by the user.
+			lastToastOptions().onDismiss?.();
+			expect(sw.setNeedRefresh).toHaveBeenCalledWith(false);
+		},
+	);
+
+	it('tells the user when the waiting worker fails to activate, and never reloads for them', async () => {
 		sw.needRefresh = true;
-		const client = new QueryClient();
-		renderPrompt(client);
-		expect(toastMock).toHaveBeenCalledTimes(1);
+		sw.updateServiceWorker.mockRejectedValueOnce(new Error('postMessage failed'));
+		renderPrompt();
+		lastToastOptions().action?.onClick();
 
-		// sonner may report a programmatic dismiss through onDismiss too; a withdrawal must
-		// not be mistaken for the user declining, or the prompt would never come back.
-		toastMock.dismiss.mockImplementation(() => lastToastOptions().onDismiss?.());
+		await waitFor(() => expect(toastMock.error).toHaveBeenCalledTimes(1));
+		const [message, options] = toastMock.error.mock.calls[0];
+		expect(message).toMatch(/could not be applied/i);
+		expect(options?.action?.label).toMatch(/reload/i);
+		expect(reloadSpy).not.toHaveBeenCalled();
 
-		const finish = startPendingMutation(client);
-		await waitFor(() => expect(toastMock.dismiss).toHaveBeenCalledWith(UPDATE_TOAST_ID));
-		expect(sw.setNeedRefresh).not.toHaveBeenCalledWith(false);
-
-		finish();
-		await waitFor(() => expect(toastMock).toHaveBeenCalledTimes(2));
+		options?.action?.onClick();
+		expect(reloadSpy).toHaveBeenCalledTimes(1);
 	});
 });
