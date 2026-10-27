@@ -39,9 +39,7 @@ export default function AppSidebar(props: AppSidebarProps) {
 					<SidebarMenuItem>
 						<SidebarMenuButton size="lg" asChild>
 							<a href="/">
-								<div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary-foreground text-primary-foreground">
-									<img src={senseaiLogo} alt="SenseAI Logo" className="size-4" />
-								</div>
+								<img src={senseaiLogo} alt="SenseAI Logo" className="size-8 shrink-0" />
 								<div className="grid flex-1 text-left text-sm leading-tight">
 									<span className="truncate font-semibold">SenseAI</span>
 									<span className="truncate text-xs">Agent</span>
