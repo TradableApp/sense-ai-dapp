@@ -104,16 +104,17 @@ type AttemptOutcome =
 	| { kind: 'retriable'; status: number | 'network' };
 
 async function attempt(url: string, fetchImpl: PayloadFetchDeps['fetch']): Promise<AttemptOutcome> {
-	let response: Response;
 	try {
-		response = await fetchImpl(url);
+		const response = await fetchImpl(url);
+		// Reading the body is inside the try on purpose: a stream that drops mid-way is a
+		// network failure like any other and must not escape as a rejection.
+		if (response.ok) return { kind: 'hit', data: await response.text() };
+		if (isRetriableStatus(response.status)) return { kind: 'retriable', status: response.status };
+		// 404 and any other definitive client error: this source does not have it.
+		return { kind: 'miss' };
 	} catch {
 		return { kind: 'retriable', status: 'network' };
 	}
-	if (response.ok) return { kind: 'hit', data: await response.text() };
-	if (isRetriableStatus(response.status)) return { kind: 'retriable', status: response.status };
-	// 404 and any other definitive client error: this source does not have it.
-	return { kind: 'miss' };
 }
 
 type SourceOutcome = { kind: 'hit'; data: string } | { kind: 'miss' } | { kind: 'exhausted' };
