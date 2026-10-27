@@ -1,12 +1,12 @@
 import { Loader2, ShieldCheck } from 'lucide-react';
 import { ConnectButton } from 'thirdweb/react';
 
+import senseaiLogo from '@/assets/logos/senseai-logo.svg';
 import RainbowButton from '@/components/magicui/rainbow-button';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { SUPPORTED_TOKENS } from '@/config/contracts';
 import { client, deploymentChain, wallets } from '@/config/thirdweb';
-import senseaiLogo from '@/senseai-logo.svg';
 
 import { useSession } from './SessionProvider';
 

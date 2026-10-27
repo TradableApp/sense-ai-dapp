@@ -1,14 +1,14 @@
 import { Navigate } from 'react-router-dom';
 import { ConnectButton, useActiveAccount } from 'thirdweb/react';
 
+import senseaiTextLogoBlack from '@/assets/logos/senseai-logo-full-black.svg';
+import senseaiTextLogoWhite from '@/assets/logos/senseai-logo-full-white.svg';
+import senseaiLogo from '@/assets/logos/senseai-logo.svg';
 import TradableLogo from '@/components/icons/TradableLogo';
 import XLogo from '@/components/icons/XLogo';
 import RainbowLabel from '@/components/magicui/rainbow-label';
 import { SUPPORTED_TOKENS } from '@/config/contracts';
 import { client, deploymentChain, wallets } from '@/config/thirdweb';
-import senseaiLogo from '@/senseai-logo.svg';
-import senseaiTextLogoBlack from '@/senseai-text-logo-black-purple.svg';
-import senseaiTextLogoWhite from '@/senseai-text-logo-white-purple.svg';
 import { useAppDispatch } from '@/store/hooks';
 import { openModal } from '@/store/uiSlice';
 
@@ -40,24 +40,22 @@ export default function Auth() {
 	return (
 		<main className="min-h-screen flex flex-col items-center justify-center p-4">
 			<div className="flex-1 flex flex-col items-center justify-center text-center">
-				<img
-					src={senseaiLogo}
-					alt="SenseAI logo"
-					className="size-32 md:size-36"
-					style={{
-						filter: 'drop-shadow(0px 0px 24px rgba(167, 38, 169, 0.4))',
-					}}
-				/>
-				<img
-					src={senseaiTextLogoBlack}
-					alt="SenseAI"
-					className="block dark:hidden w-64 md:w-80 mt-6"
-				/>
-				<img
-					src={senseaiTextLogoWhite}
-					alt="SenseAI"
-					className="hidden dark:block w-64 md:w-80 mt-6"
-				/>
+				<div className="relative isolate max-w-full px-6 py-8">
+					<div
+						aria-hidden="true"
+						className="absolute inset-x-0 -inset-y-10 -z-10 bg-[radial-gradient(closest-side,rgba(153,57,241,0.28),rgba(153,57,241,0))]"
+					/>
+					<img
+						src={senseaiTextLogoBlack}
+						alt="SenseAI"
+						className="block dark:hidden w-72 md:w-96"
+					/>
+					<img
+						src={senseaiTextLogoWhite}
+						alt="SenseAI"
+						className="hidden dark:block w-72 md:w-96"
+					/>
+				</div>
 				<div className="mt-10">
 					<ConnectButton
 						client={client}

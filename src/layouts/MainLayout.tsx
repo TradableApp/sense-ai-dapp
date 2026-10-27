@@ -2,6 +2,7 @@ import { HelpCircle, LifeBuoy, Send } from 'lucide-react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { ConnectButton } from 'thirdweb/react';
 
+import senseaiLogo from '@/assets/logos/senseai-logo.svg';
 import ThemeToggle from '@/components/ThemeToggle';
 import {
 	Breadcrumb,
@@ -26,7 +27,6 @@ import useMobile from '@/hooks/useMobile';
 import AppSidebar from '@/layouts/components/AppSidebar';
 import MobileNav from '@/layouts/components/MobileNav';
 import { cn } from '@/lib/utils';
-import senseaiLogo from '@/senseai-logo.svg';
 import { useAppDispatch } from '@/store/hooks';
 import { openModal } from '@/store/uiSlice';
 
@@ -46,7 +46,7 @@ export default function MainLayout() {
 	useLiveResponse();
 
 	return (
-		<div className={cn('flex h-screen bg-background', isMobile && 'flex-col')}>
+		<div className={cn('flex h-screen bg-background', isMobile && 'h-dvh flex-col')}>
 			<SidebarProvider>
 				{!isMobile && <AppSidebar />}
 
@@ -54,7 +54,7 @@ export default function MainLayout() {
 					className={cn(
 						'bg-card',
 						isMobile
-							? 'm-2 mb-20 flex-1 overflow-hidden rounded-xl border'
+							? 'm-2 mb-20 h-auto flex-1 overflow-hidden rounded-xl border'
 							: 'flex flex-1 flex-col overflow-hidden',
 					)}
 				>

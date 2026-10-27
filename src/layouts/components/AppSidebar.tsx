@@ -2,6 +2,7 @@ import type { HTMLAttributes } from 'react';
 
 import { BarChart2, History, LifeBuoy, MessageCircle, Send } from 'lucide-react';
 
+import senseaiLogo from '@/assets/logos/senseai-logo.svg';
 import { Separator } from '@/components/ui/separator';
 import {
 	Sidebar,
@@ -15,7 +16,6 @@ import {
 import NavMain from '@/layouts/components/nav/NavMain';
 import NavSecondary from '@/layouts/components/nav/NavSecondary';
 import NavUser from '@/layouts/components/nav/NavUser';
-import senseaiLogo from '@/senseai-logo.svg';
 
 const navData = {
 	main: [
@@ -39,9 +39,7 @@ export default function AppSidebar(props: AppSidebarProps) {
 					<SidebarMenuItem>
 						<SidebarMenuButton size="lg" asChild>
 							<a href="/">
-								<div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary-foreground text-primary-foreground">
-									<img src={senseaiLogo} alt="SenseAI Logo" className="size-4" />
-								</div>
+								<img src={senseaiLogo} alt="SenseAI Logo" className="size-8 shrink-0" />
 								<div className="grid flex-1 text-left text-sm leading-tight">
 									<span className="truncate font-semibold">SenseAI</span>
 									<span className="truncate text-xs">Agent</span>
