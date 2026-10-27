@@ -30,7 +30,7 @@ function makeDeps(impl: FetchImpl) {
 	const waits: number[] = [];
 	const report = vi.fn<PayloadFetchDeps['report']>();
 	const deps: PayloadFetchDeps = {
-		fetch: vi.fn(impl) as unknown as PayloadFetchDeps['fetch'],
+		fetch: vi.fn(impl),
 		report,
 		wait: async (ms: number) => {
 			waits.push(ms);

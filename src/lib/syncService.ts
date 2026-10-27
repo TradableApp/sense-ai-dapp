@@ -45,15 +45,32 @@ const PAYLOAD_FETCH_TIMEOUT_MS = 10_000;
 const payloadFetchDeps: PayloadFetchDeps = {
 	// Late-bound so the active global fetch is used, not the one at module load.
 	// `AbortSignal.timeout()` only arrived in Safari 17.4, so the timeout is an
-	// AbortController whose timer is cleared as soon as the request settles — the same
-	// property the native version has, on every browser the app supports.
-	fetch: async (input, init) => {
+	// AbortController whose timer is released as soon as the response is fully consumed
+	// — after the body for a hit, immediately for a miss or error. A server that sends
+	// headers and then stalls the body is cut off like any other stall.
+	fetch: async url => {
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), PAYLOAD_FETCH_TIMEOUT_MS);
 		try {
-			return await fetch(input, { ...init, signal: init?.signal ?? controller.signal });
-		} finally {
+			const response = await fetch(url, { signal: controller.signal });
+			if (!response.ok) {
+				clearTimeout(timer);
+				return { ok: false, status: response.status, text: async () => '' };
+			}
+			return {
+				ok: true,
+				status: response.status,
+				text: async () => {
+					try {
+						return await response.text();
+					} finally {
+						clearTimeout(timer);
+					}
+				},
+			};
+		} catch (error) {
 			clearTimeout(timer);
+			throw error;
 		}
 	},
 	report: (message, data) =>

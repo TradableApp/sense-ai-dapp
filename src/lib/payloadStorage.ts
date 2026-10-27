@@ -42,8 +42,15 @@ export interface PayloadStorageConfig {
 	storageGatewayUrl?: string;
 }
 
+/** The slice of a `Response` the resolver reads; lets the caller wrap timeouts around the body too. */
+export interface PayloadResponse {
+	ok: boolean;
+	status: number;
+	text(): Promise<string>;
+}
+
 export interface PayloadFetchDeps {
-	fetch: typeof globalThis.fetch;
+	fetch: (_url: string) => Promise<PayloadResponse>;
 	/** Observability sink (a Sentry breadcrumb in production). Never throws. */
 	report: (_message: string, _data: Record<string, unknown>) => void;
 	wait: (_ms: number) => Promise<void>;
