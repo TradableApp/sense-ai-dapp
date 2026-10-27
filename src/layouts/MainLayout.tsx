@@ -46,7 +46,7 @@ export default function MainLayout() {
 	useLiveResponse();
 
 	return (
-		<div className={cn('flex h-screen bg-background', isMobile && 'flex-col')}>
+		<div className={cn('flex h-screen bg-background', isMobile && 'h-dvh flex-col')}>
 			<SidebarProvider>
 				{!isMobile && <AppSidebar />}
 
@@ -54,7 +54,7 @@ export default function MainLayout() {
 					className={cn(
 						'bg-card',
 						isMobile
-							? 'm-2 mb-20 flex-1 overflow-hidden rounded-xl border'
+							? 'm-2 mb-20 h-auto flex-1 overflow-hidden rounded-xl border'
 							: 'flex flex-1 flex-col overflow-hidden',
 					)}
 				>
