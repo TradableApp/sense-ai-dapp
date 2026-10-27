@@ -32,6 +32,7 @@ import {
 } from '@/components/ai/prompt-input';
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ai/reasoning';
 import UserMessageActions from '@/components/ai/user-message-actions';
+import StorageUnavailableBanner from '@/components/StorageUnavailableBanner';
 import { Button } from '@/components/ui/button';
 import { db } from '@/config/firebase';
 import { useSession } from '@/features/auth/SessionProvider';
@@ -788,6 +789,7 @@ export default function Chat() {
 					<span className="ml-1">Reset Chat</span>
 				</Button>
 			</div>
+			<StorageUnavailableBanner className="rounded-none border-x-0 border-t-0" />
 			<Conversation className="flex-1">
 				<ConversationContent className="space-y-4">
 					{(isLoading || isFetching) && !messagesToDisplay.length && (

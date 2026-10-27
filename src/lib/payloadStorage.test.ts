@@ -6,8 +6,8 @@ import {
 	fetchPayload,
 	PAYLOAD_RETRY_ATTEMPTS,
 	PAYLOAD_RETRY_BASE_MS,
-	resolvePayloadSources,
 	type PayloadFetchDeps,
+	resolvePayloadSources,
 } from './payloadStorage';
 
 const AUTONOMYS_CID = `bafkr6i${'a'.repeat(52)}`;
@@ -24,7 +24,7 @@ function response(status: number, body = ''): Response {
 	} as unknown as Response;
 }
 
-type FetchImpl = (url: string) => Promise<Response>;
+type FetchImpl = (_url: string) => Promise<Response>;
 
 function makeDeps(impl: FetchImpl) {
 	const waits: number[] = [];

@@ -290,6 +290,8 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 		expect(result).toEqual({ unavailablePayloads: 0 });
 		expect(fetchedUrls().every(u => u.startsWith(MIRROR))).toBe(true);
 		expect(fetchedUrls().some(u => u.includes('gateway.autonomys.xyz'))).toBe(false);
+		// A clean pass commits the cursor.
+		expect(mockDb.userMetadata.put).toHaveBeenCalledTimes(1);
 	});
 
 	it('counts payloads no source could serve and keeps them out of the cache', async () => {
@@ -312,5 +314,8 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 		expect(fetchedUrls().some(u => u.includes('gateway.autonomys.xyz'))).toBe(true);
 		expect(mockDb.messageCache.bulkPut).not.toHaveBeenCalled();
 		expect(mockDb.conversations.bulkPut).not.toHaveBeenCalled();
+		// The cursor must not advance past a conversation whose payloads were withheld,
+		// or The Graph would never serve it again and it would be stranded empty.
+		expect(mockDb.userMetadata.put).not.toHaveBeenCalled();
 	});
 });

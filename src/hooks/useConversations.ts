@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useSession } from '@/features/auth/SessionProvider';
 import { fetchAndCacheConversations } from '@/lib/dataService';
 import syncWithRemote from '@/lib/syncService';
+import { useAppDispatch } from '@/store/hooks';
+import { setStorageDegraded } from '@/store/uiSlice';
 
 /**
  * A centralized hook to manage fetching, caching, and background polling
@@ -19,6 +21,7 @@ import syncWithRemote from '@/lib/syncService';
  */
 export default function useConversations() {
 	const { sessionKey, ownerAddress } = useSession();
+	const dispatch = useAppDispatch();
 
 	return useQuery({
 		queryKey: ['conversations', sessionKey, ownerAddress],
@@ -28,7 +31,10 @@ export default function useConversations() {
 			if (!sessionKey) throw new Error('Session key is required');
 			if (!ownerAddress) throw new Error('Owner address is required');
 
-			await syncWithRemote(sessionKey, ownerAddress);
+			const { unavailablePayloads } = await syncWithRemote(sessionKey, ownerAddress);
+			// Drives the "history temporarily unavailable, retrying" banner; a clean pass
+			// clears it. The refetch interval below is the retry.
+			dispatch(setStorageDegraded(unavailablePayloads > 0));
 
 			// Step 2: Read the complete, up-to-date list from the local cache.
 			// This function remains the source of truth for the UI.

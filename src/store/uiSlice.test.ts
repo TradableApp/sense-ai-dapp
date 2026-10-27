@@ -79,6 +79,7 @@ describe('uiSlice', () => {
 				priorityModal: { type: 'reauth', props: {} },
 				overlayModal: { type: 'detail', props: {} },
 				currentModal: { type: 'confirm', props: {} },
+				storageDegraded: false,
 			};
 			const state = uiReducer(allOpen, closeModal(undefined));
 			expect(state.priorityModal).toEqual(initialState.priorityModal);

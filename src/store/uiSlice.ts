@@ -1,15 +1,22 @@
 /* eslint-disable no-param-reassign */
-import { createSlice } from '@reduxjs/toolkit';
+import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
 interface ModalState {
 	type: string | null;
 	props: Record<string, unknown>;
 }
 
+type ModalTier = 'priorityModal' | 'overlayModal' | 'currentModal';
+
 export interface UiState {
 	priorityModal: ModalState;
 	overlayModal: ModalState;
 	currentModal: ModalState;
+	/**
+	 * True while the last sync pass left payloads that no storage source could serve.
+	 * Set by useConversations from the sync result; read by StorageUnavailableBanner.
+	 */
+	storageDegraded: boolean;
 }
 
 const initialState: UiState = {
@@ -20,6 +27,7 @@ const initialState: UiState = {
 	priorityModal: { type: null, props: {} },
 	overlayModal: { type: null, props: {} },
 	currentModal: { type: null, props: {} },
+	storageDegraded: false,
 };
 
 export const uiSlice = createSlice({
@@ -32,7 +40,7 @@ export const uiSlice = createSlice({
 		 */
 		openModal: (state, action) => {
 			const { type, props = {}, position = 'current' } = action.payload;
-			const modalKey = `${position}Modal` as keyof UiState; // e.g., 'currentModal'
+			const modalKey = `${position}Modal` as ModalTier; // e.g., 'currentModal'
 			state[modalKey] = { type, props };
 		},
 
@@ -59,9 +67,14 @@ export const uiSlice = createSlice({
 				state.currentModal = initialState.currentModal;
 			}
 		},
+
+		/** Flags (or clears) the "history temporarily unavailable" state after a sync pass. */
+		setStorageDegraded: (state, action: PayloadAction<boolean>) => {
+			state.storageDegraded = action.payload;
+		},
 	},
 });
 
-export const { openModal, closeModal } = uiSlice.actions;
+export const { openModal, closeModal, setStorageDegraded } = uiSlice.actions;
 
 export default uiSlice.reducer;

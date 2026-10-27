@@ -13,6 +13,7 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
+import StorageUnavailableBanner from '@/components/StorageUnavailableBanner';
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -216,6 +217,7 @@ export default function History() {
 						Select a conversation to continue where you left off.
 					</p>
 				</div>
+				<StorageUnavailableBanner />
 				<div className="flex items-center gap-2">
 					<div className="relative flex-1">
 						<Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
