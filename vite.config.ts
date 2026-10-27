@@ -21,7 +21,9 @@ export default defineConfig(({ mode }) => {
 			react(),
 			svgr(),
 			VitePWA({
-				registerType: 'autoUpdate',
+				// The user chooses when to reload; the self-reloading mode is forbidden by the
+				// pwa-prompt-mode guard (see src/components/UpdatePrompt.tsx).
+				registerType: 'prompt',
 				workbox: {
 					// We are increasing the limit for files that can be precached by the service worker.
 					// This allows our large-but-essential vendor chunks to be available offline.

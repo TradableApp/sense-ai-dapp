@@ -1,17 +1,24 @@
 import { MutationObserver, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render } from '@testing-library/react';
+import { cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import UpdatePrompt, { UPDATE_TOAST_ID } from '@/components/UpdatePrompt';
 
+type ToastOptions = {
+	id?: string | number;
+	duration?: number;
+	action?: { label: string; onClick: () => void };
+	onDismiss?: () => void;
+};
+
 // --- virtual:pwa-register/react ------------------------------------------------------------
 // The real hook only exists inside the Vite build (the PWA plugin provides the module), so
 // the test owns a tiny stand-in whose state it flips between renders.
-const sw = {
+const sw = vi.hoisted(() => ({
 	needRefresh: false,
 	setNeedRefresh: vi.fn(),
-	updateServiceWorker: vi.fn(),
-};
+	updateServiceWorker: vi.fn(() => Promise.resolve()),
+}));
 vi.mock('virtual:pwa-register/react', () => ({
 	useRegisterSW: () => ({
 		needRefresh: [sw.needRefresh, sw.setNeedRefresh] as const,
@@ -21,21 +28,17 @@ vi.mock('virtual:pwa-register/react', () => ({
 }));
 
 // --- session -----------------------------------------------------------------------------
-const session = { status: 'ready' as 'ready' | 'deriving' };
+const session = vi.hoisted(() => ({ status: 'ready' as 'ready' | 'deriving' }));
 vi.mock('@/features/auth/SessionProvider', () => ({
 	useSession: () => ({ status: session.status, sessionKey: null, ownerAddress: '0xowner' }),
 }));
 
 // --- toast -------------------------------------------------------------------------------
-type ToastOptions = {
-	id?: string | number;
-	duration?: number;
-	action?: { label: string; onClick: () => void };
-	onDismiss?: () => void;
-};
-const toastMock = Object.assign(vi.fn<(message: string, options?: ToastOptions) => void>(), {
-	dismiss: vi.fn(),
-});
+const toastMock = vi.hoisted(() =>
+	Object.assign(vi.fn<(_message: string, _options?: ToastOptions) => void>(), {
+		dismiss: vi.fn(),
+	}),
+);
 vi.mock('@/components/ui/sonner', () => ({ toast: toastMock }));
 
 vi.mock('@sentry/react', () => ({ addBreadcrumb: vi.fn() }));
@@ -56,22 +59,21 @@ function renderPrompt(client = new QueryClient()) {
 	) };
 }
 
-/** A mutation that stays pending until the test resolves it — a wallet flow in flight. */
+/**
+ * A mutation that stays pending until the test settles it — a wallet flow in flight. The
+ * mutation cache notifies subscribers on a macrotask, so tests observe its effects with
+ * waitFor rather than a microtask tick.
+ */
 function startPendingMutation(client: QueryClient) {
+	// The gate exists before mutate() so settling is valid even if the mutation function has
+	// not been invoked yet (TanStack awaits its onMutate hooks first).
 	let settle: () => void = () => {};
-	const observer = new MutationObserver(client, {
-		mutationFn: () =>
-			new Promise<void>(resolve => {
-				settle = resolve;
-			}),
+	const gate = new Promise<void>(resolve => {
+		settle = resolve;
 	});
+	const observer = new MutationObserver(client, { mutationFn: () => gate });
 	observer.mutate().catch(() => {});
-	return async () => {
-		settle();
-		await act(async () => {
-			await Promise.resolve();
-		});
-	};
+	return () => settle();
 }
 
 const lastToastOptions = (): ToastOptions => {
@@ -138,8 +140,8 @@ describe('UpdatePrompt', () => {
 		renderPrompt(client);
 		expect(toastMock).not.toHaveBeenCalled();
 
-		await finish();
-		expect(toastMock).toHaveBeenCalledTimes(1);
+		finish();
+		await waitFor(() => expect(toastMock).toHaveBeenCalledTimes(1));
 	});
 
 	it('defers the toast while the session key signature is being requested', () => {
@@ -159,11 +161,15 @@ describe('UpdatePrompt', () => {
 		renderPrompt(client);
 		expect(toastMock).toHaveBeenCalledTimes(1);
 
+		// sonner may report a programmatic dismiss through onDismiss too; a withdrawal must
+		// not be mistaken for the user declining, or the prompt would never come back.
+		toastMock.dismiss.mockImplementation(() => lastToastOptions().onDismiss?.());
+
 		const finish = startPendingMutation(client);
-		await act(async () => {
-			await Promise.resolve();
-		});
-		expect(toastMock.dismiss).toHaveBeenCalledWith(UPDATE_TOAST_ID);
-		await finish();
+		await waitFor(() => expect(toastMock.dismiss).toHaveBeenCalledWith(UPDATE_TOAST_ID));
+		expect(sw.setNeedRefresh).not.toHaveBeenCalledWith(false);
+
+		finish();
+		await waitFor(() => expect(toastMock).toHaveBeenCalledTimes(2));
 	});
 });
