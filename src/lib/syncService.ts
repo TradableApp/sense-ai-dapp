@@ -30,10 +30,12 @@ const graphQLClient = new GraphQLClient(THE_GRAPH_API_URL);
 // retry policy. VITE_PAYLOAD_MIRROR_URL is the public GCS mirror the oracle writes
 // every Autonomys CID through to (unset on localnet). VITE_STORAGE_GATEWAY_URL is
 // localnet only: the e2e stack's Kubo gateway (see sense-ai-e2e/scripts/sync-config.sh).
-const PAYLOAD_STORAGE_CONFIG: PayloadStorageConfig = {
+// Read per call rather than at module load: Vite inlines these at build time so there is
+// no runtime cost, and tests that stub the env see the change without reloading the module.
+const getPayloadStorageConfig = (): PayloadStorageConfig => ({
 	mirrorUrl: import.meta.env.VITE_PAYLOAD_MIRROR_URL,
 	storageGatewayUrl: import.meta.env.VITE_STORAGE_GATEWAY_URL,
-};
+});
 
 /**
  * Per-attempt ceiling on a payload fetch. Without it a connection that opens but stalls
@@ -45,32 +47,18 @@ const PAYLOAD_FETCH_TIMEOUT_MS = 10_000;
 const payloadFetchDeps: PayloadFetchDeps = {
 	// Late-bound so the active global fetch is used, not the one at module load.
 	// `AbortSignal.timeout()` only arrived in Safari 17.4, so the timeout is an
-	// AbortController whose timer is released as soon as the response is fully consumed
-	// — after the body for a hit, immediately for a miss or error. A server that sends
-	// headers and then stalls the body is cut off like any other stall.
+	// AbortController whose timer covers headers AND body and is released in a `finally`.
+	// The body is read eagerly: payloads are small ciphertext strings, and reading them here
+	// means no timer can outlive the request whatever a caller does with the result.
 	fetch: async url => {
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), PAYLOAD_FETCH_TIMEOUT_MS);
 		try {
 			const response = await fetch(url, { signal: controller.signal });
-			if (!response.ok) {
-				clearTimeout(timer);
-				return { ok: false, status: response.status, text: async () => '' };
-			}
-			return {
-				ok: true,
-				status: response.status,
-				text: async () => {
-					try {
-						return await response.text();
-					} finally {
-						clearTimeout(timer);
-					}
-				},
-			};
-		} catch (error) {
+			const body = response.ok ? await response.text() : '';
+			return { ok: response.ok, status: response.status, text: async () => body };
+		} finally {
 			clearTimeout(timer);
-			throw error;
 		}
 	},
 	report: (message, data) =>
@@ -118,7 +106,7 @@ async function hydratePayload(
 ): Promise<HydratedPayload> {
 	if (!cid) return EMPTY_PAYLOAD;
 
-	const result = await fetchPayload(cid, PAYLOAD_STORAGE_CONFIG, payloadFetchDeps);
+	const result = await fetchPayload(cid, getPayloadStorageConfig(), payloadFetchDeps);
 	if (!result.ok) return { value: null, unavailable: result.reason === 'unavailable' };
 
 	try {
@@ -653,8 +641,14 @@ export default async function syncWithRemote(
 		// 6. Only advance the 'last synced' cursor when every payload was served. The Graph
 		// only returns conversations newer than the cursor, so advancing past one whose
 		// payloads a storage outage withheld would strand it until a full re-sync. Holding
-		// the cursor costs one re-query; the already-hydrated conversations take the
+		// the cursor costs one re-query per pass; the already-hydrated conversations take the
 		// CID-match skip above.
+		//
+		// Deliberately no cap on how long the hold lasts. A cap would convert the one case it
+		// targets (mirror persistently 5xx AND gateway 404 for the same CID) from a loud,
+		// self-healing outage — banner shown, a Sentry breadcrumb every pass, fixed by
+		// repairing the mirror or unsetting VITE_PAYLOAD_MIRROR_URL — into silent data loss
+		// whenever that 404 was a fresh upload the gateway had not propagated yet.
 		if (unavailablePayloads === 0) {
 			await setLastSyncedAt(sessionKey, ownerAddress, newLastSync);
 		}

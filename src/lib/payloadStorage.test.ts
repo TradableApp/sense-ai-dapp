@@ -198,6 +198,27 @@ describe('fetchPayload', () => {
 		});
 	});
 
+	it('falls through to the gateway and succeeds when the mirror is exhausted on retriable errors', async () => {
+		// The primary outage shape: GCS degraded, Autonomys healthy.
+		let mirrorCalls = 0;
+		const { deps, calls, report } = makeDeps(async url => {
+			if (url.startsWith(MIRROR)) {
+				mirrorCalls += 1;
+				return response(503);
+			}
+			return response(200, 'from-gateway');
+		});
+
+		await expect(fetchPayload(AUTONOMYS_CID, config, deps)).resolves.toEqual({
+			ok: true,
+			data: 'from-gateway',
+			source: 'gateway',
+		});
+		expect(mirrorCalls).toBe(PAYLOAD_RETRY_ATTEMPTS);
+		expect(calls()).toHaveLength(PAYLOAD_RETRY_ATTEMPTS + 1);
+		expect(report).not.toHaveBeenCalledWith('payload fetch: unavailable', expect.anything());
+	});
+
 	it('is unavailable, not not-found, when the mirror is exhausted and the gateway then 404s', async () => {
 		// The gateway's 404 is not authoritative while another source could not be asked
 		// properly: fresh uploads reach the two sources at different times. Reporting
