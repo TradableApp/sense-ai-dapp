@@ -42,12 +42,22 @@ const PAYLOAD_STORAGE_CONFIG: PayloadStorageConfig = {
  */
 const PAYLOAD_FETCH_TIMEOUT_MS = 10_000;
 
+/**
+ * `AbortSignal.timeout()` only arrived in Safari 17.4; an AbortController plus a timer is
+ * the same thing on every browser the app supports, so the fallback IS the implementation.
+ */
+const timeoutSignal = (ms: number): AbortSignal => {
+	const controller = new AbortController();
+	setTimeout(() => controller.abort(), ms);
+	return controller.signal;
+};
+
 const payloadFetchDeps: PayloadFetchDeps = {
 	// Late-bound so the active global fetch is used, not the one at module load.
 	fetch: (input, init) =>
 		fetch(input, {
 			...init,
-			signal: init?.signal ?? AbortSignal.timeout(PAYLOAD_FETCH_TIMEOUT_MS),
+			signal: init?.signal ?? timeoutSignal(PAYLOAD_FETCH_TIMEOUT_MS),
 		}),
 	report: (message, data) =>
 		Sentry.addBreadcrumb({ category: 'storage.fetch', level: 'warning', message, data }),
@@ -61,10 +71,11 @@ const payloadFetchDeps: PayloadFetchDeps = {
 /** Result of a sync pass; the UI uses the count to show the "history unavailable" state. */
 export interface SyncResult {
 	/** Payloads no storage source could serve this pass (transient — retried next pass). */
-	unavailablePayloads: number;
+	readonly unavailablePayloads: number;
 }
 
-const NOTHING_UNAVAILABLE: SyncResult = { unavailablePayloads: 0 };
+// Returned by reference from several early exits, so it must be immune to mutation.
+const NOTHING_UNAVAILABLE: SyncResult = Object.freeze({ unavailablePayloads: 0 });
 
 /** A decrypted storage file: an object of unknown shape, as stored by the oracle. */
 type StoredRecord = Record<string, unknown>;
