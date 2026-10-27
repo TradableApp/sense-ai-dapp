@@ -7,7 +7,12 @@ import { dropCancelledAnswerPlaceholders } from './syncService';
 
 // graphql-request: capture a hoisted request mock so each test controls the
 // conversation updates returned by The Graph.
-const { graphRequestMock } = vi.hoisted(() => ({ graphRequestMock: vi.fn() }));
+const { graphRequestMock, captureMessageMock } = vi.hoisted(() => ({
+	graphRequestMock: vi.fn(),
+	captureMessageMock: vi.fn(),
+}));
+
+vi.mock('@sentry/react', () => ({ addBreadcrumb: vi.fn(), captureMessage: captureMessageMock }));
 
 vi.mock('graphql-request', () => ({
 	GraphQLClient: class {
@@ -18,6 +23,19 @@ vi.mock('graphql-request', () => ({
 }));
 
 vi.mock('@/lib/searchService', () => ({ mergeSearchIndexDeltas: vi.fn() }));
+
+// The resolver's retry backoff is real time; the sync tests only care about the outcome.
+vi.mock('@/lib/payloadStorage', async importOriginal => {
+	const actual = await importOriginal<typeof import('@/lib/payloadStorage')>();
+	return {
+		...actual,
+		fetchPayload: (
+			cid: string,
+			config: Parameters<typeof actual.fetchPayload>[1],
+			deps: Parameters<typeof actual.fetchPayload>[2],
+		) => actual.fetchPayload(cid, config, { ...deps, wait: async () => {} }),
+	};
+});
 
 vi.mock('@/lib/db', () => {
 	const conversations = { get: vi.fn(), bulkPut: vi.fn() };
@@ -214,5 +232,134 @@ describe('dropCancelledAnswerPlaceholders', () => {
 	it('returns the list unchanged for an empty set', () => {
 		const messages = [{ id: 'a1', role: 'assistant', content: null }];
 		expect(dropCancelledAnswerPlaceholders(messages, new Set())).toBe(messages);
+	});
+});
+
+describe('syncWithRemote — mirror-first payload reads', () => {
+	// Autonomys-style id so the resolver routes through the mirror, then the public
+	// gateway (the localnet IPFS gateway is not consulted for it).
+	const CID_ANSWER = `bafkr6i${'m'.repeat(52)}`;
+	const MIRROR = 'https://storage.googleapis.com/tradable-app-garrick-senseai-payloads/';
+	let sessionKey: CryptoKey;
+
+	beforeEach(async () => {
+		vi.resetModules();
+		vi.clearAllMocks();
+		vi.stubEnv('VITE_THE_GRAPH_API_URL', 'http://localhost:8000/subgraphs/name/senseai');
+		vi.stubEnv('VITE_PAYLOAD_MIRROR_URL', MIRROR);
+
+		sessionKey = await deriveKeyFromEntropy(ENTROPY, OWNER);
+
+		graphRequestMock.mockResolvedValue({
+			conversations: [
+				{
+					id: CONV_ID,
+					conversationCID: CID_ANSWER,
+					conversationMetadataCID: CID_ANSWER,
+					lastMessageCreatedAt: '1700',
+					messages: [{ id: 'm-answer', messageCID: CID_ANSWER, createdAt: '1700' }],
+					promptRequests: [],
+				},
+			],
+		});
+		mockDb.userMetadata.get.mockResolvedValue(undefined);
+		mockDb.userMetadata.put.mockResolvedValue(undefined);
+		mockDb.conversations.get.mockResolvedValue(undefined);
+		mockDb.messageCache.get.mockResolvedValue(undefined);
+		mockDb.conversations.bulkPut.mockResolvedValue(undefined);
+		mockDb.messageCache.bulkPut.mockResolvedValue(undefined);
+	});
+
+	afterEach(() => {
+		vi.unstubAllEnvs();
+		vi.unstubAllGlobals();
+	});
+
+	const fetchedUrls = () =>
+		(globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map(([u]) => String(u));
+
+	it('serves every payload from the mirror without calling the Autonomys gateway', async () => {
+		const encrypted = await encryptData(sessionKey, {
+			role: 'assistant',
+			content: 'mirrored',
+			createdAt: 1_700_000,
+		});
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => ({ ok: true, status: 200, text: async () => encrypted })),
+		);
+
+		const syncWithRemote = await importSync();
+		const result = await syncWithRemote(sessionKey, OWNER);
+
+		expect(result).toEqual({ unavailablePayloads: 0 });
+		expect(captureMessageMock).not.toHaveBeenCalled();
+		expect(fetchedUrls().every(u => u.startsWith(MIRROR))).toBe(true);
+		expect(fetchedUrls().some(u => u.includes('gateway.autonomys.xyz'))).toBe(false);
+		// A clean pass commits the cursor.
+		expect(mockDb.userMetadata.put).toHaveBeenCalledTimes(1);
+	});
+
+	it('counts payloads no source could serve and keeps them out of the cache', async () => {
+		// Mirror miss everywhere, gateway down: nothing hydrates, nothing is written as
+		// empty content, and the caller learns how many payloads are outstanding.
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string) =>
+				String(url).startsWith(MIRROR)
+					? { ok: false, status: 404, text: async () => '' }
+					: { ok: false, status: 503, text: async () => '' },
+			),
+		);
+
+		const syncWithRemote = await importSync();
+		const result = await syncWithRemote(sessionKey, OWNER);
+
+		// conversation + metadata + one message
+		expect(result).toEqual({ unavailablePayloads: 3 });
+		expect(fetchedUrls().some(u => u.includes('gateway.autonomys.xyz'))).toBe(true);
+		expect(mockDb.messageCache.bulkPut).not.toHaveBeenCalled();
+		expect(mockDb.conversations.bulkPut).not.toHaveBeenCalled();
+		// The cursor must not advance past a conversation whose payloads were withheld,
+		// or The Graph would never serve it again and it would be stranded empty.
+		expect(mockDb.userMetadata.put).not.toHaveBeenCalled();
+		// …and the outage is a Sentry issue of its own, not only breadcrumbs.
+		expect(captureMessageMock).toHaveBeenCalledWith(
+			'payload storage degraded: sync cursor held',
+			expect.objectContaining({ level: 'warning', extra: { unavailablePayloads: 3 } }),
+		);
+	});
+
+	it('still reports the unavailable count when a later step throws', async () => {
+		// Mirror serves the conversation and metadata, the message is unavailable, and
+		// then the cache write blows up: the caller must not be told "all clear".
+		const CID_MISSING = `bafkr6i${'n'.repeat(52)}`;
+		const encrypted = await encryptData(sessionKey, { title: 'conv', createdAt: 1_700_000 });
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string) =>
+				String(url) === `${MIRROR}${CID_ANSWER}`
+					? { ok: true, status: 200, text: async () => encrypted }
+					: { ok: false, status: 503, text: async () => '' },
+			),
+		);
+		graphRequestMock.mockResolvedValue({
+			conversations: [
+				{
+					id: CONV_ID,
+					conversationCID: CID_ANSWER,
+					conversationMetadataCID: CID_ANSWER,
+					lastMessageCreatedAt: '1700',
+					messages: [{ id: 'm-answer', messageCID: CID_MISSING, createdAt: '1700' }],
+					promptRequests: [],
+				},
+			],
+		});
+		mockDb.conversations.bulkPut.mockRejectedValue(new Error('IndexedDB is closed'));
+
+		const syncWithRemote = await importSync();
+
+		await expect(syncWithRemote(sessionKey, OWNER)).resolves.toEqual({ unavailablePayloads: 1 });
+		expect(mockDb.userMetadata.put).not.toHaveBeenCalled();
 	});
 });

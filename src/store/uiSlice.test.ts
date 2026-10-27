@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
-import uiReducer, { closeModal, openModal, type UiState } from './uiSlice';
+import uiReducer, {
+	closeModal,
+	dismissStorageDegraded,
+	openModal,
+	setStorageDegraded,
+	type UiState,
+} from './uiSlice';
 
 const initialState: UiState = {
 	priorityModal: { type: null, props: {} },
 	overlayModal: { type: null, props: {} },
 	currentModal: { type: null, props: {} },
+	storageDegraded: false,
+	storageDegradedDismissed: false,
 };
 
 describe('uiSlice', () => {
@@ -78,6 +86,8 @@ describe('uiSlice', () => {
 				priorityModal: { type: 'reauth', props: {} },
 				overlayModal: { type: 'detail', props: {} },
 				currentModal: { type: 'confirm', props: {} },
+				storageDegraded: false,
+				storageDegradedDismissed: false,
 			};
 			const state = uiReducer(allOpen, closeModal(undefined));
 			expect(state.priorityModal).toEqual(initialState.priorityModal);
@@ -108,6 +118,41 @@ describe('uiSlice', () => {
 		it('is a no-op if specified type does not match any open modal', () => {
 			const state = uiReducer(initialState, closeModal('nonexistent'));
 			expect(state).toEqual(initialState);
+		});
+	});
+
+	describe('setStorageDegraded', () => {
+		// Set by useConversations after each sync pass from the count of payloads that could
+		// not be fetched from any source; read by StorageUnavailableBanner.
+		it('flags payload storage as degraded', () => {
+			const state = uiReducer(initialState, setStorageDegraded(true));
+			expect(state.storageDegraded).toBe(true);
+			expect(state.currentModal).toEqual(initialState.currentModal);
+		});
+
+		it('clears the flag once a sync pass fetched everything', () => {
+			const degraded: UiState = { ...initialState, storageDegraded: true };
+			expect(uiReducer(degraded, setStorageDegraded(false)).storageDegraded).toBe(false);
+		});
+
+		it('keeps a dismissal while the same outage continues', () => {
+			const dismissed = uiReducer(
+				uiReducer(initialState, setStorageDegraded(true)),
+				dismissStorageDegraded(),
+			);
+			expect(dismissed.storageDegradedDismissed).toBe(true);
+			expect(uiReducer(dismissed, setStorageDegraded(true)).storageDegradedDismissed).toBe(true);
+		});
+
+		it('re-arms the banner on recovery so a new outage is announced again', () => {
+			const dismissed: UiState = {
+				...initialState,
+				storageDegraded: true,
+				storageDegradedDismissed: true,
+			};
+			const recovered = uiReducer(dismissed, setStorageDegraded(false));
+			expect(recovered.storageDegradedDismissed).toBe(false);
+			expect(uiReducer(recovered, setStorageDegraded(true)).storageDegradedDismissed).toBe(false);
 		});
 	});
 });

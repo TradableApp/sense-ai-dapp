@@ -38,6 +38,7 @@ interface ImportMetaEnv {
 	 *  fetches answer content from instead of the public Autonomys/Irys gateways.
 	 *  Unset on testnet/mainnet — see src/lib/syncService.ts. */
 	readonly VITE_STORAGE_GATEWAY_URL: string | undefined;
+	readonly VITE_PAYLOAD_MIRROR_URL: string | undefined;
 	readonly VITE_THE_GRAPH_API_URL: string;
 	readonly VITE_THIRDWEB_CLIENT_ID: string;
 	readonly VITE_TOKEN_CONTRACT_ADDRESS: string;

@@ -4,10 +4,12 @@
  *         and the client-side IndexedDB cache. It is designed to be the primary mechanism
  *         for keeping the user's local data consistent with on-chain and decentralized storage state.
  * @dev The core workflow is to periodically fetch a list of updated entities from The Graph,
- *      "hydrate" this list by fetching the actual content from decentralized storage (Arweave or Autonomys),
- *      decrypting it, and then performing a bulk update to the local IndexedDB. This provides a fast, offline-first experience.
+ *      "hydrate" this list by fetching the actual content by CID (our GCS mirror first, then the
+ *      Autonomys/Irys gateway — see payloadStorage.ts), decrypting it, and then performing a bulk
+ *      update to the local IndexedDB. This provides a fast, offline-first experience.
  */
 
+import * as Sentry from '@sentry/react';
 import { GraphQLClient } from 'graphql-request';
 import { hexToBytes } from 'viem';
 
@@ -16,6 +18,7 @@ import db from './db';
 import { GET_USER_UPDATES_QUERY } from './graph/queries';
 import type { GetUserUpdatesQuery, GetUserUpdatesQueryVariables } from './graph/query-types';
 import mergeMessages from './mergeMessages';
+import { fetchPayload, type PayloadFetchDeps, type PayloadStorageConfig } from './payloadStorage';
 import { mergeSearchIndexDeltas } from './searchService';
 import type { Message } from './types';
 
@@ -23,92 +26,97 @@ import type { Message } from './types';
 const THE_GRAPH_API_URL = import.meta.env.VITE_THE_GRAPH_API_URL;
 const graphQLClient = new GraphQLClient(THE_GRAPH_API_URL);
 
-// Localnet only: when set, answer content lives in the local IPFS node (the e2e
-// stack's Kubo) and is fetched by CID from this gateway base, instead of the
-// public Autonomys/Irys gateways. Unset on testnet/mainnet — those paths are
-// unchanged. See sense-ai-e2e/scripts/sync-config.sh. Normalised to a trailing
-// slash so `${base}${cid}` is well-formed even if configured without one.
-const RAW_STORAGE_GATEWAY_URL = import.meta.env.VITE_STORAGE_GATEWAY_URL;
-const STORAGE_GATEWAY_URL =
-	RAW_STORAGE_GATEWAY_URL && !RAW_STORAGE_GATEWAY_URL.endsWith('/')
-		? `${RAW_STORAGE_GATEWAY_URL}/`
-		: RAW_STORAGE_GATEWAY_URL;
+// Where payload bytes come from — see payloadStorage.ts for the source order and
+// retry policy. VITE_PAYLOAD_MIRROR_URL is the public GCS mirror the oracle writes
+// every Autonomys CID through to (unset on localnet). VITE_STORAGE_GATEWAY_URL is
+// localnet only: the e2e stack's Kubo gateway (see sense-ai-e2e/scripts/sync-config.sh).
+// Read per call rather than at module load: Vite inlines these at build time so there is
+// no runtime cost, and tests that stub the env see the change without reloading the module.
+const getPayloadStorageConfig = (): PayloadStorageConfig => ({
+	mirrorUrl: import.meta.env.VITE_PAYLOAD_MIRROR_URL,
+	storageGatewayUrl: import.meta.env.VITE_STORAGE_GATEWAY_URL,
+});
+
+/**
+ * Per-attempt ceiling on a payload fetch. Without it a connection that opens but stalls
+ * holds a hydration promise for the OS TCP timeout, times every retry; with it a stall
+ * is just another retriable network failure.
+ */
+const PAYLOAD_FETCH_TIMEOUT_MS = 10_000;
+
+const payloadFetchDeps: PayloadFetchDeps = {
+	// Late-bound so the active global fetch is used, not the one at module load.
+	// `AbortSignal.timeout()` only arrived in Safari 17.4, so the timeout is an
+	// AbortController whose timer covers headers AND body and is released in a `finally`.
+	// The body is read eagerly: payloads are small ciphertext strings, and reading them here
+	// means no timer can outlive the request whatever a caller does with the result.
+	fetch: async url => {
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), PAYLOAD_FETCH_TIMEOUT_MS);
+		try {
+			const response = await fetch(url, { signal: controller.signal });
+			// Always drain the body, also on errors: an unread stream pins the connection
+			// until GC, and error bodies from GCS and the gateway are tiny.
+			const text = await response.text();
+			const body = response.ok ? text : '';
+			return { ok: response.ok, status: response.status, text: async () => body };
+		} finally {
+			clearTimeout(timer);
+		}
+	},
+	report: (message, data) =>
+		Sentry.addBreadcrumb({ category: 'storage.fetch', level: 'warning', message, data }),
+	wait: ms =>
+		new Promise(resolve => {
+			setTimeout(resolve, ms);
+		}),
+	random: Math.random,
+};
+
+/** Result of a sync pass; the UI uses the count to show the "history unavailable" state. */
+export interface SyncResult {
+	/** Payloads no storage source could serve this pass (transient — retried next pass). */
+	readonly unavailablePayloads: number;
+}
+
+// Returned by reference from several early exits, so it must be immune to mutation.
+const NOTHING_UNAVAILABLE: SyncResult = Object.freeze({ unavailablePayloads: 0 });
+
+/** A decrypted storage file: an object of unknown shape, as stored by the oracle. */
+type StoredRecord = Record<string, unknown>;
+
+interface HydratedPayload {
+	value: unknown | null;
+	/** True only for a transient storage failure, never for a missing or undecryptable payload. */
+	unavailable: boolean;
+}
+
+// Returned by reference from two early exits, so frozen like NOTHING_UNAVAILABLE.
+const EMPTY_PAYLOAD: HydratedPayload = Object.freeze({ value: null, unavailable: false });
 
 // --- Internal Helper Functions ---
 
 /**
- * Determines the storage provider based on the CID format.
- * This acts as a router to support multiple storage backends.
- * @param {string} cid The Content ID.
- * @returns {object} The appropriate storage utility module.
+ * @notice Fetches and decrypts a single encrypted payload from storage.
+ * @dev Never throws: a payload that cannot be fetched or decrypted resolves to a null
+ *      value so one failure cannot take the whole sync down. The `unavailable` flag is
+ *      what distinguishes "the storage providers are down" (surfaced to the user and
+ *      retried next pass) from "this CID has nothing for us" (dropped quietly).
  */
-function getStorageProvider(cid: string): 'ipfs' | 'autonomys' | 'arweave' {
-	// ORDERING CONTRACT: the specific Autonomys/Arweave checks MUST come before the
-	// broad IPFS catch-all — its CIDs (`bafkr6i…`, all base32) are a subset of the
-	// IPFS pattern, so checking IPFS first would shadow them (route to the localnet
-	// gateway → 404). Any new CID scheme added here goes BEFORE the IPFS branch.
-	// Mirrors the oracle's getProviderFromCID (tokenized-ai-agent storage.js).
-	//
-	// Autonomys Auto Drive CID validation — CIDv1 base32, 'bafkr6i' prefix, a-z2-7.
-	if (cid && /^bafkr6i[a-z2-7]{52}$/.test(cid)) {
-		return 'autonomys';
-	}
+async function hydratePayload(
+	cid: string | undefined,
+	sessionKey: CryptoKey,
+): Promise<HydratedPayload> {
+	if (!cid) return EMPTY_PAYLOAD;
 
-	// Localnet only: a configured gateway means content lives in the local IPFS
-	// node. Our localnet CIDs are IPFS CIDv1 (base32, `bafy…`/`bafk…`); route them
-	// to the gateway. Gated on STORAGE_GATEWAY_URL so testnet/mainnet are untouched
-	// (there this branch never runs and Autonomys/Arweave detection is unchanged).
-	if (STORAGE_GATEWAY_URL && cid && /^baf[ky][a-z2-7]{20,}$/.test(cid)) {
-		return 'ipfs';
-	}
-
-	// Heuristic for Arweave/Irys: Base64URL (check second - less specific)
-	// Standard Arweave is 43 chars, but Irys can sometimes return 44 chars.
-	// We check for a valid range and character set.
-	if (cid && cid.length >= 43 && cid.length <= 44 && /^[a-zA-Z0-9_-]+$/.test(cid)) {
-		return 'arweave';
-	}
-
-	throw new Error(`Unsupported CID format: ${cid}`);
-}
-
-/**
- * @notice Fetches a single encrypted payload from decentralized storage (Autonomys or Arweave).
- * @param {string} cid The Content ID of the file.
- * @returns {Promise<string|null>} A promise resolving to the encrypted data as a string, or null on failure.
- */
-async function fetchFromStorage(cid: string): Promise<string | null> {
-	if (!cid) return null;
-
-	const provider = getStorageProvider(cid);
-
-	let url;
-	if (provider === 'ipfs') {
-		// STORAGE_GATEWAY_URL is the localnet gateway base (normalised to end in `/`).
-		url = `${STORAGE_GATEWAY_URL}${cid}`;
-	} else if (provider === 'autonomys') {
-		// Use the Autonomys Astral Gateway (or standard IPFS gateway if bridged)
-		// const envNetwork = import.meta.env.VITE_AUTONOMYS_NETWORK || 'testnet';
-
-		// For now just using mainnet
-		// const subDomain = 'mainnet';
-		// const subDomain = envNetwork === 'mainnet' ? envNetwork : 'taurus';
-
-		url = `https://gateway.autonomys.xyz/file/${cid}`;
-	} else {
-		url = `https://gateway.irys.xyz/${cid}`;
-	}
+	const result = await fetchPayload(cid, getPayloadStorageConfig(), payloadFetchDeps);
+	if (!result.ok) return { value: null, unavailable: result.reason === 'unavailable' };
 
 	try {
-		const response = await fetch(url);
-
-		if (!response.ok) {
-			throw new Error(`Storage gateway returned status ${response.status} for CID ${cid}`);
-		}
-		return response.text();
+		return { value: await decryptData(sessionKey, result.data), unavailable: false };
 	} catch (error) {
-		console.error(`[syncService] Failed to fetch CID ${cid} from ${provider}:`, error);
-		return null; // Return null to prevent a single failed fetch from crashing the entire sync.
+		console.warn(`[syncService] Could not decrypt payload ${cid}; skipping it.`, error);
+		return EMPTY_PAYLOAD;
 	}
 }
 
@@ -321,9 +329,14 @@ async function fetchUpdatesFromTheGraph(
 export default async function syncWithRemote(
 	sessionKey: CryptoKey,
 	ownerAddress: string,
-): Promise<void> {
+): Promise<SyncResult> {
 	// Guard against running without a valid session.
-	if (!sessionKey || !ownerAddress) return;
+	if (!sessionKey || !ownerAddress) return NOTHING_UNAVAILABLE;
+
+	// Declared outside the try so a failure after hydration (e.g. a bulkPut) still reports
+	// what hydration found — returning 0 there would clear the "unavailable" banner while
+	// storage is in fact down.
+	let unavailablePayloads = 0;
 
 	try {
 		// 1. Get the last known sync timestamp from our local state (Milliseconds).
@@ -353,7 +366,7 @@ export default async function syncWithRemote(
 		// If there are no updates, we're done. Update the timestamp to prevent constant polling on an idle account.
 		if (graphUpdates.length === 0) {
 			await setLastSyncedAt(sessionKey, ownerAddress, newLastSync);
-			return;
+			return NOTHING_UNAVAILABLE;
 		}
 
 		// 3. "Hydrate" the Graph data by fetching and decrypting all associated CIDs from Arweave in parallel.
@@ -382,6 +395,7 @@ export default async function syncWithRemote(
 							messages: [],
 							searchDeltas: [],
 							cancelledAnswerIds: new Set<string>(),
+							unavailablePayloads: 0,
 						};
 					}
 				} catch (e) {
@@ -390,27 +404,20 @@ export default async function syncWithRemote(
 			}
 
 			// For each conversation, fetch its core data, metadata, and all its messages in parallel.
-			const [convData, metadataData] = await Promise.all([
-				fetchFromStorage(conv.conversationCID)
-					.then(data => data && decryptData(sessionKey, data))
-					.catch(() => null),
-				fetchFromStorage(conv.conversationMetadataCID)
-					.then(data => data && decryptData(sessionKey, data))
-					.catch(() => null),
+			const [convPayload, metadataPayload] = await Promise.all([
+				hydratePayload(conv.conversationCID, sessionKey),
+				hydratePayload(conv.conversationMetadataCID, sessionKey),
 			]);
+			const convData = convPayload.value as StoredRecord | null;
+			const metadataData = metadataPayload.value as StoredRecord | null;
 
 			const messageHydrationPromises = (conv.messages || []).map(
 				async (msg: ConversationUpdate['messages'][number]) => {
-					const [messageData, searchDeltaData] = await Promise.all([
-						fetchFromStorage(msg.messageCID)
-							.then(data => data && decryptData(sessionKey, data))
-							.catch(() => null),
-						msg.searchDelta
-							? fetchFromStorage(msg.searchDelta.searchDeltaCID)
-									.then(data => data && decryptData(sessionKey, data))
-									.catch(() => null)
-							: Promise.resolve(null),
+					const [messagePayload, searchDeltaPayload] = await Promise.all([
+						hydratePayload(msg.messageCID, sessionKey),
+						hydratePayload(msg.searchDelta?.searchDeltaCID, sessionKey),
 					]);
+					const messageData = messagePayload.value as StoredRecord | null;
 					// Return a structured object for clarity, associating the message with its search delta.
 					return {
 						message: messageData
@@ -420,12 +427,19 @@ export default async function syncWithRemote(
 									messageCID: msg.messageCID,
 							  }
 							: null,
-						searchDelta: searchDeltaData,
+						searchDelta: searchDeltaPayload.value,
+						unavailablePayloads:
+							Number(messagePayload.unavailable) + Number(searchDeltaPayload.unavailable),
 					};
 				},
 			);
 
 			const messageResults = await Promise.all(messageHydrationPromises);
+
+			const convUnavailablePayloads =
+				Number(convPayload.unavailable) +
+				Number(metadataPayload.unavailable) +
+				messageResults.reduce((sum, r) => sum + r.unavailablePayloads, 0);
 
 			// --- Process Cancelled/Refunded/Pending Prompt Requests ---
 			// These don't have storage CIDs, so we decrypt the on-chain payload directly.
@@ -481,7 +495,7 @@ export default async function syncWithRemote(
 			);
 
 			// Construct the Remote Conversation Object
-			const remoteConversation = convData
+			const remoteConversation: (StoredRecord & { id: string }) | null = convData
 				? {
 						...convData,
 						...metadataData,
@@ -498,13 +512,14 @@ export default async function syncWithRemote(
 			// If we have a local record with a NEWER timestamp (Optimistic Update),
 			// DO NOT return the remote conversation. Keep the local one to prevent UI jitter/reversion.
 			if (remoteConversation && localConv) {
-				if (localConv.lastUpdatedAt > remoteConversation.lastUpdatedAt) {
+				if (localConv.lastUpdatedAt > Number(remoteConversation.lastUpdatedAt)) {
 					// Returning null conversation prevents the overwrite in the next step
 					return {
 						conversation: null,
 						messages: allMessages,
 						searchDeltas: [],
 						cancelledAnswerIds,
+						unavailablePayloads: convUnavailablePayloads,
 					};
 				}
 			}
@@ -517,19 +532,36 @@ export default async function syncWithRemote(
 				searchDeltas: messageResults
 					.map((r: { searchDelta: unknown }) => r.searchDelta)
 					.filter(Boolean) as unknown[],
+				unavailablePayloads: convUnavailablePayloads,
 			};
 		});
 
 		const hydratedData = await Promise.all(hydrationPromises);
+		unavailablePayloads = hydratedData.reduce((sum, item) => sum + item.unavailablePayloads, 0);
+		if (unavailablePayloads > 0) {
+			// One line per pass, not one per CID: the per-attempt detail is in the Sentry
+			// breadcrumbs that payloadStorage leaves.
+			console.warn(
+				`[syncService] ${unavailablePayloads} payload(s) unavailable from every storage source; will retry next sync.`,
+			);
+			// Breadcrumbs only surface attached to a later error; this makes the outage an
+			// issue of its own that can alert. One fingerprint so every pass groups together.
+			Sentry.captureMessage('payload storage degraded: sync cursor held', {
+				level: 'warning',
+				fingerprint: ['payload-storage-degraded'],
+				extra: { unavailablePayloads },
+			});
+		}
 
 		// 4. Prepare all fetched data for bulk insertion into IndexedDB.
 		const allSearchDeltas = hydratedData.flatMap(item => item.searchDeltas);
 
 		const conversationCachePromises = hydratedData
-			.filter(item => item.conversation) // Only cache if we got a valid (non-skipped) conversation
-			.map(async item => {
-				const encryptedConv = await encryptData(sessionKey, item.conversation);
-				return { ownerAddress, id: item.conversation.id, encryptedData: encryptedConv };
+			// Only cache if we got a valid (non-skipped) conversation
+			.flatMap(item => (item.conversation ? [item.conversation] : []))
+			.map(async conversation => {
+				const encryptedConv = await encryptData(sessionKey, conversation);
+				return { ownerAddress, id: conversation.id, encryptedData: encryptedConv };
 			});
 
 		const messageCachePromises = hydratedData
@@ -616,11 +648,24 @@ export default async function syncWithRemote(
 			await mergeSearchIndexDeltas(sessionKey, ownerAddress, allSearchDeltas);
 		}
 
-		// 6. Only update the 'last synced' timestamp after all operations succeed.
-		// If any step above fails, this line won't be reached, and the next sync will re-process the failed items.
-		await setLastSyncedAt(sessionKey, ownerAddress, newLastSync);
+		// 6. Only advance the 'last synced' cursor when every payload was served. The Graph
+		// only returns conversations newer than the cursor, so advancing past one whose
+		// payloads a storage outage withheld would strand it until a full re-sync. Holding
+		// the cursor costs one re-query per pass; the already-hydrated conversations take the
+		// CID-match skip above.
+		//
+		// Deliberately no cap on how long the hold lasts. A cap would convert the one case it
+		// targets (mirror persistently 5xx AND gateway 404 for the same CID) from a loud,
+		// self-healing outage — banner shown, a Sentry breadcrumb every pass, fixed by
+		// repairing the mirror or unsetting VITE_PAYLOAD_MIRROR_URL — into silent data loss
+		// whenever that 404 was a fresh upload the gateway had not propagated yet.
+		if (unavailablePayloads === 0) {
+			await setLastSyncedAt(sessionKey, ownerAddress, newLastSync);
+		}
+		return { unavailablePayloads };
 	} catch (error) {
 		console.error('[syncService] A critical error occurred during the sync process:', error);
 		// We do not update the timestamp on failure, ensuring the process will be retried.
+		return { unavailablePayloads };
 	}
 }
