@@ -7,7 +7,12 @@ import { dropCancelledAnswerPlaceholders } from './syncService';
 
 // graphql-request: capture a hoisted request mock so each test controls the
 // conversation updates returned by The Graph.
-const { graphRequestMock } = vi.hoisted(() => ({ graphRequestMock: vi.fn() }));
+const { graphRequestMock, captureMessageMock } = vi.hoisted(() => ({
+	graphRequestMock: vi.fn(),
+	captureMessageMock: vi.fn(),
+}));
+
+vi.mock('@sentry/react', () => ({ addBreadcrumb: vi.fn(), captureMessage: captureMessageMock }));
 
 vi.mock('graphql-request', () => ({
 	GraphQLClient: class {
@@ -288,6 +293,7 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 		const result = await syncWithRemote(sessionKey, OWNER);
 
 		expect(result).toEqual({ unavailablePayloads: 0 });
+		expect(captureMessageMock).not.toHaveBeenCalled();
 		expect(fetchedUrls().every(u => u.startsWith(MIRROR))).toBe(true);
 		expect(fetchedUrls().some(u => u.includes('gateway.autonomys.xyz'))).toBe(false);
 		// A clean pass commits the cursor.
@@ -317,6 +323,11 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 		// The cursor must not advance past a conversation whose payloads were withheld,
 		// or The Graph would never serve it again and it would be stranded empty.
 		expect(mockDb.userMetadata.put).not.toHaveBeenCalled();
+		// …and the outage is a Sentry issue of its own, not only breadcrumbs.
+		expect(captureMessageMock).toHaveBeenCalledWith(
+			'payload storage degraded: sync cursor held',
+			expect.objectContaining({ level: 'warning', extra: { unavailablePayloads: 3 } }),
+		);
 	});
 
 	it('still reports the unavailable count when a later step throws', async () => {

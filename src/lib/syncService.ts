@@ -55,7 +55,10 @@ const payloadFetchDeps: PayloadFetchDeps = {
 		const timer = setTimeout(() => controller.abort(), PAYLOAD_FETCH_TIMEOUT_MS);
 		try {
 			const response = await fetch(url, { signal: controller.signal });
-			const body = response.ok ? await response.text() : '';
+			// Always drain the body, also on errors: an unread stream pins the connection
+			// until GC, and error bodies from GCS and the gateway are tiny.
+			const text = await response.text();
+			const body = response.ok ? text : '';
 			return { ok: response.ok, status: response.status, text: async () => body };
 		} finally {
 			clearTimeout(timer);
@@ -541,6 +544,13 @@ export default async function syncWithRemote(
 			console.warn(
 				`[syncService] ${unavailablePayloads} payload(s) unavailable from every storage source; will retry next sync.`,
 			);
+			// Breadcrumbs only surface attached to a later error; this makes the outage an
+			// issue of its own that can alert. One fingerprint so every pass groups together.
+			Sentry.captureMessage('payload storage degraded: sync cursor held', {
+				level: 'warning',
+				fingerprint: ['payload-storage-degraded'],
+				extra: { unavailablePayloads },
+			});
 		}
 
 		// 4. Prepare all fetched data for bulk insertion into IndexedDB.
