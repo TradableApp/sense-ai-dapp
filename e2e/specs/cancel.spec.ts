@@ -1,7 +1,7 @@
 import { expect, test } from '../fixtures';
+import { advanceTime, LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { getPromptRequests, waitForGraph } from '../helpers/graph';
-import { increaseTime } from '../helpers/hardhat';
 
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
@@ -21,7 +21,7 @@ const CANCELLATION_TIMEOUT_S = 3;
 // drops the pending message so the composer frees up. Uses the oracle mock-delay sentinel
 // to hold the answer pending deterministically. Fresh per-test users; serial.
 test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test.beforeEach(async ({ freshUserAccount }) => {
@@ -39,7 +39,7 @@ test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 		// Prompt is pending (createdAt now set on-chain) → cancel affordance appears…
 		await expect(freshChatPage.cancelButton).toBeVisible({ timeout: 30_000 });
 		// …advance past the on-chain cancellation window, then cancel within the UI window.
-		await increaseTime(CANCELLATION_TIMEOUT_S + 1);
+		await advanceTime(CANCELLATION_TIMEOUT_S + 1);
 		await freshChatPage.cancelButton.click();
 
 		// Indexing: the prompt request is flagged cancelled on-chain → subgraph.
@@ -71,7 +71,7 @@ test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 		await expect(freshChatPage.submitButton).toHaveCount(0);
 
 		// Cleanup: cancel so the test leaves no in-flight job.
-		await increaseTime(CANCELLATION_TIMEOUT_S + 1);
+		await advanceTime(CANCELLATION_TIMEOUT_S + 1);
 		await freshChatPage.cancelButton.click();
 		await expect(freshChatPage.submitButton).toBeVisible({ timeout: 15_000 });
 	});
@@ -86,7 +86,7 @@ test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 		// Cancel the first prompt.
 		await freshChatPage.sendDelayedPrompt('Hold then drop this one', HOLD_MS);
 		await expect(freshChatPage.cancelButton).toBeVisible({ timeout: 30_000 });
-		await increaseTime(CANCELLATION_TIMEOUT_S + 1);
+		await advanceTime(CANCELLATION_TIMEOUT_S + 1);
 		await freshChatPage.cancelButton.click();
 
 		// The composer re-enables (isAiThinking cleared) → Send returns.

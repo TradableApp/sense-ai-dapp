@@ -1,4 +1,5 @@
 import { expect, test } from '../fixtures';
+import { LIVE_STACK } from '../helpers/chain';
 import { fundAndActivatePlan } from '../helpers/contracts';
 import { getConversations, getPayments, waitForIndexing } from '../helpers/graph';
 import { getCurrentBlock } from '../helpers/hardhat';
@@ -12,7 +13,7 @@ const SKIP_REASON = 'Skipped: requires local Graph node + Hardhat node (set E2E_
 // forward-only chain, and lets these assertions be EXACT rather than the ">= and
 // content-derived-CID" workarounds the shared account previously forced.
 test.describe('Graph — subgraph data layer (T-GRAPH)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 
 	// Fund + activate BEFORE the body touches a fresh* page fixture, so the plan is live
 	// when a protected route first loads (the composer is plan-gated). `freshUserAccount`

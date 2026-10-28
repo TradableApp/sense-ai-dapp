@@ -20,6 +20,9 @@ const LOCALNET_CHAIN_ID = 31337;
 const LOCALNET_RPC_URL = 'http://127.0.0.1:8545';
 const LOCALNET_BASE_URL = 'http://localhost:3002';
 const DEFAULT_PREFUNDED_COUNT = 4;
+/** The hosted testnet build (sense-ai-e2e TESTNET_DAPP_URL default). The runner exports
+ *  E2E_BASE_URL for the Playwright stage; the fund/key/sweep scripts never open a browser. */
+const TESTNET_DEFAULT_BASE_URL = 'https://sense-ai-app-garrick.web.app';
 
 /** Environment subset the adapter reads. `NodeJS.ProcessEnv`-shaped so `process.env` passes. */
 export type Env = Readonly<Record<string, string | undefined>>;
@@ -120,7 +123,7 @@ function readTestnetConfig(env: Env): TestnetConfig {
 	const treasuryPrivateKey = need('E2E_TESTNET_TREASURY_PRIVATE_KEY');
 	const seed = need('E2E_TESTNET_SEED');
 	const accountsFile = need('E2E_TESTNET_ACCOUNTS_FILE');
-	const baseUrl = need('E2E_BASE_URL');
+	const baseUrl = env.E2E_BASE_URL || TESTNET_DEFAULT_BASE_URL;
 	const escrowAddress = need('VITE_ESCROW_CONTRACT_ADDRESS');
 	const agentAddress = need('VITE_AGENT_CONTRACT_ADDRESS');
 	const countRaw = env.E2E_TESTNET_ACCOUNT_COUNT ?? String(DEFAULT_PREFUNDED_COUNT);
@@ -280,6 +283,23 @@ export interface SendFromRequest {
 	gas?: bigint;
 	maxFeePerGas?: bigint;
 	maxPriorityFeePerGas?: bigint;
+}
+
+/**
+ * Move chain time forward by `seconds`. Localnet: `evm_increaseTime` + a mined block. Testnet:
+ * wall-clock wait — a public chain's `block.timestamp` advances on its own (Base: 2 s blocks),
+ * so for the short protocol windows (the 3 s cancellation timeout) waiting IS advancing. Long
+ * windows (the 1 h refund timeout) are not reachable this way; those specs stay localnet-only.
+ */
+export async function advanceTime(seconds: number): Promise<void> {
+	if (CHAIN === 'localnet') {
+		await rpc('evm_increaseTime', [seconds]);
+		await rpc('evm_mine', []);
+		return;
+	}
+	await new Promise(resolve => {
+		setTimeout(resolve, seconds * 1_000);
+	});
 }
 
 /** True when the configured RPC answers and reports the configured chain id. */

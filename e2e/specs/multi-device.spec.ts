@@ -1,9 +1,9 @@
 import { type BrowserContext } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
-import { buildMockWalletScript } from '../fixtures/mock-wallet';
+import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
-import { openDevice, parseAble } from '../helpers/devices';
+import { createWalletContext, openDevice, parseAble } from '../helpers/devices';
 import { allocateFreshAccount } from '../helpers/fresh-account';
 import {
 	getConversation,
@@ -37,7 +37,7 @@ const openContexts: BrowserContext[] = [];
 // same wallet hydrates the first device's conversations from chain (and decrypts them with the
 // shared session key), while a different wallet sees nothing. Serial; fresh stack per run.
 test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	// Close every context opened during the test — even if it failed mid-body — so worker-scoped
@@ -290,9 +290,8 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		const accountB = await allocateFreshAccount();
 
 		// Connect as wallet A on a SINGLE context, create a conversation, confirm it shows.
-		const context = await browser.newContext();
+		const context = await createWalletContext(browser, accountA);
 		openContexts.push(context); // closed in afterEach (even on failure)
-		await context.addInitScript(buildMockWalletScript(accountA));
 		const page = await context.newPage();
 		await page.goto('/');
 		await new AuthPage(page).connectAndSign();

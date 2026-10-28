@@ -1,5 +1,6 @@
 import { expect, test } from '../fixtures';
 import { BRAIN_PG_SKIP_REASON, brainQuery, readBrainPgConfig } from '../helpers/brain';
+import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 
 const SKIP_REASON =
@@ -15,7 +16,7 @@ const REAL_AI_SKIP_REASON =
 // (and therefore plugin-senseai, and therefore the Brain accessor) is ever reached. So these
 // need a real model, real spend, and an explicit opt-in — never the default.
 test.describe('Brain market context reaches the answer (T-BRAIN-AI)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(process.env.E2E_REAL_AI !== '1', REAL_AI_SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 	test.skip(readBrainPgConfig() === null, BRAIN_PG_SKIP_REASON);

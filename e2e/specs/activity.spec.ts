@@ -1,4 +1,5 @@
 import { expect, test } from '../fixtures';
+import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { getActivities, waitForGraph } from '../helpers/graph';
 import { DashboardPage } from '../pages/DashboardPage';
@@ -13,7 +14,7 @@ const SKIP_REASON =
 // claims a fresh funded account; the beforeEach activation itself emits a PLAN_UPDATE Activity.
 
 test.describe('Recent activity feed (T-ACTIVITY)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test.beforeEach(async ({ freshUserAccount }) => {

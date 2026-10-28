@@ -7,11 +7,12 @@
 
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
+import { LIVE_STACK } from '../helpers/chain';
 import { AuthPage } from '../pages/AuthPage';
 
 test.describe('Wallet connection (T-AUTH)', () => {
 	test.skip(
-		process.env.E2E_LOCAL_SERVICES !== '1',
+		!LIVE_STACK,
 		'Skipped: requires local Hardhat node for wallet mock RPC delegation (set E2E_LOCAL_SERVICES=1)',
 	);
 
@@ -68,9 +69,9 @@ test.describe('Wallet connection (T-AUTH)', () => {
 		// resolution and fails whenever the name wins. Assert the intent instead:
 		// the page's provider is connected as EXACTLY account #1.
 		const accounts = (await authenticatedPage.evaluate(() =>
-			(window as unknown as { ethereum: { request(_args: { method: string }): Promise<string[]> } }).ethereum.request(
-				{ method: 'eth_accounts' },
-			),
+			(
+				window as unknown as { ethereum: { request(_args: { method: string }): Promise<string[]> } }
+			).ethereum.request({ method: 'eth_accounts' }),
 		)) as string[];
 		expect(accounts[0]?.toLowerCase()).toBe(TEST_ACCOUNT.address.toLowerCase());
 	});
@@ -125,7 +126,7 @@ test.describe('Wallet connection (T-AUTH)', () => {
 
 test.describe('Session key derivation security (T-SIGN)', () => {
 	test.skip(
-		process.env.E2E_LOCAL_SERVICES !== '1',
+		!LIVE_STACK,
 		'Skipped: requires local Hardhat node for wallet signing (set E2E_LOCAL_SERVICES=1)',
 	);
 

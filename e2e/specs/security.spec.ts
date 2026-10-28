@@ -1,7 +1,9 @@
 import { test as base, expect } from '@playwright/test';
 
+
 import { test } from '../fixtures';
 import { injectMockWallet } from '../fixtures/mock-wallet';
+import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 
 const SKIP_REASON =
@@ -33,7 +35,7 @@ test.describe('Security — route protection (T-SEC-ROUTE)', () => {
 });
 
 test.describe('Security — session and storage (T-SEC-SESSION)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 
 	test('T-SEC-04: Session key is not persisted to localStorage', async ({ authenticatedPage }) => {
 		const hasSessionKey = await authenticatedPage.evaluate(() => {
@@ -85,7 +87,7 @@ test.describe('Security — session and storage (T-SEC-SESSION)', () => {
 // they need a funded wallet with an active plan — they run on a FRESH account (fund + activate in
 // beforeEach, page connects after) rather than the planless cached Account #1 they were stranded on.
 test.describe('Security — encryption at rest and in transit (T-SEC-CRYPTO)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test.beforeEach(async ({ freshUserAccount }) => {

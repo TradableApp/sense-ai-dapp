@@ -86,6 +86,11 @@ Playwright runs projects in **config order, not the order you pass `--project`**
 **"Green" means 0 failed AND 0 flaky.** Local `retries` is 1, so the suite can exit 0 while
 reporting flaky tests. A non-zero flaky count is a finding.
 
+**Testnet mode** (`--project=testnet`, driven by `sense-ai-e2e/scripts/testnet/run-e2e-testnet.sh`)
+runs against Base Sepolia, where none of the above applies: there are no snapshots to wedge
+anything, every test uses a seed-derived fresh account, and `plan` is excluded until
+CU-14ym9bvmmvn rewrites it on fresh accounts. See `e2e/CAPABILITIES.md`, "Testnet mode".
+
 **CI does not run this suite at all** — neither repo's `ci.yml` invokes Playwright. A local
 sharded run is the only place the full stack is exercised, which is why the guards above are
 static tests: they run under `bun run test` and are the only automated protection that executes

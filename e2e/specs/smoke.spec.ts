@@ -1,28 +1,33 @@
 import { test as base, expect } from '@playwright/test';
 
 import { injectMockWallet } from '../fixtures/mock-wallet';
-import { isGraphRunning } from '../helpers/graph';
-import { isHardhatRunning } from '../helpers/hardhat';
+import { CHAIN , getChainConfig, isChainReachable, LIVE_STACK, redactUrl } from '../helpers/chain';
+import { GRAPH_NODE_ORIGIN, isGraphRunning } from '../helpers/graph';
 
 const test = base;
 
 test.describe('Infrastructure pre-flight', () => {
-	test.skip(
-		process.env.E2E_LOCAL_SERVICES !== '1',
-		'Skipped: requires local Hardhat node (set E2E_LOCAL_SERVICES=1)',
-	);
+	test.skip(!LIVE_STACK, 'Skipped: requires local Hardhat node (set E2E_LOCAL_SERVICES=1)');
 
-	test('T-INIT-SMOKE-01: Hardhat node is reachable at port 8545', async () => {
-		const running = await isHardhatRunning();
-		expect(running, 'Hardhat node must be running. Start with: bunx hardhat node').toBe(true);
+	test('T-INIT-SMOKE-01: the chain RPC is reachable and reports the expected chain id', async () => {
+		const { chainId, rpcUrl } = getChainConfig();
+		const remedy =
+			CHAIN === 'testnet'
+				? 'check the provider URL the runner exported (sense-ai-e2e verify-stack.sh rpc probe)'
+				: 'Hardhat node must be running. Start with: bunx hardhat node';
+		expect(
+			await isChainReachable(),
+			`${redactUrl(rpcUrl)} did not answer eth_chainId with ${chainId} — ${remedy}`,
+		).toBe(true);
 	});
 
-	test('T-INIT-SMOKE-02: Local Graph node is reachable at port 8000', async () => {
+	test('T-INIT-SMOKE-02: the Graph endpoint is reachable', async () => {
 		const running = await isGraphRunning();
-		expect(
-			running,
-			'Graph node must be running. Start with: docker-compose up in sense-ai-subgraph',
-		).toBe(true);
+		const remedy =
+			CHAIN === 'testnet'
+				? 'The Graph Studio did not answer — check the subgraph deployment'
+				: 'Graph node must be running. Start with: docker-compose up in sense-ai-subgraph';
+		expect(running, `${GRAPH_NODE_ORIGIN}: ${remedy}`).toBe(true);
 	});
 });
 

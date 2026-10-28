@@ -1,4 +1,5 @@
 import { expect, test } from '../fixtures';
+import { LIVE_STACK } from '../helpers/chain';
 import { ABLE, TOKEN_ADDRESS } from '../helpers/contracts';
 import { fundABLE, getABLEBalance } from '../helpers/hardhat';
 
@@ -6,7 +7,7 @@ const SKIP_REASON =
 	'Skipped: requires Hardhat node + deployed contracts (set E2E_LOCAL_SERVICES=1)';
 
 test.describe('Localnet faucet (T-FAUCET)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS, 'Skipped: VITE_TOKEN_CONTRACT_ADDRESS not set');
 
 	// ADR-0002: a fresh account per test instead of snapshot/revert. `evm_revert` wedges

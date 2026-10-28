@@ -8,18 +8,20 @@ Frontend dApp for SenseAI — the AI Agent providing sentiment and fundamental o
 
 ## Scripts
 
-| Command                             | Purpose                                                             |
-| ----------------------------------- | ------------------------------------------------------------------- |
-| `bun run dev`                       | Start dev server on port 3002 (localnet mode)                       |
-| `bun run dev:testnet`               | Dev server against Base Sepolia testnet                             |
-| `bun run build`                     | Production build (mainnet)                                          |
-| `bun run build:testnet`             | Build against testnet                                               |
-| `bun run lint` / `bun run lint:fix` | ESLint                                                              |
-| `bun run format`                    | Prettier                                                            |
-| `bun run sync-contracts`            | Copy ABI files from `able-contracts` and `tokenized-ai-agent` repos |
-| `bun run test`                      | Vitest unit tests + the `e2e/__guards__/` static guards             |
-| `bun run typecheck:e2e`             | Type-check the Playwright suite (separate tsconfig)                 |
-| `bun run test:e2e`                  | Playwright — **see the warning below before running this directly** |
+| Command                                | Purpose                                                                                  |
+| -------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `bun run dev`                          | Start dev server on port 3002 (localnet mode)                                            |
+| `bun run dev:testnet`                  | Dev server against Base Sepolia testnet                                                  |
+| `bun run build`                        | Production build (mainnet)                                                               |
+| `bun run build:testnet`                | Build against testnet                                                                    |
+| `bun run lint` / `bun run lint:fix`    | ESLint                                                                                   |
+| `bun run format`                       | Prettier                                                                                 |
+| `bun run sync-contracts`               | Copy ABI files from `able-contracts` and `tokenized-ai-agent` repos                      |
+| `bun run test`                         | Vitest unit tests + the `e2e/__guards__/` static guards                                  |
+| `bun run typecheck:e2e`                | Type-check the Playwright suite (separate tsconfig)                                      |
+| `bun run test:e2e`                     | Playwright — **see the warning below before running this directly**                      |
+| `bun run test:e2e:testnet`             | The `testnet` Playwright project against Base Sepolia — only via the sense-ai-e2e runner |
+| `bun run e2e:testnet:fund\|key\|sweep` | Ephemeral-account tooling the runner calls (`e2e/testnet/`); never by hand on a run day  |
 
 ## Testing
 
@@ -43,6 +45,13 @@ protocol, which must be started inside tmux (the runner refuses otherwise):
 ```bash
 cd ../sense-ai-e2e && tmux new-session -s e2e 'bash scripts/run-e2e-sharded.sh'
 ```
+
+**Testnet mode** runs the same specs against the real Base Sepolia stack through the chain
+adapter (`e2e/helpers/chain.ts`): seed-derived accounts funded by a treasury, Node-side signing,
+no dev-node RPC methods. It is driven only by `sense-ai-e2e/scripts/testnet/run-e2e-testnet.sh`
+(real model calls, real test gas). What runs and what is excluded, with reasons, is in
+`e2e/CAPABILITIES.md` under "Testnet mode". Specs gate on `LIVE_STACK` from the adapter, never on
+`process.env.E2E_LOCAL_SERVICES` (the `live-stack-gate` guard enforces this).
 
 A single `playwright test` invocation reproduces the wedge described above. The tmux
 requirement is because the run takes ~70 minutes and owns the ports, chain and Docker stack

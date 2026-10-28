@@ -1,5 +1,6 @@
 import { expect, test } from '../fixtures';
 import { BRAIN_PG_SKIP_REASON, readBrainPgConfig, waitForLedger } from '../helpers/brain';
+import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 
 const SKIP_REASON =
@@ -15,7 +16,7 @@ const SKIP_REASON =
 // news injection) needs MOCK_AI=false and lives in the opt-in real-AI run.
 
 test.describe('Brain activity ledger (T-BRAIN)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 	test.skip(readBrainPgConfig() === null, BRAIN_PG_SKIP_REASON);
 

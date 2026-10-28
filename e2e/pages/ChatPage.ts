@@ -126,6 +126,22 @@ export class ChatPage {
 		return this.page.getByRole('heading', { name: title, level: 4 });
 	}
 
+	/** Every reasoning step title in the expanded block — for a real oracle, whose step titles
+	 *  are not knowable in advance (count ≥ 1 is the assertion). */
+	get reasoningSteps() {
+		return this.expandedReasoningPanel.getByRole('heading', { level: 4 });
+	}
+
+	/** Every rendered source link in the expanded sources disclosure (see sourceLink). */
+	get sourceLinks() {
+		return this.expandedReasoningPanel.getByRole('link');
+	}
+
+	/** The open collapsible holding the "Used N sources" disclosure. */
+	private get expandedReasoningPanel() {
+		return this.page.locator('[data-state="open"]').filter({ hasText: /used \d+ sources?/i });
+	}
+
 	/** A rendered source link (opens in a new tab). Scoped to the expanded reasoning panel (the
 	 *  open collapsible holding the "Used N sources" disclosure) so it can never match a nav,
 	 *  footer, or onboarding link that happens to share the title. */

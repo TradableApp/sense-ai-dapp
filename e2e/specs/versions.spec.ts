@@ -1,4 +1,5 @@
 import { expect, test } from '../fixtures';
+import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import {
 	getConversations,
@@ -22,7 +23,7 @@ async function indexedAnswers(conversationId: string) {
 // dApp render) AND the version-switching UI, upgrading the prior button-only coverage
 // (T-CHAT-10). Fresh per-test users on a pristine chain (forward-only); serial run.
 test.describe('Answer versions — regenerate (T-REGEN)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test.beforeEach(async ({ freshUserAccount }) => {
@@ -133,7 +134,7 @@ test.describe('Answer versions — regenerate (T-REGEN)', () => {
 });
 
 test.describe('Answer versions — edit prompt (T-EDIT)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test.beforeEach(async ({ freshUserAccount }) => {

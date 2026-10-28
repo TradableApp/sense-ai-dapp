@@ -1,4 +1,5 @@
 import { expect, test } from '../fixtures';
+import { LIVE_STACK } from '../helpers/chain';
 import { ABLE, ESCROW_ADDRESS, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
 import {
 	activatePlan,
@@ -27,7 +28,7 @@ const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
 
 test.describe('Contract cost change → dApp/usage (T-COST)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	// ADR-0002: fresh account per test, no snapshot/revert — `evm_revert` wedges
@@ -97,7 +98,7 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 // per-test user (accounts 2..19) over a real mid-session connect, forward-only —
 // no snapshot/revert (CU-86d3a04rr).
 test.describe('Contract cost change across prompts (T-COST-MULTI)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	// promptFee is GLOBAL on the escrow, so capture and restore it forward-only (no
@@ -143,7 +144,7 @@ test.describe('Contract cost change across prompts (T-COST-MULTI)', () => {
 // The e2e covers the user-facing surface ONCE on the representative action (prompt):
 // the dApp shows the right failure when the wallet can't cover the next fee.
 test.describe('Insufficient balance blocks an action (T-COST-INSUFFICIENT)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	// No funding hook — this spec intentionally controls the wallet's balance itself, and a
@@ -180,7 +181,7 @@ test.describe('Insufficient balance blocks an action (T-COST-INSUFFICIENT)', () 
 // than re-testing every action through the UI (which the contract unit tests own).
 // Fresh per-test user, forward-only (no snapshot/revert) so the answer renders.
 test.describe('Insufficient balance blocks regenerate (T-COST-REGEN)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	usePromptFeeRestore(test, ESCROW_ADDRESS);
