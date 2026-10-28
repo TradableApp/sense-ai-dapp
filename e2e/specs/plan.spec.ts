@@ -84,7 +84,7 @@ test.describe('Spending plan management (T-PLAN)', () => {
 		await freshDashboardPage.assertHasPlan();
 	});
 
-	test('T-PLAN-06: Escrow holds no extra tokens until a prompt is sent', async ({
+	test('T-PLAN-06: Activation records the spending limit with nothing spent (no upfront escrow)', async ({
 		freshDashboardPage,
 		freshPlanModal,
 		freshUserAccount,
@@ -272,3 +272,6 @@ test.describe('Plan modal validation (T-PLAN-EDGE)', () => {
 		).toBeVisible({ timeout: 10_000 });
 	});
 });
+
+// DO NOT ADD TESTS BELOW THIS LINE. T-PLAN-13 above advances EVM time by ~24 h and a forward-only
+// chain cannot rewind it; anything that ran after it would see a chain a day ahead.
