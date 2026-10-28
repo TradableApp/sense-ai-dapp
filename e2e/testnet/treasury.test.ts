@@ -1,7 +1,11 @@
+import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
 import { decodeFunctionData, parseAbi } from 'viem';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { sweepAccount, TOKEN_PER_ACCOUNT_WEI } from './treasury';
+import { appendAccountsFile, sweepAccount, TOKEN_PER_ACCOUNT_WEI } from './treasury';
 import type { TestnetConfig } from '../helpers/chain';
 
 type Tx = { to: string; data?: `0x${string}`; value?: bigint };
@@ -90,5 +94,24 @@ describe('sweepAccount', () => {
 
 		expect(plan.sendToken).toBe(false);
 		expect(tokenTransfers()).toEqual([]);
+	});
+});
+
+describe('appendAccountsFile', () => {
+	it('surfaces a real filesystem error at once instead of retrying it into a lock timeout', async () => {
+		// A read-only directory makes the lock mkdir fail with EACCES — not EEXIST, so no other
+		// writer holds the lock and waiting cannot help. The caller must see the OS error, now.
+		const dir = mkdtempSync(path.join(tmpdir(), 'accounts-lock-'));
+		chmodSync(dir, 0o500);
+		const started = Date.now();
+		try {
+			await expect(
+				appendAccountsFile(path.join(dir, 'accounts.json'), [{ index: 0, address: ACCOUNT }]),
+			).rejects.toThrow(/EACCES/);
+			expect(Date.now() - started).toBeLessThan(2_000);
+		} finally {
+			chmodSync(dir, 0o700);
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
