@@ -7,7 +7,7 @@ import {
 	fundABLE,
 	getABLEBalance,
 	getAllowance,
-	getEscrowBalance,
+	getSpendingLimit,
 	increaseTime,
 } from '../helpers/hardhat';
 
@@ -87,18 +87,23 @@ test.describe('Spending plan management (T-PLAN)', () => {
 	test('T-PLAN-06: Escrow holds no extra tokens until a prompt is sent', async ({
 		freshDashboardPage,
 		freshPlanModal,
+		freshUserAccount,
 	}) => {
-		const escrowBefore = await getEscrowBalance(TOKEN_ADDRESS, ESCROW_ADDRESS);
-
 		await freshDashboardPage.goto();
 		await freshDashboardPage.getStartedButton.click();
 		await freshPlanModal.fillAndSubmit(10, 30);
 		await freshPlanModal.waitForTxCompletion();
 
-		// Allowance model: no upfront escrow at activation — the escrow balance only
-		// changes when a prompt is initiated.
-		const escrowAfter = await getEscrowBalance(TOKEN_ADDRESS, ESCROW_ADDRESS);
-		expect(escrowAfter).toBe(escrowBefore);
+		// Allowance model: no upfront escrow at activation — the user's spending record shows
+		// the authorised limit and NOTHING spent until a prompt is initiated. Read per user, not
+		// the escrow contract's total balance: on a shared public chain that total moves with
+		// every other user's prompt and would make this assertion race unrelated traffic.
+		const { allowance, spentAmount } = await getSpendingLimit(
+			ESCROW_ADDRESS,
+			freshUserAccount.address,
+		);
+		expect(allowance).toBe(ABLE(10));
+		expect(spentAmount).toBe(0n);
 	});
 
 	test('T-PLAN-07: ERC-20 allowance is set after plan activation', async ({
