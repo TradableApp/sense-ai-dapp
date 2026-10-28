@@ -1,4 +1,5 @@
 import { expect, test } from '../fixtures';
+import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { getConversation, getConversations, waitForGraph } from '../helpers/graph';
 
@@ -16,7 +17,7 @@ const SKIP_REASON =
 // re-sync via in-app navigation (history → chat → history) instead, which re-mounts History and
 // refetches from remote with the session intact. Fresh funded account per test; serial.
 test.describe('Metadata round-trip (T-META)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test.beforeEach(async ({ freshUserAccount }) => {

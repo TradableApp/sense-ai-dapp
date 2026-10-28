@@ -12,6 +12,7 @@ import { mnemonicToAccount } from 'viem/accounts';
 // this poller at nothing the moment either changes — and an unreachable endpoint makes
 // it skip serialization as a "graph-less context" while every other helper queries the
 // real graph. That is the self-disabling this module exists to prevent.
+import { CHAIN, rpc as chainRpc, sendFrom as chainSendFrom, getChainConfig } from './chain';
 import { GRAPH_URL } from './graph';
 
 const execFileAsync = promisify(execFile);
@@ -32,8 +33,10 @@ const AGENT_REPO_DIR = path.resolve(
 // in this file would then talk to nothing while the dApp talked to the real chain. That is
 // exactly the failure the hardcoded subgraph URL caused (CU-86d3dwme6): an unreachable
 // endpoint produced a skipped wait rather than an error.
-export const RPC_URL = process.env.VITE_CHAIN_RPC_URL || 'http://127.0.0.1:8545';
-let reqId = 1;
+export const RPC_URL: string =
+	CHAIN === 'testnet'
+		? getChainConfig().rpcUrl
+		: process.env.VITE_CHAIN_RPC_URL || 'http://127.0.0.1:8545';
 
 // ── Per-test fresh accounts ───────────────────────────────────────────────────
 // Hardhat's deterministic dev accounts (mnemonic "test test … junk"). Account 0
@@ -78,16 +81,9 @@ export const FRESH_TEST_ACCOUNTS: readonly HardhatAccount[] = Array.from(
 	},
 );
 
-async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
-	const res = await fetch(RPC_URL, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ jsonrpc: '2.0', id: reqId++, method, params }),
-	});
-	const json = (await res.json()) as { result?: unknown; error?: { message: string } };
-	if (json.error) throw new Error(`Hardhat RPC error: ${json.error.message}`);
-	return json.result;
-}
+// Every call goes through the chain adapter: on testnet it refuses dev-node methods (so a
+// localnet-only helper used from a testnet spec fails at the call, not as a confusing revert).
+const rpc = chainRpc;
 
 export async function getBlockNumber(): Promise<number> {
 	const hex = (await rpc('eth_blockNumber')) as string;
@@ -105,6 +101,11 @@ export async function getBalance(address: string): Promise<bigint> {
  *  the mock wallet submits via eth_sendTransaction, which only works for accounts
  *  the node manages or impersonates; without it: "Unknown account 0x…"). */
 export async function enableFreshAccount(address: string, wei: bigint): Promise<void> {
+	if (CHAIN !== 'localnet') {
+		throw new Error(
+			'enableFreshAccount is a dev-node operation — on testnet accounts are funded by the treasury',
+		);
+	}
 	await rpc('hardhat_setBalance', [address, toHex(wei)]);
 	await rpc('hardhat_impersonateAccount', [address]);
 }
@@ -456,20 +457,17 @@ function padUint(value: bigint): string {
 	return value.toString(16).padStart(64, '0');
 }
 
-async function waitForReceipt(txHash: string, timeoutMs = 30_000): Promise<void> {
-	const deadline = Date.now() + timeoutMs;
-	while (Date.now() < deadline) {
-		const receipt = await rpc('eth_getTransactionReceipt', [txHash]);
-		if (receipt) return;
-		await new Promise(resolve => setTimeout(resolve, 250));
-	}
-	throw new Error(`Transaction ${txHash} not mined within ${timeoutMs}ms`);
+/** The account that hands out ABLE: Hardhat's deployer (unlocked, holds the supply) on
+ *  localnet; the funded test treasury on testnet. */
+function fundingSource(): string {
+	const cfg = getChainConfig();
+	return cfg.chain === 'testnet' ? cfg.treasuryAddress : DEPLOYER_ADDRESS;
 }
 
 /**
- * Fund a user with ABLE by transferring from the deployer/treasury (account 0).
- * This is the localnet equivalent of the testnet faucet — on localnet the full
- * supply is minted to the deployer at deploy time, so users start with 0 ABLE.
+ * Fund a user with ABLE from the chain's funding source — the deployer/treasury
+ * (account 0) on localnet, where the full supply is minted to it at deploy time
+ * so users start with 0 ABLE; the test treasury on testnet.
  * @param amount Amount in base units (wei-scale, 18 decimals).
  */
 export async function fundABLE(
@@ -477,24 +475,27 @@ export async function fundABLE(
 	toAddress: string,
 	amount: bigint,
 ): Promise<void> {
-	// The deployer's ABLE supply is finite PER CHAIN: every fresh-account claim
-	// transfers some away, and heavy live-chain rerunning can drain it to zero.
-	// When that happens plan activation fails silently and specs die with an
-	// opaque "composer not found" — fail loudly at the source instead.
-	const balData = `0x70a08231${padAddress(DEPLOYER_ADDRESS).slice(2)}`;
+	// The source's ABLE is finite PER CHAIN: every fresh-account claim transfers
+	// some away, and heavy live-chain rerunning can drain it to zero. When that
+	// happens plan activation fails silently and specs die with an opaque
+	// "composer not found" — fail loudly at the source instead.
+	const from = fundingSource();
+	const balData = `0x70a08231${padAddress(from).slice(2)}`;
 	const balHex = (await rpc('eth_call', [{ to: tokenAddress, data: balData }, 'latest'])) as string;
 	if (BigInt(balHex) < amount) {
+		const remedy =
+			CHAIN === 'testnet'
+				? 'Top up the test treasury (sense-ai-e2e docs/TESTNET_RUN.md).'
+				: 'The chain has been reused past its token supply — restart the stack ' +
+				  '(sense-ai-e2e: stop-e2e.sh + start-e2e.sh) for a fresh chain.';
 		throw new Error(
-			`fundABLE: deployer ABLE depleted (${BigInt(balHex)} < ${amount}). ` +
-				'The chain has been reused past its token supply — restart the stack ' +
-				'(sense-ai-e2e: stop-e2e.sh + start-e2e.sh) for a fresh chain.',
+			`fundABLE: funding source ABLE depleted (${BigInt(balHex)} < ${amount}). ${remedy}`,
 		);
 	}
-	const data = TRANSFER_SELECTOR + padAddress(toAddress).slice(2) + padUint(amount);
-	const txHash = (await rpc('eth_sendTransaction', [
-		{ from: DEPLOYER_ADDRESS, to: tokenAddress, data },
-	])) as string;
-	await waitForReceipt(txHash);
+	const data = `${TRANSFER_SELECTOR}${padAddress(toAddress).slice(2)}${padUint(
+		amount,
+	)}` as `0x${string}`;
+	await chainSendFrom({ from, to: tokenAddress, data });
 }
 
 // ── Plan activation + fee control (programmatic, no UI) ───────────────────────
@@ -530,9 +531,11 @@ export async function getLatestBlockTimestamp(): Promise<number> {
 	return parseInt(block.timestamp, 16);
 }
 
+// Localnet: eth_sendTransaction from an unlocked/impersonated account. Testnet: signed in Node
+// by the keyring (treasury or a seed-derived account); an owner-only call from the deployer
+// fails there with "no key for 0x0DEC…", which is the intended answer on a public chain.
 async function sendFrom(from: string, to: string, data: string): Promise<void> {
-	const txHash = (await rpc('eth_sendTransaction', [{ from, to, data }])) as string;
-	await waitForReceipt(txHash);
+	await chainSendFrom({ from, to, data: data as `0x${string}` });
 }
 
 /** ERC-20 approve(spender, amount) sent by `ownerAddress` (an unlocked account). */

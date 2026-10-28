@@ -1,6 +1,7 @@
 import { type BrowserContext } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
+import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { openDevice, parseAble } from '../helpers/devices';
 import { allocateFreshAccount } from '../helpers/fresh-account';
@@ -37,7 +38,7 @@ const LIVE_CONVERGENCE_MS = 25_000;
 //
 // ADR-0002: fresh account per test; serial; fresh stack per run.
 test.describe('Live cross-device sync (T-LIVE)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	const openContexts: BrowserContext[] = [];

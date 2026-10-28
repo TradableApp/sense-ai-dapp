@@ -1,4 +1,5 @@
 import { expect, test } from '../fixtures';
+import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { getFeeConfig, getPromptRequests, getProtocolConfig, waitForGraph } from '../helpers/graph';
 import {
@@ -55,7 +56,7 @@ const isPending = (r: {
 // deferred to Area 9d; here we only make changes that don't break the prompt→answer path.
 
 test.describe('Governance config indexing (T-GOV-CFG)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	// The treasury is owner-global state shared by the whole suite, and (unlike fees, which downstream
@@ -110,7 +111,7 @@ test.describe('Governance config indexing (T-GOV-CFG)', () => {
 // Continuity: a governance change lands WHILE a session is live, and the dApp still completes a full
 // prompt → answer round-trip — the "zero-downtime governance" claim, verified end-to-end.
 test.describe('Governance continuity (T-GOV-CFG)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	// Shared fixture rather than a local capture/restore pair — see usePromptFeeRestore in
@@ -142,7 +143,7 @@ test.describe('Governance continuity (T-GOV-CFG)', () => {
 // still indexes) and users are unaffected. Ownership is snapshotted + restored so a failed restore
 // can't brick owner-only ops for the rest of the run.
 test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	let originalOwner: string | undefined;
@@ -210,7 +211,7 @@ test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
 // treasury (refunds, by contrast, return to the user — covered by the T-REFUND suite). Treasury is
 // snapshotted + restored so the routing change doesn't leak into the rest of the run.
 test.describe('Governance treasury routing (T-GOV-TREAS)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	let originalTreasury: string;
@@ -253,7 +254,7 @@ test.describe('Governance treasury routing (T-GOV-TREAS)', () => {
 // produces the same observable state). The root-cause design risk (read the oracle key from chain so
 // a rotation reaches the dApp) is tracked as a backlog ticket; see the PR description.
 test.describe('Governance oracle rotation (T-GOV-ORACLE)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(
 		!TOKEN_ADDRESS || !ESCROW_ADDRESS || !AGENT_ADDRESS,
 		'Skipped: contract addresses not set',
@@ -332,7 +333,7 @@ test.describe('Governance oracle rotation (T-GOV-ORACLE)', () => {
 // repo's hardhat-upgrades script (see upgradeEscrowToV2). It is left in place — EVMAIAgentEscrowV2
 // inherits all V1 logic (behaviourally identical + a version() marker), and the stack is fresh per run.
 test.describe('Governance UUPS upgrade (T-GOV-UPGRADE)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test('T-GOV-UPGRADE-01: a UUPS upgrade preserves state and the dApp keeps working', async ({

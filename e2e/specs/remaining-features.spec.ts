@@ -1,4 +1,5 @@
 import { expect, test } from '../fixtures';
+import { CHAIN, LIVE_STACK } from '../helpers/chain';
 import {
 	ESCROW_ADDRESS,
 	fundAndActivatePlan,
@@ -20,7 +21,7 @@ const THEME_STORAGE_KEY = 'senseai-ui-theme';
 // the testnet-faucet cloud-fn path is out of localnet scope; these cover the rest.
 
 test.describe('Theme toggle (T-THEME)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 
 	// The theme control lives in the sidebar (NavSecondary), which only renders inside the
 	// authenticated MainLayout. The default dashboard ('/') shows the first-run onboarding screen,
@@ -83,7 +84,7 @@ test.describe('Theme toggle (T-THEME)', () => {
 });
 
 test.describe('Onboarding flow (T-ONBOARD)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	// NOTE: deliberately NO fund/activate here — a fresh wallet with no spending limit is exactly
@@ -137,8 +138,14 @@ test.describe('Onboarding flow (T-ONBOARD)', () => {
 	});
 });
 
+// A real oracle answers every prompt, so a "stuck" (never-answered) escrow cannot be produced on
+// testnet; both describes below rely on the mock oracle's __E2E_DROP__ sentinel.
+const NEEDS_DROPPED_PROMPT =
+	'Skipped on testnet: needs the mock oracle to drop a prompt (no stuck escrow on a real oracle)';
+
 test.describe('Stuck-request auto-detection (T-STUCK)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
+	test.skip(CHAIN === 'testnet', NEEDS_DROPPED_PROMPT);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test.beforeEach(async ({ freshUserAccount }) => {
@@ -176,7 +183,8 @@ test.describe('Stuck-request auto-detection (T-STUCK)', () => {
 });
 
 test.describe('Pending-escrow guards (T-PENDING)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
+	test.skip(CHAIN === 'testnet', NEEDS_DROPPED_PROMPT);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test.beforeEach(async ({ freshUserAccount }) => {

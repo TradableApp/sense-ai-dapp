@@ -1,4 +1,5 @@
 import { expect, test } from '../fixtures';
+import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { getABLEBalance } from '../helpers/hardhat';
 
@@ -13,7 +14,7 @@ const SKIP_REASON =
 // these account-0 funding txs never contend. Both accounts are Hardhat-unlocked.
 
 test.describe('Chat — prompt input (T-CHAT)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	// The composer (textarea + send) only renders for a user with an active plan;
@@ -66,7 +67,7 @@ test.describe('Chat — prompt input (T-CHAT)', () => {
 // across answer round-trips. Forward-only on a pristine account avoids both the
 // reorg and the cross-test accumulation that previously timed these out (CU-86d3a04rr).
 test.describe('Chat — submission and response (T-CHAT-TX)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	// Fund + activate the fresh account BEFORE the test body touches freshChatPage,
@@ -139,7 +140,7 @@ test.describe('Chat — submission and response (T-CHAT-TX)', () => {
 });
 
 test.describe('Chat — no active plan (T-CHAT-NOPLAN)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 
 	test('T-CHAT-13: Chat shows activate plan CTA when user has no plan', async ({
 		freshChatPage,
@@ -150,7 +151,7 @@ test.describe('Chat — no active plan (T-CHAT-NOPLAN)', () => {
 });
 
 test.describe('Chat — error states (T-CHAT-ERR)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	test.beforeEach(async ({ freshUserAccount }) => {

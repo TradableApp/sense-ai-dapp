@@ -1,14 +1,14 @@
 /**
  * Global setup for Playwright E2E tests.
  *
- * When E2E_LOCAL_SERVICES=1 is set, this verifies that all local services
- * (Hardhat, Graph node, and the dApp's subgraph endpoint) are reachable.
- * If any are down, it fails fast with a clear, actionable error message.
- *
- * This prevents confusing per-test timeouts when developers forget to run
- * the local service stack (start-e2e.sh).
+ * With a live stack (E2E_LOCAL_SERVICES=1 on localnet; always on testnet) this verifies the
+ * stack is reachable before any test runs, failing fast with a clear, actionable error instead
+ * of confusing per-test timeouts. Localnet checks the local Hardhat node, graph-node and the
+ * subgraph; testnet checks the chain RPC answers with the expected chain id, The Graph Studio
+ * endpoint, and the hosted dApp.
  */
 
+import { CHAIN, getChainConfig, isChainReachable, LIVE_STACK, redactUrl } from './helpers/chain';
 import { resetFreshAccountAllocator } from './helpers/fresh-account';
 // GRAPH_URL / GRAPH_NODE_ORIGIN are imported (not re-derived) so the health
 // check can never pass/fail against a different endpoint than the tests query.
@@ -64,9 +64,60 @@ async function isSubgraphReachable(): Promise<boolean> {
 	}
 }
 
+async function isDappReachable(baseUrl: string): Promise<boolean> {
+	try {
+		const res = await fetch(baseUrl, { signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS) });
+		return res.ok;
+	} catch {
+		return false;
+	}
+}
+
+interface HealthCheck {
+	name: string;
+	check: () => Promise<boolean>;
+}
+
+function localnetChecks(): HealthCheck[] {
+	// Endpoint context lives in `name` because that's what the error prints; the
+	// single start-e2e.sh remediation below covers all three, so per-service
+	// start commands would be redundant (and easy to let go stale).
+	return [
+		{ name: 'Hardhat Node (http://127.0.0.1:8545)', check: isHardhatRunning },
+		{ name: `Graph Node (${GRAPH_NODE_ORIGIN})`, check: isGraphRunning },
+		{ name: `Subgraph Endpoint (${GRAPH_URL})`, check: isSubgraphReachable },
+	];
+}
+
+function testnetChecks(): HealthCheck[] {
+	const cfg = getChainConfig();
+	return [
+		{
+			name: `Chain RPC ${redactUrl(cfg.rpcUrl)} (chain id ${cfg.chainId})`,
+			check: isChainReachable,
+		},
+		{ name: `Subgraph Endpoint (${GRAPH_URL})`, check: isSubgraphReachable },
+		{ name: `Hosted dApp (${cfg.baseUrl})`, check: () => isDappReachable(cfg.baseUrl) },
+	];
+}
+
+const LOCALNET_REMEDY =
+	`To fix this, run the local service stack from the sense-ai-e2e repository:\n\n` +
+	`  bash start-e2e.sh\n\n` +
+	`This starts:\n` +
+	`  • Hardhat local node (http://127.0.0.1:8545)\n` +
+	`  • The Graph node (${GRAPH_NODE_ORIGIN})\n` +
+	`  • Subgraph indexing at ${GRAPH_URL}\n\n` +
+	`Then retry your tests:\n\n` +
+	`  E2E_LOCAL_SERVICES=1 bun run test:e2e\n`;
+
+const TESTNET_REMEDY =
+	`Testnet mode brings nothing up. Run sense-ai-e2e scripts/testnet/verify-stack.sh — it names\n` +
+	`the stale layer and its fix — then start the run again through run-e2e-testnet.sh.\n`;
+
 /**
  * Global setup function that runs once before all tests.
- * Only executes when E2E_LOCAL_SERVICES=1.
+ * Health checks only execute with a live stack.
  */
 export default async function globalSetup(): Promise<void> {
 	// Reset the per-test fresh-account allocator once per run. Module counters
@@ -74,22 +125,11 @@ export default async function globalSetup(): Promise<void> {
 	// file-persisted (helpers/fresh-account.ts) and must start clean each run.
 	await resetFreshAccountAllocator();
 
-	// Skip setup if not running local services
-	if (process.env.E2E_LOCAL_SERVICES !== '1') {
-		return;
-	}
+	if (!LIVE_STACK) return;
 
-	console.log('\n📋 Checking local service dependencies for E2E_LOCAL_SERVICES=1...\n');
+	console.log(`\n📋 Checking ${CHAIN} stack dependencies...\n`);
 
-	// Endpoint context lives in `name` because that's what the error prints; the
-	// single start-e2e.sh remediation below covers all three, so per-service
-	// start commands would be redundant (and easy to let go stale).
-	const checks = [
-		{ name: 'Hardhat Node (http://127.0.0.1:8545)', check: isHardhatRunning },
-		{ name: `Graph Node (${GRAPH_NODE_ORIGIN})`, check: isGraphRunning },
-		{ name: `Subgraph Endpoint (${GRAPH_URL})`, check: isSubgraphReachable },
-	];
-
+	const checks = CHAIN === 'testnet' ? testnetChecks() : localnetChecks();
 	const results = await Promise.all(
 		checks.map(async c => ({ ...c, healthy: await withTimeout(c.check) })),
 	);
@@ -97,7 +137,7 @@ export default async function globalSetup(): Promise<void> {
 	const unhealthyServices = results.filter(r => !r.healthy);
 
 	if (unhealthyServices.length === 0) {
-		console.log('✓ All local services are healthy.\n');
+		console.log(`✓ All ${CHAIN} services are healthy.\n`);
 		return;
 	}
 
@@ -105,14 +145,8 @@ export default async function globalSetup(): Promise<void> {
 	const serviceList = unhealthyServices.map(s => `  ✗ ${s.name}`).join('\n');
 
 	throw new Error(
-		`\n❌ E2E_LOCAL_SERVICES=1 is set but the following services are not running:\n\n${serviceList}\n\n` +
-			`To fix this, run the local service stack from the sense-ai-e2e repository:\n\n` +
-			`  bash start-e2e.sh\n\n` +
-			`This starts:\n` +
-			`  • Hardhat local node (http://127.0.0.1:8545)\n` +
-			`  • The Graph node (${GRAPH_NODE_ORIGIN})\n` +
-			`  • Subgraph indexing at ${GRAPH_URL}\n\n` +
-			`Then retry your tests:\n\n` +
-			`  E2E_LOCAL_SERVICES=1 bun run test:e2e\n`,
+		`\n❌ The following ${CHAIN} services are not reachable:\n\n${serviceList}\n\n${
+			CHAIN === 'testnet' ? TESTNET_REMEDY : LOCALNET_REMEDY
+		}`,
 	);
 }

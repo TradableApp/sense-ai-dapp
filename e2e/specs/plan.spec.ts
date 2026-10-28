@@ -1,5 +1,6 @@
 import { expect, test } from '../fixtures';
 import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
+import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
 import {
 	activatePlan,
@@ -16,7 +17,7 @@ const SKIP_REASON =
 	'Skipped: requires Hardhat node + deployed contracts (set E2E_LOCAL_SERVICES=1)';
 
 test.describe('Spending plan management (T-PLAN)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	// MUST precede any beforeEach that changes chain state: Playwright registers hooks in
@@ -183,7 +184,7 @@ test.describe('Spending plan management (T-PLAN)', () => {
 });
 
 test.describe('Plan modal validation (T-PLAN-EDGE)', () => {
-	test.skip(process.env.E2E_LOCAL_SERVICES !== '1', SKIP_REASON);
+	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	// This block needs no beforeEach of its own, but it DOES need the revert: T-PLAN-13
