@@ -193,6 +193,31 @@ describe('planSweep', () => {
 		);
 	});
 
+	// Base is an OP-stack L2: every transaction also pays an L1 data fee the node adds to the
+	// L2 gas cost. Observed on Base Sepolia 2026-10-28: a sweep planned to the wei failed with
+	// "insufficient funds … have 499559231865333 want 499559240000000" — 8,134,667 wei of L1 fee.
+	it('reserves the L1 data fee for EACH transaction on an OP-stack chain', () => {
+		const ethBalanceWei = 10n ** 15n;
+		const l1FeePerTxWei = 8_134_667n;
+		const plan = planSweep({
+			...params,
+			ethBalanceWei,
+			tokenBalanceWei: 7n * 10n ** 18n,
+			l1FeePerTxWei,
+		});
+		const tokenCost = tokenTransferGas * gasPriceWei + l1FeePerTxWei;
+		const ethCost = ethTransferGas * gasPriceWei + l1FeePerTxWei;
+		expect(plan.ethAmountWei).toBe(ethBalanceWei - tokenCost - ethCost);
+	});
+
+	it('counts the L1 fee when deciding whether the token can be moved at all', () => {
+		const l1FeePerTxWei = 8_134_667n;
+		const ethBalanceWei = tokenTransferGas * gasPriceWei + l1FeePerTxWei - 1n;
+		expect(() =>
+			planSweep({ ...params, ethBalanceWei, tokenBalanceWei: 10n ** 18n, l1FeePerTxWei }),
+		).toThrow(/token/i);
+	});
+
 	it('leaves ETH below one transfer fee alone — a transfer that cannot pay for itself is dust', () => {
 		const plan = planSweep({
 			...params,
