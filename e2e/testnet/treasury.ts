@@ -155,9 +155,12 @@ export async function sweepAccount(address: string): Promise<SweepPlan> {
 	const { treasuryAddress, tokenAddress } = testnetConfig();
 	const price = (await gasPrice()) * FEE_HEADROOM;
 	const l1FeePerTxWei = await l1FeeUpperBoundWei();
+	// Read once: the transfer moves exactly the balance the plan was built on, so the returned
+	// plan's `sendToken` always describes a real transfer, never a 0-amount one.
+	const tokenWei = await tokenBalance(address);
 	const plan = planSweep({
 		ethBalanceWei: await ethBalance(address),
-		tokenBalanceWei: await tokenBalance(address),
+		tokenBalanceWei: tokenWei,
 		gasPriceWei: price,
 		tokenTransferGas: TOKEN_TRANSFER_GAS,
 		ethTransferGas: ETH_TRANSFER_GAS,
@@ -168,7 +171,7 @@ export async function sweepAccount(address: string): Promise<SweepPlan> {
 		await sendFrom({
 			from: address,
 			to: tokenAddress,
-			data: tokenTransferData(treasuryAddress, await tokenBalance(address)),
+			data: tokenTransferData(treasuryAddress, tokenWei),
 			gas: TOKEN_TRANSFER_GAS,
 			...fees,
 		});
@@ -195,7 +198,12 @@ async function withFileLock<T>(file: string, fn: () => T): Promise<T> {
 			mkdirSync(lockDir);
 			break;
 		} catch {
-			if (Date.now() > deadline) throw new Error(`accounts file: lock timeout (${lockDir})`);
+			if (Date.now() > deadline) {
+				throw new Error(
+					`accounts file: lock timeout (${lockDir}) — if no fund/sweep/Playwright process is ` +
+						'running, a killed writer left the lock behind; remove that directory and retry',
+				);
+			}
 			await new Promise(resolve => {
 				setTimeout(resolve, LOCK_RETRY_MS);
 			});
