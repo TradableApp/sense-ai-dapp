@@ -29,16 +29,6 @@ export function registerKey(address: string, privateKey: Hex): void {
 	keys.set(norm(address), privateKey);
 }
 
-function treasuryAddress(): string {
-	const cfg = getChainConfig();
-	if (cfg.chain !== 'testnet') throw new Error('keyring: only used on testnet');
-	return cfg.treasuryAddress;
-}
-
-export function hasKey(address: string): boolean {
-	return keys.has(norm(address)) || norm(address) === norm(treasuryAddress());
-}
-
 /** The key for `address`: a derived ephemeral account or the treasury. Throws by ADDRESS only. */
 export function privateKeyFor(address: string): Hex {
 	const cfg = getChainConfig();

@@ -197,7 +197,9 @@ async function withFileLock<T>(file: string, fn: () => T): Promise<T> {
 		try {
 			mkdirSync(lockDir);
 			break;
-		} catch {
+		} catch (err) {
+			// Only "someone holds the lock" is worth waiting for; any other OS error is the answer.
+			if ((err as { code?: string }).code !== 'EEXIST') throw err;
 			if (Date.now() > deadline) {
 				throw new Error(
 					`accounts file: lock timeout (${lockDir}) — if no fund/sweep/Playwright process is ` +

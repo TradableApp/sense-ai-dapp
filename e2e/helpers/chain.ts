@@ -20,6 +20,9 @@ const LOCALNET_CHAIN_ID = 31337;
 const LOCALNET_RPC_URL = 'http://127.0.0.1:8545';
 const LOCALNET_BASE_URL = 'http://localhost:3002';
 const DEFAULT_PREFUNDED_COUNT = 4;
+/** Per-request deadline. A provider endpoint that neither answers nor refuses must fail here,
+ *  not hold `waitForReceipt` (and the fund/sweep stages on it) for the OS TCP timeout. */
+const RPC_TIMEOUT_MS = 15_000;
 /** The hosted testnet build (sense-ai-e2e TESTNET_DAPP_URL default). The runner exports
  *  E2E_BASE_URL for the Playwright stage; the fund/key/sweep scripts never open a browser. */
 const TESTNET_DEFAULT_BASE_URL = 'https://sense-ai-app-garrick.web.app';
@@ -248,6 +251,7 @@ export async function rpc(method: string, params: unknown[] = []): Promise<unkno
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ jsonrpc: '2.0', id: reqId++, method, params }),
+		signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
 	});
 	const json = (await res.json()) as JsonRpcResponse;
 	if (json.error) {

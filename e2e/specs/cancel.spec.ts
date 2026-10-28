@@ -8,6 +8,9 @@ const SKIP_REASON =
 
 // Hold the answer pending well past the cancel window so the cancel always wins the race
 // with the oracle (the oracle's post-delay isJobFinalized re-check then drops the answer).
+// Localnet only: the mock oracle honours the sentinel. The real oracle ignores it, and on
+// testnet its own round trip (model call, answer tx, subgraph indexing — tens of seconds)
+// is what keeps the prompt pending past the 3 s window.
 const HOLD_MS = 8000;
 // On-chain, cancelPrompt reverts (PromptNotCancellableYet) until `createdAt +
 // CANCELLATION_TIMEOUT` (3s). On a real chain block time advances naturally between the
@@ -18,8 +21,9 @@ const CANCELLATION_TIMEOUT_S = 3;
 // Cancel a pending prompt + concurrency. A 2nd prompt cannot be submitted while one is
 // pending (the composer swaps Send→Cancel while isAiThinking). Cancelling debits a
 // cancellation fee, refunds the prompt fee, flags PromptRequest.isCancelled, and the dApp
-// drops the pending message so the composer frees up. Uses the oracle mock-delay sentinel
-// to hold the answer pending deterministically. Fresh per-test users; serial.
+// drops the pending message so the composer frees up. On localnet the oracle mock-delay
+// sentinel holds the answer pending deterministically; on testnet the real oracle's latency
+// does (see HOLD_MS). Fresh per-test users; serial.
 test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
