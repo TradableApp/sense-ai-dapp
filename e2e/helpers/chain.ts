@@ -276,6 +276,20 @@ export interface SendFromRequest {
 	to: string;
 	data?: `0x${string}`;
 	value?: bigint;
+	/** Testnet only: explicit limits so a sweep's fee arithmetic is an upper bound. */
+	gas?: bigint;
+	maxFeePerGas?: bigint;
+	maxPriorityFeePerGas?: bigint;
+}
+
+/** True when the configured RPC answers and reports the configured chain id. */
+export async function isChainReachable(): Promise<boolean> {
+	try {
+		const id = (await rpc('eth_chainId')) as string;
+		return parseInt(id, 16) === getChainConfig().chainId;
+	} catch {
+		return false;
+	}
 }
 
 /**

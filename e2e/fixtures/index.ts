@@ -3,8 +3,9 @@ import { fileURLToPath } from 'url';
 import { test as base, type BrowserContext, type Page } from '@playwright/test';
 
 import { injectMockWalletIntoContext } from './mock-wallet';
+import { CHAIN } from '../helpers/chain';
 import { createWalletContext } from '../helpers/devices';
-import { allocateFreshAccount } from '../helpers/fresh-account';
+import { allocateFreshAccount, releaseFreshAccount } from '../helpers/fresh-account';
 import { type HardhatAccount } from '../helpers/hardhat';
 import { AuthPage } from '../pages/AuthPage';
 import { ChatPage } from '../pages/ChatPage';
@@ -19,7 +20,11 @@ import { PlanModal } from '../pages/PlanModal';
  * write to a literal "…/Web%20and%20App%20Development/…" directory on paths with
  * spaces).
  */
-export const AUTH_STATE_PATH = fileURLToPath(new URL('../.auth/user.json', import.meta.url));
+export const AUTH_STATE_PATH = fileURLToPath(
+	// Keyed by chain: a session cached against localnet's account #1 must never be replayed
+	// against the testnet shared account (different address, different session key).
+	new URL(`../.auth/user.${CHAIN}.json`, import.meta.url),
+);
 
 // ── Custom fixture types ───────────────────────────────────────────────────
 
@@ -128,9 +133,14 @@ export const test = base.extend<SenseAIFixtures>({
 	// eslint-disable-next-line no-empty-pattern
 	freshUserAccount: async ({}, use) => {
 		// allocateFreshAccount provisions the account at claim time (balance +
-		// impersonation) — provisioning lives in exactly one place.
+		// impersonation on localnet; ETH + ABLE from the treasury on testnet) —
+		// provisioning lives in exactly one place.
 		const account = await allocateFreshAccount();
 		await use(account);
+		// Testnet: sweep this account's ETH and ABLE straight back so the treasury's float
+		// outstanding is one account's worth; the runner's end-of-run sweep is the safety net.
+		// Localnet: no-op.
+		await releaseFreshAccount(account);
 	},
 
 	/**

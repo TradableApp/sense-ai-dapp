@@ -195,6 +195,8 @@ export async function waitForLedger(
 
 	const tail = lastError ? ` (last error: ${String(lastError)})` : '';
 	throw new Error(
-		`waitForLedger: ${label} not met within ${timeoutMs}ms. Last rows: ${JSON.stringify(last)}${tail}`,
+		`waitForLedger: ${label} not met within ${timeoutMs}ms. Last rows: ${JSON.stringify(
+			last,
+		)}${tail}`,
 	);
 }

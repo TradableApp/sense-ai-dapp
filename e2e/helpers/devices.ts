@@ -1,6 +1,7 @@
 import { type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { privateKeyToAccount } from 'viem/accounts';
 
+import { CHAIN } from './chain';
 import { type HardhatAccount } from './hardhat';
 import { buildMockWalletScript } from '../fixtures/mock-wallet';
 import { AuthPage } from '../pages/AuthPage';
@@ -8,6 +9,7 @@ import { ChatPage } from '../pages/ChatPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { HistoryPage } from '../pages/HistoryPage';
 import { PlanModal } from '../pages/PlanModal';
+import { exposeSigningBindings } from '../testnet/bindings';
 
 /** A connected "device": a fresh BrowserContext (its own empty IndexedDB) with every POM bound to
  *  its page. Used by the multi-device / live-sync specs to run two independent browsers concurrently. */
@@ -19,7 +21,6 @@ export interface Device {
 	planModal: PlanModal;
 }
 
-
 /** A BrowserContext whose mock wallet impersonates `account`, with personal_sign
  *  bridged to a Node-side signer. Derived fresh-pool accounts (indices ≥ 20) are
  *  unknown to the node and hardhat_impersonateAccount covers TRANSACTIONS only —
@@ -29,12 +30,21 @@ export interface Device {
 export async function createWalletContext(
 	browser: Browser,
 	account: HardhatAccount,
+	options: Parameters<Browser['newContext']>[0] = {},
 ): Promise<BrowserContext> {
-	const context = await browser.newContext();
-	const signer = privateKeyToAccount(account.privateKey as `0x${string}`);
-	await context.exposeBinding('__mockPersonalSign', async (_source, message: string) =>
-		signer.signMessage({ message: { raw: message as `0x${string}` } }),
-	);
+	const context = await browser.newContext(options);
+	if (CHAIN === 'testnet') {
+		// Reads, signatures AND transactions cross into Node — see testnet/bindings.ts.
+		await exposeSigningBindings(context, {
+			address: account.address,
+			privateKey: account.privateKey as `0x${string}`,
+		});
+	} else {
+		const signer = privateKeyToAccount(account.privateKey as `0x${string}`);
+		await context.exposeBinding('__mockPersonalSign', async (_source, message: string) =>
+			signer.signMessage({ message: { raw: message as `0x${string}` } }),
+		);
+	}
 	await context.addInitScript(buildMockWalletScript(account));
 	return context;
 }

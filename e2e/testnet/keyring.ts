@@ -95,6 +95,9 @@ export async function sendSigned(req: SendFromRequest): Promise<Hex> {
 		to: req.to as Hex,
 		data: req.data,
 		value: req.value,
+		gas: req.gas,
+		maxFeePerGas: req.maxFeePerGas,
+		maxPriorityFeePerGas: req.maxPriorityFeePerGas,
 	});
 }
 

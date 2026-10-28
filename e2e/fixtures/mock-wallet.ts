@@ -1,6 +1,7 @@
 import { type BrowserContext, type Page } from '@playwright/test';
 
 import { CHAIN, chainIdHex, type ChainName, getChainConfig } from '../helpers/chain';
+import { exposeSigningBindings, sharedTestnetAccount } from '../testnet/bindings';
 
 /**
  * Hardhat Account #1 — the "user" wallet in all E2E tests.
@@ -302,12 +303,28 @@ ${transportSnippet(chain.chain, HARDHAT_RPC)}
 
 /**
  * The default mock wallet script — Hardhat Account #1, the legacy shared "user"
- * wallet. Used by the cached-auth fixtures and every non-answer spec.
+ * wallet. Used by the cached-auth fixtures and every non-answer spec on localnet.
  */
 export const MOCK_WALLET_SCRIPT = buildMockWalletScript();
 
+/** The shared "user" wallet for this chain: Hardhat #1 on localnet, derived index 0 on testnet
+ *  (pre-funded by the runner's `fund` stage). */
+export function sharedAccount(): { address: string } {
+	return CHAIN === 'testnet' ? sharedTestnetAccount() : TEST_ACCOUNT;
+}
+
+async function installSharedWallet(target: Page | BrowserContext): Promise<void> {
+	if (CHAIN === 'testnet') {
+		const account = sharedTestnetAccount();
+		await exposeSigningBindings(target, account);
+		await target.addInitScript(buildMockWalletScript(account));
+		return;
+	}
+	await target.addInitScript(MOCK_WALLET_SCRIPT);
+}
+
 /**
- * Injects the mock wallet into a Playwright Page before navigation.
+ * Injects the shared-user mock wallet into a Playwright Page before navigation.
  * Call this in test setup or a fixture before `page.goto()`.
  */
 export async function injectMockWallet(
@@ -317,13 +334,13 @@ export async function injectMockWallet(
 	if (opts?.seedConsent === false) {
 		await page.addInitScript('window.__SEED_CONSENT__ = false;');
 	}
-	await page.addInitScript(MOCK_WALLET_SCRIPT);
+	await installSharedWallet(page);
 }
 
 /**
- * Injects the mock wallet into all pages opened in a BrowserContext.
+ * Injects the shared-user mock wallet into all pages opened in a BrowserContext.
  * Use this for fixtures that need the mock active across navigations.
  */
 export async function injectMockWalletIntoContext(context: BrowserContext): Promise<void> {
-	await context.addInitScript(MOCK_WALLET_SCRIPT);
+	await installSharedWallet(context);
 }
