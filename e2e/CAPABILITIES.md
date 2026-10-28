@@ -135,29 +135,30 @@ never enters a page, a trace or a screenshot.
 (loaded by `playwright.config.ts` and the scripts, never overriding the runner's exports). A
 missing or malformed variable fails once, by name, before any request.
 
-### Included in the `testnet` project (138 tests, 16 files)
+### Included in the `testnet` project (152 tests, 17 files)
 
 `smoke`, `ui`, `auth`, `chat`, `history`, `branching`, `cancel`, `metadata`, `search`,
-`versions`, `multi-device`, `live-sync`, `activity`, `graph`, `reasoning`, `remaining-features`.
-Chain-aware adaptations: `T-INIT-SMOKE-01/02` check the configured RPC's chain id and the Graph
+`versions`, `multi-device`, `live-sync`, `activity`, `graph`, `reasoning`, `remaining-features`,
+`plan`. Chain-aware adaptations: `T-INIT-SMOKE-01/02` check the configured RPC's chain id and the Graph
 endpoint; `cancel` advances time by WAITING (`advanceTime`: Base's 2 s blocks move
 `block.timestamp` on their own) instead of `evm_increaseTime`; `T-REASON-01` asserts a real
 reasoning block with ≥ 1 step and ≥ 1 http(s) source (the mock sentinel is inert on a real
 oracle) and `T-REASON-02` is testnet-skipped; `T-STUCK-01` and `T-PENDING-01` are testnet-skipped
-(see below).
+(see below); `plan` runs every test on a per-test fresh account funded through the adapter (no
+snapshots anywhere in the file), with `T-PLAN-13` testnet-skipped (see below).
 
 ### Excluded, with the reason
 
-| Spec                           | Why it cannot run on a public chain                                                                | Covered by                                                                            |
-| ------------------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `plan` (14)                    | built on the shared account + `useChainSnapshot`; no snapshots on Sepolia                          | localnet suite; CU-14ym9bvmmvn rewrites it on fresh accounts so it joins this project |
-| `refunds` (3)                  | `increaseTime(1h)` past the refund window — time travel                                            | localnet suite; CU-14ym9bvdmju (real 1 h refund on a run day)                         |
-| `contract-cost` (5)            | owner-only fee setters from the deployer                                                           | localnet suite; contract unit tests (tokenized-ai-agent)                              |
-| `governance` (9)               | owner key (setOracle, transferOwnership, upgrade) never enters the suite on a real network         | localnet suite; CU-14ym9bvdmjt (admin rehearsal, done by hand)                        |
-| `faucet` (2)                   | localnet-only faucet path                                                                          | hand-run against the real callable                                                    |
-| `brain`, `brain-substance` (5) | read the oracle's Postgres over Cloud SQL mTLS from a laptop                                       | oracle smoke (`smoke:base-testnet`)                                                   |
-| `security` (4)                 | localnet-shaped request intercepts and storage inspection                                          | localnet suite                                                                        |
-| `sentry` (4)                   | intercepts the localnet DSN                                                                        | localnet suite                                                                        |
-| `T-STUCK-01`, `T-PENDING-01`   | need the mock oracle's `__E2E_DROP__` to leave an escrow pending; a real oracle answers everything | localnet suite                                                                        |
-| `T-REASON-02`                  | only the mock oracle can be told to omit reasoning                                                 | localnet suite                                                                        |
-| `mobile` (ui on Pixel 5)       | not in the first testnet pass — desktop only; add when the desktop pass is green                   | localnet suite                                                                        |
+| Spec                           | Why it cannot run on a public chain                                                                | Covered by                                                      |
+| ------------------------------ | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `refunds` (3)                  | `increaseTime(1h)` past the refund window — time travel                                            | localnet suite; CU-14ym9bvdmju (real 1 h refund on a run day)   |
+| `contract-cost` (5)            | owner-only fee setters from the deployer                                                           | localnet suite; contract unit tests (tokenized-ai-agent)        |
+| `governance` (9)               | owner key (setOracle, transferOwnership, upgrade) never enters the suite on a real network         | localnet suite; CU-14ym9bvdmjt (admin rehearsal, done by hand)  |
+| `faucet` (2)                   | localnet-only faucet path                                                                          | hand-run against the real callable                              |
+| `brain`, `brain-substance` (5) | read the oracle's Postgres over Cloud SQL mTLS from a laptop                                       | oracle smoke (`smoke:base-testnet`)                             |
+| `security` (4)                 | localnet-shaped request intercepts and storage inspection                                          | localnet suite                                                  |
+| `sentry` (4)                   | intercepts the localnet DSN                                                                        | localnet suite                                                  |
+| `T-STUCK-01`, `T-PENDING-01`   | need the mock oracle's `__E2E_DROP__` to leave an escrow pending; a real oracle answers everything | localnet suite                                                  |
+| `T-REASON-02`                  | only the mock oracle can be told to omit reasoning                                                 | localnet suite                                                  |
+| `T-PLAN-13`                    | expires a plan with `evm_increaseTime(24 h)` — time travel                                         | localnet suite; CU-14ym9bvdmju (real limit expiry on a run day) |
+| `mobile` (ui on Pixel 5)       | not in the first testnet pass — desktop only; add when the desktop pass is green                   | localnet suite                                                  |

@@ -25,9 +25,9 @@ import { describe, expect, it } from 'vitest';
  * dependence alone.
  *
  * So the rule is not stylistic: a spec may use snapshot/revert OR read the subgraph, never
- * both. `plan` is the sole permitted snapshot user because it advances EVM time with
- * `increaseTime`, which cannot be undone on a forward-only chain, and it reads no indexed
- * data.
+ * both — and today no spec uses snapshot/revert at all. `plan` was the last one (it advances
+ * EVM time with `increaseTime`, which cannot be undone on a forward-only chain); it now runs
+ * on fresh accounts, with that one test localnet-only and last in its own invocation.
  *
  * This guard exists because the violation is invisible in review — it produces failures in
  * OTHER files, run-order dependent, and looks like flakiness. Two full 75-minute runs and
@@ -44,8 +44,10 @@ const SPECS_DIR = path.join(E2E_DIR, 'specs');
  *  a failing test that names the fix. */
 const ASSUMED_TEST_DIR = './e2e/specs';
 
-/** The one spec ADR-0002 exempts, with the reason it qualifies. */
-const PERMITTED_SNAPSHOT_SPECS = new Set(['plan.spec.ts']);
+/** Specs ADR-0002 exempts. EMPTY since plan.spec.ts moved to fresh accounts (its `increaseTime`
+ *  test is localnet-only and runs last in its own invocation, so nothing needs rewinding). Any
+ *  entry here must satisfy all three conditions in the pinned-list test below. */
+const PERMITTED_SNAPSHOT_SPECS = new Set<string>([]);
 
 /** Calls that read through the subgraph, directly or via a rendered oracle answer. */
 const INDEXED_READ_MARKERS = [
@@ -129,19 +131,19 @@ describe('ADR-0002: evm_snapshot/evm_revert must not be used by a spec that read
 		).toEqual([ASSUMED_TEST_DIR]);
 	});
 
-	it('the exemption list still contains ONLY plan.spec.ts', () => {
+	it('the exemption list is still empty', () => {
 		// The cheapest way to defeat this guard is to widen the allowlist rather than fix
 		// the spec, and for a spec with no indexed reads of its own the check below would
 		// not object — which is precisely the faucet.spec.ts trap in a new form. Pinning
 		// the list makes widening it a deliberate, reviewable act instead of a one-word
-		// edit. If you are here to add a spec: don't. Migrate it to fresh accounts. The
-		// only reason plan qualifies is `increaseTime`, which a forward-only chain cannot
-		// undo, combined with it reading nothing indexed AND running in its own invocation
-		// (sense-ai-e2e SHARD_PLAN). A new entry would need all three to be true.
-		expect([...PERMITTED_SNAPSHOT_SPECS].sort()).toEqual(['plan.spec.ts']);
+		// edit. If you are here to add a spec: don't. Migrate it to fresh accounts — plan.spec
+		// was the last holdout and it moved. An entry would need ALL of: unrewindable global
+		// state a fresh account cannot isolate, no indexed reads, and its own invocation
+		// (sense-ai-e2e SHARD_PLAN).
+		expect([...PERMITTED_SNAPSHOT_SPECS]).toEqual([]);
 	});
 
-	it('only the permitted spec uses snapshot/revert at all', () => {
+	it('no spec uses snapshot/revert at all (outside the pinned exemption list)', () => {
 		// Deliberately stricter than "snapshots AND reads the subgraph". The wedge is GLOBAL:
 		// once any revert freezes graph-node, every LATER spec's indexed reads fail, even
 		// specs that never snapshotted. faucet.spec.ts is the case that proves the point —
@@ -162,17 +164,16 @@ describe('ADR-0002: evm_snapshot/evm_revert must not be used by a spec that read
 
 		expect(
 			violations.map(v => v.file),
-			`ADR-0002 violation — only plan.spec.ts may use evm_snapshot/evm_revert. A revert ` +
+			`ADR-0002 violation — no spec may use evm_snapshot/evm_revert. A revert ` +
 				`rewinds the chain, graph-node treats it as a reorg, its ingestor wedges on a ` +
 				`zero-hash block, and the subgraph FREEZES for the rest of the invocation:\n${detail}\n\n` +
 				`Fix: migrate to fresh-account-per-test (freshUserAccount + the fresh* page ` +
-				`fixtures). plan.spec.ts is exempt only because it advances EVM time via ` +
-				`increaseTime, which a forward-only chain cannot undo — and it is run in its own ` +
-				`Playwright invocation so its reverts cannot reach a graph-asserting project.`,
+				`fixtures). plan.spec.ts, the last exemption, moved there too: its one ` +
+				`increaseTime test is localnet-only and runs last in its own invocation.`,
 		).toEqual([]);
 	});
 
-	it('the permitted spec really does avoid indexed reads (keeps the exemption honest)', () => {
+	it('any exempt spec really does avoid indexed reads (keeps the exemption honest)', () => {
 		const specs = readSpecs();
 		for (const file of PERMITTED_SNAPSHOT_SPECS) {
 			const spec = specs.find(s => s.file === file);

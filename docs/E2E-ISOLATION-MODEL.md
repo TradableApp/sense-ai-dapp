@@ -36,23 +36,26 @@ you are debugging "the answer never renders" or "later specs fail in cascade", s
 | #   | Rule                                                                        | Enforced by                                          |
 | --- | --------------------------------------------------------------------------- | ---------------------------------------------------- |
 | 1   | Use **fresh-account-per-test** isolation, never `evm_snapshot`/`evm_revert` | `e2e/__guards__/adr-0002-snapshot-isolation.test.ts` |
-| 2   | `plan.spec.ts` is the **only** exception                                    | same guard — the exemption list is pinned            |
-| 3   | `plan` runs in **its own Playwright invocation**                            | `sense-ai-e2e/scripts/run-e2e-sharded.sh` pre-flight |
+| 2   | The exemption list is **empty** (plan.spec.ts was the last entry)           | same guard — the exemption list is pinned            |
+| 3   | `plan` still runs in **its own Playwright invocation** (`increaseTime`)     | `sense-ai-e2e/scripts/run-e2e-sharded.sh` pre-flight |
 | 4   | Global contract state (e.g. `promptFee`) is restored **forward-only**       | `usePromptFeeRestore` in `e2e/helpers/hardhat.ts`    |
 | 5   | Endpoints come from env vars, never hardcoded ports                         | `e2e/__guards__/endpoint-consistency.test.ts`        |
 
 All five fail a test or refuse to start if broken. You should not need to remember them — but you
 do need to know _why_ when one fires.
 
-### Why `plan` is exempt
+### Why `plan` still runs alone
 
-It calls `increaseTime`, and **EVM time cannot be rewound on a forward-only chain**. A fresh
-account cannot undo a 24-hour clock advance the way it undoes a balance. So `plan` keeps
-snapshot/revert, and is contained by running alone. It also reads nothing indexed, so its reverts
-harm nothing inside its own invocation.
+`plan` was the last snapshot user; it now runs on per-test fresh accounts like everything else
+(CU-14ym9bvmmvn). One test, T-PLAN-13, calls `increaseTime`, and **EVM time cannot be rewound on a
+forward-only chain** — a fresh account cannot undo a 24-hour clock advance the way it isolates a
+balance. The advance is contained the same way it always was: `plan` runs alone, T-PLAN-13 is the
+last test in the file, and the file reads nothing indexed. On testnet T-PLAN-13 is skipped (no
+time travel on a public chain) and the other 13 tests run.
 
-That is the full test for any future exemption: **unrewindable global state, no indexed reads,
-and its own invocation.** All three, or migrate to fresh accounts.
+That is the full test for any future exemption from rule 1: **unrewindable global state a fresh
+account cannot isolate, no indexed reads, and its own invocation.** All three, or migrate to
+fresh accounts — and even then prefer a localnet-only gate on the one test, as `plan` does.
 
 ### Why fresh accounts work
 
@@ -88,8 +91,8 @@ reporting flaky tests. A non-zero flaky count is a finding.
 
 **Testnet mode** (`--project=testnet`, driven by `sense-ai-e2e/scripts/testnet/run-e2e-testnet.sh`)
 runs against Base Sepolia, where none of the above applies: there are no snapshots to wedge
-anything, every test uses a seed-derived fresh account, and `plan` is excluded until
-CU-14ym9bvmmvn rewrites it on fresh accounts. See `e2e/CAPABILITIES.md`, "Testnet mode".
+anything and every test uses a seed-derived fresh account; `plan` is included with T-PLAN-13
+skipped. See `e2e/CAPABILITIES.md`, "Testnet mode".
 
 **CI does not run this suite at all** — neither repo's `ci.yml` invokes Playwright. A local
 sharded run is the only place the full stack is exercised, which is why the guards above are
