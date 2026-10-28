@@ -21,8 +21,8 @@ const BASE_URL = getChainConfig().baseUrl;
 /**
  * Testnet mode runs ONE project, `testnet`, which the sense-ai-e2e runner selects by name
  * (`--project=testnet`). It is the localnet answer-flow projects' spec list minus what a public
- * chain cannot do — chain snapshots, EVM time travel, owner-key operations, the mock oracle's
- * dropped prompt, the localnet-only Postgres/Sentry intercepts. Each exclusion has its reason in
+ * chain cannot do — EVM time travel, owner-key operations, the mock oracle's dropped prompt,
+ * the localnet-only Postgres/Sentry intercepts. Each exclusion has its reason in
  * e2e/CAPABILITIES.md. Serial (one treasury, one nonce stream) with the largest headroom in the
  * suite, because every answer is a REAL model call.
  */
@@ -43,6 +43,7 @@ const TESTNET_SPECS = [
 	'graph',
 	'reasoning',
 	'remaining-features',
+	'plan',
 ];
 
 const TESTNET_PROJECTS: Project[] = [
@@ -75,9 +76,9 @@ const LOCALNET_PROJECTS: Project[] = [
 		name: 'plan',
 		testMatch: '**/plan.spec.ts',
 		fullyParallel: false,
-		// Snapshot-revert specs now wait for the subgraph to re-sync in afterEach
-		// (each mini-reorg unwind takes seconds; see revertToSnapshot) — the 30s
-		// default would abort the hook mid-wait.
+		// Each test funds its own fresh account and drives one or two wallet transactions
+		// through the modal before asserting — the 30 s default is too tight for the slower
+		// ones (T-PLAN-09/10 activate then revoke).
 		timeout: 120_000,
 		use: { ...devices['Desktop Chrome'] },
 	},

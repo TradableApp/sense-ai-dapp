@@ -25,9 +25,9 @@ import { describe, expect, it } from 'vitest';
  * dependence alone.
  *
  * So the rule is not stylistic: a spec may use snapshot/revert OR read the subgraph, never
- * both. `plan` is the sole permitted snapshot user because it advances EVM time with
- * `increaseTime`, which cannot be undone on a forward-only chain, and it reads no indexed
- * data.
+ * both — and today no spec uses snapshot/revert at all. `plan` was the last one (it advances
+ * EVM time with `increaseTime`, which cannot be undone on a forward-only chain); it now runs
+ * on fresh accounts, with that one test localnet-only and last in its own invocation.
  *
  * This guard exists because the violation is invisible in review — it produces failures in
  * OTHER files, run-order dependent, and looks like flakiness. Two full 75-minute runs and
