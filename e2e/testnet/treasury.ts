@@ -44,6 +44,14 @@ const ERC20_ABI = parseAbi([
 	'function balanceOf(address account) view returns (uint256)',
 ]);
 
+/** OP-stack predeploy. `getL1FeeUpperBound(size)` (Fjord+) is a conservative L1 data fee for
+ *  a transaction of `size` bytes; a signed transfer is ~120 bytes, a token transfer ~190. */
+const GAS_PRICE_ORACLE = '0x420000000000000000000000000000000000000F';
+const GAS_PRICE_ORACLE_ABI = parseAbi([
+	'function getL1FeeUpperBound(uint256 _unsignedTxSize) view returns (uint256)',
+]);
+const SWEEP_TX_SIZE_BYTES = 256n;
+
 export function testnetConfig(): TestnetConfig {
 	const cfg = getChainConfig();
 	if (cfg.chain !== 'testnet') {
@@ -71,6 +79,25 @@ export async function tokenBalance(address: string): Promise<bigint> {
 
 export async function gasPrice(): Promise<bigint> {
 	return BigInt((await rpc('eth_gasPrice')) as string);
+}
+
+/**
+ * The L1 data fee one sweep transaction may be charged on an OP-stack chain, as an upper bound
+ * from the chain's own oracle. A chain without the predeploy (a plain EVM) answers with an error
+ * and pays no L1 fee, so that resolves to 0.
+ */
+export async function l1FeeUpperBoundWei(): Promise<bigint> {
+	try {
+		const data = encodeFunctionData({
+			abi: GAS_PRICE_ORACLE_ABI,
+			functionName: 'getL1FeeUpperBound',
+			args: [SWEEP_TX_SIZE_BYTES],
+		});
+		const result = (await rpc('eth_call', [{ to: GAS_PRICE_ORACLE, data }, 'latest'])) as string;
+		return result && result !== '0x' ? BigInt(result) : 0n;
+	} catch {
+		return 0n;
+	}
 }
 
 /** Derive accounts from the run seed AND make them signable in this process. */
@@ -127,12 +154,14 @@ export async function fundAccount(
 export async function sweepAccount(address: string): Promise<SweepPlan> {
 	const { treasuryAddress, tokenAddress } = testnetConfig();
 	const price = (await gasPrice()) * FEE_HEADROOM;
+	const l1FeePerTxWei = await l1FeeUpperBoundWei();
 	const plan = planSweep({
 		ethBalanceWei: await ethBalance(address),
 		tokenBalanceWei: await tokenBalance(address),
 		gasPriceWei: price,
 		tokenTransferGas: TOKEN_TRANSFER_GAS,
 		ethTransferGas: ETH_TRANSFER_GAS,
+		l1FeePerTxWei,
 	});
 	const fees = { maxFeePerGas: price, maxPriorityFeePerGas: price };
 	if (plan.sendToken) {
@@ -147,7 +176,7 @@ export async function sweepAccount(address: string): Promise<SweepPlan> {
 	if (plan.sendEth) {
 		// Re-read: the token transfer's ACTUAL fee is at most the cap, so this is ≥ the planned amount.
 		const left = await ethBalance(address);
-		const value = left - ETH_TRANSFER_GAS * price;
+		const value = left - ETH_TRANSFER_GAS * price - l1FeePerTxWei;
 		if (value > 0n) {
 			await sendFrom({ from: address, to: treasuryAddress, value, gas: ETH_TRANSFER_GAS, ...fees });
 		}

@@ -161,6 +161,8 @@ export interface SweepParams {
 	gasPriceWei: bigint;
 	tokenTransferGas: bigint;
 	ethTransferGas: bigint;
+	/** OP-stack L1 data fee charged per transaction on top of L2 gas (0 on a plain EVM chain). */
+	l1FeePerTxWei?: bigint;
 }
 
 export interface SweepPlan {
@@ -175,17 +177,22 @@ export interface SweepPlan {
  * that cannot pay for its own transfer is dust and stays (the runner's dust ceiling tolerates
  * it). Token that cannot be moved for lack of gas is an ERROR, not a skip — a stranded token
  * balance is exactly what the sweep exists to prevent.
+ *
+ * Each transaction's cost is L2 gas × price PLUS the L1 data fee: Base is an OP-stack chain and
+ * its node rejects a transfer whose value + L2 fee leaves nothing for the L1 fee (observed as an
+ * 8,134,667 wei shortfall on Base Sepolia).
  */
 export function planSweep(p: SweepParams): SweepPlan {
+	const l1Fee = p.l1FeePerTxWei ?? 0n;
 	const sendToken = p.tokenBalanceWei > 0n;
-	const tokenFee = sendToken ? p.tokenTransferGas * p.gasPriceWei : 0n;
+	const tokenFee = sendToken ? p.tokenTransferGas * p.gasPriceWei + l1Fee : 0n;
 	if (sendToken && p.ethBalanceWei < tokenFee) {
 		throw new Error(
 			`sweep: account holds token but not enough ETH to pay for the token transfer ` +
 				`(${formatEth(p.ethBalanceWei)} < ${formatEth(tokenFee)}) — top it up, then sweep again`,
 		);
 	}
-	const ethFee = p.ethTransferGas * p.gasPriceWei;
+	const ethFee = p.ethTransferGas * p.gasPriceWei + l1Fee;
 	const ethAmountWei = p.ethBalanceWei - tokenFee - ethFee;
 	const sendEth = ethAmountWei > 0n;
 	return { sendToken, sendEth, ethAmountWei: sendEth ? ethAmountWei : 0n };
