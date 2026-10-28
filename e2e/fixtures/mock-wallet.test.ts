@@ -60,7 +60,7 @@ describe('buildMockWalletScript — testnet signing mode', () => {
 
 	it('sends transactions through the Node signer, never eth_sendTransaction', () => {
 		expect(script).toContain('window.__mockSendTransaction(');
-		expect(script).not.toContain("'eth_sendTransaction'");
+		expect(script).not.toContain("rpc('eth_sendTransaction'");
 	});
 
 	it('keeps the account-switch hook and the EIP-6963 announcement the specs rely on', () => {

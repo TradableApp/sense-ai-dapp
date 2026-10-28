@@ -1,5 +1,7 @@
 import { type BrowserContext, type Page } from '@playwright/test';
 
+import { CHAIN, chainIdHex, type ChainName, getChainConfig } from '../helpers/chain';
+
 /**
  * Hardhat Account #1 — the "user" wallet in all E2E tests.
  * This account receives 100 ABLE in the localnet setup.
@@ -24,26 +26,109 @@ export const HARDHAT_RPC = process.env.VITE_CHAIN_RPC_URL || 'http://127.0.0.1:8
 export const CHAIN_ID_HEX = '0x7a69'; // 31337
 export const CHAIN_ID = 31337;
 
+/** Which chain the injected wallet should claim to be on, and how it reaches it. */
+export interface MockWalletChain {
+	chain: ChainName;
+	chainId: number;
+}
+
+/**
+ * The process-wide default: whatever chain the suite is running against. Resolved per call (not
+ * at import) so the config's validation error surfaces where the wallet is built, not when this
+ * module is first imported by an unrelated spec.
+ */
+function defaultChain(): MockWalletChain {
+	return CHAIN === 'localnet'
+		? { chain: 'localnet', chainId: CHAIN_ID }
+		: { chain: 'testnet', chainId: getChainConfig().chainId };
+}
+
+/**
+ * How the page-side wallet reaches the chain.
+ *
+ * Localnet: `fetch` straight to the Hardhat node, which has the account unlocked or impersonated,
+ * so `eth_sendTransaction` and node-side `personal_sign` work.
+ *
+ * Testnet: NOTHING in the browser knows where the chain is. Every call crosses a binding exposed
+ * by `createWalletContext` (helpers/devices.ts): `__mockRpc` forwards reads through the chain
+ * adapter (which refuses dev-node methods), `__mockSendTransaction` signs with the account's key
+ * in Node and sends raw, `__mockPersonalSign` / `__mockSignTypedData` sign in Node. The private
+ * provider URL therefore never enters a page, a trace or a screenshot.
+ */
+function transportSnippet(mode: ChainName, rpcUrl: string): string {
+	if (mode === 'testnet') {
+		return `
+  async function rpc(method, params) {
+    return window.__mockRpc(method, params || []);
+  }
+  async function signPersonal(message) {
+    return window.__mockPersonalSign(message);
+  }
+  async function signTypedData(typedData) {
+    return window.__mockSignTypedData(typedData);
+  }
+  async function sendTransaction(tx) {
+    return window.__mockSendTransaction(tx);
+  }`;
+	}
+	return `
+  const RPC_URL = '${rpcUrl}';
+  async function rpc(method, params) {
+    const res = await fetch(RPC_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: _reqId++, method, params: params || [] }),
+    });
+    const json = await res.json();
+    if (json.error) {
+      const err = new Error(json.error.message || 'RPC error');
+      err.code = json.error.code || -32603;
+      throw err;
+    }
+    return json.result;
+  }
+  async function signPersonal(message, address) {
+    // Fresh contexts expose a Node-side signer binding: derived pool
+    // accounts (indices ≥ 20) are unknown to the node (impersonation
+    // covers transactions only), so node-side personal_sign would fail.
+    if (typeof window.__mockPersonalSign === 'function') {
+      return window.__mockPersonalSign(message);
+    }
+    return rpc('personal_sign', [message, address || ACCOUNT]);
+  }
+  async function signTypedData(typedData, address) {
+    return rpc('eth_signTypedData_v4', [address || ACCOUNT, typedData]);
+  }
+  async function sendTransaction(tx) {
+    return rpc('eth_sendTransaction', [tx]);
+  }`;
+}
+
 /**
  * Builds the EIP-1193 `window.ethereum` mock injected into the page before
- * navigation, backed by the Hardhat JSON-RPC node. All signing and transaction
- * sending is delegated to Hardhat, which has the dev accounts pre-unlocked, so
- * ThirdWeb's injected-wallet adapter can connect without a real extension while
- * every on-chain interaction hits the real contracts.
+ * navigation. On localnet it is backed by the Hardhat JSON-RPC node: signing and
+ * transaction sending are delegated to the node, which has the dev accounts
+ * pre-unlocked. On testnet every call crosses a Node-side binding instead (see
+ * transportSnippet). Either way ThirdWeb's injected-wallet adapter connects without
+ * a real extension while every on-chain interaction hits the real contracts.
  *
  * @param account The Hardhat account this wallet impersonates. Defaults to
  *   Account #1 — the legacy shared "user" wallet used by the cached-auth fixtures
  *   and the non-answer specs. Per-test fresh-user specs pass accounts 2..19 so
  *   each connects as a brand-new user (see helpers/fresh-account.ts).
  */
-export function buildMockWalletScript(account: { address: string } = TEST_ACCOUNT): string {
+export function buildMockWalletScript(
+	account: { address: string } = TEST_ACCOUNT,
+	chain: MockWalletChain = defaultChain(),
+): string {
+	const chainIdHexValue = chainIdHex(chain.chainId);
+	const networkVersion = String(chain.chainId);
 	return `
 (function() {
   // 'let' (not 'const') so an e2e test can simulate the user switching to a different
   // account in their wallet via window.__mockWalletSwitchAccount (see below).
   let ACCOUNT = '${account.address}';
-  const CHAIN_ID = '${CHAIN_ID_HEX}';
-  const RPC_URL = '${HARDHAT_RPC}';
+  const CHAIN_ID = '${chainIdHexValue}';
   let _reqId = 1;
   let _listeners = {};
   let _announced = false;
@@ -56,7 +141,7 @@ export function buildMockWalletScript(account: { address: string } = TEST_ACCOUN
   // after the user approves the connection. ThirdWeb v5's injected adapter relies
   // on these to finalise the chain object; without them a mid-session fresh
   // connect leaves the chain half-initialised, the RPC block watcher never starts
-  // (watchBlockNumber: "Failed to fetch 127.0.0.1:8545"), useContractEvents
+  // (watchBlockNumber: "Failed to fetch" against the node), useContractEvents
   // returns undefined, and the answer pipeline never syncs. Fire them once.
   function announceConnection() {
     if (_announced) return;
@@ -87,26 +172,13 @@ export function buildMockWalletScript(account: { address: string } = TEST_ACCOUN
     console.warn('[mock-wallet] Could not pre-seed consentSettings:', e);
   }
 
-  async function rpc(method, params) {
-    const res = await fetch(RPC_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: _reqId++, method, params: params || [] }),
-    });
-    const json = await res.json();
-    if (json.error) {
-      const err = new Error(json.error.message || 'RPC error');
-      err.code = json.error.code || -32603;
-      throw err;
-    }
-    return json.result;
-  }
+${transportSnippet(chain.chain, HARDHAT_RPC)}
 
   const provider = {
     isMetaMask: true,
     isInjected: true,
     chainId: CHAIN_ID,
-    networkVersion: '31337',
+    networkVersion: '${networkVersion}',
     selectedAddress: ACCOUNT,
     isConnected: () => true,
 
@@ -127,7 +199,7 @@ export function buildMockWalletScript(account: { address: string } = TEST_ACCOUN
           return CHAIN_ID;
 
         case 'net_version':
-          return '31337';
+          return '${networkVersion}';
 
         case 'wallet_switchEthereumChain':
           // Confirm the switch, then notify listeners as a real wallet would.
@@ -147,30 +219,25 @@ export function buildMockWalletScript(account: { address: string } = TEST_ACCOUN
           if (typeof window.__mockSignDelayMs === 'number' && window.__mockSignDelayMs > 0) {
             await new Promise(r => setTimeout(r, window.__mockSignDelayMs));
           }
-          // Fresh contexts expose a Node-side signer binding: derived pool
-          // accounts (indices ≥ 20) are unknown to the node (impersonation
-          // covers transactions only), so node-side personal_sign would fail.
-          if (typeof window.__mockPersonalSign === 'function') {
-            return window.__mockPersonalSign(message);
-          }
-          return rpc('personal_sign', [message, address || ACCOUNT]);
+          return signPersonal(message, address);
         }
 
         case 'eth_sign': {
+          // Legacy raw-hash signing; treated as a personal_sign of the data (no caller uses it).
           const [address, data] = params || [];
-          return rpc('eth_sign', [address || ACCOUNT, data]);
+          return signPersonal(data, address);
         }
 
         case 'eth_signTypedData':
         case 'eth_signTypedData_v3':
         case 'eth_signTypedData_v4': {
           const [address, typedData] = params || [];
-          return rpc('eth_signTypedData_v4', [address || ACCOUNT, typedData]);
+          return signTypedData(typedData, address);
         }
 
         case 'eth_sendTransaction': {
           const tx = { ...(params || [])[0], from: ACCOUNT };
-          return rpc('eth_sendTransaction', [tx]);
+          return sendTransaction(tx);
         }
 
         default:
@@ -217,7 +284,7 @@ export function buildMockWalletScript(account: { address: string } = TEST_ACCOUN
       info: {
         uuid: 'hardhat-mock-wallet',
         name: 'MetaMask',
-        icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>',
+        icon: 'data:image/svg+xml,<svg/>',
         rdns: 'io.metamask',
       },
       provider,
