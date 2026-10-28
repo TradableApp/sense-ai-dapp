@@ -145,7 +145,8 @@ export default async function globalSetup(): Promise<void> {
 	const serviceList = unhealthyServices.map(s => `  ✗ ${s.name}`).join('\n');
 
 	throw new Error(
-		`\n❌ The following ${CHAIN} services are not reachable:\n\n${serviceList}\n\n${ 
-			CHAIN === 'testnet' ? TESTNET_REMEDY : LOCALNET_REMEDY}`,
+		`\n❌ The following ${CHAIN} services are not reachable:\n\n${serviceList}\n\n${
+			CHAIN === 'testnet' ? TESTNET_REMEDY : LOCALNET_REMEDY
+		}`,
 	);
 }
