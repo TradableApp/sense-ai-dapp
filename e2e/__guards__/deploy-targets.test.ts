@@ -68,7 +68,9 @@ describe('build scripts', () => {
 });
 
 describe('deploy scripts', () => {
-	const deployScripts = Object.entries(scripts).filter(([, cmd]) => cmd.includes('firebase deploy'));
+	const deployScripts = Object.entries(scripts).filter(([, cmd]) =>
+		cmd.includes('firebase deploy'),
+	);
 
 	it('every firebase deploy names its --project alias', () => {
 		expect(deployScripts.length).toBeGreaterThan(0);
