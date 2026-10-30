@@ -12,8 +12,10 @@ Frontend dApp for SenseAI — the AI Agent providing sentiment and fundamental o
 | -------------------------------------- | ---------------------------------------------------------------------------------------- |
 | `bun run dev`                          | Start dev server on port 3002 (localnet mode)                                            |
 | `bun run dev:testnet`                  | Dev server against Base Sepolia testnet                                                  |
-| `bun run build`                        | Production build (mainnet)                                                               |
+| `bun run build`                        | Disabled (exits 1) — name the mode: `build:localnet` / `build:testnet` / `build:mainnet` |
 | `bun run build:testnet`                | Build against testnet                                                                    |
+| `bun run deploy:testnet`               | `build:testnet` + `firebase deploy --project local` (tradable-app-garrick)               |
+| `bun run deploy:mainnet`               | Guarded: needs `DEPLOY_MAINNET_CONFIRMED=1`; `build:mainnet` + deploy `--project prod`   |
 | `bun run lint` / `bun run lint:fix`    | ESLint                                                                                   |
 | `bun run format`                       | Prettier                                                                                 |
 | `bun run sync-contracts`               | Copy ABI files from `able-contracts` and `tokenized-ai-agent` repos                      |
