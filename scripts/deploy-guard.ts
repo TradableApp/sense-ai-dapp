@@ -1,8 +1,9 @@
 /**
  * `bun scripts/deploy-guard.ts` — the confirm step in front of `deploy:mainnet`.
  *
- * Exits 0 only when DEPLOY_MAINNET_CONFIRMED=1 is exported in the environment; anything else
- * (unset, empty, "true", "yes") exits 1 with the exact command to run. Mirrors
+ * Exits 0 only when DEPLOY_MAINNET_CONFIRMED=1 is exported in the environment (one confirmation
+ * line on stdout); anything else (unset, empty, "true", "yes") exits 1 with the refusal and the
+ * exact command to run on stderr. Mirrors
  * REHEARSAL_MAINNET_CONFIRMED in tokenized-ai-agent: the production hosting site
  * (tradable-app → senseai.tradable.app) is only ever reached on purpose.
  *
@@ -30,4 +31,4 @@ if (value !== '1') {
 	process.exit(1);
 }
 
-console.error(`${CONFIRM_VAR}=1 — proceeding with the mainnet build and deploy to ${TARGET}.`);
+console.log(`${CONFIRM_VAR}=1 — proceeding with the mainnet build and deploy to ${TARGET}.`);

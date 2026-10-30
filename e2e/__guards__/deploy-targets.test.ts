@@ -37,11 +37,15 @@ const { scripts } = pkg;
 const GUARD_SCRIPT = 'scripts/deploy-guard.ts';
 const CONFIRM_VAR = 'DEPLOY_MAINNET_CONFIRMED';
 
+// The confirm variable is removed from the inherited environment (not set to ''), so a call
+// with no override really exercises the unset branch and an empty string is its own case.
+const { [CONFIRM_VAR]: _inherited, ...baseEnv } = process.env;
+
 const runGuard = (extraEnv: Record<string, string>) =>
 	spawnSync('bun', [GUARD_SCRIPT], {
 		cwd: ROOT,
 		encoding: 'utf8',
-		env: { ...process.env, [CONFIRM_VAR]: '', ...extraEnv },
+		env: { ...baseEnv, ...extraEnv },
 	});
 
 describe('build scripts', () => {
@@ -109,20 +113,27 @@ describe('mainnet confirm guard', () => {
 		const result = runGuard({});
 
 		expect(result.status).toBe(1);
+		expect(result.stderr).toContain(`${CONFIRM_VAR} is unset`);
 		expect(result.stderr).toContain(`${CONFIRM_VAR}=1`);
 		expect(result.stderr).toContain('tradable-app');
 	});
 
-	it('refuses truthy-looking values other than exactly "1"', () => {
-		['true', 'yes', 'TRUE', ' 1'].forEach(value => {
-			expect(runGuard({ [CONFIRM_VAR]: value }).status, `value ${JSON.stringify(value)}`).toBe(1);
+	it('refuses an empty string and truthy-looking values other than exactly "1"', () => {
+		['', 'true', 'yes', 'TRUE', ' 1'].forEach(value => {
+			const result = runGuard({ [CONFIRM_VAR]: value });
+
+			expect(result.status, `value ${JSON.stringify(value)}`).toBe(1);
+			expect(result.stderr).toContain(`${CONFIRM_VAR} is ${JSON.stringify(value)}`);
 		});
 	});
 
-	it(`passes when ${CONFIRM_VAR}=1`, () => {
+	it(`passes when ${CONFIRM_VAR}=1 and says so on stdout`, () => {
 		const result = runGuard({ [CONFIRM_VAR]: '1' });
 
 		expect(result.status).toBe(0);
+		expect(result.stdout).toContain(`${CONFIRM_VAR}=1`);
+		expect(result.stdout).toContain('tradable-app');
+		expect(result.stderr).toBe('');
 	});
 });
 
