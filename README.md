@@ -145,10 +145,27 @@ For security, **never** import publicly-known private keys (like the ones from H
 
 ### Production Build
 
-- `bun run build`: Alias for `build:mainnet`.
+- `bun run build`: **Disabled on purpose** — exits 1 and lists the modes. A bare `build` used to be mainnet mode, which made a production bundle one forgotten suffix away; always name the mode.
 - `bun run build:localnet`: Builds for local environment.
 - `bun run build:testnet`: Builds for Base Sepolia.
 - `bun run build:mainnet`: Builds for Base Mainnet.
+
+### Deploy (Firebase Hosting)
+
+Each build mode has exactly one Firebase project, and the deploy scripts pin it with `--project` so the `firebase use` state on your machine never decides where a bundle lands:
+
+| Script                   | Builds          | `--project` alias | Firebase project       | Hosting site           | URL                          |
+| ------------------------ | --------------- | ----------------- | ---------------------- | ---------------------- | ---------------------------- |
+| `bun run deploy:testnet` | `build:testnet` | `local`           | `tradable-app-garrick` | `sense-ai-app-garrick` | sense-ai-app-garrick.web.app |
+| `bun run deploy:mainnet` | `build:mainnet` | `prod`            | `tradable-app`         | `sense-ai-app`         | senseai.tradable.app         |
+
+`deploy:mainnet` runs `scripts/deploy-guard.ts` first and refuses unless `DEPLOY_MAINNET_CONFIRMED=1` is exported (exactly `1`; `true`/`yes` do not count):
+
+```sh
+DEPLOY_MAINNET_CONFIRMED=1 bun run deploy:mainnet
+```
+
+Both scripts deploy `--only hosting:sense-ai` (the target in `firebase.json`); nothing else in those projects is touched. The `dev` and `staging` aliases in `.firebaserc` have no deploy script — those projects are being shut down. The rules are pinned by `e2e/__guards__/deploy-targets.test.ts`.
 
 ### Utilities
 
