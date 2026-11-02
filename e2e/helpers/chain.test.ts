@@ -11,6 +11,7 @@ import {
 	chainIdHex,
 	isLiveStack,
 	readChainConfig,
+	redactError,
 	redactUrl,
 	resolveChain,
 } from './chain';
@@ -206,5 +207,47 @@ describe('redactUrl', () => {
 
 	it('does not throw on garbage — a redaction helper must never be the thing that crashes', () => {
 		expect(redactUrl('not a url')).toBe('<unparseable url>');
+	});
+});
+
+describe('redactError', () => {
+	// viem's RpcRequestError prints "URL: <rpc url>" into message/details and nests itself as
+	// the cause of the action error. On testnet that URL carries the provider key, and
+	// Playwright prints the whole chain into the stage log — the 2026-11-02 run day's hygiene
+	// scan found it 247 times across dapp-1/dapp-2.
+	const url = 'https://base-sepolia.g.alchemy.com/v2/not-a-real-key';
+	const viemLike = () => {
+		const cause = Object.assign(new Error(`RPC Request failed.\nURL: ${url}\nRequest body: {}`), {
+			details: `URL: ${url}`,
+			shortMessage: 'RPC Request failed.',
+		});
+		return Object.assign(
+			new Error(`Execution reverted for an unknown reason.\n\nURL: ${url}`, { cause }),
+			{ details: `URL: ${url}`, shortMessage: 'Execution reverted for an unknown reason.' },
+		);
+	};
+
+	it('scrubs the private URL from message, details, stack and every nested cause, keeping the error', () => {
+		const err = viemLike();
+		const out = redactError(err, url);
+		expect(out).toBe(err);
+		const flat = JSON.stringify([
+			out.message,
+			out.stack,
+			(out as unknown as { details: string }).details,
+			(out.cause as Error).message,
+			(out.cause as Error).stack,
+			(out.cause as unknown as { details: string }).details,
+		]);
+		expect(flat).not.toContain('not-a-real-key');
+		expect(out.message).toContain(redactUrl(url));
+		expect((out.cause as Error).message).toContain(redactUrl(url));
+	});
+
+	it('returns non-Error values and errors without the URL unchanged', () => {
+		expect(redactError('plain string' as unknown as Error, url)).toBe('plain string');
+		const clean = new Error('nothing to see');
+		expect(redactError(clean, url)).toBe(clean);
+		expect(clean.message).toBe('nothing to see');
 	});
 });
