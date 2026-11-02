@@ -4,7 +4,7 @@ import { expect, test } from '../fixtures';
 import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { openDevice, parseAble } from '../helpers/devices';
-import { allocateFreshAccount } from '../helpers/fresh-account';
+import { freshAccountPool } from '../helpers/fresh-account';
 import { getConversations, waitForGraph } from '../helpers/graph';
 
 const SKIP_REASON =
@@ -42,8 +42,12 @@ test.describe('Live cross-device sync (T-LIVE)', () => {
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	const openContexts: BrowserContext[] = [];
+	// Fresh accounts claimed in the body go back to the treasury here, after the contexts are
+	// closed — an unreleased account is real ETH + ABLE on testnet.
+	const accounts = freshAccountPool();
 	test.afterEach(async () => {
 		await Promise.all(openContexts.splice(0).map(c => c.close().catch(() => {})));
+		await accounts.releaseAll();
 	});
 
 	test("T-LIVE-01: a prompt on device B updates device A's idle dashboard usage live (not via poll)", async ({
@@ -53,7 +57,7 @@ test.describe('Live cross-device sync (T-LIVE)', () => {
 			true,
 			'Idle cross-device live sync not guaranteed — usagePlan has no poll backstop; see file header + CU-86d3dvxdy / ADR-0005.',
 		);
-		const account = await allocateFreshAccount();
+		const account = await accounts.claim();
 		await fundAndActivatePlan(account.address);
 
 		// Device A sits idle on the dashboard with a fresh plan — spent is 0 ABLE and never touched
@@ -88,7 +92,7 @@ test.describe('Live cross-device sync (T-LIVE)', () => {
 			true,
 			'Idle cross-device live sync not guaranteed — conversations only reconverge on the 5-min poll; see file header + CU-86d3dvxdy / ADR-0005.',
 		);
-		const account = await allocateFreshAccount();
+		const account = await accounts.claim();
 		await fundAndActivatePlan(account.address);
 
 		// Device A sits idle on /history with no conversations (and never re-navigates after this).

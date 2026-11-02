@@ -6,7 +6,7 @@
  */
 
 import { expect, test } from '../fixtures';
-import { TEST_ACCOUNT } from '../fixtures/mock-wallet';
+import { sharedAccount } from '../fixtures/mock-wallet';
 import { LIVE_STACK } from '../helpers/chain';
 import { AuthPage } from '../pages/AuthPage';
 
@@ -59,7 +59,7 @@ test.describe('Wallet connection (T-AUTH)', () => {
 		await expect(walletPage).toHaveURL('/', { timeout: 15_000 });
 	});
 
-	test('T-AUTH-08: Owner address in nav matches Hardhat Account #1', async ({
+	test('T-AUTH-08: the page provider is connected as the shared user account', async ({
 		authenticatedPage,
 	}) => {
 		// The nav identity widget is ThirdWeb-owned: it renders a resolved social
@@ -67,13 +67,14 @@ test.describe('Wallet connection (T-AUTH)', () => {
 		// resolves to a public profile, e.g. "dylanhpaul") and only falls back to
 		// the truncated address — so matching literal address text races name
 		// resolution and fails whenever the name wins. Assert the intent instead:
-		// the page's provider is connected as EXACTLY account #1.
+		// the page's provider is connected as EXACTLY the shared user — Hardhat #1 on
+		// localnet, the runner-funded derived account 0 on testnet (sharedAccount()).
 		const accounts = (await authenticatedPage.evaluate(() =>
 			(
 				window as unknown as { ethereum: { request(_args: { method: string }): Promise<string[]> } }
 			).ethereum.request({ method: 'eth_accounts' }),
 		)) as string[];
-		expect(accounts[0]?.toLowerCase()).toBe(TEST_ACCOUNT.address.toLowerCase());
+		expect(accounts[0]?.toLowerCase()).toBe(sharedAccount().address.toLowerCase());
 	});
 
 	test('T-AUTH-12: Disconnecting wallet resets session and redirects to /auth', async ({

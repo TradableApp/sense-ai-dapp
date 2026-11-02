@@ -1,7 +1,7 @@
 import { test as base, expect } from '@playwright/test';
 
 import { injectMockWallet } from '../fixtures/mock-wallet';
-import { CHAIN , getChainConfig, isChainReachable, LIVE_STACK, redactUrl } from '../helpers/chain';
+import { CHAIN, getChainConfig, isChainReachable, LIVE_STACK, redactUrl } from '../helpers/chain';
 import { GRAPH_NODE_ORIGIN, isGraphRunning } from '../helpers/graph';
 
 const test = base;
@@ -172,7 +172,9 @@ test.describe('App initialisation (T-INIT)', () => {
 	}) => {
 		await injectMockWallet(page);
 		await page.goto('/');
-		await page.waitForLoadState('networkidle');
+		// App-ready, not networkidle: on testnet the live-state probe polls the chain every block,
+		// so the network never idles for 500 ms and the wait times out (run day 2026-11-02).
+		await expect(page.locator('img[alt*="SenseAI"]').first()).toBeVisible({ timeout: 30_000 });
 
 		await context.setOffline(true);
 		await expect(page.getByText(/offline|no connection|no internet/i)).toBeVisible({

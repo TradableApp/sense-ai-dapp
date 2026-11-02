@@ -193,3 +193,38 @@ export async function releaseFreshAccount(account: HardhatAccount): Promise<void
 	const { sweepAccount } = await import('../testnet/treasury');
 	await sweepAccount(account.address);
 }
+
+/**
+ * A per-spec pool for tests that need more than the one `freshUserAccount` the fixture gives
+ * them (two wallets, two devices). `claim()` is allocateFreshAccount(); `releaseAll()` returns
+ * every claimed account to the treasury and is for `test.afterEach`, so a failed assertion
+ * mid-body still releases. On testnet an unreleased account holds real ETH and ABLE until the
+ * runner's end-of-run sweep — the 2026-11-02 run day stranded ~400 ABLE this way and starved
+ * every later fresh-account spec. Localnet: claim allocates, release is a no-op.
+ */
+export function freshAccountPool(): {
+	claim(): Promise<HardhatAccount>;
+	releaseAll(): Promise<void>;
+} {
+	const claimed: HardhatAccount[] = [];
+	return {
+		async claim() {
+			const account = await allocateFreshAccount();
+			claimed.push(account);
+			return account;
+		},
+		async releaseAll() {
+			const accounts = claimed.splice(0);
+			const results = await Promise.allSettled(accounts.map(a => releaseFreshAccount(a)));
+			const failed = results.flatMap((r, i) =>
+				r.status === 'rejected' ? [`${accounts[i].address}: ${String(r.reason)}`] : [],
+			);
+			if (failed.length) {
+				throw new Error(
+					`freshAccountPool: ${failed.length} account(s) not released — the runner's ` +
+						`end-of-run sweep is the safety net:\n  ${failed.join('\n  ')}`,
+				);
+			}
+		},
+	};
+}
