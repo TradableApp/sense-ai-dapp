@@ -18,7 +18,7 @@ const account = (n: number): HardhatAccount => ({
 describe('freshAccountPool', () => {
 	it('releases every claimed account once and empties the pool', async () => {
 		const claim = vi.fn(async () => account(claim.mock.calls.length));
-		const release = vi.fn(async () => {});
+		const release = vi.fn(async (_acct: HardhatAccount) => {});
 		const pool = freshAccountPool({ claim, release, report: vi.fn() });
 
 		const a = await pool.claim();
@@ -51,7 +51,11 @@ describe('freshAccountPool', () => {
 
 	it('reports nothing when every release succeeds', async () => {
 		const report = vi.fn();
-		const pool = freshAccountPool({ claim: async () => account(1), release: async () => {}, report });
+		const pool = freshAccountPool({
+			claim: async () => account(1),
+			release: async () => {},
+			report,
+		});
 		await pool.claim();
 		await pool.releaseAll();
 		expect(report).not.toHaveBeenCalled();

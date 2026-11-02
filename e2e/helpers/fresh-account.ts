@@ -201,28 +201,43 @@ export async function releaseFreshAccount(account: HardhatAccount): Promise<void
  * mid-body still releases. On testnet an unreleased account holds real ETH and ABLE until the
  * runner's end-of-run sweep — the 2026-11-02 run day stranded ~400 ABLE this way and starved
  * every later fresh-account spec. Localnet: claim allocates, release is a no-op.
+ *
+ * A release that fails is reported, never thrown: a throw from afterEach fails the test it is
+ * cleaning up after (or double-marks one that already failed), turning a transient RPC error
+ * into a false verdict, and the end-of-run sweep recovers the account anyway. The dependencies
+ * are injectable for the unit test only; specs call it with no arguments.
  */
-export function freshAccountPool(): {
+export interface FreshAccountPoolDeps {
+	claim?: () => Promise<HardhatAccount>;
+	release?: (_account: HardhatAccount) => Promise<void>;
+	report?: (_message: string) => void;
+}
+
+export function freshAccountPool({
+	claim = allocateFreshAccount,
+	release = releaseFreshAccount,
+	report = (message: string) => console.error(message),
+}: FreshAccountPoolDeps = {}): {
 	claim(): Promise<HardhatAccount>;
 	releaseAll(): Promise<void>;
 } {
 	const claimed: HardhatAccount[] = [];
 	return {
 		async claim() {
-			const account = await allocateFreshAccount();
+			const account = await claim();
 			claimed.push(account);
 			return account;
 		},
 		async releaseAll() {
 			const accounts = claimed.splice(0);
-			const results = await Promise.allSettled(accounts.map(a => releaseFreshAccount(a)));
+			const results = await Promise.allSettled(accounts.map(a => release(a)));
 			const failed = results.flatMap((r, i) =>
 				r.status === 'rejected' ? [`${accounts[i].address}: ${String(r.reason)}`] : [],
 			);
 			if (failed.length) {
-				throw new Error(
-					`freshAccountPool: ${failed.length} account(s) not released — the runner's ` +
-						`end-of-run sweep is the safety net:\n  ${failed.join('\n  ')}`,
+				report(
+					`freshAccountPool: ${failed.length} account(s) not released — left to the runner's ` +
+						`end-of-run sweep:\n  ${failed.join('\n  ')}`,
 				);
 			}
 		},

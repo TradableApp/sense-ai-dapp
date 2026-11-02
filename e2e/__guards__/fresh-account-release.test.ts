@@ -17,19 +17,25 @@ const SPECS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const DIRECT_ALLOCATE = /\ballocateFreshAccount\s*\(/;
 const HARDHAT_SHARED_ACCOUNT = /\bTEST_ACCOUNT\b/;
 
+// Recursive: readdirSync is shallow by default, so a spec moved into a subdirectory would
+// silently escape the guard while the minimum-count check kept passing on the top level.
+function specFiles(): string[] {
+	return readdirSync(SPECS_DIR, { recursive: true }).filter(
+		(f): f is string => typeof f === 'string' && f.endsWith('.spec.ts'),
+	);
+}
+
 function offenders(pattern: RegExp): string[] {
-	return readdirSync(SPECS_DIR)
-		.filter(f => f.endsWith('.spec.ts'))
-		.flatMap(file =>
-			readFileSync(path.join(SPECS_DIR, file), 'utf8')
-				.split('\n')
-				.flatMap((line, i) => (pattern.test(line) ? [`${file}:${i + 1}`] : [])),
-		);
+	return specFiles().flatMap(file =>
+		readFileSync(path.join(SPECS_DIR, file), 'utf8')
+			.split('\n')
+			.flatMap((line, i) => (pattern.test(line) ? [`${file}:${i + 1}`] : [])),
+	);
 }
 
 describe('fresh accounts are released and the shared user is chain-aware', () => {
 	it('has specs to inspect', () => {
-		expect(readdirSync(SPECS_DIR).filter(f => f.endsWith('.spec.ts')).length).toBeGreaterThan(15);
+		expect(specFiles().length).toBeGreaterThan(15);
 	});
 
 	it('no spec calls allocateFreshAccount() directly — use the freshUserAccount fixture or a released pool', () => {
