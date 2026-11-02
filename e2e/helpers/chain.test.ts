@@ -220,6 +220,7 @@ describe('redactError', () => {
 		const cause = Object.assign(new Error(`RPC Request failed.\nURL: ${url}\nRequest body: {}`), {
 			details: `URL: ${url}`,
 			shortMessage: 'RPC Request failed.',
+			url, // RpcRequestError keeps the raw URL as its own property too
 		});
 		return Object.assign(
 			new Error(`Execution reverted for an unknown reason.\n\nURL: ${url}`, { cause }),
@@ -237,11 +238,23 @@ describe('redactError', () => {
 			(out as unknown as { details: string }).details,
 			(out.cause as Error).message,
 			(out.cause as Error).stack,
-			(out.cause as unknown as { details: string }).details,
+			(out.cause as unknown as { details: string; url: string }).details,
+			(out.cause as unknown as { details: string; url: string }).url,
 		]);
 		expect(flat).not.toContain('not-a-real-key');
 		expect(out.message).toContain(redactUrl(url));
 		expect((out.cause as Error).message).toContain(redactUrl(url));
+	});
+
+	it('scrubs every own string property and walks AggregateError.errors as well as cause', () => {
+		const inner = Object.assign(new Error(`timeout ${url}`), { url, meta: [`retrying ${url}`] });
+		const agg = new AggregateError([inner, viemLike()], `all attempts failed for ${url}`);
+		const out = redactError(agg, url);
+		expect(JSON.stringify(out, Object.getOwnPropertyNames(out))).not.toContain('not-a-real-key');
+		expect(out.message).toContain(redactUrl(url));
+		for (const e of out.errors as Error[]) {
+			expect(JSON.stringify(e, Object.getOwnPropertyNames(e))).not.toContain('not-a-real-key');
+		}
 	});
 
 	it('returns non-Error values and errors without the URL unchanged', () => {
