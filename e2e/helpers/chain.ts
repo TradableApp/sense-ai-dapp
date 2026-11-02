@@ -213,36 +213,44 @@ export function redactUrl(url: string): string {
 }
 
 /**
- * Replace every occurrence of the private RPC URL in an error — message, shortMessage, details,
- * stack, and the same fields down the `cause` chain — with redactUrl(url). viem's
- * RpcRequestError prints "URL: <rpc url>" into message and details and nests itself as the cause
- * of the action error; left alone, Playwright writes the provider key into the stage log (the
- * 2026-11-02 run day's hygiene scan found it 247 times). Mutates and returns the same error so
- * stack traces and `instanceof` checks are untouched; non-Error values pass through.
+ * Replace every occurrence of the private RPC URL in an error with redactUrl(url): every own
+ * string (or string-array) property — message, shortMessage, details, stack, metaMessages, and
+ * viem's raw `url` — then the same down `cause` and across AggregateError's `errors`. viem's
+ * RpcRequestError prints "URL: <rpc url>" into message and details, keeps the URL as a property,
+ * and nests itself as the cause of the action error; left alone, Playwright writes the provider
+ * key into the stage log (the 2026-11-02 run day's hygiene scan found it 247 times). Mutates and
+ * returns the same error so stack traces and `instanceof` checks are untouched; non-Error values
+ * pass through.
  */
 export function redactError<T>(err: T, url: string): T {
 	if (!url || !(err instanceof Error)) return err;
 	const safe = redactUrl(url);
-	const scrub = (v: unknown) => (typeof v === 'string' ? v.split(url).join(safe) : v);
-	let cur: unknown = err;
-	for (let depth = 0; cur instanceof Error && depth < 10; depth++) {
-		// Indexed view: viem adds shortMessage/details/metaMessages beyond the Error type.
+	const scrub = (v: unknown): unknown => {
+		if (typeof v === 'string') return v.split(url).join(safe);
+		if (Array.isArray(v)) return v.map(scrub);
+		return v;
+	};
+	const seen = new Set<unknown>();
+	const walk = (cur: unknown) => {
+		if (!(cur instanceof Error) || seen.has(cur)) return;
+		seen.add(cur);
+		// Indexed view: viem adds shortMessage/details/metaMessages/url beyond the Error type.
 		const e = cur as unknown as Record<string, unknown>;
-		for (const field of ['message', 'shortMessage', 'details', 'stack', 'metaMessages']) {
-			if (field in e) {
-				const v = e[field];
-				const next = Array.isArray(v) ? v.map(scrub) : scrub(v);
-				if (next !== v) {
-					try {
-						e[field] = next;
-					} catch {
-						/* read-only field — leave it */
-					}
+		for (const field of Object.getOwnPropertyNames(e)) {
+			const v = e[field];
+			const next = scrub(v);
+			if (next !== v) {
+				try {
+					e[field] = next;
+				} catch {
+					/* read-only field — leave it */
 				}
 			}
 		}
-		cur = e.cause;
-	}
+		walk(e.cause);
+		if (Array.isArray(e.errors)) e.errors.forEach(walk);
+	};
+	walk(err);
 	return err;
 }
 
