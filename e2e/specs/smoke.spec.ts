@@ -1,6 +1,7 @@
 import { test as base, expect } from '@playwright/test';
 
 import { injectMockWallet } from '../fixtures/mock-wallet';
+import { waitForAppShell } from '../helpers/app-ready';
 import { CHAIN, getChainConfig, isChainReachable, LIVE_STACK, redactUrl } from '../helpers/chain';
 import { GRAPH_NODE_ORIGIN, isGraphRunning } from '../helpers/graph';
 
@@ -99,7 +100,7 @@ test.describe('App initialisation (T-INIT)', () => {
 		// the initial load pays a 10-20s dep-compile that production never has and
 		// that would swallow the envelope window. Assert against a warm load.
 		await page.goto('/');
-		await page.waitForLoadState('networkidle');
+		await waitForAppShell(page);
 
 		const sentryRequest = page.waitForRequest(
 			req => req.url().includes('sentry.io') || req.url().includes('ingest'),
@@ -115,7 +116,7 @@ test.describe('App initialisation (T-INIT)', () => {
 
 		await injectMockWallet(page);
 		await page.goto('/');
-		await page.waitForLoadState('networkidle');
+		await waitForAppShell(page);
 
 		const meaningful = errors.filter(
 			e =>
@@ -136,7 +137,7 @@ test.describe('App initialisation (T-INIT)', () => {
 
 		await injectMockWallet(page);
 		await page.goto('/');
-		await page.waitForLoadState('networkidle');
+		await waitForAppShell(page);
 
 		// Browser-emitted noise, not application errors. `requestStorageAccess` is
 		// Chromium's Storage Access API refusing a cross-site storage request — it comes
@@ -157,7 +158,7 @@ test.describe('App initialisation (T-INIT)', () => {
 	test('T-INIT-09: Offline overlay renders when network is disabled', async ({ page, context }) => {
 		await injectMockWallet(page);
 		await page.goto('/');
-		await page.waitForLoadState('networkidle');
+		await waitForAppShell(page);
 
 		await context.setOffline(true);
 
@@ -172,9 +173,7 @@ test.describe('App initialisation (T-INIT)', () => {
 	}) => {
 		await injectMockWallet(page);
 		await page.goto('/');
-		// App-ready, not networkidle: on testnet the live-state probe polls the chain every block,
-		// so the network never idles for 500 ms and the wait times out (run day 2026-11-02).
-		await expect(page.locator('img[alt*="SenseAI"]').first()).toBeVisible({ timeout: 30_000 });
+		await waitForAppShell(page);
 
 		await context.setOffline(true);
 		await expect(page.getByText(/offline|no connection|no internet/i)).toBeVisible({

@@ -8,7 +8,7 @@ export const E2E_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 
 // Recursive: readdirSync is shallow by default, so a file moved into a subdirectory would
 // silently escape a guard while any minimum-count check kept passing on the top level.
-export function sourceFiles(dir: string, matches: (file: string) => boolean): string[] {
+export function sourceFiles(dir: string, matches: (_file: string) => boolean): string[] {
 	return readdirSync(dir, { recursive: true }).filter(
 		(f): f is string => typeof f === 'string' && matches(f),
 	);
@@ -32,7 +32,7 @@ export function offendersIn(file: string, source: string, pattern: RegExp): stri
 /** `<dir basename>/<file>:<line>` for every match of `pattern` in the files `matches` selects. */
 export function offenders(
 	dir: string,
-	matches: (file: string) => boolean,
+	matches: (_file: string) => boolean,
 	pattern: RegExp,
 ): string[] {
 	const label = path.basename(dir);

@@ -7,44 +7,19 @@
 // to four multi-device accounts nobody swept, and every later fresh-account spec then failed
 // on "funding source ABLE depleted". Likewise, the shared user is Hardhat #1 only on localnet:
 // specs reach it through sharedAccount(), never the TEST_ACCOUNT constant.
-import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-const SPECS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'specs');
+import { E2E_DIR, offendersIn, offenders as scan, sourceFiles } from './source-scan';
+
+const SPECS_DIR = path.join(E2E_DIR, 'specs');
 const DIRECT_ALLOCATE = /\ballocateFreshAccount\s*\(/;
 const HARDHAT_SHARED_ACCOUNT = /\bTEST_ACCOUNT\b/;
+const isSpec = (f: string) => f.endsWith('.spec.ts');
 
-// Recursive: readdirSync is shallow by default, so a spec moved into a subdirectory would
-// silently escape the guard while the minimum-count check kept passing on the top level.
-function specFiles(): string[] {
-	return readdirSync(SPECS_DIR, { recursive: true }).filter(
-		(f): f is string => typeof f === 'string' && f.endsWith('.spec.ts'),
-	);
-}
-
-// Match code, not comments: a spec explaining why it uses the pool must not fail on its own
-// documentation. Block comments are replaced by their newlines so reported line numbers hold;
-// a `//` not preceded by `:` (so a URL survives) drops the rest of its line.
-function stripComments(source: string): string {
-	return source
-		.replace(/\/\*[\s\S]*?\*\//g, block => block.replace(/[^\n]/g, ''))
-		.replace(/(^|[^:])\/\/.*$/gm, '$1');
-}
-
-function offendersIn(file: string, source: string, pattern: RegExp): string[] {
-	return stripComments(source)
-		.split('\n')
-		.flatMap((line, i) => (pattern.test(line) ? [`${file}:${i + 1}`] : []));
-}
-
-function offenders(pattern: RegExp): string[] {
-	return specFiles().flatMap(file =>
-		offendersIn(file, readFileSync(path.join(SPECS_DIR, file), 'utf8'), pattern),
-	);
-}
+const specFiles = () => sourceFiles(SPECS_DIR, isSpec);
+const offenders = (pattern: RegExp) => scan(SPECS_DIR, isSpec, pattern);
 
 describe('fresh accounts are released and the shared user is chain-aware', () => {
 	it('has specs to inspect', () => {

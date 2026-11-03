@@ -1,6 +1,7 @@
 import { test as base, expect } from '@playwright/test';
 
 import { injectMockWallet } from '../fixtures/mock-wallet';
+import { waitForAppShell } from '../helpers/app-ready';
 
 const test = base;
 
@@ -13,7 +14,7 @@ test.describe('Sentry — error tracking initialisation (T-SENTRY)', () => {
 
 		await injectMockWallet(page);
 		await page.goto('/');
-		await page.waitForLoadState('networkidle');
+		await waitForAppShell(page);
 
 		const sentryErrors = errors.filter(e => e.includes('Sentry'));
 		expect(sentryErrors).toHaveLength(0);
@@ -28,7 +29,7 @@ test.describe('Sentry — error tracking initialisation (T-SENTRY)', () => {
 		// swallow the envelope window (this assertion was intermittent under
 		// suite load even at trace sampling 1.0).
 		await page.goto('/');
-		await page.waitForLoadState('networkidle');
+		await waitForAppShell(page);
 
 		const sentryRequest = page.waitForRequest(
 			req => req.url().includes('sentry.io') || req.url().includes('ingest'),
@@ -43,7 +44,7 @@ test.describe('Sentry — error tracking initialisation (T-SENTRY)', () => {
 
 		await injectMockWallet(page);
 		await page.goto('/');
-		await page.waitForLoadState('networkidle');
+		await waitForAppShell(page);
 
 		const sentryEvent = page.waitForRequest(
 			req =>
@@ -75,11 +76,11 @@ test.describe('Sentry — error tracking initialisation (T-SENTRY)', () => {
 
 		await injectMockWallet(page);
 		await page.goto('/');
-		await page.waitForLoadState('networkidle');
+		await waitForAppShell(page);
 
 		// Navigate to trigger performance trace
 		await page.goto('/auth');
-		await page.waitForLoadState('networkidle');
+		await waitForAppShell(page);
 
 		expect(sentryRequests.length).toBeGreaterThan(0);
 	});
