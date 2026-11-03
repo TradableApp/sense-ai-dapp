@@ -31,8 +31,8 @@ describe('no wait on networkidle anywhere in the Playwright suite', () => {
 		);
 		expect(specs).toBeGreaterThan(15);
 		expect(pages).toBeGreaterThan(3);
-		expect(fixtures).toBeGreaterThan(0);
-		expect(helpers).toBeGreaterThan(0);
+		expect(fixtures).toBeGreaterThan(1); // mock-wallet, index
+		expect(helpers).toBeGreaterThan(3); // app-ready, budgets, chain, contracts, graph, …
 	});
 
 	it('matches code, not the comments that explain why a file avoids networkidle', () => {

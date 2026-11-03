@@ -17,6 +17,9 @@ export function sourceFiles(dir: string, matches: (_file: string) => boolean): s
 // Match code, not comments: a file explaining why it avoids a pattern must not fail on its own
 // documentation. Block comments are replaced by their newlines so reported line numbers hold;
 // a `//` not preceded by `:` (so a URL survives) drops the rest of its line.
+// Known limitation: a `//` inside a string or template literal also drops the rest of that line,
+// so a forbidden pattern after it in the same string is missed (a false negative, never a false
+// positive). The guards accept that trade-off over a full tokenizer.
 export function stripComments(source: string): string {
 	return source
 		.replace(/\/\*[\s\S]*?\*\//g, block => block.replace(/[^\n]/g, ''))

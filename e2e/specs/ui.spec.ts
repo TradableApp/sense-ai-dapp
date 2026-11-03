@@ -114,8 +114,18 @@ test.describe('Theme and visual', () => {
 		await page.goto('/auth');
 		await waitForAppShell(page);
 
-		const fontFamily = await page.evaluate(() => window.getComputedStyle(document.body).fontFamily);
-		expect(fontFamily.length).toBeGreaterThan(0);
+		// The shell mounts before the webfont arrives, so wait for the font set to settle and then
+		// check the brand face itself (index.css: body { font-family: 'Inter', sans-serif }) —
+		// a non-empty fontFamily is also true of the system fallback.
+		const font = await page.evaluate(async () => {
+			await document.fonts.ready;
+			return {
+				fontFamily: window.getComputedStyle(document.body).fontFamily,
+				isInterLoaded: document.fonts.check('16px Inter'),
+			};
+		});
+		expect(font.fontFamily).toMatch(/Inter/);
+		expect(font.isInterLoaded).toBe(true);
 	});
 
 	test('T-UI-08b: Theme class (light or dark) is applied to html element', async ({ page }) => {
