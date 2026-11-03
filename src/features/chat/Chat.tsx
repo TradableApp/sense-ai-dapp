@@ -61,6 +61,7 @@ import {
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
 import ActivatePlanCTA from './ActivatePlanCTA';
+import { cancelWindow } from './cancelWindow';
 import isQueryAhead from './messageReconcile';
 
 interface MarkdownParagraphProps {
@@ -136,7 +137,9 @@ export default function Chat() {
 	const prevMessageCountRef = useRef(0);
 	const [feedbackData, setFeedbackData] = useState<Record<string, number>>({});
 	const [cancelDeadline, setCancelDeadline] = useState<number | null>(null);
-	const [cancelSecondsLeft, setCancelSecondsLeft] = useState(0);
+	// Wall clock the cancel affordance is computed against; ticked while the window is closed.
+	const [cancelClock, setCancelClock] = useState(() => Date.now());
+	const cancelAffordance = cancelWindow(cancelDeadline, cancelClock);
 	const [refundSecondsLeft, setRefundSecondsLeft] = useState<number | null>(null);
 
 	const {
@@ -581,23 +584,28 @@ export default function Chat() {
 		if (!isAiThinking) setCancelDeadline(null);
 	}, [isAiThinking]);
 
-	// Cancel countdown: compares Date.now() against deadline for tab-background safety
+	// Cancel countdown: disabled while the escrow would still refuse (createdAt + 3 s), enabled
+	// once it accepts — see cancelWindow. The affordance is derived from (deadline, clock) during
+	// render and openCancelWindow sets both in one batch, so the first paint after the receipt is
+	// already "Cancel in 3s" (no enabled flash). Reads Date.now() on every tick for tab-background
+	// safety and stops ticking once the window is open.
 	useEffect(() => {
-		if (cancelDeadline === null) {
-			setCancelSecondsLeft(0);
+		if (cancelDeadline === null || cancelWindow(cancelDeadline, Date.now()).isCancellable) {
 			return undefined;
 		}
-		const tick = () => {
-			const remaining = Math.max(0, Math.ceil((cancelDeadline - Date.now()) / 1000));
-			setCancelSecondsLeft(remaining);
-			return remaining;
-		};
-		if (tick() === 0) return undefined;
 		const id = setInterval(() => {
-			if (tick() === 0) clearInterval(id);
+			const now = Date.now();
+			setCancelClock(now);
+			if (cancelWindow(cancelDeadline, now).isCancellable) clearInterval(id);
 		}, 200);
 		return () => clearInterval(id);
 	}, [cancelDeadline]);
+
+	const openCancelWindow = () => {
+		const now = Date.now();
+		setCancelClock(now);
+		setCancelDeadline(now + CANCELLATION_TIMEOUT_MS);
+	};
 
 	// Refund eligibility countdown
 	const submittedAt = lastMessage?.createdAt ?? null;
@@ -741,7 +749,7 @@ export default function Chat() {
 							]),
 						);
 					}
-					setCancelDeadline(Date.now() + CANCELLATION_TIMEOUT_MS);
+					openCancelWindow();
 					reset();
 				},
 				// onError: () => {},
@@ -999,10 +1007,10 @@ export default function Chat() {
 								<PromptInputCancel
 									onClick={handleCancelPrompt}
 									isLoading={cancelPromptMutation.isPending}
-									disabled={cancelPromptMutation.isPending || cancelSecondsLeft === 0}
-									size={cancelSecondsLeft > 0 ? 'default' : 'icon'}
+									disabled={cancelPromptMutation.isPending || !cancelAffordance.isCancellable}
+									size={cancelPromptMutation.isPending ? 'icon' : 'default'}
 								>
-									{cancelSecondsLeft > 0 ? `Cancel (${cancelSecondsLeft}s)` : undefined}
+									{cancelPromptMutation.isPending ? undefined : cancelAffordance.label}
 								</PromptInputCancel>
 							) : (
 								<PromptInputSubmit disabled={!isValid || isInputDisabled} status={submitStatus} />

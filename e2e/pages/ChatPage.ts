@@ -29,7 +29,7 @@ export class ChatPage {
 
 	get cancelButton() {
 		// Anchor to the start of the accessible name so we match ONLY the composer's
-		// cancel control — "Cancel" (icon, aria-label) or "Cancel (Ns)" (countdown) —
+		// cancel control — "Cancel in Ns" (countdown, disabled), "Cancel" (enabled) or the icon-only
 		// and never a sidebar conversation title that merely contains the word "cancel".
 		return this.page.getByRole('button', { name: /^cancel/i }).first();
 	}
