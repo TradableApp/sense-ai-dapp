@@ -1,5 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 
+import { BUDGET } from '../helpers/budgets';
+
 /**
  * Page Object Model for the Chat page (/chat).
  */
@@ -251,7 +253,7 @@ export class ChatPage {
 	 * src/hooks/useLiveResponse.ts), no navigation needed. Default timeout allows
 	 * oracle processing + the poll's catch-up.
 	 */
-	async sendPromptAndWaitForResponse(text: string, timeoutMs = 90_000) {
+	async sendPromptAndWaitForResponse(text: string, timeoutMs = BUDGET.answerMs) {
 		const before = await this.assistantMessages.count();
 		await this.sendPrompt(text);
 		await expect(this.assistantMessages).toHaveCount(before + 1, { timeout: timeoutMs });
@@ -284,7 +286,7 @@ export class ChatPage {
 	 * hasMockReasoningSentinel), then waits for the answer to render — so the reasoning/sources
 	 * disclosure is present to assert.
 	 */
-	async sendReasoningPrompt(text: string, timeoutMs = 90_000) {
+	async sendReasoningPrompt(text: string, timeoutMs = BUDGET.answerMs) {
 		return this.sendPromptAndWaitForResponse(`${text} __E2E_REASONING__`, timeoutMs);
 	}
 
@@ -311,7 +313,7 @@ export class ChatPage {
 	async regenerateAndWaitForNewVersion(
 		mode: 'default' | 'detailed' | 'concise',
 		expectedVersions: number,
-		timeoutMs = 90_000,
+		timeoutMs = BUDGET.answerMs,
 	) {
 		await this.regenerate(mode);
 		await expect(this.versionIndicator).toHaveText(

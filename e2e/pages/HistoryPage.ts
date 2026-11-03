@@ -1,5 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 
+import { BUDGET } from '../helpers/budgets';
+
 /**
  * Page Object Model for the History page (/history).
  *
@@ -69,7 +71,10 @@ export class HistoryPage {
 		await this.openConversationMenu(index);
 		await this.page.getByRole('menuitem', { name: /delete/i }).click();
 		// AlertDialog confirm — the destructive action button is "Continue".
-		await this.page.getByRole('alertdialog').getByRole('button', { name: /continue/i }).click();
+		await this.page
+			.getByRole('alertdialog')
+			.getByRole('button', { name: /continue/i })
+			.click();
 	}
 
 	async clickConversation(index: number) {
@@ -80,15 +85,15 @@ export class HistoryPage {
 
 	async assertConversationCount(count: number, options?: { timeout?: number }) {
 		await expect(this.conversationItems).toHaveCount(count, {
-			timeout: options?.timeout ?? 10_000,
+			timeout: options?.timeout ?? BUDGET.indexMs,
 		});
 	}
 
 	async assertHasConversations() {
-		await expect(this.conversationItems.first()).toBeVisible({ timeout: 10_000 });
+		await expect(this.conversationItems.first()).toBeVisible({ timeout: BUDGET.indexMs });
 	}
 
 	async assertEmpty() {
-		await expect(this.emptyState).toBeVisible({ timeout: 10_000 });
+		await expect(this.emptyState).toBeVisible({ timeout: BUDGET.indexMs });
 	}
 }
