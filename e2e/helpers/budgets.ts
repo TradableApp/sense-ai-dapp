@@ -35,8 +35,11 @@ const TESTNET: WaitBudgets = {
 	navigateAfterTxMs: 60_000,
 };
 
+// Exhaustive by type: adding a chain to ChainName without a budget here is a compile error.
+const BUDGETS: Record<ChainName, WaitBudgets> = { localnet: LOCALNET, testnet: TESTNET };
+
 export function budgetsFor(chain: ChainName): WaitBudgets {
-	return chain === 'testnet' ? TESTNET : LOCALNET;
+	return BUDGETS[chain];
 }
 
 export const BUDGET: WaitBudgets = budgetsFor(CHAIN);

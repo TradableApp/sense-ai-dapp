@@ -24,9 +24,15 @@ const SCANNED = [
 ];
 
 describe('no wait on networkidle anywhere in the Playwright suite', () => {
-	it('has files to inspect', () => {
-		expect(sourceFiles(SCANNED[0].dir, isSpec).length).toBeGreaterThan(15);
-		expect(sourceFiles(SCANNED[1].dir, isSource).length).toBeGreaterThan(3);
+	it('has files to inspect in every scanned directory', () => {
+		// Fails loudly if a directory is emptied or renamed, instead of passing with nothing scanned.
+		const [specs, pages, fixtures, helpers] = SCANNED.map(
+			({ dir, matches }) => sourceFiles(dir, matches).length,
+		);
+		expect(specs).toBeGreaterThan(15);
+		expect(pages).toBeGreaterThan(3);
+		expect(fixtures).toBeGreaterThan(0);
+		expect(helpers).toBeGreaterThan(0);
 	});
 
 	it('matches code, not the comments that explain why a file avoids networkidle', () => {
