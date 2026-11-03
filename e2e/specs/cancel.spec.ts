@@ -122,7 +122,7 @@ test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 		// when it first shows (toBeDisabled retries until disabled, so an enabled appearance fails
 		// at the deadline, not before).
 		await expect(freshChatPage.cancelButton).toBeDisabled({ timeout: 30_000 });
-		await expect(freshChatPage.cancelButton).toHaveText(/Cancel in \ds/);
+		await expect(freshChatPage.cancelButton).toHaveText(/Cancel in \d+s/);
 		// …then enabled once the 3s window opens (answer still held pending). sense-ai-dapp #88
 		// had this inverted: enabled only while the contract reverted PromptNotCancellableYet.
 		await expect(freshChatPage.cancelButton).toBeEnabled({ timeout: 10_000 });
