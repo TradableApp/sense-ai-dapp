@@ -61,6 +61,7 @@ import {
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
 import ActivatePlanCTA from './ActivatePlanCTA';
+import { cancelWindow } from './cancelWindow';
 import isQueryAhead from './messageReconcile';
 
 interface MarkdownParagraphProps {
@@ -136,7 +137,7 @@ export default function Chat() {
 	const prevMessageCountRef = useRef(0);
 	const [feedbackData, setFeedbackData] = useState<Record<string, number>>({});
 	const [cancelDeadline, setCancelDeadline] = useState<number | null>(null);
-	const [cancelSecondsLeft, setCancelSecondsLeft] = useState(0);
+	const [cancelAffordance, setCancelAffordance] = useState(() => cancelWindow(null, Date.now()));
 	const [refundSecondsLeft, setRefundSecondsLeft] = useState<number | null>(null);
 
 	const {
@@ -581,20 +582,18 @@ export default function Chat() {
 		if (!isAiThinking) setCancelDeadline(null);
 	}, [isAiThinking]);
 
-	// Cancel countdown: compares Date.now() against deadline for tab-background safety
+	// Cancel countdown: disabled while the escrow would still refuse (createdAt + 3 s), enabled
+	// once it accepts — see cancelWindow. Compares Date.now() against the deadline on every tick
+	// for tab-background safety.
 	useEffect(() => {
-		if (cancelDeadline === null) {
-			setCancelSecondsLeft(0);
-			return undefined;
-		}
 		const tick = () => {
-			const remaining = Math.max(0, Math.ceil((cancelDeadline - Date.now()) / 1000));
-			setCancelSecondsLeft(remaining);
-			return remaining;
+			const next = cancelWindow(cancelDeadline, Date.now());
+			setCancelAffordance(next);
+			return next.isCancellable;
 		};
-		if (tick() === 0) return undefined;
+		if (tick()) return undefined;
 		const id = setInterval(() => {
-			if (tick() === 0) clearInterval(id);
+			if (tick()) clearInterval(id);
 		}, 200);
 		return () => clearInterval(id);
 	}, [cancelDeadline]);
@@ -999,10 +998,10 @@ export default function Chat() {
 								<PromptInputCancel
 									onClick={handleCancelPrompt}
 									isLoading={cancelPromptMutation.isPending}
-									disabled={cancelPromptMutation.isPending || cancelSecondsLeft === 0}
-									size={cancelSecondsLeft > 0 ? 'default' : 'icon'}
+									disabled={cancelPromptMutation.isPending || !cancelAffordance.isCancellable}
+									size={cancelPromptMutation.isPending ? 'icon' : 'default'}
 								>
-									{cancelSecondsLeft > 0 ? `Cancel (${cancelSecondsLeft}s)` : undefined}
+									{cancelPromptMutation.isPending ? undefined : cancelAffordance.label}
 								</PromptInputCancel>
 							) : (
 								<PromptInputSubmit disabled={!isValid || isInputDisabled} status={submitStatus} />

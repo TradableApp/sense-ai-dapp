@@ -111,15 +111,19 @@ test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 		);
 	});
 
-	test('T-CANCEL-04: the cancel affordance follows the 3s CANCELLATION_TIMEOUT countdown', async ({
+	test('T-CANCEL-04: the cancel affordance follows the 3s CANCELLATION_TIMEOUT window', async ({
 		freshChatPage,
 	}) => {
 		await freshChatPage.goto();
 		await freshChatPage.sendDelayedPrompt('Hold for the timeout check', HOLD_MS);
 
-		// Enabled during the countdown ("Cancel (Ns)")…
-		await expect(freshChatPage.cancelButton).toBeEnabled({ timeout: 30_000 });
-		// …then disabled once the 3s countdown elapses (answer still held pending).
-		await expect(freshChatPage.cancelButton).toBeDisabled({ timeout: 10_000 });
+		// Disabled with a countdown while the escrow would still refuse ("Cancel in Ns")…
+		await expect(freshChatPage.cancelButton).toBeVisible({ timeout: 30_000 });
+		await expect(freshChatPage.cancelButton).toBeDisabled();
+		await expect(freshChatPage.cancelButton).toHaveText(/Cancel in \ds/);
+		// …then enabled once the 3s window opens (answer still held pending). sense-ai-dapp #88
+		// had this inverted: enabled only while the contract reverted PromptNotCancellableYet.
+		await expect(freshChatPage.cancelButton).toBeEnabled({ timeout: 10_000 });
+		await expect(freshChatPage.cancelButton).toHaveText(/^Cancel$/);
 	});
 });
