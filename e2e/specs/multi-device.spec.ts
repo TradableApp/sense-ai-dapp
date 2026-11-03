@@ -4,7 +4,7 @@ import { expect, test } from '../fixtures';
 import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { createWalletContext, openDevice, parseAble } from '../helpers/devices';
-import { allocateFreshAccount } from '../helpers/fresh-account';
+import { freshAccountPool } from '../helpers/fresh-account';
 import {
 	getConversation,
 	getConversations,
@@ -42,14 +42,18 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 
 	// Close every context opened during the test — even if it failed mid-body — so worker-scoped
 	// contexts never accumulate.
+	// Fresh accounts claimed in the body go back to the treasury here, after the contexts are
+	// closed — an unreleased account is real ETH + ABLE on testnet.
+	const accounts = freshAccountPool();
 	test.afterEach(async () => {
 		await Promise.all(openContexts.splice(0).map(c => c.close().catch(() => {})));
+		await accounts.releaseAll();
 	});
 
 	test("T-MULTI-01: a second device with the same wallet syncs the first device's conversation", async ({
 		browser,
 	}) => {
-		const account = await allocateFreshAccount();
+		const account = await accounts.claim();
 		await fundAndActivatePlan(account.address);
 
 		// Device A creates a conversation (a unique marker so we can identify it on device B).
@@ -86,7 +90,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		browser,
 	}) => {
 		// Wallet A creates a conversation.
-		const accountA = await allocateFreshAccount();
+		const accountA = await accounts.claim();
 		await fundAndActivatePlan(accountA.address);
 		const deviceA = await openDevice(browser, accountA, openContexts);
 		await deviceA.chat.goto();
@@ -98,7 +102,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		);
 
 		// Wallet B (a different account, no plan needed to view history) connects fresh.
-		const accountB = await allocateFreshAccount();
+		const accountB = await accounts.claim();
 		const deviceB = await openDevice(browser, accountB, openContexts);
 		await deviceB.history.goto();
 
@@ -116,7 +120,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 	test('T-MULTI-03: a freshly-opened device syncs multiple conversations and a remote rename', async ({
 		browser,
 	}) => {
-		const account = await allocateFreshAccount();
+		const account = await accounts.claim();
 		await fundAndActivatePlan(account.address);
 
 		// Device A creates two conversations.
@@ -155,7 +159,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 	test('T-MULTI-04: a freshly-opened device reflects a conversation deleted on another device', async ({
 		browser,
 	}) => {
-		const account = await allocateFreshAccount();
+		const account = await accounts.claim();
 		await fundAndActivatePlan(account.address);
 
 		const deviceA = await openDevice(browser, account, openContexts);
@@ -189,9 +193,9 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 	test('T-MULTI-05: two different wallets each see only their own conversations', async ({
 		browser,
 	}) => {
-		const accountA = await allocateFreshAccount();
+		const accountA = await accounts.claim();
 		await fundAndActivatePlan(accountA.address);
-		const accountB = await allocateFreshAccount();
+		const accountB = await accounts.claim();
 		await fundAndActivatePlan(accountB.address);
 
 		const deviceA = await openDevice(browser, accountA, openContexts);
@@ -231,7 +235,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 	test("T-MULTI-06: a shared wallet's balance and spent allowance are consistent on another device", async ({
 		browser,
 	}) => {
-		const account = await allocateFreshAccount();
+		const account = await accounts.claim();
 		await fundAndActivatePlan(account.address); // funds + authorises PLAN_ALLOWANCE (100 ABLE)
 
 		// Device A spends from the shared on-chain balance/allowance by sending a prompt.
@@ -285,9 +289,9 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		// exercise a different, already-working path). Un-fixme once the mock can drive a ThirdWeb
 		// account switch (multi-account injected mock ThirdWeb adopts) — ClickUp 86d3ckacw.
 		test.fixme(true, 'Harness: ThirdWeb v5 does not adopt the mock wallet accountsChanged');
-		const accountA = await allocateFreshAccount();
+		const accountA = await accounts.claim();
 		await fundAndActivatePlan(accountA.address);
-		const accountB = await allocateFreshAccount();
+		const accountB = await accounts.claim();
 
 		// Connect as wallet A on a SINGLE context, create a conversation, confirm it shows.
 		const context = await createWalletContext(browser, accountA);
@@ -328,7 +332,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 	test('T-RECOVER-01: a fresh device recovers an in-flight (unanswered) prompt from the subgraph', async ({
 		browser,
 	}) => {
-		const account = await allocateFreshAccount();
+		const account = await accounts.claim();
 		await fundAndActivatePlan(account.address);
 
 		// Device A: first an ANSWERED prompt so the Conversation entity exists (ConversationAdded fires

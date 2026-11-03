@@ -212,6 +212,48 @@ export function redactUrl(url: string): string {
 	}
 }
 
+/**
+ * Replace every occurrence of the private RPC URL in an error with redactUrl(url): every own
+ * string (or string-array) property — message, shortMessage, details, stack, metaMessages, and
+ * viem's raw `url` — then the same down `cause` and across AggregateError's `errors`. viem's
+ * RpcRequestError prints "URL: <rpc url>" into message and details, keeps the URL as a property,
+ * and nests itself as the cause of the action error; left alone, Playwright writes the provider
+ * key into the stage log (the 2026-11-02 run day's hygiene scan found it 247 times). Mutates and
+ * returns the same error so stack traces and `instanceof` checks are untouched; non-Error values
+ * pass through.
+ */
+export function redactError<T>(err: T, url: string): T {
+	if (!url || !(err instanceof Error)) return err;
+	const safe = redactUrl(url);
+	const scrub = (v: unknown): unknown => {
+		if (typeof v === 'string') return v.split(url).join(safe);
+		if (Array.isArray(v)) return v.map(scrub);
+		return v;
+	};
+	const seen = new Set<unknown>();
+	const walk = (cur: unknown) => {
+		if (!(cur instanceof Error) || seen.has(cur)) return;
+		seen.add(cur);
+		// Indexed view: viem adds shortMessage/details/metaMessages/url beyond the Error type.
+		const e = cur as unknown as Record<string, unknown>;
+		for (const field of Object.getOwnPropertyNames(e)) {
+			const v = e[field];
+			const next = scrub(v);
+			if (next !== v) {
+				try {
+					e[field] = next;
+				} catch {
+					/* read-only field — leave it */
+				}
+			}
+		}
+		walk(e.cause);
+		if (Array.isArray(e.errors)) e.errors.forEach(walk);
+	};
+	walk(err);
+	return err;
+}
+
 // ── Process-wide selection ────────────────────────────────────────────────────────────────────
 
 /** The chain this process is testing. Fixed at import; set by the runner or the developer. */
@@ -247,12 +289,18 @@ let reqId = 1;
 export async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
 	assertRpcMethodAllowed(CHAIN, method);
 	const { rpcUrl } = getChainConfig();
-	const res = await fetch(rpcUrl, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ jsonrpc: '2.0', id: reqId++, method, params }),
-		signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
-	});
+	let res: Response;
+	try {
+		res = await fetch(rpcUrl, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ jsonrpc: '2.0', id: reqId++, method, params }),
+			signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
+		});
+	} catch (err) {
+		// A network-level failure names the URL in its cause chain; it carries the provider key.
+		throw redactError(err, rpcUrl);
+	}
 	const json = (await res.json()) as JsonRpcResponse;
 	if (json.error) {
 		// The URL is NOT included: on testnet it carries the provider key.
@@ -332,7 +380,13 @@ export async function sendFrom(req: SendFromRequest): Promise<string> {
 	}
 	// Lazy import keeps the localnet path free of the testnet signing stack.
 	const { sendSigned } = await import('../testnet/keyring');
-	const hash = await sendSigned(req);
-	await waitForReceipt(hash);
-	return hash;
+	try {
+		const hash = await sendSigned(req);
+		await waitForReceipt(hash);
+		return hash;
+	} catch (err) {
+		// viem's errors print "URL: <rpc url>" into message/details/cause — scrub before it can
+		// reach a Playwright report.
+		throw redactError(err, getChainConfig().rpcUrl);
+	}
 }
