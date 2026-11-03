@@ -25,8 +25,19 @@ function specFiles(): string[] {
 	);
 }
 
+// Match code, not comments: a spec explaining why it uses the pool must not fail on its own
+// documentation. Block comments are replaced by their newlines so reported line numbers hold;
+// a `//` not preceded by `:` (so a URL survives) drops the rest of its line.
+function stripComments(source: string): string {
+	return source
+		.replace(/\/\*[\s\S]*?\*\//g, block => block.replace(/[^\n]/g, ''))
+		.replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
 function offendersIn(file: string, source: string, pattern: RegExp): string[] {
-	return source.split('\n').flatMap((line, i) => (pattern.test(line) ? [`${file}:${i + 1}`] : []));
+	return stripComments(source)
+		.split('\n')
+		.flatMap((line, i) => (pattern.test(line) ? [`${file}:${i + 1}`] : []));
 }
 
 function offenders(pattern: RegExp): string[] {
