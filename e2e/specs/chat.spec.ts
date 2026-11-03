@@ -1,4 +1,5 @@
 import { expect, test } from '../fixtures';
+import { BUDGET } from '../helpers/budgets';
 import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { getABLEBalance } from '../helpers/hardhat';
@@ -87,7 +88,7 @@ test.describe('Chat — submission and response (T-CHAT-TX)', () => {
 		await freshChatPage.goto();
 		await freshChatPage.sendPrompt('Test user message visibility');
 		await expect(freshChatPage.userMessages.last()).toContainText('Test user message visibility', {
-			timeout: 15_000,
+			timeout: BUDGET.ownMessageVisibleMs,
 		});
 	});
 

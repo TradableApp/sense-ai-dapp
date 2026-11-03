@@ -1,5 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 
+import { BUDGET } from '../helpers/budgets';
+
 /**
  * Page Object Model for the /auth route and the ThirdWeb connect flow.
  */
@@ -129,7 +131,7 @@ export class AuthPage {
 		}
 
 		// Authenticated → redirected to the dashboard.
-		await this.page.waitForURL('/', { timeout: 20_000 });
+		await this.page.waitForURL('/', { timeout: BUDGET.navigateAfterTxMs });
 	}
 
 	// ── Assertions ────────────────────────────────────────────────────────────

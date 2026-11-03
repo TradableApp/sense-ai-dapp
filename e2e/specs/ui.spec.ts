@@ -1,6 +1,7 @@
 import { test as base, expect } from '@playwright/test';
 
 import { injectMockWallet } from '../fixtures/mock-wallet';
+import { waitForAppShell } from '../helpers/app-ready';
 
 const test = base;
 
@@ -111,10 +112,20 @@ test.describe('Theme and visual', () => {
 	test('T-UI-08: Root font is loaded (not system fallback)', async ({ page }) => {
 		await injectMockWallet(page);
 		await page.goto('/auth');
-		await page.waitForLoadState('networkidle');
+		await waitForAppShell(page);
 
-		const fontFamily = await page.evaluate(() => window.getComputedStyle(document.body).fontFamily);
-		expect(fontFamily.length).toBeGreaterThan(0);
+		// The shell mounts before the webfont arrives, so wait for the font set to settle and then
+		// check the brand face itself (index.css: body { font-family: 'Inter', sans-serif }) —
+		// a non-empty fontFamily is also true of the system fallback.
+		const font = await page.evaluate(async () => {
+			await document.fonts.ready;
+			return {
+				fontFamily: window.getComputedStyle(document.body).fontFamily,
+				isInterLoaded: document.fonts.check('16px Inter'),
+			};
+		});
+		expect(font.fontFamily).toMatch(/Inter/);
+		expect(font.isInterLoaded).toBe(true);
 	});
 
 	test('T-UI-08b: Theme class (light or dark) is applied to html element', async ({ page }) => {
@@ -245,7 +256,7 @@ test.describe('Accessibility basics', () => {
 	test('T-UI-15: Interactive elements are keyboard-focusable', async ({ page }) => {
 		await injectMockWallet(page);
 		await page.goto('/auth');
-		await page.waitForLoadState('networkidle');
+		await waitForAppShell(page);
 
 		// Tab through focusable elements — at least one should be a BUTTON or A
 		const focusedTags: string[] = [];
@@ -327,7 +338,7 @@ test.describe('Offline behaviour', () => {
 	test('T-UI-19: Offline message shows "No Internet Connection"', async ({ page, context }) => {
 		await injectMockWallet(page);
 		await page.goto('/auth');
-		await page.waitForLoadState('networkidle');
+		await waitForAppShell(page);
 
 		await context.setOffline(true);
 
@@ -337,7 +348,7 @@ test.describe('Offline behaviour', () => {
 	test('T-UI-20: Offline message has dismiss button', async ({ page, context }) => {
 		await injectMockWallet(page);
 		await page.goto('/auth');
-		await page.waitForLoadState('networkidle');
+		await waitForAppShell(page);
 
 		await context.setOffline(true);
 
@@ -376,7 +387,7 @@ test.describe('Performance basics', () => {
 	test('T-UI-23: No excessive DOM nodes on auth page', async ({ page }) => {
 		await injectMockWallet(page);
 		await page.goto('/auth');
-		await page.waitForLoadState('networkidle');
+		await waitForAppShell(page);
 
 		const nodeCount = await page.evaluate(() => document.querySelectorAll('*').length);
 		expect(nodeCount).toBeLessThan(3000);
