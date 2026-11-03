@@ -137,7 +137,9 @@ export default function Chat() {
 	const prevMessageCountRef = useRef(0);
 	const [feedbackData, setFeedbackData] = useState<Record<string, number>>({});
 	const [cancelDeadline, setCancelDeadline] = useState<number | null>(null);
-	const [cancelAffordance, setCancelAffordance] = useState(() => cancelWindow(null, Date.now()));
+	// Wall clock the cancel affordance is computed against; ticked while the window is closed.
+	const [cancelClock, setCancelClock] = useState(() => Date.now());
+	const cancelAffordance = cancelWindow(cancelDeadline, cancelClock);
 	const [refundSecondsLeft, setRefundSecondsLeft] = useState<number | null>(null);
 
 	const {
@@ -583,20 +585,27 @@ export default function Chat() {
 	}, [isAiThinking]);
 
 	// Cancel countdown: disabled while the escrow would still refuse (createdAt + 3 s), enabled
-	// once it accepts — see cancelWindow. Compares Date.now() against the deadline on every tick
-	// for tab-background safety.
+	// once it accepts — see cancelWindow. The affordance is derived from (deadline, clock) during
+	// render and openCancelWindow sets both in one batch, so the first paint after the receipt is
+	// already "Cancel in 3s" (no enabled flash). Reads Date.now() on every tick for tab-background
+	// safety and stops ticking once the window is open.
 	useEffect(() => {
-		const tick = () => {
-			const next = cancelWindow(cancelDeadline, Date.now());
-			setCancelAffordance(next);
-			return next.isCancellable;
-		};
-		if (tick()) return undefined;
+		if (cancelDeadline === null || cancelWindow(cancelDeadline, Date.now()).isCancellable) {
+			return undefined;
+		}
 		const id = setInterval(() => {
-			if (tick()) clearInterval(id);
+			const now = Date.now();
+			setCancelClock(now);
+			if (cancelWindow(cancelDeadline, now).isCancellable) clearInterval(id);
 		}, 200);
 		return () => clearInterval(id);
 	}, [cancelDeadline]);
+
+	const openCancelWindow = () => {
+		const now = Date.now();
+		setCancelClock(now);
+		setCancelDeadline(now + CANCELLATION_TIMEOUT_MS);
+	};
 
 	// Refund eligibility countdown
 	const submittedAt = lastMessage?.createdAt ?? null;
@@ -740,7 +749,7 @@ export default function Chat() {
 							]),
 						);
 					}
-					setCancelDeadline(Date.now() + CANCELLATION_TIMEOUT_MS);
+					openCancelWindow();
 					reset();
 				},
 				// onError: () => {},
