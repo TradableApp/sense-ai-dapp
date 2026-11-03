@@ -25,17 +25,31 @@ function specFiles(): string[] {
 	);
 }
 
+function offendersIn(file: string, source: string, pattern: RegExp): string[] {
+	return source.split('\n').flatMap((line, i) => (pattern.test(line) ? [`${file}:${i + 1}`] : []));
+}
+
 function offenders(pattern: RegExp): string[] {
 	return specFiles().flatMap(file =>
-		readFileSync(path.join(SPECS_DIR, file), 'utf8')
-			.split('\n')
-			.flatMap((line, i) => (pattern.test(line) ? [`${file}:${i + 1}`] : [])),
+		offendersIn(file, readFileSync(path.join(SPECS_DIR, file), 'utf8'), pattern),
 	);
 }
 
 describe('fresh accounts are released and the shared user is chain-aware', () => {
 	it('has specs to inspect', () => {
 		expect(specFiles().length).toBeGreaterThan(15);
+	});
+
+	it('matches code, not the comments that explain why a spec uses the pool', () => {
+		const source = [
+			'// use freshAccountPool(), not allocateFreshAccount() — see TEST_ACCOUNT notes',
+			'/* allocateFreshAccount() is forbidden here',
+			'   and so is TEST_ACCOUNT */',
+			"const url = 'https://example.test'; // allocateFreshAccount() in a trailing comment",
+			'const account = await allocateFreshAccount();',
+		].join('\n');
+		expect(offendersIn('x.spec.ts', source, DIRECT_ALLOCATE)).toEqual(['x.spec.ts:5']);
+		expect(offendersIn('x.spec.ts', source, HARDHAT_SHARED_ACCOUNT)).toEqual([]);
 	});
 
 	it('no spec calls allocateFreshAccount() directly — use the freshUserAccount fixture or a released pool', () => {
