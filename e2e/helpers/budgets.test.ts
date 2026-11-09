@@ -16,6 +16,7 @@ describe('wait budgets', () => {
 			answerMs: 90_000,
 			indexMs: 10_000,
 			navigateAfterTxMs: 20_000,
+			pageLoadMs: 30_000,
 		});
 	});
 
@@ -31,6 +32,12 @@ describe('wait budgets', () => {
 		const testnet = budgetsFor('testnet');
 		expect(testnet.ownMessageVisibleMs).toBeGreaterThan(30_000);
 		expect(testnet.answerMs).toBeGreaterThan(90_000);
+	});
+
+	it('testnet page-load budget covers a hosting throughput dip: the 3 MB main bundle alone took 21 s', () => {
+		// 2026-11-09 run day, T-AUTH-05 in dapp-2: `page.goto` timed out at Playwright's 30 s default
+		// while index-*.js was still downloading at ~200 KB/s. The retry 20 s later loaded in 22 s.
+		expect(budgetsFor('testnet').pageLoadMs).toBeGreaterThanOrEqual(90_000);
 	});
 
 	it('BUDGET is the budget for the configured chain', () => {
