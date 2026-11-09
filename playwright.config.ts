@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url';
 
 import { defineConfig, devices, type Project } from '@playwright/test';
 
+import { BUDGET } from './e2e/helpers/budgets';
 import { CHAIN, getChainConfig, LIVE_STACK } from './e2e/helpers/chain';
 import { loadChainEnv } from './e2e/helpers/env';
 
@@ -340,7 +341,8 @@ export default defineConfig({
 		baseURL: BASE_URL,
 		/** Default assertion timeout — tight enough to catch regressions */
 		actionTimeout: 15_000,
-		navigationTimeout: 30_000,
+		/** `page.goto` waits for `load`; on a hosted build that is the CDN's time, so it is budgeted. */
+		navigationTimeout: BUDGET.pageLoadMs,
 		/**
 		 * 'on-first-retry' records the trace DURING the retry — so for a flaky test you keep a
 		 * trace of the attempt that PASSED, and nothing from the one that failed. That is the

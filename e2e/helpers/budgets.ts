@@ -19,6 +19,13 @@ export interface WaitBudgets {
 	indexMs: number;
 	/** A navigation that waits on a confirmed transaction (connect → dashboard redirect). */
 	navigateAfterTxMs: number;
+	/**
+	 * `page.goto` resolving on the browser's `load` event: every sub-resource fetched, including the
+	 * ~3 MB main bundle and third-party scripts. Localnet serves from the Vite dev server; testnet
+	 * from Firebase Hosting, where the 2026-11-09 run day saw that bundle alone take 21 s during a
+	 * throughput dip. Wired into playwright.config.ts as `navigationTimeout`.
+	 */
+	pageLoadMs: number;
 }
 
 const LOCALNET: WaitBudgets = {
@@ -26,6 +33,7 @@ const LOCALNET: WaitBudgets = {
 	answerMs: 90_000,
 	indexMs: 10_000,
 	navigateAfterTxMs: 20_000,
+	pageLoadMs: 30_000,
 };
 
 const TESTNET: WaitBudgets = {
@@ -33,6 +41,7 @@ const TESTNET: WaitBudgets = {
 	answerMs: 180_000,
 	indexMs: 30_000,
 	navigateAfterTxMs: 60_000,
+	pageLoadMs: 90_000,
 };
 
 // Exhaustive by type: adding a chain to ChainName without a budget here is a compile error.
