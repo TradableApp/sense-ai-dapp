@@ -7,6 +7,7 @@ import { CHAIN } from '../helpers/chain';
 import { createWalletContext } from '../helpers/devices';
 import { allocateFreshAccount, releaseFreshAccount } from '../helpers/fresh-account';
 import { type HardhatAccount } from '../helpers/hardhat';
+import { ensureRendererAlive } from '../helpers/renderer-health';
 import { AuthPage } from '../pages/AuthPage';
 import { ChatPage } from '../pages/ChatPage';
 import { DashboardPage } from '../pages/DashboardPage';
@@ -107,6 +108,9 @@ export const test = base.extend<SenseAIFixtures>({
 
 		const page = await context.newPage();
 		await page.goto('/');
+		await ensureRendererAlive(page, {
+			warn: m => console.warn(`[fixture authenticatedPage] ${m}`),
+		});
 
 		if (page.url().includes('/auth')) {
 			const authPage = new AuthPage(page);
@@ -164,6 +168,9 @@ export const test = base.extend<SenseAIFixtures>({
 	freshPage: async ({ freshContext }, use) => {
 		const page = await freshContext.newPage();
 		await page.goto('/');
+		// A fresh context's first interaction is where the once-per-run renderer stall bit (H9 on
+		// the 2026-11-09/10 run days); ask for one frame first and reload once if none comes.
+		await ensureRendererAlive(page, { warn: m => console.warn(`[fixture freshPage] ${m}`) });
 
 		// A fresh context has no cached session, so the app ALWAYS redirects to /auth —
 		// don't gate on page.url(). page.goto resolves on the `load` event, BEFORE

@@ -53,7 +53,17 @@ const TESTNET_PROJECTS: Project[] = [
 		testMatch: TESTNET_SPECS.map(spec => `**/${spec}.spec.ts`),
 		fullyParallel: false,
 		timeout: 300_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: {
+			...devices['Desktop Chrome'],
+			/**
+			 * Software compositor. Once per Base Sepolia run a fresh context stopped scheduling
+			 * animation frames while its JS kept running (T-HIST-10 2026-11-09, T-PLAN-01 2026-11-10),
+			 * so Playwright's actionability check waited its full 15 s on a page that was alive but
+			 * not painting. The GPU process is the usual culprit for that headless stall on macOS
+			 * under load; the fixture's renderer-health probe is the second line of defence.
+			 */
+			launchOptions: { args: ['--disable-gpu'] },
+		},
 	},
 ];
 
