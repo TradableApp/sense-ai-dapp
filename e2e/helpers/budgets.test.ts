@@ -17,7 +17,15 @@ describe('wait budgets', () => {
 			indexMs: 10_000,
 			navigateAfterTxMs: 20_000,
 			pageLoadMs: 30_000,
+			graphPollMs: 1_000,
 		});
+	});
+
+	it('testnet polls the subgraph no faster than every 2 s — the Studio endpoint is capped at 3,000 queries a day', () => {
+		// 2026-11-10 00:31Z: run 20261109T233416Z died in dapp-2 when the Studio query endpoint
+		// answered HTTP 429 (x-ratelimit-limit 3000, remaining 0). The 1 s poll in waitForGraph was
+		// a large share of the day's budget.
+		expect(budgetsFor('testnet').graphPollMs).toBeGreaterThanOrEqual(2_000);
 	});
 
 	it('testnet gives every budget at least the localnet headroom, never less', () => {
