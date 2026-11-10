@@ -33,6 +33,13 @@ export interface WaitBudgets {
 	 * owns its graph-node and can poll every second; testnet polls no faster than every 2 s.
 	 */
 	graphPollMs: number;
+	/**
+	 * Timeout for one health probe in global-setup. Localhost services answer in milliseconds; a
+	 * public gateway behind Cloudflare with indexer selection took 16–20 s per query in the first
+	 * minutes after `sense-ai-testnet` was published (2026-11-10 02:50Z) and failed a 5 s probe
+	 * twice at 03:07Z, ending run 20261110T030552Z before a single test ran.
+	 */
+	healthCheckMs: number;
 }
 
 const LOCALNET: WaitBudgets = {
@@ -42,6 +49,7 @@ const LOCALNET: WaitBudgets = {
 	navigateAfterTxMs: 20_000,
 	pageLoadMs: 30_000,
 	graphPollMs: 1_000,
+	healthCheckMs: 5_000,
 };
 
 const TESTNET: WaitBudgets = {
@@ -51,6 +59,7 @@ const TESTNET: WaitBudgets = {
 	navigateAfterTxMs: 60_000,
 	pageLoadMs: 90_000,
 	graphPollMs: 2_000,
+	healthCheckMs: 30_000,
 };
 
 // Exhaustive by type: adding a chain to ChainName without a budget here is a compile error.

@@ -3,11 +3,28 @@
  */
 
 import { BUDGET } from './budgets';
+import { CHAIN, type ChainName, redactUrl } from './chain';
 
 // Single source of truth for the subgraph endpoint, env-aware so the health
 // check (global-setup) and the test queries always target the same URL.
-export const GRAPH_URL =
-	process.env.VITE_THE_GRAPH_API_URL || 'http://localhost:8000/subgraphs/name/sense-ai';
+/**
+ * Which subgraph endpoint the Node-side helpers and the health check use.
+ *
+ * On testnet the runner exports `TESTNET_GRAPH_URL`, its own gateway key with no domain
+ * restriction, and that wins: the dApp's `VITE_THE_GRAPH_API_URL` carries a key restricted to the
+ * hosted site's domain, and Node sends no Origin, so the gateway refuses it ("auth error: domain
+ * not authorized by user" — runs 20261110T030552Z and 031616Z). On localnet the dApp's variable
+ * (or the local graph-node default) is the endpoint, and a stray `TESTNET_GRAPH_URL` in the shell
+ * is ignored.
+ */
+export function resolveGraphUrl(env: Record<string, string | undefined>, chain: ChainName): string {
+	if (chain === 'testnet' && env.TESTNET_GRAPH_URL) return env.TESTNET_GRAPH_URL;
+	// The literal is the dApp variable's fallback only (the endpoint-consistency guard forbids a
+	// bare localnet literal); sync-config.sh derives the real value from $PORT_GRAPH.
+	return env.VITE_THE_GRAPH_API_URL || 'http://localhost:8000/subgraphs/name/sense-ai';
+}
+
+export const GRAPH_URL = resolveGraphUrl(process.env, CHAIN);
 
 // Origin of the Graph node HTTP server (e.g. http://localhost:8000) — lets us
 // probe that the node process itself is up, independently of whether the
@@ -25,7 +42,9 @@ export const GRAPH_NODE_ORIGIN = ((): string => {
 		return url.origin;
 	} catch {
 		throw new Error(
-			`Invalid Graph endpoint "${GRAPH_URL}". Set VITE_THE_GRAPH_API_URL to an absolute ` +
+			`Invalid Graph endpoint "${redactUrl(
+				GRAPH_URL,
+			)}". Set VITE_THE_GRAPH_API_URL (or TESTNET_GRAPH_URL on testnet) to an absolute ` +
 				`http(s) URL including the scheme, e.g. http://localhost:8000/subgraphs/name/sense-ai.`,
 		);
 	}
@@ -106,6 +125,87 @@ export async function graphQuery<T>(
 	if (json.errors?.length) throw new Error(`Graph error: ${json.errors[0].message}`);
 	if (!json.data) throw new Error('Graph returned no data');
 	return json.data;
+}
+
+export type SubgraphProbe = { ok: true } | { ok: false; detail: string };
+
+/**
+ * Makes probe text safe to print. The exact URL and its key segment are replaced first (so a key
+ * cut by truncation cannot survive), then any remaining `/api/<hex>/` run of 8+ chars is hidden.
+ */
+function scrubberFor(url: string): (_text: string) => string {
+	const key = /\/api\/([0-9a-f]{16,})\//i.exec(url)?.[1];
+	return text => {
+		let out = text.split(url).join(redactUrl(url));
+		if (key) out = out.split(key).join('<redacted>');
+		return out.replace(/(\/api\/)[0-9a-f]{8,}(\/|$)/gi, '$1<redacted>$2');
+	};
+}
+
+/** Empty string on success; otherwise a short, printable reason. */
+async function probeOnce(
+	url: string,
+	timeoutMs: number,
+	scrub: (_text: string) => string,
+): Promise<string> {
+	try {
+		const res = await fetch(url, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ query: '{ _meta { block { number } } }' }),
+			signal: AbortSignal.timeout(timeoutMs),
+		});
+		const text = await res.text();
+		// Scrub BEFORE truncating: a key cut in half would escape a length-anchored pattern.
+		const head = scrub(text.replace(/\s+/g, ' ')).slice(0, 100);
+		if (!res.ok) return `HTTP ${res.status}: ${head || '(empty body)'}`;
+		let json: { data?: unknown; errors?: Array<{ message: string }> };
+		try {
+			json = JSON.parse(text) as typeof json;
+		} catch {
+			return `HTTP ${res.status} answered non-JSON: ${head}`;
+		}
+		if (json.errors?.length) return `GraphQL error: ${scrub(json.errors[0].message)}`;
+		if (!json.data) return 'GraphQL answer carried no data';
+		return '';
+	} catch (err) {
+		if (err instanceof Error && err.name === 'TimeoutError')
+			return `timed out after ${timeoutMs} ms`;
+		return `request failed: ${scrub(
+			err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+		)}`;
+	}
+}
+
+/**
+ * One health probe of the subgraph endpoint: a `_meta` query that must answer 200 with no
+ * GraphQL errors. A public gateway can answer 5xx or slowly while a new deployment is being
+ * allocated, so testnet asks several times; localnet asks once. The returned detail is safe to
+ * print: it carries the status and the first words of the body, never the keyed URL.
+ */
+export async function probeSubgraph(
+	url: string,
+	{
+		attempts = 1,
+		timeoutMs,
+		retryGapMs = 2_000,
+		sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms)),
+	}: {
+		attempts?: number;
+		timeoutMs: number;
+		retryGapMs?: number;
+		sleep?: (_ms: number) => Promise<void>;
+	},
+): Promise<SubgraphProbe> {
+	const scrub = scrubberFor(url);
+	let detail = 'no attempt made';
+	for (let attempt = 1; attempt <= attempts; attempt++) {
+		detail = await probeOnce(url, timeoutMs, scrub);
+		if (detail === '') return { ok: true };
+		if (attempt < attempts) await sleep(retryGapMs);
+	}
+	const tries = `${attempts} attempt${attempts === 1 ? '' : 's'}`;
+	return { ok: false, detail: scrub(`${detail} (${tries})`) };
 }
 
 /**

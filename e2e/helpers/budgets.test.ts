@@ -18,6 +18,7 @@ describe('wait budgets', () => {
 			navigateAfterTxMs: 20_000,
 			pageLoadMs: 30_000,
 			graphPollMs: 1_000,
+			healthCheckMs: 5_000,
 		});
 	});
 
