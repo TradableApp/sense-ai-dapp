@@ -7,12 +7,6 @@ import { CHAIN, type ChainName, redactUrl } from './chain';
 
 // Single source of truth for the subgraph endpoint, env-aware so the health
 // check (global-setup) and the test queries always target the same URL.
-// The dApp's endpoint, or the local graph-node when the per-mode env sets none. The literal sits
-// behind the env override on purpose: sync-config.sh derives the real value from $PORT_GRAPH and
-// the endpoint-consistency guard forbids a bare localnet literal.
-const DAPP_GRAPH_URL =
-	process.env.VITE_THE_GRAPH_API_URL || 'http://localhost:8000/subgraphs/name/sense-ai';
-
 /**
  * Which subgraph endpoint the Node-side helpers and the health check use.
  *
@@ -25,7 +19,9 @@ const DAPP_GRAPH_URL =
  */
 export function resolveGraphUrl(env: Record<string, string | undefined>, chain: ChainName): string {
 	if (chain === 'testnet' && env.TESTNET_GRAPH_URL) return env.TESTNET_GRAPH_URL;
-	return env.VITE_THE_GRAPH_API_URL || DAPP_GRAPH_URL;
+	// The literal is the dApp variable's fallback only (the endpoint-consistency guard forbids a
+	// bare localnet literal); sync-config.sh derives the real value from $PORT_GRAPH.
+	return env.VITE_THE_GRAPH_API_URL || 'http://localhost:8000/subgraphs/name/sense-ai';
 }
 
 export const GRAPH_URL = resolveGraphUrl(process.env, CHAIN);

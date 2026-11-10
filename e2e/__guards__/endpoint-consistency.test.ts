@@ -34,7 +34,9 @@ function read(rel: string): string {
 	return readFileSync(path.join(E2E_DIR, rel), 'utf8');
 }
 
-/** Every `process.env.X || '<literal>'` (or `??`) pair in a file, as [envVar, literal].
+/** Every `process.env.X || '<literal>'` (or `??`) pair in a file, as [envVar, literal]. An
+ *  injected `env.X || '<literal>'` (a resolver that takes the environment as a parameter and is
+ *  called with `process.env` at module load) is the same override contract and counts too.
  *
  *  Both operators are matched deliberately. They are NOT equivalent — `||` falls through on any
  *  falsy value including `''`, while `??` only on null/undefined — and `??` is the
@@ -43,10 +45,9 @@ function read(rel: string): string {
  *  nothing would fail with "should define exactly one …", which reads as "the fallback is
  *  missing" rather than "the operator changed". Matching both keeps the failure honest. */
 function envFallbacks(src: string): Array<[string, string]> {
-	return [...src.matchAll(/process\.env\.(\w+)\s*(?:\|\||\?\?)\s*['"]([^'"]+)['"]/g)].map(m => [
-		m[1],
-		m[2],
-	]);
+	return [...src.matchAll(/(?:process\.)?env\.(\w+)\s*(?:\|\||\?\?)\s*['"]([^'"]+)['"]/g)].map(
+		m => [m[1], m[2]],
+	);
 }
 
 describe('localnet endpoints have one source of truth', () => {

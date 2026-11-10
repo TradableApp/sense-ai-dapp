@@ -158,8 +158,10 @@ describe('probeSubgraph', () => {
 	});
 
 	it('never leaks a key cut by truncation — the URL is scrubbed before the body is shortened', async () => {
-		// 90 chars of filler put the key across the 100-char cut, where a 32-hex pattern cannot match.
-		const body = `${'x'.repeat(90)} ${KEYED} rejected`;
+		// 60 x's + space: the URL starts at 61 and its 33-char prefix puts the key at 94, so six key
+		// chars (fewer than the regex fallback's minimum of 8) sit inside the 100-char cut. Truncating
+		// first would leak them; scrubbing first removes the whole URL before the cut.
+		const body = `${'x'.repeat(60)} ${KEYED} rejected`;
 		vi.stubGlobal(
 			'fetch',
 			vi.fn(async () => new Response(body, { status: 502 })),
@@ -174,7 +176,7 @@ describe('probeSubgraph', () => {
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
 			expect(result.detail).toMatch(/HTTP 502/);
-			expect(result.detail).not.toMatch(/0123456789abcdef/);
+			expect(result.detail).not.toMatch(/012345/);
 		}
 	});
 
