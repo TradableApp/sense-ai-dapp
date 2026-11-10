@@ -151,6 +151,45 @@ describe('probeSubgraph', () => {
 		}
 	});
 
+	it('never leaks a key cut by truncation — the URL is scrubbed before the body is shortened', async () => {
+		// 90 chars of filler put the key across the 100-char cut, where a 32-hex pattern cannot match.
+		const body = `${'x'.repeat(90)} ${KEYED} rejected`;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => new Response(body, { status: 502 })),
+		);
+
+		const result = await probeSubgraph(KEYED, {
+			attempts: 1,
+			timeoutMs: 1_000,
+			sleep: async () => {},
+		});
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.detail).toMatch(/HTTP 502/);
+			expect(result.detail).not.toMatch(/0123456789abcdef/);
+		}
+	});
+
+	it('scrubs the key out of a GraphQL error message and a thrown error', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => {
+				throw new TypeError(`fetch failed for ${KEYED}`);
+			}),
+		);
+
+		const result = await probeSubgraph(KEYED, {
+			attempts: 1,
+			timeoutMs: 1_000,
+			sleep: async () => {},
+		});
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.detail).not.toMatch(/0123456789abcdef/);
+	});
+
 	it('recovers when a later attempt succeeds', async () => {
 		let n = 0;
 		vi.stubGlobal(

@@ -3,6 +3,7 @@
  */
 
 import { BUDGET } from './budgets';
+import { redactUrl } from './chain';
 
 // Single source of truth for the subgraph endpoint, env-aware so the health
 // check (global-setup) and the test queries always target the same URL.
@@ -110,13 +111,25 @@ export async function graphQuery<T>(
 
 export type SubgraphProbe = { ok: true } | { ok: false; detail: string };
 
-/** Hides a gateway API key (32 hex chars in the path) so a probe detail is safe to print. */
-function redactKeyedUrls(text: string): string {
-	return text.replace(/(gateway\.thegraph\.com\/api\/)[0-9a-f]{32}\//gi, '$1<redacted>/');
+/**
+ * Makes probe text safe to print. The exact URL and its key segment are replaced first (so a key
+ * cut by truncation cannot survive), then any remaining `/api/<hex>/` run of 8+ chars is hidden.
+ */
+function scrubberFor(url: string): (_text: string) => string {
+	const key = /\/api\/([0-9a-f]{16,})\//i.exec(url)?.[1];
+	return text => {
+		let out = text.split(url).join(redactUrl(url));
+		if (key) out = out.split(key).join('<redacted>');
+		return out.replace(/(\/api\/)[0-9a-f]{8,}(\/|$)/gi, '$1<redacted>$2');
+	};
 }
 
 /** Empty string on success; otherwise a short, printable reason. */
-async function probeOnce(url: string, timeoutMs: number): Promise<string> {
+async function probeOnce(
+	url: string,
+	timeoutMs: number,
+	scrub: (_text: string) => string,
+): Promise<string> {
 	try {
 		const res = await fetch(url, {
 			method: 'POST',
@@ -125,7 +138,8 @@ async function probeOnce(url: string, timeoutMs: number): Promise<string> {
 			signal: AbortSignal.timeout(timeoutMs),
 		});
 		const text = await res.text();
-		const head = text.replace(/\s+/g, ' ').slice(0, 100);
+		// Scrub BEFORE truncating: a key cut in half would escape a length-anchored pattern.
+		const head = scrub(text.replace(/\s+/g, ' ')).slice(0, 100);
 		if (!res.ok) return `HTTP ${res.status}: ${head || '(empty body)'}`;
 		let json: { data?: unknown; errors?: Array<{ message: string }> };
 		try {
@@ -133,13 +147,15 @@ async function probeOnce(url: string, timeoutMs: number): Promise<string> {
 		} catch {
 			return `HTTP ${res.status} answered non-JSON: ${head}`;
 		}
-		if (json.errors?.length) return `GraphQL error: ${json.errors[0].message}`;
+		if (json.errors?.length) return `GraphQL error: ${scrub(json.errors[0].message)}`;
 		if (!json.data) return 'GraphQL answer carried no data';
 		return '';
 	} catch (err) {
 		if (err instanceof Error && err.name === 'TimeoutError')
 			return `timed out after ${timeoutMs} ms`;
-		return `request failed: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`;
+		return `request failed: ${scrub(
+			err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+		)}`;
 	}
 }
 
@@ -163,14 +179,15 @@ export async function probeSubgraph(
 		sleep?: (_ms: number) => Promise<void>;
 	},
 ): Promise<SubgraphProbe> {
+	const scrub = scrubberFor(url);
 	let detail = 'no attempt made';
 	for (let attempt = 1; attempt <= attempts; attempt++) {
-		detail = await probeOnce(url, timeoutMs);
+		detail = await probeOnce(url, timeoutMs, scrub);
 		if (detail === '') return { ok: true };
 		if (attempt < attempts) await sleep(retryGapMs);
 	}
 	const tries = `${attempts} attempt${attempts === 1 ? '' : 's'}`;
-	return { ok: false, detail: redactKeyedUrls(`${detail} (${tries})`) };
+	return { ok: false, detail: scrub(`${detail} (${tries})`) };
 }
 
 /**
