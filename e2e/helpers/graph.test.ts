@@ -113,7 +113,7 @@ describe('probeSubgraph', () => {
 			status: 200,
 			headers: { 'content-type': 'application/json' },
 		});
-	const noIndexer = () => new Response('no indexers available for ' + KEYED, { status: 503 });
+	const noIndexer = () => new Response(`no indexers available for ${KEYED}`, { status: 503 });
 
 	it('is ok on a healthy endpoint with one request', async () => {
 		const fetchMock = vi.fn(async () => healthy());

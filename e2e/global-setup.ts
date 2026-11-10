@@ -8,14 +8,22 @@
  * endpoint, and the hosted dApp.
  */
 
+import { BUDGET } from './helpers/budgets';
 import { CHAIN, getChainConfig, isChainReachable, LIVE_STACK, redactUrl } from './helpers/chain';
 import { resetFreshAccountAllocator } from './helpers/fresh-account';
 // GRAPH_URL / GRAPH_NODE_ORIGIN are imported (not re-derived) so the health
 // check can never pass/fail against a different endpoint than the tests query.
-import { GRAPH_NODE_ORIGIN, GRAPH_URL, isGraphRunning } from './helpers/graph';
+import { GRAPH_NODE_ORIGIN, GRAPH_URL, isGraphRunning, probeSubgraph } from './helpers/graph';
 import { isHardhatRunning } from './helpers/hardhat';
 
-const HEALTH_CHECK_TIMEOUT_MS = 5_000;
+// One probe gets the chain budget (5 s on localhost, 30 s against the public gateway); the race
+// below allows for every attempt plus the gaps between them.
+const HEALTH_CHECK_TIMEOUT_MS = BUDGET.healthCheckMs;
+const SUBGRAPH_PROBE_ATTEMPTS = CHAIN === 'testnet' ? 3 : 1;
+const SUBGRAPH_PROBE_GAP_MS = 2_000;
+const CHECK_RACE_MS =
+	HEALTH_CHECK_TIMEOUT_MS * SUBGRAPH_PROBE_ATTEMPTS +
+	SUBGRAPH_PROBE_GAP_MS * SUBGRAPH_PROBE_ATTEMPTS;
 
 /**
  * Bounds a health check so a hung connection (e.g. a TCP connect that neither
@@ -26,7 +34,7 @@ const HEALTH_CHECK_TIMEOUT_MS = 5_000;
 async function withTimeout(check: () => Promise<boolean>): Promise<boolean> {
 	let timeoutId: ReturnType<typeof setTimeout> | undefined;
 	const timeout = new Promise<boolean>(resolve => {
-		timeoutId = setTimeout(() => resolve(false), HEALTH_CHECK_TIMEOUT_MS);
+		timeoutId = setTimeout(() => resolve(false), CHECK_RACE_MS);
 	});
 	try {
 		return await Promise.race([check(), timeout]);
@@ -37,31 +45,22 @@ async function withTimeout(check: () => Promise<boolean>): Promise<boolean> {
 	}
 }
 
+/** Last failure detail from the subgraph probe, printed with the error so the cause is in the log. */
+let subgraphProbeDetail = '';
+
 /**
- * Checks if the subgraph endpoint is reachable by making a simple GraphQL query.
+ * Checks the subgraph endpoint with a `_meta` query through the shared probe: several attempts on
+ * testnet (a public gateway can answer 5xx or slowly while a new deployment is being allocated),
+ * one on localnet. The detail it keeps is redacted, so it is safe in a stage log.
  */
 async function isSubgraphReachable(): Promise<boolean> {
-	const controller = new AbortController();
-	const timeoutId = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
-	try {
-		const response = await fetch(GRAPH_URL, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				query: '{ _meta { block { number } } }',
-			}),
-			signal: controller.signal,
-		});
-
-		if (!response.ok) return false;
-
-		const data = (await response.json()) as { data?: unknown; errors?: Array<{ message: string }> };
-		return !data.errors || data.errors.length === 0;
-	} catch {
-		return false;
-	} finally {
-		clearTimeout(timeoutId);
-	}
+	const result = await probeSubgraph(GRAPH_URL, {
+		attempts: SUBGRAPH_PROBE_ATTEMPTS,
+		timeoutMs: HEALTH_CHECK_TIMEOUT_MS,
+		retryGapMs: SUBGRAPH_PROBE_GAP_MS,
+	});
+	if (!result.ok) subgraphProbeDetail = result.detail;
+	return result.ok;
 }
 
 async function isDappReachable(baseUrl: string): Promise<boolean> {
@@ -85,7 +84,7 @@ function localnetChecks(): HealthCheck[] {
 	return [
 		{ name: 'Hardhat Node (http://127.0.0.1:8545)', check: isHardhatRunning },
 		{ name: `Graph Node (${GRAPH_NODE_ORIGIN})`, check: isGraphRunning },
-		{ name: `Subgraph Endpoint (${GRAPH_URL})`, check: isSubgraphReachable },
+		{ name: `Subgraph Endpoint (${redactUrl(GRAPH_URL)})`, check: isSubgraphReachable },
 	];
 }
 
@@ -96,7 +95,7 @@ function testnetChecks(): HealthCheck[] {
 			name: `Chain RPC ${redactUrl(cfg.rpcUrl)} (chain id ${cfg.chainId})`,
 			check: isChainReachable,
 		},
-		{ name: `Subgraph Endpoint (${GRAPH_URL})`, check: isSubgraphReachable },
+		{ name: `Subgraph Endpoint (${redactUrl(GRAPH_URL)})`, check: isSubgraphReachable },
 		{ name: `Hosted dApp (${cfg.baseUrl})`, check: () => isDappReachable(cfg.baseUrl) },
 	];
 }
@@ -107,7 +106,7 @@ const LOCALNET_REMEDY =
 	`This starts:\n` +
 	`  • Hardhat local node (http://127.0.0.1:8545)\n` +
 	`  • The Graph node (${GRAPH_NODE_ORIGIN})\n` +
-	`  • Subgraph indexing at ${GRAPH_URL}\n\n` +
+	`  • Subgraph indexing at ${redactUrl(GRAPH_URL)}\n\n` +
 	`Then retry your tests:\n\n` +
 	`  E2E_LOCAL_SERVICES=1 bun run test:e2e\n`;
 
@@ -142,7 +141,14 @@ export default async function globalSetup(): Promise<void> {
 	}
 
 	// At least one service is down
-	const serviceList = unhealthyServices.map(s => `  ✗ ${s.name}`).join('\n');
+	const serviceList = unhealthyServices
+		.map(
+			s =>
+				`  ✗ ${s.name}${
+					s.check === isSubgraphReachable && subgraphProbeDetail ? ` — ${subgraphProbeDetail}` : ''
+				}`,
+		)
+		.join('\n');
 
 	throw new Error(
 		`\n❌ The following ${CHAIN} services are not reachable:\n\n${serviceList}\n\n${

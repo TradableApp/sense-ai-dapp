@@ -108,6 +108,71 @@ export async function graphQuery<T>(
 	return json.data;
 }
 
+export type SubgraphProbe = { ok: true } | { ok: false; detail: string };
+
+/** Hides a gateway API key (32 hex chars in the path) so a probe detail is safe to print. */
+function redactKeyedUrls(text: string): string {
+	return text.replace(/(gateway\.thegraph\.com\/api\/)[0-9a-f]{32}\//gi, '$1<redacted>/');
+}
+
+/** Empty string on success; otherwise a short, printable reason. */
+async function probeOnce(url: string, timeoutMs: number): Promise<string> {
+	try {
+		const res = await fetch(url, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ query: '{ _meta { block { number } } }' }),
+			signal: AbortSignal.timeout(timeoutMs),
+		});
+		const text = await res.text();
+		const head = text.replace(/\s+/g, ' ').slice(0, 100);
+		if (!res.ok) return `HTTP ${res.status}: ${head || '(empty body)'}`;
+		let json: { data?: unknown; errors?: Array<{ message: string }> };
+		try {
+			json = JSON.parse(text) as typeof json;
+		} catch {
+			return `HTTP ${res.status} answered non-JSON: ${head}`;
+		}
+		if (json.errors?.length) return `GraphQL error: ${json.errors[0].message}`;
+		if (!json.data) return 'GraphQL answer carried no data';
+		return '';
+	} catch (err) {
+		if (err instanceof Error && err.name === 'TimeoutError')
+			return `timed out after ${timeoutMs} ms`;
+		return `request failed: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`;
+	}
+}
+
+/**
+ * One health probe of the subgraph endpoint: a `_meta` query that must answer 200 with no
+ * GraphQL errors. A public gateway can answer 5xx or slowly while a new deployment is being
+ * allocated, so testnet asks several times; localnet asks once. The returned detail is safe to
+ * print: it carries the status and the first words of the body, never the keyed URL.
+ */
+export async function probeSubgraph(
+	url: string,
+	{
+		attempts = 1,
+		timeoutMs,
+		retryGapMs = 2_000,
+		sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms)),
+	}: {
+		attempts?: number;
+		timeoutMs: number;
+		retryGapMs?: number;
+		sleep?: (_ms: number) => Promise<void>;
+	},
+): Promise<SubgraphProbe> {
+	let detail = 'no attempt made';
+	for (let attempt = 1; attempt <= attempts; attempt++) {
+		detail = await probeOnce(url, timeoutMs);
+		if (detail === '') return { ok: true };
+		if (attempt < attempts) await sleep(retryGapMs);
+	}
+	const tries = `${attempts} attempt${attempts === 1 ? '' : 's'}`;
+	return { ok: false, detail: redactKeyedUrls(`${detail} (${tries})`) };
+}
+
 /**
  * Returns true if the local Graph node HTTP server is reachable at its origin.
  * Deliberately independent of subgraph deployment: any HTTP response (even 4xx)
