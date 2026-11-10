@@ -6,7 +6,7 @@
 // waitForGraph timeout, and the run burned 15 more minutes before anyone read it.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { graphQuery, GraphUnavailableError, waitForGraph } from './graph';
+import { graphQuery, GraphUnavailableError, probeSubgraph, waitForGraph } from './graph';
 
 const META = JSON.stringify({ data: { _meta: { block: { number: 1 } } } });
 
@@ -102,5 +102,113 @@ describe('waitForGraph', () => {
 		).resolves.toBe(6);
 		// four errors: 2 s → 4 s → 8 s → 8 s (capped); then a success resets to the base poll
 		expect(delays).toEqual([2_000, 4_000, 8_000, 8_000, 2_000]);
+	});
+});
+
+describe('probeSubgraph', () => {
+	const KEYED =
+		'https://gateway.thegraph.com/api/0123456789abcdef0123456789abcdef/subgraphs/id/H4Xz';
+	const healthy = () =>
+		new Response(JSON.stringify({ data: { _meta: { block: { number: 1 } } } }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' },
+		});
+	const noIndexer = () => new Response('no indexers available for ' + KEYED, { status: 503 });
+
+	it('is ok on a healthy endpoint with one request', async () => {
+		const fetchMock = vi.fn(async () => healthy());
+		vi.stubGlobal('fetch', fetchMock);
+
+		const result = await probeSubgraph(KEYED, {
+			attempts: 3,
+			timeoutMs: 1_000,
+			sleep: async () => {},
+		});
+
+		expect(result.ok).toBe(true);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it('retries a transient 5xx up to the attempt count and reports the last status without the key', async () => {
+		const sleeps: number[] = [];
+		const fetchMock = vi.fn(async () => noIndexer());
+		vi.stubGlobal('fetch', fetchMock);
+
+		const result = await probeSubgraph(KEYED, {
+			attempts: 3,
+			timeoutMs: 1_000,
+			sleep: async ms => {
+				sleeps.push(ms);
+			},
+		});
+
+		expect(result.ok).toBe(false);
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+		expect(sleeps).toHaveLength(2);
+		if (!result.ok) {
+			expect(result.detail).toMatch(/HTTP 503/);
+			expect(result.detail).not.toMatch(/0123456789abcdef0123456789abcdef/);
+		}
+	});
+
+	it('recovers when a later attempt succeeds', async () => {
+		let n = 0;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => (n++ === 0 ? noIndexer() : healthy())),
+		);
+
+		const result = await probeSubgraph(KEYED, {
+			attempts: 2,
+			timeoutMs: 1_000,
+			sleep: async () => {},
+		});
+
+		expect(result.ok).toBe(true);
+	});
+
+	it('treats a GraphQL error body as unhealthy and names it', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(
+				async () =>
+					new Response(JSON.stringify({ errors: [{ message: 'subgraph not found: Qm1' }] }), {
+						status: 200,
+						headers: { 'content-type': 'application/json' },
+					}),
+			),
+		);
+
+		const result = await probeSubgraph(KEYED, {
+			attempts: 1,
+			timeoutMs: 1_000,
+			sleep: async () => {},
+		});
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.detail).toMatch(/subgraph not found/);
+	});
+
+	it('reports a timeout as such', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(
+				(_url: string, init?: { signal?: AbortSignal }) =>
+					new Promise<Response>((_resolve, reject) => {
+						init?.signal?.addEventListener('abort', () =>
+							reject(Object.assign(new Error('aborted'), { name: 'TimeoutError' })),
+						);
+					}),
+			),
+		);
+
+		const result = await probeSubgraph(KEYED, {
+			attempts: 1,
+			timeoutMs: 20,
+			sleep: async () => {},
+		});
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.detail).toMatch(/timed out after 20 ms/);
 	});
 });
