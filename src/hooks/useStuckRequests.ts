@@ -100,7 +100,10 @@ export default function useStuckRequests() {
 			}
 		},
 		enabled: !!ownerAddress && !!THE_GRAPH_API_URL,
-		// Polling: Check every 15 seconds to see if status changed or 1h timer expired
-		refetchInterval: 15000,
+		// Background poll of the subgraph. The quota is shared (Studio: 3,000 queries a day) and a
+		// 15 s cadence was 240 queries an hour per open tab; status changes are already surfaced by
+		// the block-driven live poller, so once a minute is enough to catch the 1 h refund timer.
+		// (A literal: the graph-poll-cadence guard reads the value from source.)
+		refetchInterval: 60_000,
 	});
 }

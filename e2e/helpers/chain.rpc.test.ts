@@ -27,9 +27,13 @@ describe('rpc', () => {
 	it('retries an idempotent read when the provider times out or errors, then succeeds', async () => {
 		const fetchMock = vi
 			.fn()
-			.mockRejectedValueOnce(Object.assign(new Error('The operation timed out.'), { name: 'TimeoutError' }))
+			.mockRejectedValueOnce(
+				Object.assign(new Error('The operation timed out.'), { name: 'TimeoutError' }),
+			)
 			.mockResolvedValueOnce(new Response('Bad gateway', { status: 502 }))
-			.mockResolvedValueOnce(new Response(JSON.stringify({ jsonrpc: '2.0', id: 3, result: '0x2a' })));
+			.mockResolvedValueOnce(
+				new Response(JSON.stringify({ jsonrpc: '2.0', id: 3, result: '0x2a' })),
+			);
 		vi.stubGlobal('fetch', fetchMock);
 
 		await expect(rpc('eth_blockNumber', [], { sleep: async () => {} })).resolves.toBe('0x2a');
@@ -39,10 +43,14 @@ describe('rpc', () => {
 	it('never retries a transaction broadcast — a resend could double-spend', async () => {
 		const fetchMock = vi
 			.fn()
-			.mockRejectedValueOnce(Object.assign(new Error('The operation timed out.'), { name: 'TimeoutError' }));
+			.mockRejectedValueOnce(
+				Object.assign(new Error('The operation timed out.'), { name: 'TimeoutError' }),
+			);
 		vi.stubGlobal('fetch', fetchMock);
 
-		await expect(rpc('eth_sendRawTransaction', ['0x00'], { sleep: async () => {} })).rejects.toThrow(/timed out/);
+		await expect(
+			rpc('eth_sendRawTransaction', ['0x00'], { sleep: async () => {} }),
+		).rejects.toThrow(/timed out/);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
@@ -50,7 +58,9 @@ describe('rpc', () => {
 		const fetchMock = vi.fn().mockResolvedValue(new Response('Too many requests', { status: 429 }));
 		vi.stubGlobal('fetch', fetchMock);
 
-		await expect(rpc('eth_getBalance', ['0x0', 'latest'], { sleep: async () => {} })).rejects.toThrow(/429/);
+		await expect(
+			rpc('eth_getBalance', ['0x0', 'latest'], { sleep: async () => {} }),
+		).rejects.toThrow(/429/);
 		expect(fetchMock).toHaveBeenCalledTimes(3);
 	});
 });

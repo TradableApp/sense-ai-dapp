@@ -2,6 +2,8 @@
  * Local Graph node helpers for use in Playwright tests.
  */
 
+import { BUDGET } from './budgets';
+
 // Single source of truth for the subgraph endpoint, env-aware so the health
 // check (global-setup) and the test queries always target the same URL.
 export const GRAPH_URL =
@@ -29,14 +31,73 @@ export const GRAPH_NODE_ORIGIN = ((): string => {
 	}
 })();
 const GRAPH_PROBE_TIMEOUT_MS = 5_000;
+/** Longest pause between two reads while the endpoint is erroring. */
+const GRAPH_BACKOFF_CAP_MS = 8_000;
 
-async function graphQuery<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+/**
+ * The subgraph endpoint refused or answered something other than JSON. Carries the HTTP status so
+ * callers can tell a quota refusal (429, lasts until the reset) from a transient 5xx; the message is
+ * what the run-day operator reads, so it names the status and, for 429, when the quota resets.
+ */
+export class GraphUnavailableError extends Error {
+	readonly status: number;
+
+	readonly retryAfterS: number | undefined;
+
+	constructor(status: number, message: string, retryAfterS?: number) {
+		super(message);
+		this.name = 'GraphUnavailableError';
+		this.status = status;
+		this.retryAfterS = retryAfterS;
+	}
+}
+
+function describeRefusal(res: Response, bodyHead: string): GraphUnavailableError {
+	const retryAfter = Number(res.headers.get('retry-after') ?? '');
+	const hasRetryAfter = Number.isFinite(retryAfter) && retryAfter > 0;
+	if (res.status === 429) {
+		const reset = Number(res.headers.get('x-ratelimit-reset') ?? '');
+		const limit = res.headers.get('x-ratelimit-limit');
+		const when =
+			Number.isFinite(reset) && reset > 0 ? new Date(reset * 1000).toISOString() : 'unknown';
+		const limitNote = limit ? ` (limit ${limit}/day)` : '';
+		const retryNote = hasRetryAfter ? ` (retry-after ${retryAfter}s)` : '';
+		return new GraphUnavailableError(
+			429,
+			`Graph HTTP 429: query quota exhausted${limitNote}, resets ${when}${retryNote} — the endpoint is a stack limit, not a test failure`,
+			hasRetryAfter ? retryAfter : undefined,
+		);
+	}
+	return new GraphUnavailableError(
+		res.status,
+		`Graph HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}: ${
+			bodyHead || '(empty body)'
+		}`,
+		Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
+	);
+}
+
+/** One POST to the subgraph. Exported for the tests; the typed readers below are the callers. */
+export async function graphQuery<T>(
+	query: string,
+	variables: Record<string, unknown> = {},
+): Promise<T> {
 	const res = await fetch(GRAPH_URL, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ query, variables }),
 	});
-	const json = (await res.json()) as { data?: T; errors?: Array<{ message: string }> };
+	const text = await res.text();
+	if (!res.ok) throw describeRefusal(res, text.replace(/\s+/g, ' ').slice(0, 120));
+	let json: { data?: T; errors?: Array<{ message: string }> };
+	try {
+		json = JSON.parse(text) as typeof json;
+	} catch {
+		throw new GraphUnavailableError(
+			res.status,
+			`Graph HTTP ${res.status} answered non-JSON: ${text.replace(/\s+/g, ' ').slice(0, 120)}`,
+		);
+	}
 	if (json.errors?.length) throw new Error(`Graph error: ${json.errors[0].message}`);
 	if (!json.data) throw new Error('Graph returned no data');
 	return json.data;
@@ -372,21 +433,44 @@ export async function getActivities(userAddress: string, first = 20): Promise<In
 export async function waitForGraph<T>(
 	query: () => Promise<T>,
 	predicate: (_value: T) => boolean,
-	{ timeoutMs = 60_000, label = 'condition' }: { timeoutMs?: number; label?: string } = {},
+	{
+		timeoutMs = 60_000,
+		label = 'condition',
+		pollMs = BUDGET.graphPollMs,
+		sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms)),
+	}: {
+		timeoutMs?: number;
+		label?: string;
+		/** Base interval between reads; the chain budget by default. */
+		pollMs?: number;
+		/** Injectable for tests. */
+		sleep?: (_ms: number) => Promise<void>;
+	} = {},
 ): Promise<T> {
 	const deadline = Date.now() + timeoutMs;
 	let last: T | undefined;
 	let lastError: unknown;
+	let delay = pollMs;
 	do {
+		let wait = pollMs;
 		try {
 			last = await query();
 			if (predicate(last)) return last;
+			delay = pollMs;
 		} catch (err) {
+			// A quota refusal lasts until the endpoint's reset — polling cannot outwait it inside a
+			// test budget, and every further read is another query against a quota of zero. Fail now
+			// with the endpoint's own message so the operator stops the run instead of reading
+			// 60 s timeouts for the next two hours.
+			if (err instanceof GraphUnavailableError && err.status === 429) throw err;
 			// A transient subgraph/network error (graph-node restarting, an HTTP 5xx, a cold
-			// endpoint) must not fail the whole wait — keep polling until the deadline.
+			// endpoint) must not fail the whole wait — keep polling until the deadline, backing off
+			// so a struggling endpoint is not hammered: base → 2× → 4× … capped at 8 s.
 			lastError = err;
+			wait = delay;
+			delay = Math.min(delay * 2, GRAPH_BACKOFF_CAP_MS);
 		}
-		await new Promise(r => setTimeout(r, 1_000));
+		await sleep(wait);
 	} while (Date.now() < deadline);
 
 	// One final read after the deadline — the loop queries, sleeps, THEN tests the deadline, so
@@ -399,6 +483,7 @@ export async function waitForGraph<T>(
 		last = await query();
 		if (predicate(last)) return last;
 	} catch (err) {
+		if (err instanceof GraphUnavailableError && err.status === 429) throw err;
 		lastError = err;
 	}
 

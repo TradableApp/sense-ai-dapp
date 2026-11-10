@@ -286,8 +286,46 @@ let reqId = 1;
  * One JSON-RPC call to the current chain. Every Node-side helper and the testnet mock wallet's
  * binding go through here, so the method allow-list is enforced for all of them.
  */
-export async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
-	assertRpcMethodAllowed(CHAIN, method);
+/** Reads that can be repeated without side effects; everything else is sent exactly once. */
+const IDEMPOTENT_RPC = new Set([
+	'eth_chainId',
+	'eth_blockNumber',
+	'eth_getBalance',
+	'eth_call',
+	'eth_getTransactionCount',
+	'eth_getTransactionReceipt',
+	'eth_getTransactionByHash',
+	'eth_getBlockByNumber',
+	'eth_getLogs',
+	'eth_gasPrice',
+	'eth_estimateGas',
+	'eth_maxPriorityFeePerGas',
+	'eth_feeHistory',
+]);
+/** Attempts for an idempotent read; the first is the normal call. */
+const RPC_READ_ATTEMPTS = 3;
+const RPC_RETRY_BASE_MS = 500;
+
+export interface RpcOptions {
+	/** Injectable for tests. */
+	sleep?: (_ms: number) => Promise<void>;
+}
+
+class RpcHttpError extends Error {
+	constructor(readonly status: number, method: string) {
+		super(`RPC HTTP ${status} (${CHAIN}, ${method})`);
+		this.name = 'RpcHttpError';
+	}
+}
+
+/** Network failures and provider-side refusals that a repeat can cure. */
+function isTransientRpcError(err: unknown): boolean {
+	if (err instanceof RpcHttpError) return err.status === 429 || err.status >= 500;
+	// AbortSignal.timeout → TimeoutError; a dropped socket → TypeError('fetch failed') and friends.
+	return err instanceof Error && (err.name === 'TimeoutError' || err.name === 'TypeError');
+}
+
+async function rpcOnce(method: string, params: unknown[]): Promise<unknown> {
 	const { rpcUrl } = getChainConfig();
 	let res: Response;
 	try {
@@ -301,12 +339,39 @@ export async function rpc(method: string, params: unknown[] = []): Promise<unkno
 		// A network-level failure names the URL in its cause chain; it carries the provider key.
 		throw redactError(err, rpcUrl);
 	}
+	// A provider refusal (429, 5xx) is usually text, not JSON-RPC; name the status, never the URL.
+	if (!res.ok) throw new RpcHttpError(res.status, method);
 	const json = (await res.json()) as JsonRpcResponse;
 	if (json.error) {
 		// The URL is NOT included: on testnet it carries the provider key.
 		throw new Error(`RPC error (${CHAIN}, ${method}): ${json.error.message ?? 'unknown'}`);
 	}
 	return json.result;
+}
+
+/**
+ * The fund stage of run 20261109T233258Z died on its very first read: one 15 s timeout, nothing
+ * funded, every later stage skipped. A read that times out or meets a 5xx/429 is retried with a
+ * short backoff; a transaction broadcast never is — a resend could double-spend.
+ */
+export async function rpc(
+	method: string,
+	params: unknown[] = [],
+	{ sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms)) }: RpcOptions = {},
+): Promise<unknown> {
+	assertRpcMethodAllowed(CHAIN, method);
+	const attempts = IDEMPOTENT_RPC.has(method) ? RPC_READ_ATTEMPTS : 1;
+	let lastError: unknown;
+	for (let attempt = 1; attempt <= attempts; attempt++) {
+		try {
+			return await rpcOnce(method, params);
+		} catch (err) {
+			lastError = err;
+			if (attempt === attempts || !isTransientRpcError(err)) throw err;
+			await sleep(RPC_RETRY_BASE_MS * 2 ** (attempt - 1));
+		}
+	}
+	throw lastError;
 }
 
 export async function waitForReceipt(txHash: string, timeoutMs = 60_000): Promise<void> {

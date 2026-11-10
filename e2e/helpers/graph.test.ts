@@ -6,7 +6,7 @@
 // waitForGraph timeout, and the run burned 15 more minutes before anyone read it.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { GraphUnavailableError, graphQuery, waitForGraph } from './graph';
+import { graphQuery, GraphUnavailableError, waitForGraph } from './graph';
 
 const META = JSON.stringify({ data: { _meta: { block: { number: 1 } } } });
 
@@ -27,9 +27,14 @@ describe('graphQuery', () => {
 	afterEach(() => vi.unstubAllGlobals());
 
 	it('turns an HTTP 429 into a GraphUnavailableError that names the status and the quota reset', async () => {
-		vi.stubGlobal('fetch', vi.fn(async () => tooManyRequests()));
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => tooManyRequests()),
+		);
 
-		const err = await graphQuery('{ _meta { block { number } } }').catch(e => e);
+		const err = (await graphQuery('{ _meta { block { number } } }').catch(
+			(e: unknown) => e,
+		)) as GraphUnavailableError;
 
 		expect(err).toBeInstanceOf(GraphUnavailableError);
 		expect(err.status).toBe(429);
@@ -39,9 +44,14 @@ describe('graphQuery', () => {
 	});
 
 	it('names the status instead of a JSON parse error when a non-2xx answer is not JSON', async () => {
-		vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>Bad gateway</html>', { status: 502 })));
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => new Response('<html>Bad gateway</html>', { status: 502 })),
+		);
 
-		const err = await graphQuery('{ _meta { block { number } } }').catch(e => e);
+		const err = (await graphQuery('{ _meta { block { number } } }').catch(
+			(e: unknown) => e,
+		)) as GraphUnavailableError;
 
 		expect(err).toBeInstanceOf(GraphUnavailableError);
 		expect(err.status).toBe(502);
@@ -49,10 +59,15 @@ describe('graphQuery', () => {
 	});
 
 	it('still returns data on a healthy answer', async () => {
-		vi.stubGlobal('fetch', vi.fn(async () => new Response(META, { status: 200 })));
-		await expect(graphQuery<{ _meta: unknown }>('{ _meta { block { number } } }')).resolves.toEqual({
-			_meta: { block: { number: 1 } },
-		});
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => new Response(META, { status: 200 })),
+		);
+		await expect(graphQuery<{ _meta: unknown }>('{ _meta { block { number } } }')).resolves.toEqual(
+			{
+				_meta: { block: { number: 1 } },
+			},
+		);
 	});
 });
 

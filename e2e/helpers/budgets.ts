@@ -26,6 +26,13 @@ export interface WaitBudgets {
 	 * throughput dip. Wired into playwright.config.ts as `navigationTimeout`.
 	 */
 	pageLoadMs: number;
+	/**
+	 * Interval between two reads of the subgraph while a wait polls for an indexed entity. The
+	 * endpoint is shared infrastructure with a quota: Subgraph Studio allows 3,000 queries a day and
+	 * refused with HTTP 429 at 00:31Z on 2026-11-10, ending run 20261109T233416Z in dapp-2. Localnet
+	 * owns its graph-node and can poll every second; testnet polls no faster than every 2 s.
+	 */
+	graphPollMs: number;
 }
 
 const LOCALNET: WaitBudgets = {
@@ -34,6 +41,7 @@ const LOCALNET: WaitBudgets = {
 	indexMs: 10_000,
 	navigateAfterTxMs: 20_000,
 	pageLoadMs: 30_000,
+	graphPollMs: 1_000,
 };
 
 const TESTNET: WaitBudgets = {
@@ -42,6 +50,7 @@ const TESTNET: WaitBudgets = {
 	indexMs: 30_000,
 	navigateAfterTxMs: 60_000,
 	pageLoadMs: 90_000,
+	graphPollMs: 2_000,
 };
 
 // Exhaustive by type: adding a chain to ChainName without a budget here is a compile error.
