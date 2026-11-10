@@ -3,12 +3,32 @@
  */
 
 import { BUDGET } from './budgets';
-import { redactUrl } from './chain';
+import { CHAIN, type ChainName, redactUrl } from './chain';
 
 // Single source of truth for the subgraph endpoint, env-aware so the health
 // check (global-setup) and the test queries always target the same URL.
-export const GRAPH_URL =
+// The dApp's endpoint, or the local graph-node when the per-mode env sets none. The literal sits
+// behind the env override on purpose: sync-config.sh derives the real value from $PORT_GRAPH and
+// the endpoint-consistency guard forbids a bare localnet literal.
+const DAPP_GRAPH_URL =
 	process.env.VITE_THE_GRAPH_API_URL || 'http://localhost:8000/subgraphs/name/sense-ai';
+
+/**
+ * Which subgraph endpoint the Node-side helpers and the health check use.
+ *
+ * On testnet the runner exports `TESTNET_GRAPH_URL`, its own gateway key with no domain
+ * restriction, and that wins: the dApp's `VITE_THE_GRAPH_API_URL` carries a key restricted to the
+ * hosted site's domain, and Node sends no Origin, so the gateway refuses it ("auth error: domain
+ * not authorized by user" — runs 20261110T030552Z and 031616Z). On localnet the dApp's variable
+ * (or the local graph-node default) is the endpoint, and a stray `TESTNET_GRAPH_URL` in the shell
+ * is ignored.
+ */
+export function resolveGraphUrl(env: Record<string, string | undefined>, chain: ChainName): string {
+	if (chain === 'testnet' && env.TESTNET_GRAPH_URL) return env.TESTNET_GRAPH_URL;
+	return env.VITE_THE_GRAPH_API_URL || DAPP_GRAPH_URL;
+}
+
+export const GRAPH_URL = resolveGraphUrl(process.env, CHAIN);
 
 // Origin of the Graph node HTTP server (e.g. http://localhost:8000) — lets us
 // probe that the node process itself is up, independently of whether the
@@ -26,7 +46,9 @@ export const GRAPH_NODE_ORIGIN = ((): string => {
 		return url.origin;
 	} catch {
 		throw new Error(
-			`Invalid Graph endpoint "${GRAPH_URL}". Set VITE_THE_GRAPH_API_URL to an absolute ` +
+			`Invalid Graph endpoint "${redactUrl(
+				GRAPH_URL,
+			)}". Set VITE_THE_GRAPH_API_URL (or TESTNET_GRAPH_URL on testnet) to an absolute ` +
 				`http(s) URL including the scheme, e.g. http://localhost:8000/subgraphs/name/sense-ai.`,
 		);
 	}
