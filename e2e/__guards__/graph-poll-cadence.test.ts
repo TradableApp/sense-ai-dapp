@@ -35,12 +35,18 @@ describe('subgraph polling cadence', () => {
 			const source = stripComments(readFileSync(file, 'utf8'));
 			// Accepts a literal or a product of literals (`60 * 1000`); anything else is a failure
 			// so a clever expression cannot slip under the floor unread.
-			for (const m of source.matchAll(/refetchInterval:\s*([^,\n]+)/g)) {
+			[...source.matchAll(/refetchInterval:\s*([^,\n]+)/g)].forEach(m => {
 				const expr = m[1].trim();
-				expect(expr, m[0]).toMatch(/^[\d_]+(\s*\*\s*[\d_]+)*$/);
-				const value = expr.split('*').reduce((acc, n) => acc * Number(n.replace(/[\s_]/g, '')), 1);
+				// `false` / `undefined` switch polling off entirely — no quota concern. A conditional
+				// (`enabled ? 60_000 : false`) still has to satisfy the floor on its polling arm.
+				if (expr === 'false' || expr === 'undefined') return;
+				const polling = expr.includes('?') ? expr.split('?')[1].split(':')[0].trim() : expr;
+				expect(polling, m[0]).toMatch(/^[\d_]+(\s*\*\s*[\d_]+)*$/);
+				const value = polling
+					.split('*')
+					.reduce((acc, n) => acc * Number(n.replace(/[\s_]/g, '')), 1);
 				expect(value, m[0]).toBeGreaterThanOrEqual(MIN_POLL_MS);
-			}
+			});
 		},
 	);
 });

@@ -42,6 +42,11 @@ const GRAPH_BACKOFF_CAP_MS = 8_000;
 export class GraphUnavailableError extends Error {
 	readonly status: number;
 
+	/**
+	 * Seconds until the quota resets, from the `retry-after` header. Diagnostic only: a 429 ends
+	 * the wait (no caller sleeps on this), it is here so the operator's message and any logged
+	 * error carry the number.
+	 */
 	readonly retryAfterS: number | undefined;
 
 	constructor(status: number, message: string, retryAfterS?: number) {
