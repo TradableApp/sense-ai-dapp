@@ -6,7 +6,13 @@
 // waitForGraph timeout, and the run burned 15 more minutes before anyone read it.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { graphQuery, GraphUnavailableError, probeSubgraph, waitForGraph } from './graph';
+import {
+	graphQuery,
+	GraphUnavailableError,
+	probeSubgraph,
+	resolveGraphUrl,
+	waitForGraph,
+} from './graph';
 
 const META = JSON.stringify({ data: { _meta: { block: { number: 1 } } } });
 
@@ -249,5 +255,40 @@ describe('probeSubgraph', () => {
 
 		expect(result.ok).toBe(false);
 		if (!result.ok) expect(result.detail).toMatch(/timed out after 20 ms/);
+	});
+});
+
+describe('resolveGraphUrl', () => {
+	const RUNNER =
+		'https://gateway.thegraph.com/api/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/subgraphs/id/H4Xz';
+	const DAPP =
+		'https://gateway.thegraph.com/api/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/subgraphs/id/H4Xz';
+
+	it('on testnet prefers the runner URL over the dApp bundle URL', () => {
+		// The dApp key is domain-restricted to the hosted site; Node sends no Origin, so the
+		// gateway refuses it ("domain not authorized by user", runs 20261110T030552Z/031616Z).
+		expect(
+			resolveGraphUrl({ TESTNET_GRAPH_URL: RUNNER, VITE_THE_GRAPH_API_URL: DAPP }, 'testnet'),
+		).toBe(RUNNER);
+	});
+
+	it('on testnet falls back to the dApp URL when the runner exports none', () => {
+		expect(resolveGraphUrl({ VITE_THE_GRAPH_API_URL: DAPP }, 'testnet')).toBe(DAPP);
+	});
+
+	it('on localnet ignores a stray TESTNET_GRAPH_URL in the shell', () => {
+		expect(
+			resolveGraphUrl(
+				{
+					TESTNET_GRAPH_URL: RUNNER,
+					VITE_THE_GRAPH_API_URL: 'http://localhost:8000/subgraphs/name/sense-ai',
+				},
+				'localnet',
+			),
+		).toBe('http://localhost:8000/subgraphs/name/sense-ai');
+	});
+
+	it('defaults to the local graph-node when nothing is set', () => {
+		expect(resolveGraphUrl({}, 'localnet')).toBe('http://localhost:8000/subgraphs/name/sense-ai');
 	});
 });
