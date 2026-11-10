@@ -321,8 +321,16 @@ class RpcHttpError extends Error {
 /** Network failures and provider-side refusals that a repeat can cure. */
 function isTransientRpcError(err: unknown): boolean {
 	if (err instanceof RpcHttpError) return err.status === 429 || err.status >= 500;
-	// AbortSignal.timeout → TimeoutError; a dropped socket → TypeError('fetch failed') and friends.
-	return err instanceof Error && (err.name === 'TimeoutError' || err.name === 'TypeError');
+	if (!(err instanceof Error)) return false;
+	// AbortSignal.timeout → TimeoutError. A dropped socket surfaces as a TypeError whose message
+	// names the network ('fetch failed', 'Failed to fetch', ECONNRESET…); a programming TypeError
+	// ('Cannot read properties of undefined') must NOT be retried, or the developer reads the same
+	// mistake three times.
+	if (err.name === 'TimeoutError') return true;
+	return (
+		err.name === 'TypeError' &&
+		/fetch failed|failed to fetch|network|ECONN|socket/i.test(err.message)
+	);
 }
 
 async function rpcOnce(method: string, params: unknown[]): Promise<unknown> {
@@ -371,7 +379,8 @@ export async function rpc(
 			await sleep(RPC_RETRY_BASE_MS * 2 ** (attempt - 1));
 		}
 	}
-	throw lastError;
+	// The loop always returns or throws from inside; this only runs if RPC_READ_ATTEMPTS is set to 0.
+	throw lastError ?? new Error(`RPC ${method} (${CHAIN}): no attempt was made`);
 }
 
 export async function waitForReceipt(txHash: string, timeoutMs = 60_000): Promise<void> {
