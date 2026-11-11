@@ -296,3 +296,30 @@ export function findPaymentRefundedLog<T extends { address: string; topics: read
 		log => log.address.toLowerCase() === emitter && isPaymentRefundedLog(log, escrowId),
 	);
 }
+
+export interface RefundProof {
+	transactionHash: string;
+	blockNumber: bigint;
+}
+
+/** The parts of an `eth_getTransactionReceipt` result the refund proof reads. */
+export interface RawReceipt {
+	blockNumber: string;
+	status: string;
+	logs: ReadonlyArray<{ address: string; topics: readonly string[] }>;
+}
+
+/**
+ * Proof that a receipt is the refund of `escrowId`: it succeeded and carries the escrow's
+ * PaymentRefunded log for that id. Undefined when it is not mined, reverted, or not that refund.
+ */
+export function refundProofFromReceiptData(
+	receipt: RawReceipt | null,
+	txHash: string,
+	escrow: string,
+	escrowId: bigint,
+): RefundProof | undefined {
+	if (!receipt || receipt.status !== '0x1') return undefined;
+	if (!findPaymentRefundedLog(receipt.logs, escrow, escrowId)) return undefined;
+	return { transactionHash: txHash, blockNumber: BigInt(receipt.blockNumber) };
+}

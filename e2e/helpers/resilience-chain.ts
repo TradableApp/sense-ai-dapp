@@ -9,8 +9,10 @@ import { CHAIN, type ChainName, getChainConfig, rpc } from './chain';
 import { graphQuery } from './graph';
 import {
 	decodeUint256,
-	findPaymentRefundedLog,
 	pendingEscrowCountCalldata,
+	type RawReceipt,
+	type RefundProof,
+	refundProofFromReceiptData,
 	refundTimeoutCalldata,
 } from './resilience';
 
@@ -82,36 +84,24 @@ export async function waitForNoPendingEscrow({
 	timeoutMs: number;
 	pollMs: number;
 }): Promise<boolean> {
+	const settled = async (): Promise<boolean> => (await pendingEscrowCount(escrow, user)) === 0n;
+	if (timeoutMs === 0) return settled();
 	const deadline = Date.now() + timeoutMs;
 	for (;;) {
-		if ((await pendingEscrowCount(escrow, user)) === 0n) return true;
+		if (await settled()) return true;
 		if (Date.now() >= deadline) return false;
 		await sleepMs(pollMs);
 	}
 }
 
-export interface RefundProof {
-	transactionHash: string;
-	blockNumber: bigint;
-}
-
-/**
- * Proof that `txHash` is the refund of `escrowId`: its receipt succeeded and carries the
- * escrow's PaymentRefunded log for that id. Undefined when it is not mined or is not that refund.
- */
+/** Fetch `txHash`'s receipt and read the refund proof for `escrowId` out of it. */
 export async function refundProofFromReceipt(
 	txHash: string,
 	escrow: string,
 	escrowId: bigint,
 ): Promise<RefundProof | undefined> {
-	const receipt = (await rpc('eth_getTransactionReceipt', [txHash])) as {
-		blockNumber: string;
-		status: string;
-		logs: Array<{ address: string; topics: string[] }>;
-	} | null;
-	if (!receipt || receipt.status !== '0x1') return undefined;
-	if (!findPaymentRefundedLog(receipt.logs, escrow, escrowId)) return undefined;
-	return { transactionHash: txHash, blockNumber: BigInt(receipt.blockNumber) };
+	const receipt = (await rpc('eth_getTransactionReceipt', [txHash])) as RawReceipt | null;
+	return refundProofFromReceiptData(receipt, txHash, escrow, escrowId);
 }
 
 /** Values the evidence file must never contain. Empty off testnet, where nothing is signed. */
