@@ -75,6 +75,12 @@ describe('testnet-resilience project is separate from the testnet project', () =
 		);
 	});
 
+	// Run day 2026-11-11: a failed R-REFUND-01 was retried, which spent a second real hour on a
+	// result the strict verdict already counts as a failure (a pass on retry is a flaky).
+	it('the resilience project never retries: one attempt per real-time check', () => {
+		expect(projectBlock('testnet-resilience')).toMatch(/retries:\s*0\b/);
+	});
+
 	it('a package.json script runs only the resilience project', () => {
 		expect(PACKAGE_JSON.scripts['test:e2e:testnet:resilience']).toBe(
 			'playwright test --project=testnet-resilience',
