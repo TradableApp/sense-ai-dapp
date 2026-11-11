@@ -26,7 +26,6 @@ import {
 	type PaymentRecord,
 	pendingEscrowCount,
 	receiptOf,
-	refundLogsFor,
 	refundTimeoutSeconds,
 	registeredSecrets,
 	sleepMs,
@@ -113,6 +112,8 @@ test.describe('Resilience — real 1 h refund through the dApp (R-REFUND-01)', (
 				{ label: 'pending PromptRequest', timeoutMs: RESILIENCE_BUDGET.indexWaitMs },
 			);
 			const stuck = stuckRequests.find(isPending)!;
+			// PromptRequest.id is the answerMessageId (see IndexedPromptRequest in graph.ts); the
+			// script fallback passes it to processRefund.
 			const answerMessageId = BigInt(stuck.id);
 			evidence.promptRequest = { answerMessageId };
 			expect(
@@ -197,16 +198,31 @@ test.describe('Resilience — real 1 h refund through the dApp (R-REFUND-01)', (
 			if (refundLog && uiPathOk) {
 				refundPath = 'ui';
 			} else {
+				let fallbackSent = false;
 				if (!refundLog) {
-					const hash = await sendFrom({
-						from: owner,
-						to: ESCROW_ADDRESS,
-						data: processRefundCalldata(answerMessageId),
+					try {
+						evidence.fallbackRefundTxHash = await sendFrom({
+							from: owner,
+							to: ESCROW_ADDRESS,
+							data: processRefundCalldata(answerMessageId),
+						});
+						fallbackSent = true;
+					} catch (err) {
+						// A UI claim still in flight settles the escrow first, and this one then
+						// reverts. Record that it failed (no message: it can carry an RPC URL) and
+						// let the log decide — the UI's transaction is the refund if one is there.
+						evidence.fallbackRefundFailed = err instanceof Error ? err.name : 'error';
+					}
+					refundLog = await waitForRefundLog({
+						escrow: ESCROW_ADDRESS,
+						escrowId,
+						fromBlock,
+						timeoutMs: RESILIENCE_BUDGET.refundClickGraceMs,
+						pollMs: RESILIENCE_BUDGET.refundPollMs,
 					});
-					refundPath = 'script-fallback';
-					evidence.fallbackRefundTxHash = hash;
 				}
-				[refundLog] = await refundLogsFor(ESCROW_ADDRESS, escrowId, fromBlock);
+				// Without a fallback transaction of ours, the refund on chain is the dApp's.
+				refundPath = fallbackSent ? 'script-fallback' : 'ui';
 			}
 			if (!refundLog) throw new Error('no PaymentRefunded log for this escrow after the refund');
 			const refundReceipt = await receiptOf(refundLog.transactionHash);

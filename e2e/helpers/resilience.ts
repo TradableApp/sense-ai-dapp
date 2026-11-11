@@ -173,7 +173,8 @@ export function refundReadiness({
 		uiReady,
 		ready: chainReady && uiReady,
 		chainRemainingS: Math.max(0, refundableAtS - chainTimeS),
-		uiRemainingMs: Math.max(0, refundableAtMs - nowMs),
+		// The UI gate is strict (>), so it is still shut at the exact boundary: never report 0 then.
+		uiRemainingMs: uiReady ? 0 : Math.max(1, refundableAtMs - nowMs),
 		refundableAtS,
 	};
 }
