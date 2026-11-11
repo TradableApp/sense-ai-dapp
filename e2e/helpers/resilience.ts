@@ -306,12 +306,14 @@ export interface RefundProof {
 export interface RawReceipt {
 	blockNumber: string;
 	status: string;
+	transactionHash: string;
 	logs: ReadonlyArray<{ address: string; topics: readonly string[] }>;
 }
 
 /**
  * Proof that a receipt is the refund of `escrowId`: it succeeded and carries the escrow's
- * PaymentRefunded log for that id. Undefined when it is not mined, reverted, or not that refund.
+ * PaymentRefunded log for that id. Undefined when it is not mined, reverted, another
+ * transaction's receipt, or not that refund.
  */
 export function refundProofFromReceiptData(
 	receipt: RawReceipt | null,
@@ -320,6 +322,8 @@ export function refundProofFromReceiptData(
 	escrowId: bigint,
 ): RefundProof | undefined {
 	if (!receipt || receipt.status !== '0x1') return undefined;
+	// The proof names `txHash`, so the receipt must be that transaction's.
+	if (receipt.transactionHash.toLowerCase() !== txHash.toLowerCase()) return undefined;
 	if (!findPaymentRefundedLog(receipt.logs, escrow, escrowId)) return undefined;
 	return { transactionHash: txHash, blockNumber: BigInt(receipt.blockNumber) };
 }

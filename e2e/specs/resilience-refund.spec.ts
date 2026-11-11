@@ -220,7 +220,9 @@ test.describe('Resilience — real 1 h refund through the dApp (R-REFUND-01)', (
 
 			// The subgraph names the refund transaction; its receipt proves it. No block-range
 			// log query: the prompt-to-refund window is far beyond a provider's log-query cap.
-			const isRefundActivity = (a: { type: string }): boolean => a.type === 'REFUND';
+			// Only a REFUND indexed after this prompt: an older one would name another escrow's tx.
+			const isRefundActivity = (a: { type: string; timestamp: string }): boolean =>
+				a.type === 'REFUND' && Number(a.timestamp) >= createdAtS;
 			const activities = await waitForGraph(
 				() => getActivities(owner),
 				acts => acts.some(isRefundActivity),

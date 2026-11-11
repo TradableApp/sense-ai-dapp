@@ -370,28 +370,39 @@ describe('refund proof from a transaction receipt', () => {
 	});
 
 	it('builds the proof from a successful receipt that carries the refund log', () => {
-		const receipt = { blockNumber: '0x369da3c', status: '0x1', logs: [refundLog(ESCROW, 7n)] };
+		const receipt = {
+			blockNumber: '0x369da3c',
+			status: '0x1',
+			transactionHash: '0xABC',
+			logs: [refundLog(ESCROW, 7n)],
+		};
 		expect(refundProofFromReceiptData(receipt, '0xabc', ESCROW, 7n)).toEqual({
 			transactionHash: '0xabc',
 			blockNumber: 57268796n,
 		});
 	});
 
-	it('gives no proof for an unmined, reverted or unrelated transaction', () => {
-		const logs = [refundLog(ESCROW, 7n)];
+	it('gives no proof for an unmined, reverted, mismatched or unrelated transaction', () => {
+		const ok = {
+			blockNumber: '0x1',
+			status: '0x1',
+			transactionHash: '0xabc',
+			logs: [refundLog(ESCROW, 7n)],
+		};
 		expect(refundProofFromReceiptData(null, '0xabc', ESCROW, 7n)).toBeUndefined();
 		expect(
-			refundProofFromReceiptData({ blockNumber: '0x1', status: '0x0', logs }, '0xabc', ESCROW, 7n),
+			refundProofFromReceiptData({ ...ok, status: '0x0' }, '0xabc', ESCROW, 7n),
 		).toBeUndefined();
-		expect(
-			refundProofFromReceiptData({ blockNumber: '0x1', status: '0x1', logs }, '0xabc', ESCROW, 8n),
-		).toBeUndefined();
+		expect(refundProofFromReceiptData(ok, '0xdef', ESCROW, 7n)).toBeUndefined();
+		expect(refundProofFromReceiptData(ok, '0xabc', ESCROW, 8n)).toBeUndefined();
 	});
+});
 
+describe('no block-range log queries in the resilience helpers and specs', () => {
 	// Run day 2026-11-11: the first real R-REFUND-01 refunded through the dApp and then failed
 	// on `eth_getLogs` — the prompt-to-refund window is ~18,000 Base Sepolia blocks and the
 	// provider's free tier caps a log query at 10. The refund is proven from its receipt.
-	it('the resilience chain helpers and specs never query logs by block range', () => {
+	it('eth_getLogs does not appear in any resilience source file', () => {
 		// Driven from the filesystem, so a new resilience helper or spec is covered on arrival.
 		const sources = (dir: string): string[] =>
 			readdirSync(path.resolve(process.cwd(), dir))
