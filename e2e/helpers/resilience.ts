@@ -281,3 +281,18 @@ export function isPaymentRefundedLog(
 	const [topic0, topic1] = paymentRefundedTopics(escrowId);
 	return log.topics[0]?.toLowerCase() === topic0 && log.topics[1]?.toLowerCase() === topic1;
 }
+
+/**
+ * The PaymentRefunded log for this escrow id among a transaction receipt's logs, emitted by the
+ * escrow itself. Reading the receipt proves the refund without a block-range log query.
+ */
+export function findPaymentRefundedLog<T extends { address: string; topics: readonly string[] }>(
+	logs: readonly T[],
+	escrow: string,
+	escrowId: bigint,
+): T | undefined {
+	const emitter = escrow.toLowerCase();
+	return logs.find(
+		log => log.address.toLowerCase() === emitter && isPaymentRefundedLog(log, escrowId),
+	);
+}

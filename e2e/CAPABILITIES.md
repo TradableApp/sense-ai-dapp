@@ -174,22 +174,26 @@ and optional `E2E_RESILIENCE_EVIDENCE_DIR` (absolute directory; each check write
 evidence writer refuses secret-shaped field names, unprefixed 32-byte hex, URLs with a path, and any
 registered secret (RPC URL, seed, treasury key), and it names the field, never the value.
 
+The refund is proven from chain state and the refund transaction's receipt (the subgraph names the
+transaction), never from a block-range `eth_getLogs`: an hour of Base Sepolia is ~18,000 blocks and a
+provider's free tier caps a log query at 10.
+
 The pure logic (calldata, chain-time wait, refund readiness, skip gate, evidence writer, PaymentRefunded
-topics) is unit-tested in `e2e/helpers/resilience.test.ts`. `e2e/__guards__/testnet-resilience-project.test.ts`
+topics and receipt-log match) is unit-tested in `e2e/helpers/resilience.test.ts`. `e2e/__guards__/testnet-resilience-project.test.ts`
 keeps the resilience specs out of the `testnet` project and the regular testnet specs out of this one.
 
 ### Excluded, with the reason
 
-| Spec                           | Why it cannot run on a public chain                                                                | Covered by                                                      |
-| ------------------------------ | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `refunds` (3)                  | `increaseTime(1h)` past the refund window — time travel                                            | localnet suite; `testnet-resilience` R-REFUND-01 (real 1 h refund) |
-| `contract-cost` (5)            | owner-only fee setters from the deployer                                                           | localnet suite; contract unit tests (tokenized-ai-agent)        |
-| `governance` (9)               | owner key (setOracle, transferOwnership, upgrade) never enters the suite on a real network         | localnet suite; CU-14ym9bvdmjt (admin rehearsal, done by hand)  |
-| `faucet` (2)                   | localnet-only faucet path                                                                          | hand-run against the real callable                              |
-| `brain`, `brain-substance` (5) | read the oracle's Postgres over Cloud SQL mTLS from a laptop                                       | oracle smoke (`smoke:base-testnet`)                             |
-| `security` (4)                 | localnet-shaped request intercepts and storage inspection                                          | localnet suite                                                  |
-| `sentry` (4)                   | intercepts the localnet DSN                                                                        | localnet suite                                                  |
+| Spec                           | Why it cannot run on a public chain                                                                | Covered by                                                                                                      |
+| ------------------------------ | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `refunds` (3)                  | `increaseTime(1h)` past the refund window — time travel                                            | localnet suite; `testnet-resilience` R-REFUND-01 (real 1 h refund)                                              |
+| `contract-cost` (5)            | owner-only fee setters from the deployer                                                           | localnet suite; contract unit tests (tokenized-ai-agent)                                                        |
+| `governance` (9)               | owner key (setOracle, transferOwnership, upgrade) never enters the suite on a real network         | localnet suite; CU-14ym9bvdmjt (admin rehearsal, done by hand)                                                  |
+| `faucet` (2)                   | localnet-only faucet path                                                                          | hand-run against the real callable                                                                              |
+| `brain`, `brain-substance` (5) | read the oracle's Postgres over Cloud SQL mTLS from a laptop                                       | oracle smoke (`smoke:base-testnet`)                                                                             |
+| `security` (4)                 | localnet-shaped request intercepts and storage inspection                                          | localnet suite                                                                                                  |
+| `sentry` (4)                   | intercepts the localnet DSN                                                                        | localnet suite                                                                                                  |
 | `T-STUCK-01`, `T-PENDING-01`   | need the mock oracle's `__E2E_DROP__` to leave an escrow pending; a real oracle answers everything | `T-STUCK-01`: `testnet-resilience` R-REFUND-01 (oracle down, real stuck prompt); `T-PENDING-01`: localnet suite |
-| `T-REASON-02`                  | only the mock oracle can be told to omit reasoning                                                 | localnet suite                                                  |
-| `T-PLAN-13`                    | expires a plan with `evm_increaseTime(24 h)` — time travel                                         | localnet suite; `testnet-resilience` R-EXPIRY-01 (real limit expiry, 120 s ahead) |
-| `mobile` (ui on Pixel 5)       | not in the first testnet pass — desktop only; add when the desktop pass is green                   | localnet suite                                                  |
+| `T-REASON-02`                  | only the mock oracle can be told to omit reasoning                                                 | localnet suite                                                                                                  |
+| `T-PLAN-13`                    | expires a plan with `evm_increaseTime(24 h)` — time travel                                         | localnet suite; `testnet-resilience` R-EXPIRY-01 (real limit expiry, 120 s ahead)                               |
+| `mobile` (ui on Pixel 5)       | not in the first testnet pass — desktop only; add when the desktop pass is green                   | localnet suite                                                                                                  |
