@@ -22,6 +22,7 @@ import {
 	decodeUint256,
 	evidenceDirFrom,
 	expiryTarget,
+	findPaymentRefundedLog,
 	isPaymentRefundedLog,
 	oracleDownSkipReason,
 	paymentRefundedTopics,
@@ -336,6 +337,50 @@ describe('PaymentRefunded log matching', () => {
 		expect(isPaymentRefundedLog(log, 7n)).toBe(true);
 		expect(isPaymentRefundedLog(log, 8n)).toBe(false);
 		expect(isPaymentRefundedLog({ topics: [] }, 7n)).toBe(false);
+	});
+});
+
+describe('refund proof from a transaction receipt', () => {
+	const ESCROW = '0x36ec08471F2B995024967204D7542713CfaF5Fa4';
+	const refundLog = (address: string, escrowId: bigint) => ({
+		address,
+		topics: paymentRefundedTopics(escrowId) as string[],
+	});
+
+	it('finds the PaymentRefunded log the escrow emitted for this escrow id', () => {
+		const logs = [
+			{ address: '0x0000000000000000000000000000000000000001', topics: ['0xaa'] },
+			refundLog(ESCROW.toLowerCase(), 7n),
+		];
+		expect(findPaymentRefundedLog(logs, ESCROW, 7n)).toBe(logs[1]);
+	});
+
+	it('ignores a refund for another escrow id', () => {
+		expect(findPaymentRefundedLog([refundLog(ESCROW, 8n)], ESCROW, 7n)).toBeUndefined();
+	});
+
+	it('ignores the same event emitted by another contract', () => {
+		const other = '0x0000000000000000000000000000000000000002';
+		expect(findPaymentRefundedLog([refundLog(other, 7n)], ESCROW, 7n)).toBeUndefined();
+	});
+
+	it('returns undefined for a receipt with no logs', () => {
+		expect(findPaymentRefundedLog([], ESCROW, 7n)).toBeUndefined();
+	});
+
+	// Run day 2026-11-11: the first real R-REFUND-01 refunded through the dApp and then failed
+	// on `eth_getLogs` — the prompt-to-refund window is ~18,000 Base Sepolia blocks and the
+	// provider's free tier caps a log query at 10. The refund is proven from its receipt.
+	it('the resilience chain helpers and specs never query logs by block range', () => {
+		const files = [
+			'e2e/helpers/resilience-chain.ts',
+			'e2e/specs/resilience-refund.spec.ts',
+			'e2e/specs/resilience-expiry.spec.ts',
+		];
+		const offenders = files.filter(f =>
+			readFileSync(path.resolve(process.cwd(), f), 'utf8').includes('eth_getLogs'),
+		);
+		expect(offenders).toEqual([]);
 	});
 });
 
