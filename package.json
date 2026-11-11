@@ -58,6 +58,7 @@
 		"test:e2e:report": "playwright show-report",
 		"// --- TESTNET E2E (sense-ai-e2e run-e2e-testnet.sh calls these) ---": "",
 		"test:e2e:testnet": "playwright test --project=testnet",
+		"test:e2e:testnet:resilience": "playwright test --project=testnet-resilience",
 		"e2e:testnet:fund": "bun e2e/testnet/fund.ts",
 		"e2e:testnet:key": "bun e2e/testnet/key.ts",
 		"e2e:testnet:sweep": "bun e2e/testnet/sweep.ts",
