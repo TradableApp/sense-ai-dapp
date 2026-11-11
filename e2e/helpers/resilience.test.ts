@@ -17,7 +17,6 @@ import {
 } from 'viem';
 import { afterEach, describe, expect, it } from 'vitest';
 
-
 import { RESILIENCE_BUDGETS } from './budgets';
 import {
 	decodeUint256,
@@ -147,6 +146,19 @@ describe('waitForChainTime', () => {
 });
 
 describe('refundReadiness', () => {
+	it('never reports zero UI time remaining while the UI gate is still shut', () => {
+		// The dApp's gate is strict (>), so at the exact boundary it is shut for one more ms.
+		const r = refundReadiness({
+			chainTimeS: 1_000 + 3_600,
+			createdAtS: 1_000,
+			refundTimeoutS: 3_600,
+			nowMs: (1_000 + 3_600) * 1000,
+			uiTimeoutMs: 3_600_000,
+		});
+		expect(r.uiReady).toBe(false);
+		expect(r.uiRemainingMs).toBe(1);
+	});
+
 	const createdAtS = 1_000;
 	const refundTimeoutS = 3_600;
 	const uiTimeoutMs = 3_600_000;
