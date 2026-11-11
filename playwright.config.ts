@@ -82,6 +82,9 @@ const RESILIENCE_PROJECTS: Project[] = [
 		// The refund check spans the escrow's full 1 h window; each test sets its own timeout from
 		// the budget, and the project ceiling is the largest of them.
 		timeout: RESILIENCE_BUDGET.refundTestTimeoutMs,
+		// One attempt: a retry of the refund check is a second real hour, and the run-day verdict
+		// counts a pass on retry as a failure anyway.
+		retries: 0,
 		use: {
 			...devices['Desktop Chrome'],
 			// Same software compositor as the testnet project (see the note there).
