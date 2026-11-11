@@ -26,10 +26,11 @@ import {
 	type PaymentRecord,
 	pendingEscrowCount,
 	receiptOf,
+	refundProofFromReceipt,
 	refundTimeoutSeconds,
 	registeredSecrets,
 	sleepMs,
-	waitForRefundLog,
+	waitForNoPendingEscrow,
 } from '../helpers/resilience-chain';
 import { DashboardPage } from '../pages/DashboardPage';
 
@@ -183,55 +184,68 @@ test.describe('Resilience — real 1 h refund through the dApp (R-REFUND-01)', (
 			}
 			evidence.uiPath = { buttonShown, rowClearedAfterClick: uiPathOk };
 
-			// 6. Did the UI path refund on chain? If not, send the claim Node-side so the window is
-			// not lost. Check for an existing refund first, so a slow UI tx is never double-claimed.
-			const fromBlock = promptReceipt.blockNumber;
-			let refundLog = await waitForRefundLog({
-				escrow: ESCROW_ADDRESS,
-				escrowId,
-				fromBlock,
-				// 0 = read the logs once and return: when the UI path was not taken, this only
-				// checks for a refund that already landed before the script fallback sends one.
-				timeoutMs: uiPathOk ? RESILIENCE_BUDGET.refundClickGraceMs : 0,
-				pollMs: RESILIENCE_BUDGET.refundPollMs,
-			});
-			if (refundLog && uiPathOk) {
-				refundPath = 'ui';
-			} else {
-				let fallbackSent = false;
-				if (!refundLog) {
-					try {
-						evidence.fallbackRefundTxHash = await sendFrom({
-							from: owner,
-							to: ESCROW_ADDRESS,
-							data: processRefundCalldata(answerMessageId),
-						});
-						fallbackSent = true;
-					} catch (err) {
-						// A UI claim still in flight settles the escrow first, and this one then
-						// reverts. Record that it failed (no message: it can carry an RPC URL) and
-						// let the log decide — the UI's transaction is the refund if one is there.
-						evidence.fallbackRefundFailed = err instanceof Error ? err.name : 'error';
-					}
-					refundLog = await waitForRefundLog({
-						escrow: ESCROW_ADDRESS,
-						escrowId,
-						fromBlock,
-						timeoutMs: RESILIENCE_BUDGET.refundClickGraceMs,
-						pollMs: RESILIENCE_BUDGET.refundPollMs,
+			// 6. Did the UI path settle the escrow on chain? If not, send the claim Node-side so
+			// the window is not lost. Chain state is read first, so a slow UI tx is never
+			// double-claimed. This account has exactly one escrow, so "none pending" means settled.
+			const settledBy = (timeoutMs: number): Promise<boolean> =>
+				waitForNoPendingEscrow({
+					escrow: ESCROW_ADDRESS,
+					user: owner,
+					timeoutMs,
+					pollMs: RESILIENCE_BUDGET.refundPollMs,
+				});
+			// 0 = read once: when the UI path was not taken, this only checks for a refund that
+			// already landed before the script fallback sends one.
+			let settled = await settledBy(uiPathOk ? RESILIENCE_BUDGET.refundClickGraceMs : 0);
+			let fallbackSent = false;
+			if (!settled) {
+				try {
+					evidence.fallbackRefundTxHash = await sendFrom({
+						from: owner,
+						to: ESCROW_ADDRESS,
+						data: processRefundCalldata(answerMessageId),
 					});
+					fallbackSent = true;
+				} catch (err) {
+					// A UI claim still in flight settles the escrow first, and this one then
+					// reverts. Record that it failed (no message: it can carry an RPC URL) and
+					// let the chain decide — the UI's transaction is the refund if it settled.
+					evidence.fallbackRefundFailed = err instanceof Error ? err.name : 'error';
 				}
-				// Without a fallback transaction of ours, the refund on chain is the dApp's.
-				refundPath = fallbackSent ? 'script-fallback' : 'ui';
+				settled = await settledBy(RESILIENCE_BUDGET.refundClickGraceMs);
 			}
-			if (!refundLog) throw new Error('no PaymentRefunded log for this escrow after the refund');
-			const refundReceipt = await receiptOf(refundLog.transactionHash);
+			if (!settled) throw new Error('the escrow is still pending after the refund attempts');
+			// Without a fallback transaction of ours, the refund on chain is the dApp's.
+			refundPath = fallbackSent ? 'script-fallback' : 'ui';
+
+			// The subgraph names the refund transaction; its receipt proves it. No block-range
+			// log query: the prompt-to-refund window is far beyond a provider's log-query cap.
+			// Only a REFUND indexed after this prompt: an older one would name another escrow's tx.
+			const isRefundActivity = (a: { type: string; timestamp: string }): boolean =>
+				a.type === 'REFUND' && Number(a.timestamp) >= createdAtS;
+			const activities = await waitForGraph(
+				() => getActivities(owner),
+				acts => acts.some(isRefundActivity),
+				{ label: 'REFUND activity', timeoutMs: RESILIENCE_BUDGET.indexWaitMs },
+			);
+			const refundActivity = activities.find(isRefundActivity)!;
+			const refundProof = await refundProofFromReceipt(
+				refundActivity.transactionHash,
+				ESCROW_ADDRESS,
+				escrowId,
+			);
+			if (!refundProof) {
+				throw new Error(
+					'the indexed REFUND transaction has no PaymentRefunded log for this escrow',
+				);
+			}
 			evidence.refund = {
 				path: refundPath,
-				txHash: refundLog.transactionHash,
-				blockNumber: refundReceipt.blockNumber,
-				blockTimestampS: await blockTimestampS(refundReceipt.blockNumber),
+				txHash: refundProof.transactionHash,
+				blockNumber: refundProof.blockNumber,
+				blockTimestampS: await blockTimestampS(refundProof.blockNumber),
 			};
+			evidence.activity = refundActivity;
 
 			// 7. Chain state after the refund.
 			expect(
@@ -242,7 +256,7 @@ test.describe('Resilience — real 1 h refund through the dApp (R-REFUND-01)', (
 			evidence.tokenBalance = { ...(evidence.tokenBalance as object), afterRefund: balanceAfter };
 			expect(balanceAfter, 'token balance restored to the pre-prompt value').toBe(balanceBefore);
 
-			// 8. Indexed state: Payment, PromptRequest and the REFUND activity.
+			// 8. Indexed state: Payment and PromptRequest (the REFUND activity is proven in step 6).
 			const refundedPayment = await waitForGraph(
 				() => getPaymentRecords(owner),
 				records => records.some(r => r.id === payment.id && r.status === 'REFUNDED'),
@@ -255,17 +269,6 @@ test.describe('Resilience — real 1 h refund through the dApp (R-REFUND-01)', (
 				{ label: 'PromptRequest.isRefunded', timeoutMs: RESILIENCE_BUDGET.indexWaitMs },
 			);
 			expect(refundedRequest.find(r => r.id === stuck.id)?.isRefunded).toBe(true);
-			const activity = await waitForGraph(
-				() => getActivities(owner),
-				acts =>
-					acts.some(
-						a =>
-							a.type === 'REFUND' &&
-							a.transactionHash.toLowerCase() === refundLog!.transactionHash.toLowerCase(),
-					),
-				{ label: 'REFUND activity', timeoutMs: RESILIENCE_BUDGET.indexWaitMs },
-			);
-			evidence.activity = activity.find(a => a.type === 'REFUND');
 
 			// 9. The UI path is the claim under test. A fallback is recorded and fails it here,
 			// after every chain assertion above has already passed.

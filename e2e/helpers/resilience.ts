@@ -281,3 +281,49 @@ export function isPaymentRefundedLog(
 	const [topic0, topic1] = paymentRefundedTopics(escrowId);
 	return log.topics[0]?.toLowerCase() === topic0 && log.topics[1]?.toLowerCase() === topic1;
 }
+
+/**
+ * The PaymentRefunded log for this escrow id among a transaction receipt's logs, emitted by the
+ * escrow itself. Reading the receipt proves the refund without a block-range log query.
+ */
+export function findPaymentRefundedLog<T extends { address: string; topics: readonly string[] }>(
+	logs: readonly T[],
+	escrow: string,
+	escrowId: bigint,
+): T | undefined {
+	const emitter = escrow.toLowerCase();
+	return logs.find(
+		log => log.address.toLowerCase() === emitter && isPaymentRefundedLog(log, escrowId),
+	);
+}
+
+export interface RefundProof {
+	transactionHash: string;
+	blockNumber: bigint;
+}
+
+/** The parts of an `eth_getTransactionReceipt` result the refund proof reads. */
+export interface RawReceipt {
+	blockNumber: string;
+	status: string;
+	transactionHash: string;
+	logs: ReadonlyArray<{ address: string; topics: readonly string[] }>;
+}
+
+/**
+ * Proof that a receipt is the refund of `escrowId`: it succeeded and carries the escrow's
+ * PaymentRefunded log for that id. Undefined when it is not mined, reverted, another
+ * transaction's receipt, or not that refund.
+ */
+export function refundProofFromReceiptData(
+	receipt: RawReceipt | null,
+	txHash: string,
+	escrow: string,
+	escrowId: bigint,
+): RefundProof | undefined {
+	if (!receipt || receipt.status !== '0x1') return undefined;
+	// The proof names `txHash`, so the receipt must be that transaction's.
+	if (receipt.transactionHash.toLowerCase() !== txHash.toLowerCase()) return undefined;
+	if (!findPaymentRefundedLog(receipt.logs, escrow, escrowId)) return undefined;
+	return { transactionHash: txHash, blockNumber: BigInt(receipt.blockNumber) };
+}

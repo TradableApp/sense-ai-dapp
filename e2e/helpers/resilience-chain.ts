@@ -9,9 +9,10 @@ import { CHAIN, type ChainName, getChainConfig, rpc } from './chain';
 import { graphQuery } from './graph';
 import {
 	decodeUint256,
-	isPaymentRefundedLog,
-	paymentRefundedTopics,
 	pendingEscrowCountCalldata,
+	type RawReceipt,
+	type RefundProof,
+	refundProofFromReceiptData,
 	refundTimeoutCalldata,
 } from './resilience';
 
@@ -62,59 +63,45 @@ export async function receiptOf(txHash: string): Promise<MinedReceipt> {
 	};
 }
 
-export interface RefundLog {
-	transactionHash: Hex;
-	blockNumber: bigint;
-}
-
-/** PaymentRefunded logs for one escrow id, from `fromBlock` to the latest block. */
-export async function refundLogsFor(
-	escrow: string,
-	escrowId: bigint,
-	fromBlock: bigint,
-): Promise<RefundLog[]> {
-	const logs = (await rpc('eth_getLogs', [
-		{
-			address: escrow,
-			topics: paymentRefundedTopics(escrowId),
-			fromBlock: toHex(fromBlock),
-			toBlock: 'latest',
-		},
-	])) as Array<{ topics: string[]; transactionHash: Hex; blockNumber: string }>;
-	return logs
-		.filter(log => isPaymentRefundedLog(log, escrowId))
-		.map(log => ({ transactionHash: log.transactionHash, blockNumber: BigInt(log.blockNumber) }));
-}
-
 export const sleepMs = (ms: number): Promise<void> =>
 	new Promise(resolve => {
 		setTimeout(resolve, ms);
 	});
 
 /**
- * Poll for the refund log until it appears or the budget ends. Returns undefined rather than
- * throwing: the caller decides whether a missing log means the UI path failed.
+ * Poll the escrow until `user` has no pending escrow, or the budget ends. `timeoutMs: 0` reads
+ * once. This is chain state, one `eth_call` per poll — never a block-range log query: an hour of
+ * Base Sepolia is ~18,000 blocks and a provider's free tier caps a log query at 10.
  */
-export async function waitForRefundLog({
+export async function waitForNoPendingEscrow({
 	escrow,
-	escrowId,
-	fromBlock,
+	user,
 	timeoutMs,
 	pollMs,
 }: {
 	escrow: string;
-	escrowId: bigint;
-	fromBlock: bigint;
+	user: string;
 	timeoutMs: number;
 	pollMs: number;
-}): Promise<RefundLog | undefined> {
+}): Promise<boolean> {
+	const settled = async (): Promise<boolean> => (await pendingEscrowCount(escrow, user)) === 0n;
+	if (timeoutMs === 0) return settled();
 	const deadline = Date.now() + timeoutMs;
 	for (;;) {
-		const [found] = await refundLogsFor(escrow, escrowId, fromBlock);
-		if (found) return found;
-		if (Date.now() >= deadline) return undefined;
+		if (await settled()) return true;
+		if (Date.now() >= deadline) return false;
 		await sleepMs(pollMs);
 	}
+}
+
+/** Fetch `txHash`'s receipt and read the refund proof for `escrowId` out of it. */
+export async function refundProofFromReceipt(
+	txHash: string,
+	escrow: string,
+	escrowId: bigint,
+): Promise<RefundProof | undefined> {
+	const receipt = (await rpc('eth_getTransactionReceipt', [txHash])) as RawReceipt | null;
+	return refundProofFromReceiptData(receipt, txHash, escrow, escrowId);
 }
 
 /** Values the evidence file must never contain. Empty off testnet, where nothing is signed. */

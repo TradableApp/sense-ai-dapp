@@ -2,7 +2,7 @@
 //
 // Pure logic behind the two run-day resilience specs (testnet-resilience project). No chain, no
 // browser: every clock, read and sleep is injected so the wait logic is proven without time.
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -22,11 +22,13 @@ import {
 	decodeUint256,
 	evidenceDirFrom,
 	expiryTarget,
+	findPaymentRefundedLog,
 	isPaymentRefundedLog,
 	oracleDownSkipReason,
 	paymentRefundedTopics,
 	pendingEscrowCountCalldata,
 	processRefundCalldata,
+	refundProofFromReceiptData,
 	refundReadiness,
 	refundTimeoutCalldata,
 	setSpendingLimitCalldata,
@@ -336,6 +338,82 @@ describe('PaymentRefunded log matching', () => {
 		expect(isPaymentRefundedLog(log, 7n)).toBe(true);
 		expect(isPaymentRefundedLog(log, 8n)).toBe(false);
 		expect(isPaymentRefundedLog({ topics: [] }, 7n)).toBe(false);
+	});
+});
+
+describe('refund proof from a transaction receipt', () => {
+	const ESCROW = '0x36ec08471F2B995024967204D7542713CfaF5Fa4';
+	const refundLog = (address: string, escrowId: bigint) => ({
+		address,
+		topics: paymentRefundedTopics(escrowId) as string[],
+	});
+
+	it('finds the PaymentRefunded log the escrow emitted for this escrow id', () => {
+		const logs = [
+			{ address: '0x0000000000000000000000000000000000000001', topics: ['0xaa'] },
+			refundLog(ESCROW.toLowerCase(), 7n),
+		];
+		expect(findPaymentRefundedLog(logs, ESCROW, 7n)).toBe(logs[1]);
+	});
+
+	it('ignores a refund for another escrow id', () => {
+		expect(findPaymentRefundedLog([refundLog(ESCROW, 8n)], ESCROW, 7n)).toBeUndefined();
+	});
+
+	it('ignores the same event emitted by another contract', () => {
+		const other = '0x0000000000000000000000000000000000000002';
+		expect(findPaymentRefundedLog([refundLog(other, 7n)], ESCROW, 7n)).toBeUndefined();
+	});
+
+	it('returns undefined for a receipt with no logs', () => {
+		expect(findPaymentRefundedLog([], ESCROW, 7n)).toBeUndefined();
+	});
+
+	it('builds the proof from a successful receipt that carries the refund log', () => {
+		const receipt = {
+			blockNumber: '0x369da3c',
+			status: '0x1',
+			transactionHash: '0xABC',
+			logs: [refundLog(ESCROW, 7n)],
+		};
+		expect(refundProofFromReceiptData(receipt, '0xabc', ESCROW, 7n)).toEqual({
+			transactionHash: '0xabc',
+			blockNumber: 57268796n,
+		});
+	});
+
+	it('gives no proof for an unmined, reverted, mismatched or unrelated transaction', () => {
+		const ok = {
+			blockNumber: '0x1',
+			status: '0x1',
+			transactionHash: '0xabc',
+			logs: [refundLog(ESCROW, 7n)],
+		};
+		expect(refundProofFromReceiptData(null, '0xabc', ESCROW, 7n)).toBeUndefined();
+		expect(
+			refundProofFromReceiptData({ ...ok, status: '0x0' }, '0xabc', ESCROW, 7n),
+		).toBeUndefined();
+		expect(refundProofFromReceiptData(ok, '0xdef', ESCROW, 7n)).toBeUndefined();
+		expect(refundProofFromReceiptData(ok, '0xabc', ESCROW, 8n)).toBeUndefined();
+	});
+});
+
+describe('no block-range log queries in the resilience helpers and specs', () => {
+	// Run day 2026-11-11: the first real R-REFUND-01 refunded through the dApp and then failed
+	// on `eth_getLogs` — the prompt-to-refund window is ~18,000 Base Sepolia blocks and the
+	// provider's free tier caps a log query at 10. The refund is proven from its receipt.
+	it('eth_getLogs does not appear in any resilience source file', () => {
+		// Driven from the filesystem, so a new resilience helper or spec is covered on arrival.
+		const sources = (dir: string): string[] =>
+			readdirSync(path.resolve(process.cwd(), dir))
+				.filter(f => f.startsWith('resilience') && f.endsWith('.ts') && !f.endsWith('.test.ts'))
+				.map(f => `${dir}/${f}`);
+		const files = [...sources('e2e/helpers'), ...sources('e2e/specs')];
+		expect(files.length).toBeGreaterThanOrEqual(4);
+		const offenders = files.filter(f =>
+			readFileSync(path.resolve(process.cwd(), f), 'utf8').includes('eth_getLogs'),
+		);
+		expect(offenders).toEqual([]);
 	});
 });
 
