@@ -189,6 +189,8 @@ test.describe('Resilience — real 1 h refund through the dApp (R-REFUND-01)', (
 				escrow: ESCROW_ADDRESS,
 				escrowId,
 				fromBlock,
+				// 0 = read the logs once and return: when the UI path was not taken, this only
+				// checks for a refund that already landed before the script fallback sends one.
 				timeoutMs: uiPathOk ? RESILIENCE_BUDGET.refundClickGraceMs : 0,
 				pollMs: RESILIENCE_BUDGET.refundPollMs,
 			});

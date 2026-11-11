@@ -6,8 +6,17 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { decodeFunctionData, keccak256, parseAbi, toFunctionSelector, toHex } from 'viem';
+import {
+	type Abi,
+	decodeFunctionData,
+	encodeEventTopics,
+	keccak256,
+	parseAbi,
+	toFunctionSelector,
+	toHex,
+} from 'viem';
 import { afterEach, describe, expect, it } from 'vitest';
+
 
 import { RESILIENCE_BUDGETS } from './budgets';
 import {
@@ -25,6 +34,7 @@ import {
 	waitForChainTime,
 	writeResilienceEvidence,
 } from './resilience';
+import escrowArtifact from '../../src/lib/abi/EVMAIAgentEscrow.json';
 
 const ESCROW_ABI = parseAbi([
 	'function setSpendingLimit(uint256 _allowance, uint256 _expiresAt)',
@@ -278,10 +288,11 @@ describe('evidence directory and writer', () => {
 			writeResilienceEvidence({
 				dir: dir!,
 				name: 'bad',
-				evidence: { rpc: 'https://provider.example.test/key/abc' },
+				// A neutral field name, so the value check is what refuses it (not the key-name guard).
+				evidence: { server: 'https://provider.example.test/key/abc' },
 				secrets: [],
 			}),
-		).toThrow(/rpc/);
+		).toThrow(/server/);
 	});
 
 	it('writes nothing when the evidence directory is not configured', () => {
@@ -296,6 +307,16 @@ describe('PaymentRefunded log matching', () => {
 		const [topic0, topic1] = paymentRefundedTopics(7n);
 		expect(topic0).toBe(keccak256(toHex('PaymentRefunded(uint256)')));
 		expect(topic1).toBe(`0x${'0'.repeat(63)}7`);
+	});
+
+	it('matches the PaymentRefunded event in the synced escrow ABI, so an ABI change fails here', () => {
+		// The hand-written signature is checked against the artifact `sync-contracts` copies in.
+		const topics = encodeEventTopics({
+			abi: escrowArtifact.abi as Abi,
+			eventName: 'PaymentRefunded',
+			args: { escrowId: 7n },
+		});
+		expect(topics).toEqual(paymentRefundedTopics(7n));
 	});
 
 	it('matches only the log for that escrow id', () => {
