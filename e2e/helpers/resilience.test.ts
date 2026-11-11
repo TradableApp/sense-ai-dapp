@@ -201,7 +201,11 @@ describe('oracleDownSkipReason', () => {
 	});
 
 	it('explains the skip for every other value', () => {
-		for (const env of [{}, { E2E_RESILIENCE_ORACLE_DOWN: '0' }, { E2E_RESILIENCE_ORACLE_DOWN: 'true' }]) {
+		for (const env of [
+			{},
+			{ E2E_RESILIENCE_ORACLE_DOWN: '0' },
+			{ E2E_RESILIENCE_ORACLE_DOWN: 'true' },
+		]) {
 			expect(oracleDownSkipReason(env)).toMatch(/E2E_RESILIENCE_ORACLE_DOWN=1/);
 		}
 	});
@@ -281,7 +285,9 @@ describe('evidence directory and writer', () => {
 	});
 
 	it('writes nothing when the evidence directory is not configured', () => {
-		expect(writeResilienceEvidence({ dir: undefined, name: 'x', evidence: {}, secrets: [] })).toBeUndefined();
+		expect(
+			writeResilienceEvidence({ dir: undefined, name: 'x', evidence: {}, secrets: [] }),
+		).toBeUndefined();
 	});
 });
 

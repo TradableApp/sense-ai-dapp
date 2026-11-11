@@ -70,3 +70,58 @@ export function budgetsFor(chain: ChainName): WaitBudgets {
 }
 
 export const BUDGET: WaitBudgets = budgetsFor(CHAIN);
+
+/**
+ * Budgets for the two run-day resilience checks (testnet-resilience project only). Kept apart
+ * from WaitBudgets because they describe a deliberate, hour-long run-day action, not the wait
+ * the dApp owes on every interaction; the testnet-resilience project is the only consumer.
+ */
+export interface ResilienceBudgets {
+	/** Interval between reads of chain time while waiting for a spending limit to expire. */
+	chainTimePollMs: number;
+	/** Gentle poll interval while waiting out the 1 h refund window. */
+	refundPollMs: number;
+	/** Seconds past `expiresAt` the prompt is sent, so the contract's own clock has moved on. */
+	expiryMarginS: number;
+	/** Test timeout for R-EXPIRY-01: a 120 s limit, funding, two transactions and a prompt. */
+	expiryTestTimeoutMs: number;
+	/** Test timeout for R-REFUND-01: the 1 h window, the prompt round-trip and indexing. */
+	refundTestTimeoutMs: number;
+	/** How long the dashboard's refund button may take to appear once both gates are open. */
+	refundUiGraceMs: number;
+	/** How long the stuck-request row may take to leave the panel after the refund click. */
+	refundClickGraceMs: number;
+	/** Indexed state (pending payment, refunded payment, REFUND activity) for the resilience checks. */
+	indexWaitMs: number;
+}
+
+const LOCALNET_RESILIENCE: ResilienceBudgets = {
+	chainTimePollMs: 1_000,
+	refundPollMs: 1_000,
+	expiryMarginS: 15,
+	expiryTestTimeoutMs: 600_000,
+	refundTestTimeoutMs: 4_500_000,
+	refundUiGraceMs: 60_000,
+	refundClickGraceMs: 45_000,
+	indexWaitMs: 60_000,
+};
+
+const TESTNET_RESILIENCE: ResilienceBudgets = {
+	chainTimePollMs: 5_000,
+	refundPollMs: 30_000,
+	expiryMarginS: 15,
+	expiryTestTimeoutMs: 600_000,
+	// 75 min: the 1 h refund window measured from the escrow's block, plus the prompt round-trip
+	// before it and the refund click and indexing after it.
+	refundTestTimeoutMs: 4_500_000,
+	refundUiGraceMs: 180_000,
+	refundClickGraceMs: 90_000,
+	indexWaitMs: 90_000,
+};
+
+export const RESILIENCE_BUDGETS: Record<ChainName, ResilienceBudgets> = {
+	localnet: LOCALNET_RESILIENCE,
+	testnet: TESTNET_RESILIENCE,
+};
+
+export const RESILIENCE_BUDGET: ResilienceBudgets = RESILIENCE_BUDGETS[CHAIN];

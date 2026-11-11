@@ -3,7 +3,7 @@ import { fileURLToPath } from 'url';
 
 import { defineConfig, devices, type Project } from '@playwright/test';
 
-import { BUDGET } from './e2e/helpers/budgets';
+import { BUDGET, RESILIENCE_BUDGET } from './e2e/helpers/budgets';
 import { CHAIN, getChainConfig, LIVE_STACK } from './e2e/helpers/chain';
 import { loadChainEnv } from './e2e/helpers/env';
 
@@ -47,6 +47,13 @@ const TESTNET_SPECS = [
 	'plan',
 ];
 
+/**
+ * The run-day resilience checks: a real spending-limit expiry (R-EXPIRY-01) and the real 1 h
+ * refund through the dApp's button with the oracle DOWN (R-REFUND-01). Their own project, run by
+ * `test:e2e:testnet:resilience`, so the regular testnet run never waits an hour. Never in CI.
+ */
+const RESILIENCE_SPECS = ['resilience-expiry', 'resilience-refund'];
+
 const TESTNET_PROJECTS: Project[] = [
 	{
 		name: 'testnet',
@@ -62,6 +69,22 @@ const TESTNET_PROJECTS: Project[] = [
 			 * not painting. The GPU process is the usual culprit for that headless stall on macOS
 			 * under load; the fixture's renderer-health probe is the second line of defence.
 			 */
+			launchOptions: { args: ['--disable-gpu'] },
+		},
+	},
+];
+
+const RESILIENCE_PROJECTS: Project[] = [
+	{
+		name: 'testnet-resilience',
+		testMatch: RESILIENCE_SPECS.map(spec => `**/${spec}.spec.ts`),
+		fullyParallel: false,
+		// The refund check spans the escrow's full 1 h window; each test sets its own timeout from
+		// the budget, and the project ceiling is the largest of them.
+		timeout: RESILIENCE_BUDGET.refundTestTimeoutMs,
+		use: {
+			...devices['Desktop Chrome'],
+			// Same software compositor as the testnet project (see the note there).
 			launchOptions: { args: ['--disable-gpu'] },
 		},
 	},
@@ -388,5 +411,5 @@ export default defineConfig({
 					timeout: 60_000,
 			  },
 
-	projects: CHAIN === 'testnet' ? TESTNET_PROJECTS : LOCALNET_PROJECTS,
+	projects: CHAIN === 'testnet' ? [...TESTNET_PROJECTS, ...RESILIENCE_PROJECTS] : LOCALNET_PROJECTS,
 });

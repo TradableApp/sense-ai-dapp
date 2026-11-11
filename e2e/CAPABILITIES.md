@@ -149,18 +149,47 @@ snapshots anywhere in the file), with `T-PLAN-13` testnet-skipped (see below). `
 
 **Waits.** No spec or page object waits for Playwright's `networkidle`: the live-state probe polls every block and Thirdweb and Sentry keep their own traffic up, so the network never idles and the wait times out with the page rendered (T-INIT-06..10 and T-UI-08 on the 2026-11-02 run day). `waitForAppShell(page)` (`e2e/helpers/app-ready.ts`) is the app-ready wait; the `no-networkidle` guard enforces it. Wait budgets are chain-aware (`e2e/helpers/budgets.ts`): localnet keeps the values the specs were written against, testnet states the acceptable experience on a public chain (own message 45 s, answer 180 s, indexed state 30 s, post-tx navigation 60 s, page load 90 s), sized from the run day where a submit → receipt took up to ~30 s and one answer passed 90 s. The page-load budget is Playwright's `navigationTimeout` (`page.goto` resolves on `load`, i.e. every sub-resource): on the 2026-11-09 run day the hosted build's 3 MB main bundle alone took 21 s during a Firebase Hosting throughput dip and `T-AUTH-05` timed out at the 30 s default; the `navigation-budget` guard keeps the config on the budget rather than a literal. A test that breaches a budget is a finding about the stack, not a retry. Known finding from that run: the user's own prompt renders only after the submit receipt (`T-CHAT-07` took 29 s on the first attempt), so on a slow block the composer shows nothing for the whole confirmation wait.
 
+### Resilience checks (`testnet-resilience` project)
+
+Two run-day checks that a regular testnet run cannot afford, kept in their own project so the
+`testnet` project never waits an hour. Run with `bun run test:e2e:testnet:resilience` from the
+sense-ai-e2e runner (the same tmux and env contract as the testnet pass). Never in CI.
+
+- **R-EXPIRY-01** (`resilience-expiry.spec.ts`): a fresh account is funded, and the spending limit is
+  set Node-side with an absolute `expiresAt` 120 s ahead of the latest block (the dApp form only offers
+  whole days). The check waits for chain time, not the wall clock, to pass the expiry, then asserts
+  "Limit has expired" on the dashboard, the "Plan Expired" toast on a prompt, `pendingEscrowCount == 0`
+  on chain, and the subgraph `SpendingLimit.expiresAt`. No oracle is needed.
+- **R-REFUND-01** (`resilience-refund.spec.ts`): the oracle must be DOWN. The runner declares that with
+  `E2E_RESILIENCE_ORACLE_DOWN=1`; without it the test skips with a written reason. A prompt is submitted
+  through the chat UI and stays pending. The check waits for both refund gates (chain time from the
+  contract's `REFUND_TIMEOUT()`, and the dApp's wall-clock gate), polling every 30 s with the page open,
+  then clicks the dashboard's Refund button. A fallback sends `processRefund` Node-side if the UI path
+  fails after the hour; the path is recorded as `ui` or `script-fallback`, the chain assertions still run,
+  and the final assertion fails on a fallback because it is a finding about the UI.
+
+Env contract, on top of the testnet contract above: `E2E_RESILIENCE_ORACLE_DOWN=1` (R-REFUND-01 only)
+and optional `E2E_RESILIENCE_EVIDENCE_DIR` (absolute directory; each check writes `expiry.json` or
+`refund.json` with transaction hashes, block numbers, timestamps, balances and the refund path). The
+evidence writer refuses secret-shaped field names, unprefixed 32-byte hex, URLs with a path, and any
+registered secret (RPC URL, seed, treasury key), and it names the field, never the value.
+
+The pure logic (calldata, chain-time wait, refund readiness, skip gate, evidence writer, PaymentRefunded
+topics) is unit-tested in `e2e/helpers/resilience.test.ts`. `e2e/__guards__/testnet-resilience-project.test.ts`
+keeps the resilience specs out of the `testnet` project and the regular testnet specs out of this one.
+
 ### Excluded, with the reason
 
 | Spec                           | Why it cannot run on a public chain                                                                | Covered by                                                      |
 | ------------------------------ | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `refunds` (3)                  | `increaseTime(1h)` past the refund window — time travel                                            | localnet suite; CU-14ym9bvdmju (real 1 h refund on a run day)   |
+| `refunds` (3)                  | `increaseTime(1h)` past the refund window — time travel                                            | localnet suite; `testnet-resilience` R-REFUND-01 (real 1 h refund) |
 | `contract-cost` (5)            | owner-only fee setters from the deployer                                                           | localnet suite; contract unit tests (tokenized-ai-agent)        |
 | `governance` (9)               | owner key (setOracle, transferOwnership, upgrade) never enters the suite on a real network         | localnet suite; CU-14ym9bvdmjt (admin rehearsal, done by hand)  |
 | `faucet` (2)                   | localnet-only faucet path                                                                          | hand-run against the real callable                              |
 | `brain`, `brain-substance` (5) | read the oracle's Postgres over Cloud SQL mTLS from a laptop                                       | oracle smoke (`smoke:base-testnet`)                             |
 | `security` (4)                 | localnet-shaped request intercepts and storage inspection                                          | localnet suite                                                  |
 | `sentry` (4)                   | intercepts the localnet DSN                                                                        | localnet suite                                                  |
-| `T-STUCK-01`, `T-PENDING-01`   | need the mock oracle's `__E2E_DROP__` to leave an escrow pending; a real oracle answers everything | localnet suite                                                  |
+| `T-STUCK-01`, `T-PENDING-01`   | need the mock oracle's `__E2E_DROP__` to leave an escrow pending; a real oracle answers everything | `T-STUCK-01`: `testnet-resilience` R-REFUND-01 (oracle down, real stuck prompt); `T-PENDING-01`: localnet suite |
 | `T-REASON-02`                  | only the mock oracle can be told to omit reasoning                                                 | localnet suite                                                  |
-| `T-PLAN-13`                    | expires a plan with `evm_increaseTime(24 h)` — time travel                                         | localnet suite; CU-14ym9bvdmju (real limit expiry on a run day) |
+| `T-PLAN-13`                    | expires a plan with `evm_increaseTime(24 h)` — time travel                                         | localnet suite; `testnet-resilience` R-EXPIRY-01 (real limit expiry, 120 s ahead) |
 | `mobile` (ui on Pixel 5)       | not in the first testnet pass — desktop only; add when the desktop pass is green                   | localnet suite                                                  |
