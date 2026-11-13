@@ -139,7 +139,7 @@ missing or malformed variable fails once, by name, before any request.
 
 `smoke`, `ui`, `auth`, `chat`, `history`, `branching`, `cancel`, `metadata`, `search`,
 `versions`, `multi-device`, `live-sync`, `activity`, `graph`, `reasoning`, `remaining-features`,
-`plan`. `T-BRANCH-08` (regenerating an inherited answer inside a branch: the new answer renders in the branch, is indexed under the branch and leaves the original untouched) needs agent contracts that file a regeneration under the conversation it was asked in; against older contracts the answer is filed under the original and the test fails. Chain-aware adaptations: `T-INIT-SMOKE-01/02` check the configured RPC's chain id and the Graph
+`plan`. `T-BRANCH-08` (regenerating an inherited answer inside a branch: the new answer renders in the branch, is indexed under the branch and leaves the original untouched) needs agent contracts that file a regeneration under the conversation it was asked in; against older contracts the answer is filed under the original and the test fails. It checks the stored state on a second device (a clean browser context): the original is unchanged and the regenerated answer is in the branch. `T-BRANCH-09` is a `test.fixme`: a second device does not rebuild the history a branch inherited (the copies live only in the branching device's IndexedDB), so the count below does not include it. Chain-aware adaptations: `T-INIT-SMOKE-01/02` check the configured RPC's chain id and the Graph
 endpoint; `cancel` advances time by WAITING (`advanceTime`: Base's 2 s blocks move
 `block.timestamp` on their own) instead of `evm_increaseTime`; `T-REASON-01` asserts a real
 reasoning block with ≥ 1 step and ≥ 1 http(s) source (the mock sentinel is inert on a real
