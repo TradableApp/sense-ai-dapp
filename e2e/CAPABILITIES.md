@@ -135,11 +135,11 @@ never enters a page, a trace or a screenshot.
 (loaded by `playwright.config.ts` and the scripts, never overriding the runner's exports). A
 missing or malformed variable fails once, by name, before any request.
 
-### Included in the `testnet` project (152 tests, 17 files)
+### Included in the `testnet` project (153 tests, 17 files)
 
 `smoke`, `ui`, `auth`, `chat`, `history`, `branching`, `cancel`, `metadata`, `search`,
 `versions`, `multi-device`, `live-sync`, `activity`, `graph`, `reasoning`, `remaining-features`,
-`plan`. Chain-aware adaptations: `T-INIT-SMOKE-01/02` check the configured RPC's chain id and the Graph
+`plan`. `T-BRANCH-08` (regenerating an inherited answer inside a branch: the new answer renders in the branch, is indexed under the branch and leaves the original untouched) needs agent contracts that file a regeneration under the conversation it was asked in; against older contracts the answer is filed under the original and the test fails. Chain-aware adaptations: `T-INIT-SMOKE-01/02` check the configured RPC's chain id and the Graph
 endpoint; `cancel` advances time by WAITING (`advanceTime`: Base's 2 s blocks move
 `block.timestamp` on their own) instead of `evm_increaseTime`; `T-REASON-01` asserts a real
 reasoning block with ≥ 1 step and ≥ 1 http(s) source (the mock sentinel is inert on a real

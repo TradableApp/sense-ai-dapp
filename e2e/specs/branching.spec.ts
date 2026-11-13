@@ -5,9 +5,12 @@ import {
 	getConversations,
 	getConversationsWithLineage,
 	getMessages,
+	getPendingPayments,
 	getPromptRequests,
+	getRegenerationRequests,
 	waitForGraph,
 } from '../helpers/graph';
+import { getPromptFee, getSpendingLimit } from '../helpers/hardhat';
 
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node for multi-turn conversations (set E2E_LOCAL_SERVICES=1)';
@@ -220,5 +223,100 @@ test.describe('Branching (T-BRANCH)', () => {
 		expect(leaf, 'branch-of-branch C (parent = B) should exist').toBeTruthy();
 		// Three distinct conversations forming a single chain A ← B ← C.
 		expect(new Set([root!.id, mid!.id, leaf!.id]).size).toBe(3);
+	});
+
+	// A branch reuses the message ids it inherited, so regenerating an inherited answer inside
+	// the branch names the BRANCH and a prompt that was asked in the original. The new answer
+	// belongs to the conversation the user is looking at: it must render in the branch, be
+	// indexed under the branch, and leave the original conversation exactly as it was.
+	test('T-BRANCH-08: regenerating an inherited answer inside a branch lands in the branch, not the original', async ({
+		freshChatPage,
+		freshHistoryPage,
+		freshUserAccount,
+	}) => {
+		const owner = freshUserAccount.address;
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse(
+			'Source conversation for a branch regeneration',
+		);
+
+		const [originalConv] = await waitForGraph(
+			() => getConversations(owner),
+			c => c.length === 1,
+			{ label: 'original conversation indexed' },
+		);
+		const [inheritedAnswer] = await waitForGraph(
+			async () => (await getMessages(originalConv.id)).filter(m => m.role === 'assistant'),
+			a => a.length === 1,
+			{ label: 'original answer indexed' },
+		);
+
+		await freshChatPage.branchInNewChat();
+		// The copied answer must be on screen before it can be regenerated.
+		await expect(freshChatPage.assistantMessages.first()).toBeVisible({ timeout: 20_000 });
+		const lineage = await waitForGraph(
+			() => getConversationsWithLineage(owner),
+			list => list.length === 2 && list.some(c => c.branchedFrom !== null),
+			{ label: 'branch lineage indexed' },
+		);
+		const branch = lineage.find(c => c.branchedFrom !== null)!;
+		expect(branch.branchedFrom!.id).toBe(originalConv.id);
+
+		const spendBefore = (await getSpendingLimit(ESCROW_ADDRESS, owner)).spentAmount;
+		const promptFee = await getPromptFee(ESCROW_ADDRESS);
+
+		// dApp: the inherited answer becomes version 2 of 2 inside the branch and hydrates.
+		await freshChatPage.regenerateAndWaitForNewVersion('default', 2);
+
+		// Indexing: the regeneration names the inherited answer and produces a new one.
+		const [regen] = await waitForGraph(
+			() => getRegenerationRequests(owner),
+			r => r.length === 1,
+			{ label: 'RegenerationRequest indexed' },
+		);
+		expect(regen.originalAnswerMessageId).toBe(inheritedAnswer.messageId);
+		expect(regen.answerMessageId).not.toBe(inheritedAnswer.messageId);
+
+		// The copied history is not indexed as Message rows, so the branch's ONLY indexed message
+		// is the regenerated answer — under the branch.
+		const branchMessages = await waitForGraph(
+			() => getMessages(branch.id),
+			msgs => msgs.some(m => m.messageId === regen.answerMessageId),
+			{ label: 'regenerated answer indexed under the branch' },
+		);
+		expect(branchMessages.map(m => m.role)).toEqual(['assistant']);
+		expect(branchMessages[0].messageCID).not.toBe('');
+
+		// And the original still holds its one prompt and one answer, nothing more.
+		const originalMessages = await getMessages(originalConv.id);
+		expect(originalMessages.map(m => m.role).sort()).toEqual(['assistant', 'user']);
+		expect(originalMessages.some(m => m.messageId === regen.answerMessageId)).toBe(false);
+
+		// The request is settled: no payment of this account is left pending (a regeneration has
+		// no PromptRequest row in the subgraph — its escrow payment is the record), and exactly
+		// one promptFee was spent.
+		await waitForGraph(
+			() => getPendingPayments(owner),
+			pending => pending.length === 0,
+			{ label: 'branch regeneration payment settled', timeoutMs: 15_000 },
+		);
+		const spendAfter = (await getSpendingLimit(ESCROW_ADDRESS, owner)).spentAmount;
+		expect(spendAfter - spendBefore).toBe(promptFee);
+
+		// dApp, original conversation (index 1 in history; the branch is the most recent): one
+		// answer, and no version pager — the regeneration did not leak into it.
+		await freshHistoryPage.goto();
+		await freshHistoryPage.assertConversationCount(2);
+		await freshHistoryPage.clickConversation(1);
+		await expect(freshChatPage.assistantMessages.first()).toBeVisible({ timeout: 15_000 });
+		await expect(freshChatPage.assistantMessages).toHaveCount(1);
+		await expect(freshChatPage.versionIndicator).toHaveCount(0);
+
+		// dApp, the branch reopened after a history sync: both versions are still there.
+		await freshHistoryPage.goto();
+		await freshHistoryPage.clickConversation(0);
+		await expect(freshChatPage.versionIndicator).toHaveText(/^\s*2\s*\/\s*2\s*$/, {
+			timeout: 15_000,
+		});
 	});
 });
