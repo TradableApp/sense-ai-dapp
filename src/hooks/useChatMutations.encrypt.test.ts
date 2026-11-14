@@ -49,6 +49,34 @@ describe('buildInitiatePromptPayload', () => {
 		expect(payload.previousMessageId).toBe('53');
 	});
 
+	it('never flags a conversation with a branch origin as new', () => {
+		// A branch exists from the moment it is made. Flagging its prompt as new makes the
+		// oracle write the conversation file again without where it was branched from.
+		const payload = buildInitiatePromptPayload({
+			promptText: 'first prompt in the branch',
+			conversationId: '7',
+			parentId: 2,
+			parentCID: 'cid',
+			conversationHasAnswer: false,
+			hasBranchOrigin: true,
+		});
+
+		expect(payload.isNewConversation).toBe(false);
+	});
+
+	it('still flags a conversation without an answer as new when it is not a branch', () => {
+		const payload = buildInitiatePromptPayload({
+			promptText: 'resend',
+			conversationId: '7',
+			parentId: null,
+			parentCID: null,
+			conversationHasAnswer: false,
+			hasBranchOrigin: false,
+		});
+
+		expect(payload.isNewConversation).toBe(true);
+	});
+
 	it('preserves a parent message id of 0 instead of collapsing it to null', () => {
 		const payload = buildInitiatePromptPayload({
 			promptText: 'q',
