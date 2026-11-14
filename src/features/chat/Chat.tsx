@@ -63,6 +63,7 @@ import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import ActivatePlanCTA from './ActivatePlanCTA';
 import { cancelWindow } from './cancelWindow';
 import isQueryAhead from './messageReconcile';
+import promptParentFor from './promptParent';
 
 interface MarkdownParagraphProps {
 	children: ReactNode;
@@ -263,6 +264,12 @@ export default function Chat() {
 		return { messagesToDisplay: displayPath, versionInfo: versions };
 	}, [activeConversationMessages, activeMessageId]);
 
+	// A branch always has history. One that shows nothing does not have it on this device yet,
+	// and a prompt sent now would have no parent: see promptParentFor.
+	const hasBranchOrigin = Boolean(currentConversation?.branchedFromConversationId);
+	const promptParent = promptParentFor(messagesToDisplay, { hasBranchOrigin });
+	const isHeldForBranchHistory = Boolean(activeConversationId) && promptParent.kind === 'hold';
+
 	useEffect(() => {
 		setActiveMessageId(null);
 		setEditingMessageId(null);
@@ -378,6 +385,7 @@ export default function Chat() {
 				sessionKey,
 				parentId: originalMessage.parentId ?? null,
 				parentCID: parentMessage?.messageCID ?? null,
+				hasBranchOrigin,
 			},
 			{
 				onSuccess: async newIds => {
@@ -671,18 +679,11 @@ export default function Chat() {
 	const onSubmit = (data: { prompt: string }) => {
 		if (!sessionKey) return;
 
-		// The new prompt threads off the last message in view. Message ids are numeric
-		// strings (e.g. "53"), so parse rather than `typeof === 'number'` (which was
-		// always false → parentId null → every follow-up stored with no parent, so the
-		// synced thread split into a disjoint branch). NaN (no prior message — a brand
-		// new conversation) correctly yields a null parent.
-		const lastDisplayedMessage = messagesToDisplay?.at(-1);
-		// `?? NaN` first: a missing/null id (brand-new conversation, or an unresolved
-		// placeholder) must map to a null parent. Number(null) is 0 — which would
-		// wrongly thread the prompt onto message id 0 — so guard it before Number().
-		const parentIdNum = Number(lastDisplayedMessage?.id ?? NaN);
-		const parentId = Number.isFinite(parentIdNum) ? parentIdNum : null;
-		const parentCID = lastDisplayedMessage?.messageCID ?? null;
+		// The new prompt threads off the last message in view (a null parent would store every
+		// follow-up with no parent, and the synced thread would split into a disjoint branch).
+		// See promptParentFor for how the parent is found and when a branch holds the prompt.
+		if (promptParent.kind === 'hold') return;
+		const { parentId, parentCID } = promptParent;
 
 		// Whether this conversation already has a delivered (content-bearing) answer. If it
 		// doesn't (e.g. its only prior prompt was cancelled), the conversation was never
@@ -701,6 +702,7 @@ export default function Chat() {
 				parentId,
 				parentCID,
 				conversationHasAnswer,
+				hasBranchOrigin,
 			},
 			{
 				onSuccess: async newIds => {
@@ -764,9 +766,16 @@ export default function Chat() {
 		branchConversationMutation.isPending;
 
 	const hasValidationError = !!errors.prompt;
-	const isDisabled = isProcessing || isAiThinking || !sessionKey || isLoadingPlan || !hasActivePlan;
+	const isDisabled =
+		isProcessing ||
+		isAiThinking ||
+		!sessionKey ||
+		isLoadingPlan ||
+		!hasActivePlan ||
+		isHeldForBranchHistory;
 
-	const isInputDisabled = isProcessing || !sessionKey || isLoadingPlan || !hasActivePlan;
+	const isInputDisabled =
+		isProcessing || !sessionKey || isLoadingPlan || !hasActivePlan || isHeldForBranchHistory;
 
 	// Calculate UI status for the submit button
 	const submitStatus = (() => {
@@ -972,6 +981,16 @@ export default function Chat() {
 							disabled={isDisabled}
 							{...register('prompt')}
 						/>
+						{isHeldForBranchHistory && (
+							<p
+								className="px-3 py-1.5 text-xs text-muted-foreground"
+								role="status"
+								data-testid="branch-history-hold"
+							>
+								This branch&apos;s earlier messages are not on this device yet. You can send a
+								prompt once they have loaded.
+							</p>
+						)}
 						{isAiThinking && refundSecondsLeft !== null && (
 							<div className="flex items-center justify-end px-3 py-1.5 text-xs text-muted-foreground">
 								{refundSecondsLeft > 0 ? (

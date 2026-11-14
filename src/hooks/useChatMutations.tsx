@@ -78,6 +78,13 @@ interface InitiatePromptPayloadInput {
 	 * has a delivered answer, so this stays `true`.
 	 */
 	conversationHasAnswer?: boolean;
+	/**
+	 * Whether the conversation was branched from another. A branch exists from the moment it is
+	 * made (the oracle stores its conversation file, with where it was branched from, when it
+	 * confirms the branch), so its prompts are never "new", whatever `conversationHasAnswer`
+	 * says. Flagged new, the oracle would write the conversation file again without the origin.
+	 */
+	hasBranchOrigin?: boolean;
 }
 
 /**
@@ -98,6 +105,7 @@ export function buildInitiatePromptPayload({
 	parentId,
 	parentCID,
 	conversationHasAnswer,
+	hasBranchOrigin = false,
 }: InitiatePromptPayloadInput): Record<string, unknown> {
 	return {
 		promptText,
@@ -113,7 +121,9 @@ export function buildInitiatePromptPayload({
 		// Conversation entity was never created. Treating the resend as new makes the
 		// oracle re-initialise it and finally emit ConversationAdded. See
 		// `conversationHasAnswer`.
-		isNewConversation: !conversationId || conversationHasAnswer === false,
+		//
+		// A branch is never new: see `hasBranchOrigin`.
+		isNewConversation: !conversationId || (conversationHasAnswer === false && !hasBranchOrigin),
 		previousMessageId: parentId != null ? String(parentId) : null,
 		previousMessageCID: parentCID || null,
 	};
@@ -429,6 +439,7 @@ export default function useChatMutations() {
 			parentId,
 			parentCID,
 			conversationHasAnswer,
+			hasBranchOrigin,
 		}: {
 			conversationId: number | string;
 			promptText: string;
@@ -436,6 +447,7 @@ export default function useChatMutations() {
 			parentId: number | null;
 			parentCID: string | null;
 			conversationHasAnswer?: boolean;
+			hasBranchOrigin?: boolean;
 		}) => {
 			const chain = activeWallet?.getChain();
 			if (!activeWallet || !chain || !sessionKey || !activeAccount) {
@@ -455,6 +467,7 @@ export default function useChatMutations() {
 					parentId,
 					parentCID,
 					conversationHasAnswer,
+					hasBranchOrigin,
 				}),
 			);
 
