@@ -1,18 +1,26 @@
 import { expect, test } from '../fixtures';
 import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
-import { getFeeConfig, getPromptRequests, getProtocolConfig, waitForGraph } from '../helpers/graph';
 import {
+	getFeeConfig,
+	getOracleChanges,
+	getOracles,
+	getPromptRequests,
+	getProtocolConfig,
+	waitForGraph,
+} from '../helpers/graph';
+import {
+	addOracle,
 	getABLEBalance,
-	getOracle,
 	getOwner,
 	getPromptFee,
 	getSpendingLimit,
 	getTreasury,
+	isOracle,
+	removeOracle,
 	setBranchFee,
 	setCancellationFee,
 	setMetadataUpdateFee,
-	setOracle,
 	setPromptFee,
 	setPromptFeeFrom,
 	setTreasury,
@@ -37,10 +45,13 @@ const NEW_TREASURY = '0x000000000000000000000000000000000000beef';
 // afterEach so the change never bricks owner-only ops for the rest of the suite.
 const NEW_OWNER = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 
-// A synthetic, non-Hardhat address used as the rotated-oracle target. The oracle address is never a
-// fund recipient and we never send txs from it, so a synthetic address is fine; it's restored to the
-// original in afterEach. Lowercase for the same reason as NEW_TREASURY.
+// A synthetic, non-Hardhat address used as the second oracle in a rotation. It is never a fund
+// recipient and no transaction is sent from it, so a synthetic address is fine; it is removed again
+// in afterEach. Lowercase for the same reason as NEW_TREASURY.
 const NEW_ORACLE = '0x000000000000000000000000000000000000face';
+
+// The deployer (Hardhat account 0) owns the agent and sends addOracle / removeOracle.
+const OWNER = '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266';
 
 const isPending = (r: {
 	isAnswered: boolean;
@@ -52,8 +63,8 @@ const isPending = (r: {
 // UUPS) is unit-tested in tokenized-ai-agent and the subgraph handlers are matchstick-tested; these
 // assert the CROSS-LAYER path on a real stack: an on-chain governance change is reflected in the
 // subgraph's FeeConfig/ProtocolConfig singletons, and the dApp keeps working through it. Owner-only
-// setters are sent by the deployer (account 0). Oracle rotation (entangled with answering) is
-// deferred to Area 9d; here we only make changes that don't break the prompt→answer path.
+// setters are sent by the deployer (account 0). The oracle set (entangled with answering) is
+// in Area 9d; here we only make changes that don't break the prompt→answer path.
 
 test.describe('Governance config indexing (T-GOV-CFG)', () => {
 	test.skip(!LIVE_STACK, SKIP_REASON);
@@ -242,87 +253,144 @@ test.describe('Governance treasury routing (T-GOV-TREAS)', () => {
 	});
 });
 
-// Area 9d — oracle rotation (of the EVMAIAgent, which owns the oracle address). The contract-level
-// setOracle is unit-tested in tokenized-ai-agent; here we assert the cross-layer effect: a rotation
-// indexes into ProtocolConfig, and in-flight prompts are not orphaned by it.
+// Area 9d — the oracle set (on the EVMAIAgent, which authorizes oracles through a role several
+// addresses can hold at once). The contract rules are unit-tested in tokenized-ai-agent and the
+// handlers are matchstick-tested in sense-ai-subgraph; here we assert the cross-layer effect on a
+// real stack: the set and its history are indexed, a rotation with an overlap leaves no prompt
+// unanswered, and an oracle that loses the role keeps a prompt in flight and answers it once the
+// role is back.
 //
-// The dApp's STALENESS failure mode (it holds VITE_ORACLE_PUBLIC_KEY from env, never read from chain,
-// so a rotation to a genuinely different key would leave prompts encrypted to the old key and never
-// answered) cannot be injected in this harness: the key is build-time-baked and the localnet runs a
-// single oracle process. Its user-facing OUTCOME — a prompt submitted but never answered, then
-// recoverable via refund — is already covered by T-REFUND-01 / T-STUCK-01 (the __E2E_DROP__ sentinel
-// produces the same observable state). The root-cause design risk (read the oracle key from chain so
-// a rotation reaches the dApp) is tracked as a backlog ticket; see the PR description.
-test.describe('Governance oracle rotation (T-GOV-ORACLE)', () => {
+// The localnet runs one oracle process, so the second oracle of a rotation is an address with no
+// process behind it: what is proven is that adding and removing it never interrupts the running
+// oracle. A cut-over to a second live oracle needs a second process and is not exercised here.
+test.describe('Governance oracle set (T-GOV-ORACLE)', () => {
 	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(
 		!TOKEN_ADDRESS || !ESCROW_ADDRESS || !AGENT_ADDRESS,
 		'Skipped: contract addresses not set',
 	);
 
-	// The on-chain oracle is owner-global; snapshot + restore it so the rotation doesn't leak into the
-	// rest of the run. (The running oracle keeps DECRYPTING with its signer key, but answer submission
-	// is onlyOracle-gated — so once rotated it can no longer SUBMIT; see T-GOV-ORACLE-02.)
-	let originalOracle: string | undefined;
+	// The role is owner-global, so each test starts from, and is restored to, exactly one active
+	// oracle: the running one. Read from the index, not assumed, so a leak from an earlier test
+	// fails here with a clear message instead of inside a later assertion.
+	let runningOracle: string | undefined;
 	test.beforeEach(async () => {
-		originalOracle = await getOracle(AGENT_ADDRESS);
+		const active = await waitForGraph(
+			() => getOracles().then(all => all.filter(o => o.active)),
+			set => set.length === 1,
+			{ label: 'exactly one active oracle before the test' },
+		);
+		runningOracle = active[0].address;
+		expect(await isOracle(AGENT_ADDRESS, runningOracle)).toBe(true);
 	});
 	test.afterEach(async () => {
-		// Guard: skip the restore if beforeEach threw before snapshotting (see treasury note above).
-		if (originalOracle !== undefined) await setOracle(AGENT_ADDRESS, originalOracle);
+		// Both calls change nothing when there is nothing to change. Skipped if beforeEach threw
+		// before it knew the running oracle (see the treasury note above).
+		await removeOracle(AGENT_ADDRESS, NEW_ORACLE);
+		if (runningOracle !== undefined) await addOracle(AGENT_ADDRESS, runningOracle);
 	});
 
-	test('T-GOV-ORACLE-01: an oracle rotation is indexed into the ProtocolConfig singleton', async () => {
-		await setOracle(AGENT_ADDRESS, NEW_ORACLE);
+	test('T-GOV-ORACLE-01: adding and removing a second oracle is indexed as a set with its history', async () => {
+		const before = (await getOracleChanges(NEW_ORACLE)).length;
 
-		// Runs after the earlier describes' answer round-trips, so graph-node lags past the 30s default
-		// — give the indexing wait headroom (see ADR-0002 / the e2e troubleshooting note).
+		await addOracle(AGENT_ADDRESS, NEW_ORACLE);
+		// Two oracles hold the role at once: the overlap a rotation relies on.
 		await waitForGraph(
-			() => getProtocolConfig(),
-			c => c?.oracleAddress?.toLowerCase() === NEW_ORACLE.toLowerCase(),
-			{ label: 'ProtocolConfig reflects the rotated oracle' },
+			() => getOracles(),
+			all =>
+				all.filter(o => o.active).length === 2 &&
+				all.some(o => o.address === NEW_ORACLE && o.active && o.removedAt === null),
+			{ label: 'both oracles active' },
+		);
+
+		await removeOracle(AGENT_ADDRESS, NEW_ORACLE);
+		// The removed oracle stays on record as inactive; the running one is untouched.
+		const after = await waitForGraph(
+			() => getOracles(),
+			all => all.some(o => o.address === NEW_ORACLE && !o.active && o.removedAt !== null),
+			{ label: 'second oracle recorded as removed' },
+		);
+		expect(after.filter(o => o.active).map(o => o.address)).toEqual([runningOracle]);
+
+		// One immutable record per change, in order, naming the owner as the caller.
+		const changes = await waitForGraph(
+			() => getOracleChanges(NEW_ORACLE),
+			rows => rows.length === before + 2,
+			{ label: 'one history record per change' },
+		);
+		const [added, removed] = changes.slice(-2);
+		expect([added.kind, removed.kind]).toEqual(['ADDED', 'REMOVED']);
+		expect([added.caller, removed.caller]).toEqual([OWNER, OWNER]);
+	});
+
+	test('T-GOV-ORACLE-02: a prompt in flight through a rotation overlap is answered, and so is the next', async ({
+		freshUserAccount,
+		freshChatPage,
+	}) => {
+		await fundAndActivatePlan(freshUserAccount.address);
+
+		await freshChatPage.goto();
+		// The oracle holds the answer for 20 s (mock sentinel): a fixed window in which the set
+		// changes while this prompt is in flight.
+		await freshChatPage.sendPrompt('In flight through a rotation overlap __E2E_DELAY_MS__:20000');
+		await expect(freshChatPage.cancelButton).toBeVisible({ timeout: 30_000 });
+		await addOracle(AGENT_ADDRESS, NEW_ORACLE);
+
+		// Adding an oracle takes nothing from the running one: the held answer still lands.
+		await expect(freshChatPage.assistantMessages).toHaveCount(1, { timeout: 90_000 });
+
+		// Removing the second oracle again does not interrupt service either.
+		await removeOracle(AGENT_ADDRESS, NEW_ORACLE);
+		await freshChatPage.sendPromptAndWaitForResponse('Still answered after the rotation.');
+		await waitForGraph(
+			() => getPromptRequests(freshUserAccount.address),
+			reqs => reqs.length === 2 && reqs.every(r => r.isAnswered),
+			{ label: 'both prompts answered' },
 		);
 	});
 
-	test('T-GOV-ORACLE-02: a mid-flight oracle rotation orphans the in-flight prompt (onlyOracle answer-submit)', async ({
+	test('T-GOV-ORACLE-03: an oracle that loses the role mid-flight keeps the prompt and answers once the role is back', async ({
 		freshUserAccount,
 		freshChatPage,
 		freshPage,
 	}) => {
-		// FINDING (see ADR-0006 + the linked tokenized-ai-agent issue / CU task): answer submission is
-		// onlyOracle-gated to a SINGLE address, so the instant the oracle is rotated the running oracle
-		// can no longer submit — any in-flight prompt is ORPHANED (submitAnswer reverts with
-		// UnauthorizedOracle and the oracle then hits a FATAL non-retryable error). A naive rotation is
-		// therefore NOT zero-downtime. This locks in the known risk until the planned multi-oracle
-		// (ORACLE_ROLE) + shared-key design (Option B) lands; the orphaned prompt is recoverable via
-		// refund exactly like a stuck prompt (T-REFUND-01 / T-STUCK-01).
+		// Worst case after the role returns, from the oracle's own timings: its role recheck runs
+		// every 30 s, the retry pass every 60 s, the queued prompt is due 30 s after it was refused,
+		// and the retry holds the mock answer for 20 s again. 30 + 60 + 20 = 110 s, so 240 s leaves
+		// room for indexing lag at the end of the serial suite.
+		const ANSWER_AFTER_ROLE_RETURNS_MS = 240_000;
+		// 30 s to see the prompt pending + 25 s wait + the budget above + the indexing waits.
+		test.setTimeout(420_000);
 		await fundAndActivatePlan(freshUserAccount.address);
 
 		await freshChatPage.goto();
-		// The oracle holds the answer for 20s (mock sentinel), giving a deterministic window to rotate
-		// the oracle BEFORE it attempts to submit — so the orphan is caused by the rotation, not a race.
-		await freshChatPage.sendPrompt(
-			'Orphaned by a mid-flight oracle rotation __E2E_DELAY_MS__:20000',
-		);
+		// The 20 s hold gives a fixed window to remove the role BEFORE the oracle submits, so the
+		// refusal is caused by the removal, not by a race.
+		await freshChatPage.sendPrompt('Held while the oracle has no role __E2E_DELAY_MS__:20000');
 		await expect(freshChatPage.cancelButton).toBeVisible({ timeout: 30_000 });
-		await setOracle(AGENT_ADDRESS, NEW_ORACLE);
+		await removeOracle(AGENT_ADDRESS, runningOracle!);
 
-		// Wait past the answer-delay window so the oracle's now-delayed submitAnswer has fired and
-		// reverted (onlyOracle) — this makes the pending state DURABLE (orphaned), not merely "not yet
-		// answered". A bounded wait is required to prove non-delivery of the held answer.
+		// Past the hold: the submission has been attempted and refused. A bounded wait is the only
+		// way to show the held answer was not delivered.
 		await freshPage.waitForTimeout(25_000);
-
-		// Orphaned: the prompt stays PENDING on-chain — never answered. waitForGraph (not a single read)
-		// because this runs last in the serial suite, so graph-node lags past the 30s default; once
-		// indexed it is pending and STAYS pending (the old oracle can no longer submit), so the wait
-		// resolves — whereas if the rotation had lost the race the prompt would be answered and this
-		// would (correctly) time out.
 		await waitForGraph(
 			() => getPromptRequests(freshUserAccount.address),
 			reqs => reqs.some(isPending),
-			{ label: 'orphaned prompt stays pending (unanswered)' },
+			{ label: 'prompt still pending while the oracle has no role' },
 		);
 		await expect(freshChatPage.assistantMessages).toHaveCount(0);
+
+		// The owner gives the role back. The oracle did not exit: it waited, and now answers the
+		// prompt it kept, with no resubmission and no refund.
+		await addOracle(AGENT_ADDRESS, runningOracle!);
+		await expect(freshChatPage.assistantMessages).toHaveCount(1, {
+			timeout: ANSWER_AFTER_ROLE_RETURNS_MS,
+		});
+		await waitForGraph(
+			() => getPromptRequests(freshUserAccount.address),
+			reqs => reqs.length === 1 && reqs[0].isAnswered,
+			{ label: 'the kept prompt is answered, once' },
+		);
 	});
 });
 

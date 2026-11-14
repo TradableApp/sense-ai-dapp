@@ -475,14 +475,14 @@ export async function getFeeConfig(): Promise<IndexedFeeConfig | null> {
 	return data.feeConfig;
 }
 
-/** The protocol address config singleton (id "singleton"), written by the
- *  AgentEscrowUpdated / OracleUpdated / TreasuryUpdated handlers. Addresses are
- *  lowercase Bytes hex; null until the corresponding event first fires. */
+/** The protocol config singleton (id "singleton"), written by the AgentEscrowUpdated /
+ *  TreasuryUpdated / OracleEncryptionKeyUpdated handlers. Values are lowercase Bytes hex; null
+ *  until the corresponding event first fires. The oracles are a set: see getOracles(). */
 export interface IndexedProtocolConfig {
 	id: string;
 	escrowAddress: string | null;
-	oracleAddress: string | null;
 	treasuryAddress: string | null;
+	oracleEncryptionKey: string | null;
 	updatedAt: string;
 }
 
@@ -493,13 +493,66 @@ export async function getProtocolConfig(): Promise<IndexedProtocolConfig | null>
       protocolConfig(id: "singleton") {
         id
         escrowAddress
-        oracleAddress
         treasuryAddress
+        oracleEncryptionKey
         updatedAt
       }
     }`,
 	);
 	return data.protocolConfig;
+}
+
+/** One address that has held the oracle role (id = lowercase address). `active` is whether it
+ *  holds the role now; `removedAt` is null while it does. */
+export interface IndexedOracle {
+	id: string;
+	address: string;
+	active: boolean;
+	addedAt: string;
+	removedAt: string | null;
+}
+
+/** Every address that has ever held the oracle role, active or not. */
+export async function getOracles(): Promise<IndexedOracle[]> {
+	const data = await graphQuery<{ oracles: IndexedOracle[] }>(
+		`query {
+      oracles(first: 100) {
+        id
+        address
+        active
+        addedAt
+        removedAt
+      }
+    }`,
+	);
+	return data.oracles;
+}
+
+/** One immutable record per oracle added ("ADDED") or removed ("REMOVED"), oldest first.
+ *  `caller` is the account that called the contract (the owner for add / remove). */
+export interface IndexedOracleChange {
+	id: string;
+	kind: string;
+	oracle: string | null;
+	caller: string | null;
+	blockNumber: string;
+}
+
+/** The add / remove history of one oracle address, oldest first. */
+export async function getOracleChanges(oracle: string): Promise<IndexedOracleChange[]> {
+	const data = await graphQuery<{ oracleChanges: IndexedOracleChange[] }>(
+		`query($oracle: Bytes!) {
+      oracleChanges(where: { oracle: $oracle }, orderBy: blockNumber, orderDirection: asc) {
+        id
+        kind
+        oracle
+        caller
+        blockNumber
+      }
+    }`,
+		{ oracle: oracle.toLowerCase() },
+	);
+	return data.oracleChanges;
 }
 
 /** A row from the protocol-wide `Activity` log (immutable, id = txHash-logIndex), written by

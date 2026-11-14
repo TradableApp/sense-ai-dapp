@@ -520,10 +520,12 @@ const ESCROW_ABI = parseAbi([
 	'function processRefund(uint256 _answerMessageId)',
 ]);
 const ERC20_APPROVE_ABI = parseAbi(['function approve(address spender, uint256 amount)']);
-// EVMAIAgent owns the oracle address (setOracle / OracleUpdated → subgraph ProtocolConfig.oracle).
+// EVMAIAgent authorizes oracles through a role several addresses can hold at once
+// (addOracle / removeOracle → RoleGranted / RoleRevoked → the subgraph's Oracle set).
 const AGENT_ABI = parseAbi([
-	'function oracle() view returns (address)',
-	'function setOracle(address _newOracle)',
+	'function isOracle(address _account) view returns (bool)',
+	'function addOracle(address _oracle)',
+	'function removeOracle(address _oracle)',
 ]);
 
 export async function getLatestBlockTimestamp(): Promise<number> {
@@ -775,28 +777,48 @@ export async function upgradeEscrowToV2(escrowAddress: string): Promise<void> {
 	}
 }
 
-/** Read the current on-chain oracle address from the EVMAIAgent. */
-export async function getOracle(agentAddress: string): Promise<string> {
-	const data = encodeFunctionData({ abi: AGENT_ABI, functionName: 'oracle', args: [] });
+/** Whether `account` holds the oracle role on the EVMAIAgent. */
+export async function isOracle(agentAddress: string, account: string): Promise<boolean> {
+	const data = encodeFunctionData({
+		abi: AGENT_ABI,
+		functionName: 'isOracle',
+		args: [account as `0x${string}`],
+	});
 	const result = await callContract(agentAddress, data);
-	return `0x${result.slice(-40)}`;
+	return BigInt(result) === 1n;
 }
 
 /**
- * Rotate the on-chain oracle address (owner-only on EVMAIAgent). Sent by the deployer/owner
- * (account 0). NOTE: the running localnet oracle keeps DECRYPTING with its signer key, but answer
- * submission is onlyOracle-gated — so once rotated it can no longer SUBMIT, and any in-flight prompt
- * is orphaned (see T-GOV-ORACLE-02). Restore the original address afterwards so the stack stays clean.
+ * Give `oracle` the oracle role (owner-only on EVMAIAgent; sent by the deployer, account 0).
+ * Several addresses can hold it at once. Adding a holder again changes nothing.
  */
-export async function setOracle(
+export async function addOracle(
 	agentAddress: string,
-	newOracle: string,
+	oracle: string,
 	fromAddress: string = DEPLOYER_ADDRESS,
 ): Promise<void> {
 	const data = encodeFunctionData({
 		abi: AGENT_ABI,
-		functionName: 'setOracle',
-		args: [newOracle as `0x${string}`],
+		functionName: 'addOracle',
+		args: [oracle as `0x${string}`],
+	});
+	await sendFrom(fromAddress, agentAddress, data);
+}
+
+/**
+ * Take the oracle role from `oracle` (owner-only). The running localnet oracle keeps decrypting
+ * with its own key, but a submission without the role is refused: it then holds the prompt and
+ * waits for the role (T-GOV-ORACLE-03). Removing an address that is not an oracle changes nothing.
+ */
+export async function removeOracle(
+	agentAddress: string,
+	oracle: string,
+	fromAddress: string = DEPLOYER_ADDRESS,
+): Promise<void> {
+	const data = encodeFunctionData({
+		abi: AGENT_ABI,
+		functionName: 'removeOracle',
+		args: [oracle as `0x${string}`],
 	});
 	await sendFrom(fromAddress, agentAddress, data);
 }
