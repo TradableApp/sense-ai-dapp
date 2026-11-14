@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import db from '@/lib/db';
 
-import { deriveKeyFromEntropy, encryptData } from './crypto';
+import { decryptData, deriveKeyFromEntropy, encryptData } from './crypto';
 import { dropCancelledAnswerPlaceholders } from './syncService';
 
 // graphql-request: capture a hoisted request mock so each test controls the
@@ -39,15 +39,24 @@ vi.mock('@/lib/payloadStorage', async importOriginal => {
 
 vi.mock('@/lib/db', () => {
 	const conversations = { get: vi.fn(), bulkPut: vi.fn() };
-	const messageCache = { get: vi.fn(), bulkPut: vi.fn() };
+	const messageCache = { get: vi.fn(), put: vi.fn(), bulkPut: vi.fn() };
 	const userMetadata = { get: vi.fn(), put: vi.fn() };
-	return { default: { conversations, messageCache, userMetadata } };
+	// A transaction runs its body in one go, as IndexedDB does.
+	const transaction = vi.fn(async (_mode: string, _table: unknown, body: () => Promise<unknown>) =>
+		body(),
+	);
+	return { default: { conversations, messageCache, userMetadata, transaction } };
 });
 
 const mockDb = db as unknown as {
 	conversations: { get: ReturnType<typeof vi.fn>; bulkPut: ReturnType<typeof vi.fn> };
-	messageCache: { get: ReturnType<typeof vi.fn>; bulkPut: ReturnType<typeof vi.fn> };
+	messageCache: {
+		get: ReturnType<typeof vi.fn>;
+		put: ReturnType<typeof vi.fn>;
+		bulkPut: ReturnType<typeof vi.fn>;
+	};
 	userMetadata: { get: ReturnType<typeof vi.fn>; put: ReturnType<typeof vi.fn> };
+	transaction: ReturnType<typeof vi.fn>;
 };
 
 const ENTROPY = 'test-sig-0xsync';
@@ -160,7 +169,34 @@ describe('syncWithRemote — message-aware hydration skip', () => {
 				String(u).includes('msga'),
 			),
 		).toBe(true);
-		expect(mockDb.messageCache.bulkPut).toHaveBeenCalled();
+		expect(mockDb.messageCache.put).toHaveBeenCalled();
+	});
+
+	it('keeps a message stored in the conversation while the sync was hydrating it', async () => {
+		const pending = [
+			{ id: 'm-prompt', role: 'user', content: 'follow-up question', createdAt: 1 },
+			{ id: 'm-answer', role: 'assistant', content: null, createdAt: 2 },
+		];
+		await seedMessageCache(pending);
+		// The user sends another prompt after the sync has read and encrypted, just before it
+		// writes: the stored list now also holds that prompt.
+		mockDb.transaction.mockImplementationOnce(
+			async (_mode: string, _table: unknown, body: () => Promise<unknown>) => {
+				await seedMessageCache([
+					...pending,
+					{ id: 'm-next-prompt', role: 'user', content: 'one more thing', createdAt: 3 },
+				]);
+				return body();
+			},
+		);
+
+		const syncWithRemote = await importSync();
+		await syncWithRemote(sessionKey, OWNER);
+
+		expect(mockDb.messageCache.bulkPut).not.toHaveBeenCalled();
+		const written = mockDb.messageCache.put.mock.calls.at(-1)?.[0];
+		const stored = (await decryptData(sessionKey, written.encryptedData)) as Array<{ id: string }>;
+		expect(stored.map(m => m.id)).toContain('m-next-prompt');
 	});
 
 	it('still skips hydration when the cache is already fully resolved', async () => {
@@ -178,7 +214,7 @@ describe('syncWithRemote — message-aware hydration skip', () => {
 				String(u).includes('msga'),
 			),
 		).toBe(false);
-		expect(mockDb.messageCache.bulkPut).not.toHaveBeenCalled();
+		expect(mockDb.messageCache.put).not.toHaveBeenCalled();
 	});
 
 	it('treats a content-less but cancelled answer as resolved (still skips)', async () => {
@@ -198,7 +234,7 @@ describe('syncWithRemote — message-aware hydration skip', () => {
 				String(u).includes('msga'),
 			),
 		).toBe(false);
-		expect(mockDb.messageCache.bulkPut).not.toHaveBeenCalled();
+		expect(mockDb.messageCache.put).not.toHaveBeenCalled();
 	});
 });
 
@@ -318,7 +354,7 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 		// conversation + metadata + one message
 		expect(result).toEqual({ unavailablePayloads: 3 });
 		expect(fetchedUrls().some(u => u.includes('gateway.autonomys.xyz'))).toBe(true);
-		expect(mockDb.messageCache.bulkPut).not.toHaveBeenCalled();
+		expect(mockDb.messageCache.put).not.toHaveBeenCalled();
 		expect(mockDb.conversations.bulkPut).not.toHaveBeenCalled();
 		// The cursor must not advance past a conversation whose payloads were withheld,
 		// or The Graph would never serve it again and it would be stranded empty.

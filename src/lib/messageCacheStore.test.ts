@@ -137,6 +137,22 @@ describe('writeMessageCache — one writer for a conversation’s stored message
 		expect(await stored()).toEqual([message('1')]);
 	});
 
+	it('treats stored data it cannot decrypt as no messages, so the write repairs it', async () => {
+		rows.set(`${OWNER}|${CONVERSATION}`, {
+			ownerAddress: OWNER,
+			conversationId: CONVERSATION,
+			encryptedData: 'not.ciphertext',
+			lastAccessedAt: 1,
+		});
+
+		await writeMessageCache(sessionKey, OWNER, CONVERSATION, current => [
+			...(current ?? []),
+			message('1'),
+		]);
+
+		expect(await stored()).toEqual([message('1')]);
+	});
+
 	it('gives up with an error when the stored messages keep changing under it', async () => {
 		let version = 0;
 
