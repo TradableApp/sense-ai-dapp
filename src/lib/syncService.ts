@@ -576,7 +576,7 @@ export default async function syncWithRemote(
 					? item.conversation.id
 					: ((item.messages[0] as Record<string, unknown>)?.conversationId as string) || '';
 
-				return writeMessageCache(sessionKey, ownerAddress, conversationId, current => {
+				const mergeHydrated = (current: Message[] | null): Message[] => {
 					// Merge by id, keyed so The Graph is authority for status/metadata, but an
 					// un-hydrated (content-less) incoming message must NOT clobber content we
 					// already delivered. See mergeMessages. This also preserves history when The
@@ -597,13 +597,33 @@ export default async function syncWithRemote(
 						}>,
 						item.cancelledAnswerIds,
 					) as unknown as Message[];
-				});
+				};
+
+				// The hydrated messages are the stored copy, so they replace data that cannot be read.
+				return writeMessageCache(sessionKey, ownerAddress, conversationId, mergeHydrated, {
+					replaceUnreadable: true,
+				}).then(
+					() => null,
+					(error: unknown) => {
+						console.error(
+							`[syncService] The messages of conversation "${conversationId}" could not be stored:`,
+							error,
+						);
+						return conversationId;
+					},
+				);
 			});
 
-		const [conversationsToCache] = await Promise.all([
+		const [allConversationsToCache, messageWriteResults] = await Promise.all([
 			Promise.all(conversationCachePromises),
 			Promise.all(messageWrites),
 		]);
+
+		// A conversation whose messages could not be stored is not recorded either: its record
+		// is what lets the next sync skip it, and it would then never get its messages. The
+		// others are recorded as usual, so one bad write does not hold every conversation back.
+		const notStored = new Set(messageWriteResults.filter(id => id !== null));
+		const conversationsToCache = allConversationsToCache.filter(c => !notStored.has(c.id));
 
 		// 5. Store the conversation records in one bulk operation.
 		if (conversationsToCache.length > 0) {
@@ -626,7 +646,9 @@ export default async function syncWithRemote(
 		// self-healing outage — banner shown, a Sentry breadcrumb every pass, fixed by
 		// repairing the mirror or unsetting VITE_PAYLOAD_MIRROR_URL — into silent data loss
 		// whenever that 404 was a fresh upload the gateway had not propagated yet.
-		if (unavailablePayloads === 0) {
+		//
+		// The same goes for a conversation whose messages could not be stored on this device.
+		if (unavailablePayloads === 0 && notStored.size === 0) {
 			await setLastSyncedAt(sessionKey, ownerAddress, newLastSync);
 		}
 		return { unavailablePayloads };

@@ -19,25 +19,36 @@ const MAX_ATTEMPTS = 5;
 const readRow = (ownerAddress: string, conversationId: string) =>
 	db.messageCache.get([ownerAddress, conversationId]);
 
+/** Stored data that cannot be used as a list of messages. */
+const UNREADABLE = Symbol('unreadable');
+
 const decryptMessages = async (
 	sessionKey: CryptoKey,
 	encryptedData: string | undefined,
-): Promise<Message[] | null> => {
+): Promise<Message[] | null | typeof UNREADABLE> => {
 	if (!encryptedData) return null;
 	try {
 		const decrypted = await decryptData(sessionKey, encryptedData);
-		// A blob that does not hold a list is treated as empty, so this write repairs it.
-		return Array.isArray(decrypted) ? (decrypted as Message[]) : [];
+		return Array.isArray(decrypted) ? (decrypted as Message[]) : UNREADABLE;
 	} catch (error) {
-		// Unreadable with this key: nothing in it can be merged, and leaving it would block every
-		// later write to the conversation. The sync restores the messages from storage.
-		console.warn(
-			'[messageCacheStore] Stored messages could not be decrypted; replacing them.',
-			error,
-		);
-		return [];
+		console.warn('[messageCacheStore] Stored messages could not be decrypted.', error);
+		return UNREADABLE;
 	}
 };
+
+export interface WriteMessageCacheOptions {
+	/**
+	 * What to do with stored data that cannot be read (written under another key, or damaged).
+	 *
+	 * By default it is left alone and nothing is written: the sync counts an unreadable
+	 * conversation as unfinished and restores it, whereas a list written over it by a writer
+	 * that only removes or reorders would look finished and be skipped from then on.
+	 *
+	 * A writer that brings messages of its own (the sync, a prompt being sent, a new branch)
+	 * sets this, and its merge is given an empty list in place of the unreadable data.
+	 */
+	replaceUnreadable?: boolean;
+}
 
 /**
  * The only way a conversation's stored messages are written.
@@ -54,19 +65,22 @@ const decryptMessages = async (
  * same row exactly when their ciphertext is the same string.
  *
  * @returns The messages now stored (what the merge returned, or what was already there when it
- *          returned `null`).
+ *          returned `null`); `null` also when unreadable data was left alone.
  */
 export const writeMessageCache = async (
 	sessionKey: CryptoKey,
 	ownerAddress: string,
 	conversationId: string,
 	merge: MessageCacheMerge,
+	{ replaceUnreadable = false }: WriteMessageCacheOptions = {},
 ): Promise<Message[] | null> => {
 	for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
 		// eslint-disable-next-line no-await-in-loop -- each attempt must see the previous one's outcome
 		const seen = (await readRow(ownerAddress, conversationId))?.encryptedData;
 		// eslint-disable-next-line no-await-in-loop
-		const current = await decryptMessages(sessionKey, seen);
+		const read = await decryptMessages(sessionKey, seen);
+		if (read === UNREADABLE && !replaceUnreadable) return null;
+		const current = read === UNREADABLE ? [] : read;
 		// eslint-disable-next-line no-await-in-loop
 		const next = await merge(current);
 		if (next === null) return current;

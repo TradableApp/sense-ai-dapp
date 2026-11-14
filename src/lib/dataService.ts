@@ -141,9 +141,12 @@ const readCachedMessages = async (
 		// Heal the stored list when duplicates were actually collapsed, so it is not collapsed
 		// again on every read and is not seen by paths that read the table directly.
 		if (sortedMessages.length < decryptedData.length) {
-			await writeMessageCache(sessionKey, ownerAddress, conversationId, current =>
-				current ? collapseDuplicates(current) : null,
-			);
+			await writeMessageCache(sessionKey, ownerAddress, conversationId, current => {
+				if (!current) return null;
+				const collapsed = collapseDuplicates(current);
+				// Another reader may have healed it already: nothing to write then.
+				return collapsed.length < current.length ? collapsed : null;
+			});
 		}
 
 		return sortedMessages;
@@ -259,11 +262,17 @@ const createMessageWorkflow = async (
 	_queryClient?: QueryClient,
 ): Promise<void> => {
 	const created = userMessage ? [userMessage, aiMessage] : [aiMessage];
-	// `existingMessages` is what the caller read a moment ago. What is stored now may hold more
-	// (a sync landed in between), so the new messages are added to both, stored versions first.
+	// Added to what is stored at the moment of writing, not to `existingMessages`, which the
+	// caller read a moment ago: a sync may have stored more since, and a cancel may have removed
+	// a message that `existingMessages` would bring back. `existingMessages` is used only when
+	// nothing is stored.
 	const newMessages =
-		(await writeMessageCache(sessionKey, ownerAddress, conversationId, current =>
-			withAdded(withAdded(existingMessages, current ?? []), created),
+		(await writeMessageCache(
+			sessionKey,
+			ownerAddress,
+			conversationId,
+			current => withAdded(current ?? existingMessages, created),
+			{ replaceUnreadable: true },
 		)) ?? [];
 
 	// A copy: updateAndEncryptConversation sorts the list it is given.
@@ -536,8 +545,12 @@ export const branchConversation = async (
 		encryptedData: encryptedNewConv,
 	});
 	// A sync may already have stored the branch's own messages: they stay, in front of nothing.
-	await writeMessageCache(sessionKey, ownerAddress, newConversation.id, current =>
-		withInherited(current ?? [], newMessages),
+	await writeMessageCache(
+		sessionKey,
+		ownerAddress,
+		newConversation.id,
+		current => withInherited(current ?? [], newMessages),
+		{ replaceUnreadable: true },
 	);
 	console.log(`[dataService] Created new branched conversation "${newConversation.id}".`);
 
@@ -640,7 +653,7 @@ export const deleteMessageFromConversation = async (
 
 	try {
 		// Removed from whatever is stored at the moment of writing, so a message a sync stored
-		// meanwhile is kept. Nothing stored means nothing to remove.
+		// meanwhile is kept. Nothing stored, or nothing readable, means nothing to remove.
 		const newMessages = await writeMessageCache(sessionKey, ownerAddress, conversationId, current =>
 			current ? current.filter(m => m.id !== messageId) : null,
 		);
