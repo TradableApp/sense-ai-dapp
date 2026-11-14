@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import promptParentFor from './promptParent';
+import promptParentFor, { composerStateFor } from './promptParent';
 
 const shown = (id: string, messageCID: string | null = `cid-${id}`) => ({ id, messageCID });
 
@@ -59,5 +59,91 @@ describe('promptParentFor — what a new prompt threads off', () => {
 		});
 
 		expect(result).toEqual({ kind: 'hold' });
+	});
+});
+
+describe('composerStateFor — whether a prompt can be sent now', () => {
+	const settled = {
+		activeConversationId: '7',
+		conversation: { branchedFromConversationId: null } as {
+			branchedFromConversationId?: string | null;
+		},
+		isConversationSettled: true,
+		messagesShown: [shown('51'), shown('53')],
+		areMessagesSettled: true,
+	};
+	const branch = { branchedFromConversationId: '3' };
+
+	it('is ready with no parent when there is no conversation yet', () => {
+		expect(
+			composerStateFor({
+				activeConversationId: null,
+				conversation: undefined,
+				isConversationSettled: false,
+				messagesShown: [],
+				areMessagesSettled: false,
+			}),
+		).toEqual({ kind: 'ready', parentId: null, parentCID: null, hasBranchOrigin: false });
+	});
+
+	it('is ready, threading off the last message shown, in a conversation that has loaded', () => {
+		expect(composerStateFor(settled)).toEqual({
+			kind: 'ready',
+			parentId: 53,
+			parentCID: 'cid-53',
+			hasBranchOrigin: false,
+		});
+	});
+
+	it('is loading while the messages of the conversation have not been read', () => {
+		// Opening a branch shows nothing for the length of the read. That is not a branch
+		// without its history, and saying so on every open would be wrong.
+		expect(
+			composerStateFor({
+				...settled,
+				conversation: branch,
+				messagesShown: [],
+				areMessagesSettled: false,
+			}),
+		).toEqual({ kind: 'loading' });
+	});
+
+	it('is loading while it is not known whether the conversation is a branch', () => {
+		// Right after a branch is made its record is not in the list yet. A prompt sent in that
+		// moment with nothing shown would go out with no parent, flagged new.
+		expect(
+			composerStateFor({
+				...settled,
+				conversation: undefined,
+				isConversationSettled: false,
+				messagesShown: [],
+			}),
+		).toEqual({ kind: 'loading' });
+	});
+
+	it('holds a branch that shows nothing once everything has been read', () => {
+		expect(composerStateFor({ ...settled, conversation: branch, messagesShown: [] })).toEqual({
+			kind: 'hold',
+		});
+	});
+
+	it('is ready in a branch that shows messages, and says it is a branch', () => {
+		expect(composerStateFor({ ...settled, conversation: branch })).toEqual({
+			kind: 'ready',
+			parentId: 53,
+			parentCID: 'cid-53',
+			hasBranchOrigin: true,
+		});
+	});
+
+	it('treats a conversation with no record, once that is settled, as not a branch', () => {
+		// A conversation whose only prompts were cancelled has no stored record; its resend has
+		// no parent and is flagged new, as before.
+		expect(composerStateFor({ ...settled, conversation: undefined, messagesShown: [] })).toEqual({
+			kind: 'ready',
+			parentId: null,
+			parentCID: null,
+			hasBranchOrigin: false,
+		});
 	});
 });
