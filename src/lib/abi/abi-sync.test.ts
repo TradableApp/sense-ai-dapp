@@ -158,6 +158,108 @@ describe('EVMAIAgentEscrow ABI — SafeERC20 surface (tokenized-ai-agent#86)', (
 });
 
 /**
+ * THE PRE-MAINNET CONTRACT SERIES.
+ *
+ * The agent and escrow changed shape over a run of contract PRs: a timeout refund is recorded on
+ * the agent, the single oracle address became a role several addresses can hold, the oracle's
+ * encryption key moved on chain, every oracle-work request is counted, and a failed refund record
+ * can be retried. These cases pin the entries this app reads or will read, and the three that
+ * must be gone — an ABI that still offers `oracle()` encodes a call the contract no longer has.
+ */
+describe('EVMAIAgent ABI — oracle role, on-chain encryption key, refund record, request counter', () => {
+	const raw = loadAbi('EVMAIAgent.json');
+	const abi = Array.isArray(raw) ? raw : raw.abi ?? [];
+	const find = (type: string, name: string) =>
+		abi.find((x: unknown) => (x as any).type === type && (x as any).name === name);
+
+	it('oracleEncryptionKey returns bytes', () => {
+		const fn = find('function', 'oracleEncryptionKey');
+		expect(fn).toBeDefined();
+		expect(fn.inputs).toHaveLength(0);
+		expect(fn.outputs).toMatchObject([{ type: 'bytes' }]);
+	});
+
+	it('OracleEncryptionKeyUpdated carries the new key', () => {
+		const event = find('event', 'OracleEncryptionKeyUpdated');
+		expect(event).toBeDefined();
+		expect(event.inputs).toMatchObject([{ name: 'newKey', type: 'bytes', indexed: false }]);
+	});
+
+	it('isOracle takes an address and returns bool', () => {
+		const fn = find('function', 'isOracle');
+		expect(fn).toBeDefined();
+		expect(fn.inputs).toMatchObject([{ type: 'address' }]);
+		expect(fn.outputs).toMatchObject([{ type: 'bool' }]);
+	});
+
+	it.each(['addOracle', 'removeOracle'])('%s takes one address', name => {
+		const fn = find('function', name);
+		expect(fn).toBeDefined();
+		expect(fn.inputs).toMatchObject([{ type: 'address' }]);
+	});
+
+	it.each([
+		['function', 'oracle'],
+		['function', 'setOracle'],
+		['event', 'OracleUpdated'],
+	])('the single-oracle %s %s is gone', (type, name) => {
+		expect(find(type, name)).toBeUndefined();
+	});
+
+	it('PromptRefunded indexes user and answerMessageId', () => {
+		const event = find('event', 'PromptRefunded');
+		expect(event).toBeDefined();
+		expect(event.inputs).toMatchObject([
+			{ name: 'user', type: 'address', indexed: true },
+			{ name: 'answerMessageId', type: 'uint256', indexed: true },
+		]);
+	});
+
+	it('requestCount returns uint256 and requestBlock maps a request number to a block', () => {
+		const count = find('function', 'requestCount');
+		expect(count).toBeDefined();
+		expect(count.outputs).toMatchObject([{ type: 'uint256' }]);
+		const block = find('function', 'requestBlock');
+		expect(block).toBeDefined();
+		expect(block.inputs).toMatchObject([{ type: 'uint256' }]);
+		expect(block.outputs).toMatchObject([{ type: 'uint256' }]);
+	});
+});
+
+describe('EVMAIAgentEscrow ABI — refund-record retry and direct-payment event', () => {
+	const raw = loadAbi('EVMAIAgentEscrow.json');
+	const abi = Array.isArray(raw) ? raw : raw.abi ?? [];
+	const find = (type: string, name: string) =>
+		abi.find((x: unknown) => (x as any).type === type && (x as any).name === name);
+
+	it('retryRefundRecord accepts _answerMessageId uint256', () => {
+		const fn = find('function', 'retryRefundRecord');
+		expect(fn).toBeDefined();
+		expect(fn.inputs).toMatchObject([{ name: '_answerMessageId', type: 'uint256' }]);
+	});
+
+	it.each(['RefundRecordFailed', 'RefundRecordRetried'])('%s indexes the escrow id', name => {
+		const event = find('event', name);
+		expect(event).toBeDefined();
+		expect(event.inputs).toMatchObject([{ name: 'escrowId', type: 'uint256', indexed: true }]);
+	});
+
+	it('DirectPaymentProcessed indexes user and amount', () => {
+		const event = find('event', 'DirectPaymentProcessed');
+		expect(event).toBeDefined();
+		expect(event.inputs).toMatchObject([
+			{ name: 'user', type: 'address', indexed: true },
+			{ name: 'amount', type: 'uint256', indexed: true },
+		]);
+	});
+
+	// Decodability: retrying a record for an escrow that was never refunded reverts with this.
+	it('EscrowNotRefunded error exists', () => {
+		expect(find('error', 'EscrowNotRefunded')).toBeDefined();
+	});
+});
+
+/**
  * SOURCE.json records which upstream commit each ABI came from — the same pin-the-upstream-commit
  * pattern this org already uses for the Brain (EXPECTED_BRAIN_SHA).
  *
