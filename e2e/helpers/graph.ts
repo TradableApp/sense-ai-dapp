@@ -477,7 +477,8 @@ export async function getFeeConfig(): Promise<IndexedFeeConfig | null> {
 
 /** The protocol config singleton (id "singleton"), written by the AgentEscrowUpdated /
  *  TreasuryUpdated / OracleEncryptionKeyUpdated handlers. Values are lowercase Bytes hex; null
- *  until the corresponding event first fires. The oracles are a set: see getOracles(). */
+ *  until the corresponding event first fires. The encryption key is null again once the oracle
+ *  that published it loses its role. The oracles are a set: see getOracles(). */
 export interface IndexedProtocolConfig {
 	id: string;
 	escrowAddress: string | null;

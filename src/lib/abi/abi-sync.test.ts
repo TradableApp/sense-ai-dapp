@@ -179,10 +179,36 @@ describe('EVMAIAgent ABI — oracle role, on-chain encryption key, refund record
 		expect(fn.outputs).toMatchObject([{ type: 'bytes' }]);
 	});
 
-	it('OracleEncryptionKeyUpdated carries the new key', () => {
+	it('OracleEncryptionKeyUpdated carries the publishing oracle, indexed, and the new key', () => {
 		const event = find('event', 'OracleEncryptionKeyUpdated');
 		expect(event).toBeDefined();
-		expect(event.inputs).toMatchObject([{ name: 'newKey', type: 'bytes', indexed: false }]);
+		expect(event.inputs).toHaveLength(2);
+		expect(event.inputs).toMatchObject([
+			{ name: 'publisher', type: 'address', indexed: true },
+			{ name: 'newKey', type: 'bytes', indexed: false },
+		]);
+	});
+
+	it('oracleEncryptionKeyPublisher returns the address that published the key', () => {
+		const fn = find('function', 'oracleEncryptionKeyPublisher');
+		expect(fn).toBeDefined();
+		expect(fn.inputs).toHaveLength(0);
+		expect(fn.outputs).toMatchObject([{ type: 'address' }]);
+	});
+
+	it('setOracleEncryptionKey takes the key and a proof made by it', () => {
+		const fn = find('function', 'setOracleEncryptionKey');
+		expect(fn).toBeDefined();
+		expect(fn.inputs).toHaveLength(2);
+		expect(fn.inputs).toMatchObject([
+			{ name: '_newKey', type: 'bytes' },
+			{ name: '_proof', type: 'bytes' },
+		]);
+	});
+
+	it('declares the errors a refused key publication reverts with', () => {
+		expect(find('error', 'InvalidEncryptionKeyProof')).toBeDefined();
+		expect(find('error', 'EncryptionKeyHeldByAnotherOracle')).toBeDefined();
 	});
 
 	it('isOracle takes an address and returns bool', () => {
