@@ -1,5 +1,13 @@
 import type { Message } from './types';
 
+/** A message's parent id as a string: a message written on the sending device can carry a number. */
+const parentIdOf = (message: Message): string | undefined => {
+	const { parentId }: { parentId?: unknown } = message;
+	return parentId === undefined || parentId === null || parentId === ''
+		? undefined
+		: String(parentId);
+};
+
 /**
  * The messages a branch inherits: the path from the original's first message to the branch
  * point, oldest first, copied under the branch's id.
@@ -17,17 +25,27 @@ export default function inheritedHistory(
 	branchPointMessageId: string,
 	branchConversationId: string,
 ): Message[] {
-	const byId = new Map(parentMessages.map(message => [message.id, message]));
+	const byId = new Map(parentMessages.map(message => [String(message.id), message]));
 	const path: Message[] = [];
 	const seen = new Set<string>();
 
 	let currentId: string | undefined = branchPointMessageId;
-	while (currentId && byId.has(currentId) && !seen.has(currentId)) {
+	while (currentId !== undefined && !seen.has(currentId)) {
+		const message = byId.get(currentId);
+		if (!message) break;
 		seen.add(currentId);
-		const message = byId.get(currentId) as Message;
 		path.unshift({ ...message, conversationId: branchConversationId });
-		currentId = message.parentId;
+		currentId = parentIdOf(message);
 	}
 
 	return path;
+}
+
+/**
+ * True when a path from `inheritedHistory` goes all the way back to a first message. A path
+ * that stops short (a message the device does not hold yet) is a cut-off history: fine to show,
+ * not to keep as the branch's history.
+ */
+export function reachesFirstMessage(path: Message[]): boolean {
+	return path.length > 0 && parentIdOf(path[0]) === undefined;
 }
