@@ -49,6 +49,16 @@ export async function createWalletContext(
 	return context;
 }
 
+export interface OpenDeviceOptions {
+	/**
+	 * Runs on the device's context before its page first loads. The device connects and starts
+	 * its first sync as it opens, so anything that must be in place for that sync (a route
+	 * intercept that makes storage fail, for one) is set here.
+	 */
+	// eslint-disable-next-line no-unused-vars -- the name documents the type's parameter
+	beforeFirstLoad?: (context: BrowserContext) => Promise<unknown>;
+}
+
 /**
  * Opens a brand-new "device" — a fresh BrowserContext (its own empty IndexedDB) whose mock wallet
  * impersonates `account`, then completes the real connect + session-key signature. Two devices on
@@ -63,9 +73,11 @@ export async function openDevice(
 	browser: Browser,
 	account: HardhatAccount,
 	openContexts: BrowserContext[],
+	{ beforeFirstLoad }: OpenDeviceOptions = {},
 ): Promise<Device> {
 	const context = await createWalletContext(browser, account);
 	openContexts.push(context);
+	await beforeFirstLoad?.(context);
 	const page = await context.newPage();
 	await page.goto('/');
 	await new AuthPage(page).connectAndSign();
