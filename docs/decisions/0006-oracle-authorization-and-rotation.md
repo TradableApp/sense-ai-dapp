@@ -1,8 +1,12 @@
 # 6. Oracle authorization & rotation — multi-oracle role + shared decryption key
 
-**Status:** Accepted (deferred — implement after the SenseAI e2e campaign; tracked by
+**Status:** Accepted, partly implemented (tracked by
 [tokenized-ai-agent#42](https://github.com/TradableApp/tokenized-ai-agent/issues/42) +
-[CU-86d3cx5qt](https://app.clickup.com/t/86d3cx5qt))
+[CU-86d3cx5qt](https://app.clickup.com/t/86d3cx5qt)). Built: the oracle role on the contracts
+(`ORACLE_ROLE`, owner-only `addOracle` / `removeOracle`, the encryption key stored on the agent),
+an oracle that waits for its role instead of stopping, the subgraph's oracle set and change
+history, and the e2e specs `T-GOV-ORACLE-01..03`. Not built yet: the dApp reading the key from
+chain, the shared decryption key across oracles, and a cut-over between two live oracles.
 **Applies to:** system-wide (`tokenized-ai-agent` contracts + oracle, `sense-ai-subgraph`,
 `sense-ai-dapp`) — recorded here alongside the other decision logs; move to an oracle/infra
 `docs/decisions/` if one is created and leave a pointer.
@@ -75,10 +79,11 @@ Adopt **multi-oracle role-based authorization + a shared decryption key** ("Opti
   UUPS, Hardhat tests for overlap/no-orphan) → P2 oracle (multi-oracle + shared key + remove the
   FATAL-wedge) → P3 subgraph (oracle-set indexing) → P4 dApp (read active key from chain) → P5 e2e
   (assert a *sequenced* rotation is zero-downtime, replacing the current orphan guard).
-- **Until it lands:** the dApp e2e captures the current behavior — `T-GOV-ORACLE-02` asserts that a
-  mid-flight rotation orphans the in-flight prompt — so the known risk is locked in as a regression
-  guard rather than silently assumed safe.
-- **Alternatives rejected:** the single-address atomic swap (current — orphans in-flight prompts);
+- **e2e:** `T-GOV-ORACLE-02` used to assert that a rotation orphaned the prompt in flight. It now
+  asserts the opposite for a rotation with an overlap, and `T-GOV-ORACLE-03` asserts that an oracle
+  whose role is removed mid-flight keeps the prompt and answers it once the role is back. The
+  localnet runs one oracle process, so a cut-over between two live oracles is not exercised.
+- **Alternatives rejected:** the single-address atomic swap (the earlier design — orphans in-flight prompts);
   Option A distinct-key-per-oracle (old oracle must drain, more complex dApp key-switching, no seamless
   takeover); operational "drain before rotating" (pause + wait for all pending to settle — doesn't
   help an *urgent* rotation, e.g. a compromised key).
