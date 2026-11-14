@@ -239,6 +239,157 @@ describe('getMessagesForConversation', () => {
 	});
 });
 
+describe('getMessagesForConversation — a branch rebuilds its inherited history', () => {
+	let sessionKey: CryptoKey;
+
+	const message = (id: string, conversationId: string, parentId?: string) => ({
+		id,
+		conversationId,
+		parentId,
+		role: Number(id) % 2 === 1 ? 'user' : 'assistant',
+		content: `content of ${id}`,
+		createdAt: Number(id) * 1000,
+	});
+
+	/** An in-memory stand-in for the two tables: conversation records and message caches. */
+	const seed = async (
+		conversations: Array<Record<string, unknown>>,
+		caches: Record<string, unknown[]>,
+	) => {
+		const convRecords = new Map<string, unknown>();
+		for (const conv of conversations) {
+			convRecords.set(conv.id as string, {
+				ownerAddress: OWNER,
+				id: conv.id,
+				encryptedData: await encryptData(sessionKey, conv),
+			});
+		}
+		const cacheRecords = new Map<string, { encryptedData: string }>();
+		for (const [conversationId, messages] of Object.entries(caches)) {
+			cacheRecords.set(conversationId, {
+				encryptedData: await encryptData(sessionKey, messages),
+			});
+		}
+		mockDb.conversations.get.mockImplementation(async ([, id]: [string, string]) =>
+			convRecords.get(id),
+		);
+		mockDb.messageCache.get.mockImplementation(async ([, id]: [string, string]) =>
+			cacheRecords.get(id),
+		);
+		mockDb.messageCache.update.mockResolvedValue(undefined);
+		mockDb.messageCache.put.mockImplementation(async (record: any) => {
+			cacheRecords.set(record.conversationId, record);
+		});
+		return cacheRecords;
+	};
+
+	beforeEach(async () => {
+		sessionKey = await deriveKeyFromEntropy(ENTROPY, OWNER);
+		vi.resetAllMocks();
+	});
+
+	// original: 1 → 2 → 3 → 4. The branch was taken at 2, and 6 is a second version of 2 made
+	// inside the branch (its parent is the inherited prompt 1).
+	const ORIGINAL = [
+		message('1', 'original'),
+		message('2', 'original', '1'),
+		message('3', 'original', '2'),
+		message('4', 'original', '3'),
+	];
+	const BRANCH = {
+		id: 'branch',
+		branchedFromConversationId: 'original',
+		branchedAtMessageId: '2',
+	};
+
+	it('puts the inherited prompt and answer in front of what was created in the branch', async () => {
+		await seed([{ id: 'original' }, BRANCH], {
+			original: ORIGINAL,
+			branch: [message('6', 'branch', '1')],
+		});
+
+		const result = await getMessagesForConversation(sessionKey, OWNER, 'branch');
+
+		expect(result.map(m => m.id)).toEqual(['1', '2', '6']);
+		expect(result.every(m => m.conversationId === 'branch')).toBe(true);
+	});
+
+	it('rebuilds a branch that has no messages of its own yet', async () => {
+		await seed([{ id: 'original' }, BRANCH], { original: ORIGINAL });
+
+		const result = await getMessagesForConversation(sessionKey, OWNER, 'branch');
+
+		expect(result.map(m => m.id)).toEqual(['1', '2']);
+	});
+
+	it('stores the rebuilt history, so the next read does not need the original', async () => {
+		const caches = await seed([{ id: 'original' }, BRANCH], {
+			original: ORIGINAL,
+			branch: [message('6', 'branch', '1')],
+		});
+
+		await getMessagesForConversation(sessionKey, OWNER, 'branch');
+		caches.delete('original');
+		const again = await getMessagesForConversation(sessionKey, OWNER, 'branch');
+
+		expect(again.map(m => m.id)).toEqual(['1', '2', '6']);
+	});
+
+	it('rebuilds a branch of a branch through both parents', async () => {
+		// The second branch was taken at 6, the version made inside the first branch.
+		await seed(
+			[
+				{ id: 'original' },
+				BRANCH,
+				{ id: 'second', branchedFromConversationId: 'branch', branchedAtMessageId: '6' },
+			],
+			{ original: ORIGINAL, branch: [message('6', 'branch', '1')] },
+		);
+
+		const result = await getMessagesForConversation(sessionKey, OWNER, 'second');
+
+		expect(result.map(m => m.id)).toEqual(['1', '6']);
+		expect(result.every(m => m.conversationId === 'second')).toBe(true);
+	});
+
+	it('leaves a branch that already holds its branch point alone', async () => {
+		const caches = await seed([{ id: 'original' }, BRANCH], {
+			original: ORIGINAL,
+			branch: [message('1', 'branch'), message('2', 'branch', '1')],
+		});
+		const before = caches.get('branch');
+
+		const result = await getMessagesForConversation(sessionKey, OWNER, 'branch');
+
+		expect(result.map(m => m.id)).toEqual(['1', '2']);
+		expect(mockDb.messageCache.put).not.toHaveBeenCalled();
+		expect(caches.get('branch')).toBe(before);
+	});
+
+	it('returns what the branch has when the original is not on this device yet', async () => {
+		await seed([BRANCH], { branch: [message('6', 'branch', '1')] });
+
+		const result = await getMessagesForConversation(sessionKey, OWNER, 'branch');
+
+		expect(result.map(m => m.id)).toEqual(['6']);
+		expect(mockDb.messageCache.put).not.toHaveBeenCalled();
+	});
+
+	it('does not loop when two conversations name each other as parent', async () => {
+		await seed(
+			[
+				{ id: 'a', branchedFromConversationId: 'b', branchedAtMessageId: '2' },
+				{ id: 'b', branchedFromConversationId: 'a', branchedAtMessageId: '2' },
+			],
+			{ a: [message('6', 'a', '1')], b: [message('8', 'b', '1')] },
+		);
+
+		const result = await getMessagesForConversation(sessionKey, OWNER, 'a');
+
+		expect(result.map(m => m.id)).toEqual(['6']);
+	});
+});
+
 describe('getConversation', () => {
 	let sessionKey: CryptoKey;
 
