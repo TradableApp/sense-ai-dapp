@@ -53,6 +53,15 @@ describe('promptParentFor — what a new prompt threads off', () => {
 		expect(result).toEqual({ kind: 'parent', parentId: null, parentCID: null });
 	});
 
+	it('has no parent when the last message shown has an empty id', () => {
+		// Number('') is 0, and 0 is a real message id.
+		expect(promptParentFor([{ id: '', messageCID: null }], { hasBranchOrigin: false })).toEqual({
+			kind: 'parent',
+			parentId: null,
+			parentCID: null,
+		});
+	});
+
 	it('holds the prompt in a branch whose last message shown has no usable id', () => {
 		const result = promptParentFor([{ id: undefined, messageCID: null }], {
 			hasBranchOrigin: true,
