@@ -332,7 +332,10 @@ export class ChatPage {
 	 */
 	async editLatestUserMessage(newText: string) {
 		await this.userMessages.last().hover();
-		await this.page.getByRole('button', { name: 'Edit message' }).first().click();
+		// Every user message has its own Edit button (hidden until hovered, but present), so
+		// the latest message's is the last one. `.first()` edited the FIRST prompt of a
+		// conversation that had more than one.
+		await this.page.getByRole('button', { name: 'Edit message' }).last().click();
 		// The inline editor REPLACES the user bubble, and `:focus` is flaky (a React
 		// re-render can blur the textarea while Playwright resolves the locator). Scope
 		// to the edit form instead — it's the only PromptInput carrying a "Cancel"
