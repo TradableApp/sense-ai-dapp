@@ -4,6 +4,7 @@ import db from '@/lib/db';
 
 import { deriveKeyFromEntropy, encryptData } from './crypto';
 import {
+	addMessageToConversation,
 	deleteConversation,
 	deleteMessageFromConversation,
 	fetchAndCacheConversations,
@@ -26,9 +27,14 @@ vi.mock('@/lib/db', () => {
 		update: vi.fn(),
 		delete: vi.fn(),
 		where: vi.fn(),
+		bulkDelete: vi.fn(),
 	};
+	// A transaction runs its body in one go, as IndexedDB does.
+	const transaction = vi.fn(async (_mode: string, _table: unknown, body: () => Promise<unknown>) =>
+		body(),
+	);
 	return {
-		default: { conversations, messageCache },
+		default: { conversations, messageCache, transaction },
 	};
 });
 
@@ -292,8 +298,34 @@ describe('getMessagesForConversation — a branch rebuilds its inherited history
 		mockDb.messageCache.put.mockImplementation(async (record: any) => {
 			cacheRecords.set(record.conversationId, record);
 		});
+		mockDb.conversations.put.mockImplementation(async (record: any) => {
+			convRecords.set(record.id, record);
+		});
+		mockDb.messageCache.where.mockReturnValue({ count: vi.fn().mockResolvedValue(0) });
+		mockDb.transaction.mockImplementation(
+			async (_mode: string, _table: unknown, body: () => Promise<unknown>) => body(),
+		);
 		return cacheRecords;
 	};
+
+	/**
+	 * Another writer (a sync, or a prompt being sent) stores `messages` in `conversationId` at
+	 * the last moment a writer can lose to it: after that writer has read and encrypted, just
+	 * before its write.
+	 */
+	const writeElsewhereJustBeforeTheNextWrite = (
+		caches: Map<string, { encryptedData: string }>,
+		conversationId: string,
+		messages: unknown[],
+	) => {
+		mockDb.transaction.mockImplementationOnce(
+			async (_mode: string, _table: unknown, body: () => Promise<unknown>) => {
+				caches.set(conversationId, { encryptedData: await encryptData(sessionKey, messages) });
+				return body();
+			},
+		);
+	};
+	const queryClient = { invalidateQueries: vi.fn() } as any;
 
 	beforeEach(async () => {
 		sessionKey = await deriveKeyFromEntropy(ENTROPY, OWNER);
@@ -438,6 +470,71 @@ describe('getMessagesForConversation — a branch rebuilds its inherited history
 		const stored = await getMessagesForConversation(sessionKey, OWNER, 'branch');
 
 		expect(stored.map(m => m.id)).toEqual(['1', '2', '6']);
+	});
+
+	it('keeps a message written to the branch after the rebuild last read it', async () => {
+		const caches = await seed([{ id: 'original' }, BRANCH], { original: ORIGINAL });
+		writeElsewhereJustBeforeTheNextWrite(caches, 'branch', [message('6', 'branch', '1')]);
+
+		await getMessagesForConversation(sessionKey, OWNER, 'branch');
+		const stored = await getMessagesForConversation(sessionKey, OWNER, 'branch');
+
+		expect(stored.map(m => m.id)).toEqual(['1', '2', '6']);
+	});
+
+	it('sending a prompt keeps a message a sync stored after the conversation was read', async () => {
+		const caches = await seed([{ id: 'original' }], { original: ORIGINAL.slice(0, 2) });
+		writeElsewhereJustBeforeTheNextWrite(caches, 'original', ORIGINAL.slice(0, 3));
+
+		await addMessageToConversation(
+			sessionKey,
+			OWNER,
+			'original',
+			'2',
+			'a new prompt',
+			'11',
+			'12',
+			queryClient,
+		);
+		const stored = await getMessagesForConversation(sessionKey, OWNER, 'original');
+
+		// 3 came from the sync; 11 and 12 are the prompt and its pending answer.
+		expect(stored.map(m => m.id).sort()).toEqual(['1', '11', '12', '2', '3']);
+	});
+
+	it('removing a cancelled message keeps a message stored while it was being removed', async () => {
+		const caches = await seed([{ id: 'original' }], { original: ORIGINAL.slice(0, 2) });
+		writeElsewhereJustBeforeTheNextWrite(caches, 'original', ORIGINAL.slice(0, 3));
+
+		await deleteMessageFromConversation(sessionKey, OWNER, 'original', '2', queryClient);
+		const stored = await getMessagesForConversation(sessionKey, OWNER, 'original');
+
+		expect(stored.map(m => m.id)).toEqual(['1', '3']);
+	});
+
+	it('storing a message never removes the stored messages of another conversation', async () => {
+		await seed([{ id: 'original' }], { original: ORIGINAL.slice(0, 2) });
+		// Seven conversations are stored for this owner: more than the limit there used to be.
+		const keysOfOthers = [1, 2].map(n => [OWNER, `other-${n}`]);
+		mockDb.messageCache.where.mockReturnValue({
+			count: vi.fn().mockResolvedValue(7),
+			limit: vi.fn().mockReturnValue({ keys: vi.fn().mockResolvedValue(keysOfOthers) }),
+		});
+		mockDb.messageCache.bulkDelete.mockResolvedValue(undefined);
+
+		await addMessageToConversation(
+			sessionKey,
+			OWNER,
+			'original',
+			'2',
+			'a new prompt',
+			'11',
+			'12',
+			queryClient,
+		);
+
+		expect(mockDb.messageCache.bulkDelete).not.toHaveBeenCalled();
+		expect(mockDb.messageCache.delete).not.toHaveBeenCalled();
 	});
 
 	it('does not loop when two conversations name each other as parent', async () => {
