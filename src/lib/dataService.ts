@@ -225,8 +225,9 @@ const resolveMessages = async (
 	// The original is not on this device yet (or no longer holds the branch point): show what
 	// the branch has, and try again on the next read.
 	if (inherited.length === 0) return own;
-	// The original is missing an earlier message on this device. Show what there is, but keep
-	// nothing: a stored cut-off history would never be completed.
+	// The original is missing an earlier message on this device. Show what there is without
+	// storing it: only a whole history is kept as the branch's, and the next read stores it
+	// once the original is whole.
 	if (!reachesFirstMessage(inherited)) return withInherited(own, inherited);
 
 	// Read the branch again just before writing: a sync or a prompt being sent may have stored
