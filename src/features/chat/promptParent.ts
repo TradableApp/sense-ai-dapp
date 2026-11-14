@@ -22,9 +22,10 @@ export default function promptParentFor(
 	{ hasBranchOrigin }: { hasBranchOrigin: boolean },
 ): PromptParent {
 	const last = messagesShown?.at(-1);
-	// Message ids are numeric strings ("53"). A missing id must not become 0, which is a real
-	// id: Number(null) is 0, so it is replaced before parsing.
-	const parsed = Number(last?.id ?? NaN);
+	// Message ids are numeric strings ("53"). A missing or empty id must not become 0, which is
+	// a real id: Number(null) and Number('') are both 0, so they are replaced before parsing.
+	const id = last?.id;
+	const parsed = id === null || id === undefined || id === '' ? NaN : Number(id);
 	const parentId = Number.isFinite(parsed) ? parsed : null;
 
 	if (parentId === null) {

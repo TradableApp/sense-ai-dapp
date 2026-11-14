@@ -163,7 +163,11 @@ export default function Chat() {
 	const { data: conversations } = useConversations();
 	const currentConversation = conversations?.find(c => c.id === activeConversationId);
 
-	const { data: activeConversationMetadata, isFetched: isMetadataFetched } = useQuery({
+	const {
+		data: activeConversationMetadata,
+		isFetched: isMetadataFetched,
+		isFetching: isMetadataFetching,
+	} = useQuery({
 		queryKey: ['conversations', 'metadata', activeConversationId, sessionKey, ownerAddress],
 		queryFn: () => {
 			if (!sessionKey || !ownerAddress || !activeConversationId) return null;
@@ -276,9 +280,13 @@ export default function Chat() {
 	const composer = composerStateFor({
 		activeConversationId,
 		conversation: currentConversation ?? activeConversationMetadata,
-		isConversationSettled: isMetadataFetched,
+		// Fetched and not being fetched again: `isFetched` stays true from an earlier visit, when
+		// the record may not have existed yet.
+		isConversationSettled: isMetadataFetched && !isMetadataFetching,
 		messagesShown: messagesToDisplay,
-		// Read, and what was read is what is shown: the store is filled one render after the read.
+		// Read, and what was read is what is shown. The third clause is needed: the store is
+		// emptied when the conversation changes and filled one render AFTER the read returns, so
+		// in between the read has messages and the screen has none.
 		areMessagesSettled:
 			isSuccess &&
 			!isFetching &&
@@ -419,10 +427,8 @@ export default function Chat() {
 				sessionKey,
 				parentId: originalMessage.parentId ?? null,
 				parentCID: parentMessage?.messageCID ?? null,
-				// An edit is made on a message that is shown, so the record has been read by now.
-				hasBranchOrigin: Boolean(
-					(currentConversation ?? activeConversationMetadata)?.branchedFromConversationId,
-				),
+				// An edit is made on a message that is shown, so the composer is ready here.
+				hasBranchOrigin,
 			},
 			{
 				onSuccess: async newIds => {
