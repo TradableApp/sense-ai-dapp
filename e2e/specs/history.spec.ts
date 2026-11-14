@@ -148,9 +148,9 @@ test.describe('History (T-HIST)', () => {
 		freshHistoryPage,
 		freshPage,
 	}) => {
-		// The local message cache keeps a handful of conversations. Whatever it drops must come
-		// back from the index and storage when the conversation is opened: what the user sees
-		// must be what is stored, at any time.
+		// The local store is the only place a synced conversation's messages are read from, and
+		// a conversation that has not changed is not fetched again. So every conversation must
+		// still be in it, however many there are: what the user sees must be what is stored.
 		// The cache and its rebuild are the same code on every chain, so the seven paid prompts
 		// are spent on the localnet only.
 		test.skip(CHAIN === 'testnet', 'cache behaviour is chain-independent; covered on localnet');

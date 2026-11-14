@@ -409,11 +409,12 @@ test.describe('Branching (T-BRANCH)', () => {
 		await freshChatPage.sendPromptAndWaitForResponse(inherited);
 		await freshChatPage.branchInNewChat();
 		await expect(freshChatPage.assistantMessages.first()).toBeVisible({ timeout: 20_000 });
-		await waitForGraph(
+		const lineage = await waitForGraph(
 			() => getConversationsWithLineage(owner),
 			list => list.length === 2 && list.some(c => c.branchedFrom !== null),
 			{ label: 'branch lineage indexed' },
 		);
+		const original = lineage.find(c => c.branchedFrom === null)!;
 
 		// Back in the original, after the branch point: this must not reach the branch.
 		await freshHistoryPage.goto();
@@ -423,10 +424,23 @@ test.describe('Branching (T-BRANCH)', () => {
 			timeout: BUDGET.answerMs,
 		});
 		await freshChatPage.sendPromptAndWaitForResponse(later);
+		// The later pair has to be in the index before the second device syncs, or there would
+		// be nothing that could reach the branch and the last check below would prove nothing.
+		await waitForGraph(
+			() => getMessages(original.id),
+			msgs => msgs.length === 4,
+			{ label: 'later prompt and answer indexed in the original' },
+		);
 
 		const deviceB = await openDevice(browser, freshUserAccount, openContexts);
 		await deviceB.history.goto();
 		await deviceB.history.assertConversationCount(2, { timeout: BUDGET.indexMs * 3 });
+		// The second device does hold the later prompt, in the original.
+		await deviceB.history.conversationItems.filter({ hasNotText: /Branch of/ }).click();
+		await expect(deviceB.chat.userMessages.filter({ hasText: later })).toHaveCount(1, {
+			timeout: BUDGET.answerMs,
+		});
+		await deviceB.history.goto();
 		await deviceB.history.conversationItems.filter({ hasText: /Branch of/ }).click();
 
 		// The branch has no messages of its own: all it shows is the inherited pair.
