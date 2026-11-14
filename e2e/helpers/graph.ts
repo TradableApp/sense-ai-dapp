@@ -418,6 +418,9 @@ export async function getConversationsWithLineage(
 
 export interface IndexedRegenerationRequest {
 	id: string;
+	/** The conversation the regeneration was asked in (a branch's own id when asked in a branch). */
+	conversationId: string;
+	promptMessageId: string;
 	originalAnswerMessageId: string;
 	answerMessageId: string;
 }
@@ -433,6 +436,8 @@ export async function getRegenerationRequests(
 		`query($user: Bytes!) {
       regenerationRequests(where: { user: $user }, orderBy: timestamp, orderDirection: asc) {
         id
+        conversationId
+        promptMessageId
         originalAnswerMessageId
         answerMessageId
       }
