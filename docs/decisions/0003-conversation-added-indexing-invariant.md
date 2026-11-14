@@ -49,13 +49,17 @@ fire** (regardless of how many prompts were cancelled before it). Enforced at tw
 
 ## Amendment (2026-11-14): a branch is never new
 
-A branched conversation exists from the moment the oracle confirms the branch: `submitBranch`
-stores its conversation file, with where it was branched from, and the subgraph creates the
-`Conversation` entity from `ConversationBranched`. The rule in layer 1 ("no delivered answer ⇒
-new") was written for conversations created by a first prompt, and it misfired for a branch
-that showed no messages on a device (its inherited history not loaded there yet): the prompt
-was flagged new, the oracle wrote the conversation file again without the branch origin, and
-the branch lost its link to the original in storage and in the index.
+A branched conversation is created by the branch, not by a first prompt: once the oracle
+confirms it, `submitBranch` stores its conversation file, with where it was branched from, and
+the subgraph creates the `Conversation` entity from `ConversationBranched`. The dApp treats it
+as a branch earlier still, from the receipt of the branch request, when it writes the local
+record with the origin and copies of the inherited messages.
+
+The rule in layer 1 ("no delivered answer ⇒ new") was written for conversations created by a
+first prompt, and it misfired for a branch that showed no messages on a device (its inherited
+history not loaded there yet): the prompt was flagged new, the oracle wrote the conversation
+file again without the branch origin, and the branch lost its link to the original in storage
+and in the index.
 
 So, in the dApp:
 
@@ -64,9 +68,16 @@ So, in the dApp:
 - **A branch that shows no message holds the prompt** (`promptParentFor`,
   `src/features/chat/promptParent.ts`). A prompt needs a message to thread off, and in a branch
   there always is one; when none is shown, the history is not on the device yet. The composer
-  is disabled and says so. Threading off the branch point by id alone was rejected: without the
+  is disabled and says so, and asks for the messages again on a timer until they are there.
+  Until the messages and the conversation's record have been read, the composer is disabled
+  without a message (`composerStateFor`): at that point it is not yet known whether the
+  conversation is a branch. Threading off the branch point by id alone was rejected: without the
   message's CID the oracle cannot rebuild the context for the model.
 - An edit keeps the parent of the message it replaces, a null parent included.
 
 The invariant itself is unchanged: for a conversation created by a first prompt, the first
 delivered answer still causes `ConversationAdded`.
+
+Known gap, unchanged by this amendment: a branch whose request the oracle never confirms exists
+only on the device that made it, and prompts sent in it are answered under a conversation the
+index does not have.

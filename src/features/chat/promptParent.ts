@@ -32,3 +32,56 @@ export default function promptParentFor(
 	}
 	return { kind: 'parent', parentId, parentCID: last?.messageCID ?? null };
 }
+
+/**
+ * Whether a prompt can be sent now, and what it threads off.
+ *
+ * - `ready`: send, with this parent.
+ * - `loading`: the conversation's messages, or whether it is a branch, have not been read yet.
+ *   Nothing is known, so nothing is sent and nothing is said: opening any conversation passes
+ *   through this for the length of a local read.
+ * - `hold`: everything has been read, the conversation is a branch and it shows nothing. Its
+ *   history is not on this device; see `promptParentFor`.
+ */
+export type ComposerState =
+	| { kind: 'ready'; parentId: number | null; parentCID: string | null; hasBranchOrigin: boolean }
+	| { kind: 'loading' }
+	| { kind: 'hold' };
+
+interface ComposerInput {
+	activeConversationId: string | number | null | undefined;
+	/** The conversation's stored record, from whichever read has it; undefined when none does. */
+	conversation: { branchedFromConversationId?: string | null } | null | undefined;
+	/** The read that would find the record has finished. */
+	isConversationSettled: boolean;
+	messagesShown: readonly ShownMessage[] | undefined;
+	/** The conversation's messages have been read and are what is shown. */
+	areMessagesSettled: boolean;
+}
+
+export function composerStateFor({
+	activeConversationId,
+	conversation,
+	isConversationSettled,
+	messagesShown,
+	areMessagesSettled,
+}: ComposerInput): ComposerState {
+	// No conversation yet: the prompt starts one.
+	if (!activeConversationId) {
+		return { kind: 'ready', parentId: null, parentCID: null, hasBranchOrigin: false };
+	}
+	// Whether it is a branch is unknown until its record is found or the read has finished
+	// without one (a conversation whose only prompts were cancelled has no record).
+	if (!conversation && !isConversationSettled) return { kind: 'loading' };
+
+	const hasBranchOrigin = Boolean(conversation?.branchedFromConversationId);
+	const parent = promptParentFor(messagesShown, { hasBranchOrigin });
+	if (parent.kind === 'parent' && parent.parentId !== null) {
+		return { ...parent, kind: 'ready', hasBranchOrigin };
+	}
+	// Nothing to thread off. Whether that is the whole truth is known only once the messages
+	// have been read; a re-read with messages on screen never gets here, so typing is never
+	// interrupted by one.
+	if (!areMessagesSettled) return { kind: 'loading' };
+	return parent.kind === 'hold' ? parent : { ...parent, kind: 'ready', hasBranchOrigin };
+}

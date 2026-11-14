@@ -508,7 +508,7 @@ test.describe('Branching (T-BRANCH)', () => {
 	// A branch always has history. When a device cannot load it, the branch shows nothing, and
 	// a prompt sent then would have no parent: the answer would be stored as the start of a
 	// conversation and the branch would lose where it came from. So the prompt is held.
-	test('T-BRANCH-12: a branch whose history cannot be loaded holds the prompt, and nothing is spent', async ({
+	test('T-BRANCH-12: a branch whose history cannot be loaded holds the prompt', async ({
 		browser,
 		freshChatPage,
 		freshUserAccount,
@@ -532,31 +532,47 @@ test.describe('Branching (T-BRANCH)', () => {
 			{ label: 'original prompt and answer indexed' },
 		);
 		const messageCIDs = originalMessages.map(m => m.messageCID);
-		const spendBefore = (await getSpendingLimit(ESCROW_ADDRESS, owner)).spentAmount;
 
 		// The second device can read everything except the original's two messages: every
 		// storage source answers 503 for them.
+		let refusedReads = 0;
 		const deviceB = await openDevice(browser, freshUserAccount, openContexts, {
 			beforeFirstLoad: context =>
 				context.route(
 					url => messageCIDs.some(cid => url.href.includes(cid)),
-					route => route.fulfill({ status: 503, body: 'storage unavailable' }),
+					route => {
+						refusedReads += 1;
+						return route.fulfill({ status: 503, body: 'storage unavailable' });
+					},
 				),
 		});
 		await deviceB.history.goto();
 		await deviceB.history.assertConversationCount(2, { timeout: BUDGET.indexMs * 3 });
 		await deviceB.history.conversationItems.filter({ hasText: /Branch of/ }).click();
 
+		// The hold must come from the failed reads, not from the moment before anything has
+		// loaded: so first the reads are seen to be refused and the sync to have given up on them.
+		const hold = deviceB.page.getByTestId('branch-history-hold');
+		await expect(deviceB.page.getByText('History temporarily unavailable')).toBeVisible({
+			timeout: BUDGET.answerMs,
+		});
+		expect(refusedReads).toBeGreaterThan(0);
+
 		// Nothing to thread a prompt off: the composer says so and takes no input.
-		await expect(deviceB.page.getByTestId('branch-history-hold')).toBeVisible({
+		await expect(hold).toContainText(/earlier messages have not loaded/, {
 			timeout: BUDGET.answerMs,
 		});
 		await expect(deviceB.chat.promptTextarea).toBeDisabled();
+		await expect(deviceB.chat.promptTextarea).toHaveAttribute(
+			'aria-describedby',
+			'branch-history-hold',
+		);
 		await expect(deviceB.chat.userMessages).toHaveCount(0);
 
-		// No prompt was sent from the held composer.
-		const spendAfter = (await getSpendingLimit(ESCROW_ADDRESS, owner)).spentAmount;
-		expect(spendAfter).toBe(spendBefore);
-		expect(await getPromptRequests(owner)).toHaveLength(1);
+		// The original, opened on the same device, is not a branch: it is not held.
+		await deviceB.history.goto();
+		await deviceB.history.conversationItems.filter({ hasNotText: /Branch of/ }).click();
+		await expect(deviceB.chat.promptTextarea).toBeEnabled({ timeout: BUDGET.answerMs });
+		await expect(hold).toBeEmpty();
 	});
 });

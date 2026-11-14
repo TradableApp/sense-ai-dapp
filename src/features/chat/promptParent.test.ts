@@ -121,6 +121,16 @@ describe('composerStateFor — whether a prompt can be sent now', () => {
 		).toEqual({ kind: 'loading' });
 	});
 
+	it('stays ready while messages on screen are being read again', () => {
+		// A background re-read must not disable a composer someone is typing in.
+		expect(composerStateFor({ ...settled, areMessagesSettled: false })).toEqual({
+			kind: 'ready',
+			parentId: 53,
+			parentCID: 'cid-53',
+			hasBranchOrigin: false,
+		});
+	});
+
 	it('holds a branch that shows nothing once everything has been read', () => {
 		expect(composerStateFor({ ...settled, conversation: branch, messagesShown: [] })).toEqual({
 			kind: 'hold',
