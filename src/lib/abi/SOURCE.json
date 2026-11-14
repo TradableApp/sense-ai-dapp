@@ -15,7 +15,7 @@
   ],
   "sources": {
     "AbleToken.json":        { "repo": "TradableApp/able-contracts",     "commit": "53f368fd67d2c75002c5659397216d2b9086e572", "abiSha256": "0e946fec2d5af22bde9c62529017e2693e8eec2fbe821de0a6dec9833ca1f063" },
-    "EVMAIAgent.json":       { "repo": "TradableApp/tokenized-ai-agent", "commit": "1ce71d3e93bd6f4dfd29cc3078b9d169067b1d75", "abiSha256": "03231d8208af9eeeb38135fc51e1756f1ccb0623879eea358f11a61453038428" },
-    "EVMAIAgentEscrow.json": { "repo": "TradableApp/tokenized-ai-agent", "commit": "1ce71d3e93bd6f4dfd29cc3078b9d169067b1d75", "abiSha256": "58c49fada0da94ca77d77812e2831bd7f9cb8bd047f3a11d6b22ca765d6dbd3b" }
+    "EVMAIAgent.json":       { "repo": "TradableApp/tokenized-ai-agent", "commit": "22fecb98081ef13ee49cc334cb665401c8de9b97", "abiSha256": "1c62519a0040d4e242e9189ef16602c821d9c6f77dbbd3969c472d525e3259bc" },
+    "EVMAIAgentEscrow.json": { "repo": "TradableApp/tokenized-ai-agent", "commit": "22fecb98081ef13ee49cc334cb665401c8de9b97", "abiSha256": "31d55cdc2fc984375f379e50587b646b8d8d2a7811d55516c572bb23633c4638" }
   }
 }
