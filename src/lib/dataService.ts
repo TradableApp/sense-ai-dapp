@@ -2,6 +2,7 @@ import type { QueryClient } from '@tanstack/react-query';
 
 import { decryptData, encryptData } from './crypto';
 import db from './db';
+import inheritedHistory, { reachesFirstMessage } from './inheritedHistory';
 // import simulateOracleProcess from './mockApi';
 import {
 	addDeltaToLiveIndex,
@@ -54,6 +55,29 @@ const updateAndEncryptConversation = async (
 	return decryptedConv;
 };
 
+// Sort by numeric message id, falling back to timestamp for any non-numeric id.
+// Within a conversation the contract assigns monotonically increasing ids, so
+// id order IS true chronological order — and unlike createdAt it's immune to
+// the optimistic-vs-block-time skew: an optimistic answer placeholder is
+// stamped with wall-clock time (now+1) while its prompt, once synced, carries a
+// LATER on-chain block time, which would otherwise sort the placeholder before
+// its own prompt and make `.at(-1)` (the conversation leaf) point at the user
+// message instead of the answer.
+const byMessageOrder = (a: Message, b: Message): number => {
+	const aId = Number(a.id);
+	const bId = Number(b.id);
+	if (Number.isFinite(aId) && Number.isFinite(bId) && aId !== bId) {
+		return aId - bId;
+	}
+	return a.createdAt - b.createdAt;
+};
+
+/** A branch's messages with its inherited history in front; the branch's own copy of a message wins. */
+const withInherited = (own: Message[], inherited: Message[]): Message[] => {
+	const ownIds = new Set(own.map(message => message.id));
+	return [...inherited.filter(message => !ownIds.has(message.id)), ...own].sort(byMessageOrder);
+};
+
 const maintainMessageCache = async (ownerAddress: string): Promise<void> => {
 	const cacheCount = await db.messageCache.where({ ownerAddress }).count();
 	if (cacheCount > MESSAGE_CACHE_LIMIT) {
@@ -83,13 +107,11 @@ export const fetchAndCacheConversations = async (
 		.sort((a, b) => (b.lastMessageCreatedAt || 0) - (a.lastMessageCreatedAt || 0));
 };
 
-export const getMessagesForConversation = async (
+const readCachedMessages = async (
 	sessionKey: CryptoKey,
 	ownerAddress: string,
 	conversationId: string,
 ): Promise<Message[]> => {
-	if (!sessionKey || !ownerAddress || !conversationId) return [];
-
 	const cachedRecord = await db.messageCache.get([ownerAddress, conversationId]);
 
 	if (cachedRecord) {
@@ -122,22 +144,7 @@ export const getMessagesForConversation = async (
 			}
 		});
 
-		// Sort by numeric message id, falling back to timestamp for any non-numeric id.
-		// Within a conversation the contract assigns monotonically increasing ids, so
-		// id order IS true chronological order — and unlike createdAt it's immune to
-		// the optimistic-vs-block-time skew: an optimistic answer placeholder is
-		// stamped with wall-clock time (now+1) while its prompt, once synced, carries a
-		// LATER on-chain block time, which would otherwise sort the placeholder before
-		// its own prompt and make `.at(-1)` (the conversation leaf) point at the user
-		// message instead of the answer.
-		const sortedMessages = Array.from(byId.values()).sort((a: Message, b: Message) => {
-			const aId = Number(a.id);
-			const bId = Number(b.id);
-			if (Number.isFinite(aId) && Number.isFinite(bId) && aId !== bId) {
-				return aId - bId;
-			}
-			return a.createdAt - b.createdAt;
-		});
+		const sortedMessages = Array.from(byId.values()).sort(byMessageOrder);
 
 		// Heal the cache when duplicates were actually collapsed, so the dirty blob
 		// isn't re-deduped on every subsequent read and isn't seen by paths that read
@@ -155,6 +162,97 @@ export const getMessagesForConversation = async (
 		'color: red',
 	);
 	return [];
+};
+
+/** Where a conversation was branched from, or null when it is not a branch or cannot be read. */
+const readBranchOrigin = async (
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	conversationId: string,
+): Promise<{ parentConversationId: string; branchPointMessageId: string } | null> => {
+	try {
+		const record = await db.conversations.get([ownerAddress, conversationId]);
+		if (!record) return null;
+		const conversation = (await decryptData(sessionKey, record.encryptedData)) as Conversation;
+		if (!conversation.branchedFromConversationId || !conversation.branchedAtMessageId) return null;
+		return {
+			parentConversationId: String(conversation.branchedFromConversationId),
+			branchPointMessageId: String(conversation.branchedAtMessageId),
+		};
+	} catch (error) {
+		// The messages the branch does hold are still worth showing.
+		console.warn(
+			`[dataService] Could not read the origin of conversation "${conversationId}":`,
+			error,
+		);
+		return null;
+	}
+};
+
+/**
+ * A conversation's messages, with a branch's inherited history rebuilt when it is missing.
+ *
+ * A branch's own records hold only what was created in it; the messages before the branch point
+ * belong to the original. The device that made the branch copied them at the time. Any other
+ * device, or this one after its site data was cleared, gets them here from the original's
+ * messages, and stores the result so the next read needs nothing more. `visiting` carries the
+ * chain of branches being resolved, so a branch of a branch is rebuilt through each parent and
+ * a loop in the lineage ends instead of recursing.
+ */
+const resolveMessages = async (
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	conversationId: string,
+	visiting: Set<string>,
+): Promise<Message[]> => {
+	const own = await readCachedMessages(sessionKey, ownerAddress, conversationId);
+
+	const origin = await readBranchOrigin(sessionKey, ownerAddress, conversationId);
+	if (!origin) return own;
+	// Already whole: the branch holds every message from its branch point back to the first.
+	if (reachesFirstMessage(inheritedHistory(own, origin.branchPointMessageId, conversationId))) {
+		return own;
+	}
+	if (visiting.has(origin.parentConversationId)) return own;
+
+	const parentMessages = await resolveMessages(
+		sessionKey,
+		ownerAddress,
+		origin.parentConversationId,
+		new Set(visiting).add(conversationId),
+	);
+	const inherited = inheritedHistory(parentMessages, origin.branchPointMessageId, conversationId);
+	// The original is not on this device yet (or no longer holds the branch point): show what
+	// the branch has, and try again on the next read.
+	if (inherited.length === 0) return own;
+	// The original is missing an earlier message on this device. Show what there is without
+	// storing it: only a whole history is kept as the branch's, and the next read stores it
+	// once the original is whole.
+	if (!reachesFirstMessage(inherited)) return withInherited(own, inherited);
+
+	// Read the branch again just before writing: a sync or a prompt being sent may have stored
+	// messages in it since the first read, and they must not be replaced by an older view.
+	const latest = await readCachedMessages(sessionKey, ownerAddress, conversationId);
+	const rebuilt = withInherited(latest, inherited);
+	await db.messageCache.put({
+		ownerAddress,
+		conversationId,
+		encryptedData: await encryptData(sessionKey, rebuilt),
+		lastAccessedAt: Date.now(),
+	});
+	console.log(
+		`[dataService] Rebuilt ${inherited.length} inherited message(s) for branch "${conversationId}".`,
+	);
+	return rebuilt;
+};
+
+export const getMessagesForConversation = async (
+	sessionKey: CryptoKey,
+	ownerAddress: string,
+	conversationId: string,
+): Promise<Message[]> => {
+	if (!sessionKey || !ownerAddress || !conversationId) return [];
+	return resolveMessages(sessionKey, ownerAddress, conversationId, new Set());
 };
 
 const createMessageWorkflow = async (

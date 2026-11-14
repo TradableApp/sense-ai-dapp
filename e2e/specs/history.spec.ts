@@ -1,5 +1,5 @@
 import { expect, test } from '../fixtures';
-import { LIVE_STACK } from '../helpers/chain';
+import { CHAIN, LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 
 const SKIP_REASON =
@@ -141,5 +141,46 @@ test.describe('History (T-HIST)', () => {
 		await expect
 			.poll(async () => freshChatPage.userMessages.count(), { timeout: 15_000 })
 			.toBeGreaterThanOrEqual(2);
+	});
+
+	test('T-HIST-11: every conversation still shows its messages after seven, on a reloaded page', async ({
+		freshChatPage,
+		freshHistoryPage,
+		freshPage,
+	}) => {
+		// The local store is the only place a synced conversation's messages are read from, and
+		// a conversation that has not changed is not fetched again. So every conversation must
+		// still be in it, however many there are: what the user sees must be what is stored.
+		// The cache and its rebuild are the same code on every chain, so the seven paid prompts
+		// are spent on the localnet only.
+		test.skip(CHAIN === 'testnet', 'cache behaviour is chain-independent; covered on localnet');
+		// Seven prompts at up to one answer budget each, plus navigation.
+		test.setTimeout(480_000);
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse('Conversation 1 of seven');
+		for (let n = 2; n <= 7; n++) {
+			await freshChatPage.startNewConversation();
+			await freshChatPage.sendPromptAndWaitForResponse(`Conversation ${n} of seven`);
+		}
+
+		// A reload empties everything held in memory, so what shows next comes from the browser's
+		// store or from the index and storage, never from the page that created it.
+		await freshPage.reload();
+		for (let index = 0; index < 7; index++) {
+			await freshHistoryPage.goto();
+			await freshHistoryPage.assertConversationCount(7);
+			await freshHistoryPage.clickConversation(index);
+
+			await expect(freshPage).toHaveURL(/\/chat/, { timeout: 10_000 });
+			// Newest first: index 0 is conversation 7.
+			await expect(
+				freshChatPage.userMessages,
+				`conversation ${7 - index} shows its prompt`,
+			).toHaveCount(1, { timeout: 30_000 });
+			await expect(freshChatPage.userMessages.first()).toContainText(
+				`Conversation ${7 - index} of seven`,
+			);
+			await expect(freshChatPage.assistantMessages).toHaveCount(1);
+		}
 	});
 });

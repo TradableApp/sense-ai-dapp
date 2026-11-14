@@ -349,51 +349,106 @@ test.describe('Branching (T-BRANCH)', () => {
 		await expect(deviceB.chat.assistantMessages).toHaveCount(1);
 	});
 
-	// KNOWN GAP, kept as an executable statement of the expected behaviour. The messages a branch
-	// inherits are copied into the branching device's IndexedDB only; they are not indexed under
-	// the branch, and the sync does not rebuild them from the branch's lineage. A second device
-	// (or the same one after its site data is cleared) therefore opens a branch without its
-	// inherited prompt and answer, and a regenerated inherited answer shows as a lone answer with
-	// no version pager. Remove `fixme` when the sync rebuilds inherited history.
-	test.fixme(
-		'T-BRANCH-09: a second device rebuilds the history a branch inherited, with its answer versions',
-		async ({ browser, freshChatPage, freshUserAccount }) => {
-			const owner = freshUserAccount.address;
-			const marker = 'Zibblefrond inherited prompt marker';
-			await freshChatPage.goto();
-			await freshChatPage.sendPromptAndWaitForResponse(marker);
-			await freshChatPage.branchInNewChat();
-			await expect(freshChatPage.assistantMessages.first()).toBeVisible({ timeout: 20_000 });
-			await waitForGraph(
-				() => getConversationsWithLineage(owner),
-				list => list.length === 2 && list.some(c => c.branchedFrom !== null),
-				{ label: 'branch lineage indexed' },
-			);
-			await freshChatPage.regenerateAndWaitForNewVersion('default', 2);
-			const [regen] = await waitForGraph(
-				() => getRegenerationRequests(owner),
-				r => r.length === 1,
-				{ label: 'RegenerationRequest indexed' },
-			);
-			await waitForGraph(
-				() => getPayments(owner),
-				payments => payments.some(p => p.id === regen.answerMessageId && p.status === 'COMPLETE'),
-				{ label: 'branch regeneration payment complete' },
-			);
+	// A branch's own records hold only what was created in it: the messages it inherits are not
+	// indexed under the branch. The device that made the branch copied them locally; any other
+	// device (or the same one after its site data is cleared) rebuilds them from the original's
+	// messages when the branch is opened.
+	test('T-BRANCH-09: a second device rebuilds the history a branch inherited, with its answer versions', async ({
+		browser,
+		freshChatPage,
+		freshUserAccount,
+	}) => {
+		const owner = freshUserAccount.address;
+		const marker = 'Zibblefrond inherited prompt marker';
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse(marker);
+		await freshChatPage.branchInNewChat();
+		await expect(freshChatPage.assistantMessages.first()).toBeVisible({ timeout: 20_000 });
+		await waitForGraph(
+			() => getConversationsWithLineage(owner),
+			list => list.length === 2 && list.some(c => c.branchedFrom !== null),
+			{ label: 'branch lineage indexed' },
+		);
+		await freshChatPage.regenerateAndWaitForNewVersion('default', 2);
+		const [regen] = await waitForGraph(
+			() => getRegenerationRequests(owner),
+			r => r.length === 1,
+			{ label: 'RegenerationRequest indexed' },
+		);
+		await waitForGraph(
+			() => getPayments(owner),
+			payments => payments.some(p => p.id === regen.answerMessageId && p.status === 'COMPLETE'),
+			{ label: 'branch regeneration payment complete' },
+		);
 
-			const deviceB = await openDevice(browser, freshUserAccount, openContexts);
-			await deviceB.history.goto();
-			await deviceB.history.assertConversationCount(2, { timeout: BUDGET.indexMs * 3 });
-			await deviceB.history.conversationItems.filter({ hasText: /Branch of/ }).click();
+		const deviceB = await openDevice(browser, freshUserAccount, openContexts);
+		await deviceB.history.goto();
+		await deviceB.history.assertConversationCount(2, { timeout: BUDGET.indexMs * 3 });
+		await deviceB.history.conversationItems.filter({ hasText: /Branch of/ }).click();
 
-			// The inherited prompt is back, and its answer carries both versions.
-			await expect(deviceB.chat.userMessages.first()).toContainText(marker, {
-				timeout: BUDGET.answerMs,
-			});
-			await expect(deviceB.chat.versionIndicator).toHaveText(/^\s*2\s*\/\s*2\s*$/, {
-				timeout: BUDGET.answerMs,
-			});
-			await expect(deviceB.chat.assistantMessages).toHaveCount(1);
-		},
-	);
+		// The inherited prompt is back, and its answer carries both versions.
+		await expect(deviceB.chat.userMessages.first()).toContainText(marker, {
+			timeout: BUDGET.answerMs,
+		});
+		await expect(deviceB.chat.versionIndicator).toHaveText(/^\s*2\s*\/\s*2\s*$/, {
+			timeout: BUDGET.answerMs,
+		});
+		await expect(deviceB.chat.assistantMessages).toHaveCount(1);
+	});
+
+	test('T-BRANCH-10: on a second device a branch shows what it inherited and nothing added to the original later', async ({
+		browser,
+		freshChatPage,
+		freshHistoryPage,
+		freshUserAccount,
+	}) => {
+		const owner = freshUserAccount.address;
+		const inherited = 'Quorvane inherited prompt marker';
+		const later = 'Plithwick later prompt marker';
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse(inherited);
+		await freshChatPage.branchInNewChat();
+		await expect(freshChatPage.assistantMessages.first()).toBeVisible({ timeout: 20_000 });
+		const lineage = await waitForGraph(
+			() => getConversationsWithLineage(owner),
+			list => list.length === 2 && list.some(c => c.branchedFrom !== null),
+			{ label: 'branch lineage indexed' },
+		);
+		const original = lineage.find(c => c.branchedFrom === null)!;
+
+		// Back in the original, after the branch point: this must not reach the branch.
+		await freshHistoryPage.goto();
+		await freshHistoryPage.assertConversationCount(2);
+		await freshHistoryPage.conversationItems.filter({ hasNotText: /Branch of/ }).click();
+		await expect(freshChatPage.userMessages.first()).toContainText(inherited, {
+			timeout: BUDGET.answerMs,
+		});
+		await freshChatPage.sendPromptAndWaitForResponse(later);
+		// The later pair has to be in the index before the second device syncs, or there would
+		// be nothing that could reach the branch and the last check below would prove nothing.
+		await waitForGraph(
+			() => getMessages(original.id),
+			msgs => msgs.length === 4,
+			{ label: 'later prompt and answer indexed in the original' },
+		);
+
+		const deviceB = await openDevice(browser, freshUserAccount, openContexts);
+		await deviceB.history.goto();
+		await deviceB.history.assertConversationCount(2, { timeout: BUDGET.indexMs * 3 });
+		// The second device does hold the later prompt, in the original.
+		await deviceB.history.conversationItems.filter({ hasNotText: /Branch of/ }).click();
+		await expect(deviceB.chat.userMessages.filter({ hasText: later })).toHaveCount(1, {
+			timeout: BUDGET.answerMs,
+		});
+		await deviceB.history.goto();
+		await deviceB.history.conversationItems.filter({ hasText: /Branch of/ }).click();
+
+		// The branch has no messages of its own: all it shows is the inherited pair.
+		await expect(deviceB.chat.userMessages.first()).toContainText(inherited, {
+			timeout: BUDGET.answerMs,
+		});
+		await expect(deviceB.chat.userMessages).toHaveCount(1);
+		await expect(deviceB.chat.assistantMessages).toHaveCount(1);
+		await expect(deviceB.chat.userMessages.filter({ hasText: later })).toHaveCount(0);
+	});
 });
