@@ -11,6 +11,7 @@ import {
 } from '../helpers/graph';
 import {
 	addOracle,
+	DEPLOYER_ADDRESS,
 	getABLEBalance,
 	getOwner,
 	getPromptFee,
@@ -50,8 +51,9 @@ const NEW_OWNER = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 // in afterEach. Lowercase for the same reason as NEW_TREASURY.
 const NEW_ORACLE = '0x000000000000000000000000000000000000face';
 
-// The deployer (Hardhat account 0) owns the agent and sends addOracle / removeOracle.
-const OWNER = '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266';
+// The deployer (Hardhat account 0) owns the agent and sends addOracle / removeOracle. Lowercase:
+// the subgraph stores Bytes lowercase.
+const OWNER = DEPLOYER_ADDRESS.toLowerCase();
 
 const isPending = (r: {
 	isAnswered: boolean;

@@ -451,7 +451,7 @@ export async function getAllowance(
 const TRANSFER_SELECTOR = '0xa9059cbb'; // transfer(address,uint256)
 // Hardhat account 0 — deployer/treasury; holds the full ABLE supply and is
 // unlocked on the node, so eth_sendTransaction needs no signing key.
-const DEPLOYER_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
+export const DEPLOYER_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 
 function padUint(value: bigint): string {
 	return value.toString(16).padStart(64, '0');

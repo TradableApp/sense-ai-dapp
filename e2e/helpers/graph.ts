@@ -512,11 +512,11 @@ export interface IndexedOracle {
 	removedAt: string | null;
 }
 
-/** Every address that has ever held the oracle role, active or not. */
+/** Every address that has ever held the oracle role, active or not, oldest grant first. */
 export async function getOracles(): Promise<IndexedOracle[]> {
 	const data = await graphQuery<{ oracles: IndexedOracle[] }>(
 		`query {
-      oracles(first: 100) {
+      oracles(first: 100, orderBy: addedAt, orderDirection: asc) {
         id
         address
         active
