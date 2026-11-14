@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import db from '@/lib/db';
 
-import { deriveKeyFromEntropy, encryptData } from './crypto';
+import { decryptData, deriveKeyFromEntropy, encryptData } from './crypto';
 import {
 	addMessageToConversation,
 	deleteConversation,
@@ -197,11 +197,12 @@ describe('getMessagesForConversation', () => {
 
 		expect(result).toHaveLength(2);
 		expect(result.find(m => m.id === 'm2')?.content).toBe('the answer');
-		// Cache-heal fired (a duplicate was collapsed): the deduped blob was written back.
-		expect(mockDb.messageCache.update).toHaveBeenCalledWith(
-			[OWNER, 'c1'],
-			expect.objectContaining({ encryptedData: expect.any(String) }),
-		);
+		// Cache-heal fired (a duplicate was collapsed): the deduped list was written back, through
+		// the one writer, so inside a transaction.
+		expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+		const healed = mockDb.messageCache.put.mock.calls[0][0];
+		expect(healed).toMatchObject({ ownerAddress: OWNER, conversationId: 'c1' });
+		expect(await decryptData(sessionKey, healed.encryptedData)).toHaveLength(2);
 	});
 
 	it('resolves equal-length different-content duplicates to the latest write', async () => {

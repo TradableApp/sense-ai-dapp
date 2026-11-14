@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { decryptData, encryptData } from './crypto';
 import db from './db';
 import inheritedHistory, { reachesFirstMessage } from './inheritedHistory';
+import { writeMessageCache } from './messageCacheStore';
 // import simulateOracleProcess from './mockApi';
 import {
 	addDeltaToLiveIndex,
@@ -10,8 +11,6 @@ import {
 	updateTitleInLiveIndex,
 } from './searchService';
 import type { Conversation, Message } from './types';
-
-const MESSAGE_CACHE_LIMIT = 5;
 
 const updateAndEncryptConversation = async (
 	sessionKey: CryptoKey,
@@ -78,19 +77,36 @@ const withInherited = (own: Message[], inherited: Message[]): Message[] => {
 	return [...inherited.filter(message => !ownIds.has(message.id)), ...own].sort(byMessageOrder);
 };
 
-const maintainMessageCache = async (ownerAddress: string): Promise<void> => {
-	const cacheCount = await db.messageCache.where({ ownerAddress }).count();
-	if (cacheCount > MESSAGE_CACHE_LIMIT) {
-		// The compound index '[ownerAddress+lastAccessedAt]' in db.js ensures
-		// that the results from .where({ ownerAddress }) are already sorted
-		// by lastAccessedAt in ascending order.
-		const keysToDelete = await db.messageCache
-			.where({ ownerAddress })
-			.limit(cacheCount - MESSAGE_CACHE_LIMIT)
-			.keys();
-		await db.messageCache.bulkDelete(keysToDelete);
-		console.log(`[dataService] Evicted ${keysToDelete.length} items from message cache.`);
-	}
+/** `base` with `added` put in; a message in both is taken from `added`. */
+const withAdded = (base: Message[], added: Message[]): Message[] => {
+	const addedIds = new Set(added.map(message => message.id));
+	return [...base.filter(message => !addedIds.has(message.id)), ...added];
+};
+
+/**
+ * One entry per message id, in order. The stored list can briefly hold two entries for the same
+ * message: an optimistic, content-less "pending" placeholder and the synced version with the
+ * delivered content. Without this, a content-less duplicate landing last leaves the chat stuck
+ * "Thinking…" even though the answer has arrived.
+ */
+const collapseDuplicates = (messages: Message[]): Message[] => {
+	const byId = new Map<string, Message>();
+	messages.forEach(m => {
+		const prev = byId.get(m.id);
+		if (!prev) {
+			byId.set(m.id, m);
+			return;
+		}
+		const curLen = (m.content || '').length;
+		const prevLen = (prev.content || '').length;
+		// Prefer the richest content; on equal length prefer the latest write, so a
+		// differing same-length duplicate is resolved deterministically rather than
+		// silently dropped.
+		if (curLen > prevLen || (curLen === prevLen && m.createdAt > prev.createdAt)) {
+			byId.set(m.id, m);
+		}
+	});
+	return Array.from(byId.values()).sort(byMessageOrder);
 };
 
 export const fetchAndCacheConversations = async (
@@ -119,39 +135,15 @@ const readCachedMessages = async (
 			`%c[dataService-LOG] Cache HIT for messages in conversation "${conversationId}".`,
 			'color: green',
 		);
-		await db.messageCache.update([ownerAddress, conversationId], { lastAccessedAt: Date.now() });
 		const decryptedData = (await decryptData(sessionKey, cachedRecord.encryptedData)) as Message[];
+		const sortedMessages = collapseDuplicates(decryptedData);
 
-		// Collapse duplicate ids, keeping the richest version of each. The cache can
-		// briefly hold two entries for the same message — an optimistic, content-less
-		// "pending" placeholder and the synced/hydrated version with the delivered
-		// content. Without this, a content-less duplicate landing last leaves the chat
-		// stuck "Thinking…" even though the answer has arrived.
-		const byId = new Map<string, Message>();
-		decryptedData.forEach(m => {
-			const prev = byId.get(m.id);
-			if (!prev) {
-				byId.set(m.id, m);
-				return;
-			}
-			const curLen = (m.content || '').length;
-			const prevLen = (prev.content || '').length;
-			// Prefer the richest content; on equal length prefer the latest write, so a
-			// differing same-length duplicate is resolved deterministically rather than
-			// silently dropped.
-			if (curLen > prevLen || (curLen === prevLen && m.createdAt > prev.createdAt)) {
-				byId.set(m.id, m);
-			}
-		});
-
-		const sortedMessages = Array.from(byId.values()).sort(byMessageOrder);
-
-		// Heal the cache when duplicates were actually collapsed, so the dirty blob
-		// isn't re-deduped on every subsequent read and isn't seen by paths that read
-		// messageCache directly. Consistent with the lastAccessedAt write above.
-		if (byId.size < decryptedData.length) {
-			const reEncrypted = await encryptData(sessionKey, sortedMessages);
-			await db.messageCache.update([ownerAddress, conversationId], { encryptedData: reEncrypted });
+		// Heal the stored list when duplicates were actually collapsed, so it is not collapsed
+		// again on every read and is not seen by paths that read the table directly.
+		if (sortedMessages.length < decryptedData.length) {
+			await writeMessageCache(sessionKey, ownerAddress, conversationId, current =>
+				current ? collapseDuplicates(current) : null,
+			);
 		}
 
 		return sortedMessages;
@@ -230,16 +222,12 @@ const resolveMessages = async (
 	// once the original is whole.
 	if (!reachesFirstMessage(inherited)) return withInherited(own, inherited);
 
-	// Read the branch again just before writing: a sync or a prompt being sent may have stored
-	// messages in it since the first read, and they must not be replaced by an older view.
-	const latest = await readCachedMessages(sessionKey, ownerAddress, conversationId);
-	const rebuilt = withInherited(latest, inherited);
-	await db.messageCache.put({
-		ownerAddress,
-		conversationId,
-		encryptedData: await encryptData(sessionKey, rebuilt),
-		lastAccessedAt: Date.now(),
-	});
+	// Merged into whatever the branch holds at the moment of writing: a sync or a prompt being
+	// sent may have stored messages in it since the read above.
+	const rebuilt =
+		(await writeMessageCache(sessionKey, ownerAddress, conversationId, current =>
+			withInherited(collapseDuplicates(current ?? []), inherited),
+		)) ?? withInherited(own, inherited);
 	console.log(
 		`[dataService] Rebuilt ${inherited.length} inherited message(s) for branch "${conversationId}".`,
 	);
@@ -270,20 +258,16 @@ const createMessageWorkflow = async (
 	_regenerationMode?: unknown,
 	_queryClient?: QueryClient,
 ): Promise<void> => {
-	const newMessages = userMessage
-		? [...existingMessages, userMessage, aiMessage]
-		: [...existingMessages, aiMessage];
+	const created = userMessage ? [userMessage, aiMessage] : [aiMessage];
+	// `existingMessages` is what the caller read a moment ago. What is stored now may hold more
+	// (a sync landed in between), so the new messages are added to both, stored versions first.
+	const newMessages =
+		(await writeMessageCache(sessionKey, ownerAddress, conversationId, current =>
+			withAdded(withAdded(existingMessages, current ?? []), created),
+		)) ?? [];
 
-	const encryptedMessages = await encryptData(sessionKey, newMessages);
-	await db.messageCache.put({
-		ownerAddress,
-		conversationId,
-		encryptedData: encryptedMessages,
-		lastAccessedAt: Date.now(),
-	});
-
-	await updateAndEncryptConversation(sessionKey, ownerAddress, conversationId, newMessages);
-	await maintainMessageCache(ownerAddress);
+	// A copy: updateAndEncryptConversation sorts the list it is given.
+	await updateAndEncryptConversation(sessionKey, ownerAddress, conversationId, [...newMessages]);
 
 	// const onFinalAnswerForDb = async (finalMessageId, finalAnswer) => {
 	// 	onFinalAnswer(finalMessageId, finalAnswer);
@@ -551,14 +535,10 @@ export const branchConversation = async (
 		id: newConversation.id,
 		encryptedData: encryptedNewConv,
 	});
-	const encryptedNewMessages = await encryptData(sessionKey, newMessages);
-	await db.messageCache.put({
-		ownerAddress,
-		conversationId: newConversation.id,
-		encryptedData: encryptedNewMessages,
-		lastAccessedAt: Date.now(),
-	});
-	await maintainMessageCache(ownerAddress);
+	// A sync may already have stored the branch's own messages: they stay, in front of nothing.
+	await writeMessageCache(sessionKey, ownerAddress, newConversation.id, current =>
+		withInherited(current ?? [], newMessages),
+	);
 	console.log(`[dataService] Created new branched conversation "${newConversation.id}".`);
 
 	queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
@@ -658,32 +638,17 @@ export const deleteMessageFromConversation = async (
 ): Promise<void> => {
 	console.log(`[dataService] Deleting message ${messageId} from conversation ${conversationId}`);
 
-	const cachedRecord = await db.messageCache.get([ownerAddress, conversationId]);
-
-	if (!cachedRecord) {
-		return;
-	}
-
 	try {
-		// 1. Decrypt existing messages
-		const currentMessages = await decryptData(sessionKey, cachedRecord.encryptedData);
-
-		// 2. Filter out the target message
-		const newMessages = currentMessages.filter((m: Message) => m.id !== messageId);
-
-		// 3. Re-encrypt and save
-		const encryptedMessages = await encryptData(sessionKey, newMessages);
-
-		await db.messageCache.put({
-			ownerAddress,
-			conversationId,
-			encryptedData: encryptedMessages,
-			lastAccessedAt: Date.now(),
-		});
+		// Removed from whatever is stored at the moment of writing, so a message a sync stored
+		// meanwhile is kept. Nothing stored means nothing to remove.
+		const newMessages = await writeMessageCache(sessionKey, ownerAddress, conversationId, current =>
+			current ? current.filter(m => m.id !== messageId) : null,
+		);
+		if (!newMessages) return;
 
 		// 4. Update conversation metadata (preview) if we deleted the last message
 		// Note: This re-uses existing logic if available, or we can just invoke updateAndEncryptConversation
-		await updateAndEncryptConversation(sessionKey, ownerAddress, conversationId, newMessages);
+		await updateAndEncryptConversation(sessionKey, ownerAddress, conversationId, [...newMessages]);
 
 		queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
 		// The messages query is keyed WITHOUT sessionKey (see Chat.tsx useQuery:
