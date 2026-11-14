@@ -7,6 +7,8 @@
 an oracle that waits for its role instead of stopping, the subgraph's oracle set and change
 history, and the e2e specs `T-GOV-ORACLE-01..03`. Not built yet: the dApp reading the key from
 chain, the shared decryption key across oracles, and a cut-over between two live oracles.
+Who publishes the key, and what happens to it when an oracle is removed, is decided in
+[ADR-0007](0007-oracle-keys-from-the-rofl-key-service.md): the owner no longer sets it.
 **Applies to:** system-wide (`tokenized-ai-agent` contracts + oracle, `sense-ai-subgraph`,
 `sense-ai-dapp`) — recorded here alongside the other decision logs; move to an oracle/infra
 `docs/decisions/` if one is created and leave a pointer.

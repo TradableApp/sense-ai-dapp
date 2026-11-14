@@ -16,6 +16,7 @@ is preserved.
 | [0004](0004-subgraph-fees-from-feeconfig.md) | Subgraph reads fees from indexed `FeeConfig`, not `eth_calls` (cross-repo) | Accepted |
 | [0005](0005-realtime-cross-device-sync-and-multi-tee.md) | Real-time cross-device sync + multi-TEE scaling (durable + live planes) | Accepted (deferred — epic CU-86d3cjj8n) |
 | [0006](0006-oracle-authorization-and-rotation.md) | Oracle authorization & rotation — multi-oracle role + shared decryption key (cross-repo) | Accepted (deferred — tokenized-ai-agent#42 / CU-86d3cx5qt) |
+| [0007](0007-oracle-keys-from-the-rofl-key-service.md) | Oracle keys come from the ROFL key service, and the oracle publishes its own encryption key (cross-repo) | Accepted (partly implemented) |
 
 > ADR-0004 records a `sense-ai-subgraph` decision here because it is the indexing guarantee
 > ADR-0003 depends on and the work landed alongside this dApp work. If the subgraph repo later
