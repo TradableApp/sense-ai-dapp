@@ -161,6 +161,18 @@ describe('writeMessageCache — one writer for a conversation’s stored message
 		expect(await stored()).toEqual([message('1')]);
 	});
 
+	it('reports nothing stored when a writer that may replace unreadable data writes nothing', async () => {
+		const before = await storeUnusable('not.ciphertext');
+
+		const result = await writeMessageCache(sessionKey, OWNER, CONVERSATION, () => null, {
+			replaceUnreadable: true,
+		});
+
+		// Not the empty list the merge was given: nothing readable is stored.
+		expect(result).toBeNull();
+		expect(rows.get(`${OWNER}|${CONVERSATION}`)).toBe(before);
+	});
+
 	it('replaces stored data that is not a list for a writer that says it may', async () => {
 		await storeUnusable(await encryptData(sessionKey, { not: 'a list' }));
 

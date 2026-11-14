@@ -545,6 +545,16 @@ describe('getMessagesForConversation — a branch rebuilds its inherited history
 		expect(caches.get('original')?.encryptedData).toBe('not.ciphertext');
 	});
 
+	it('still returns the messages when the stored duplicates could not be removed', async () => {
+		const duplicated = [...ORIGINAL.slice(0, 2), ORIGINAL[1]];
+		await seed([{ id: 'original' }], { original: duplicated });
+		mockDb.transaction.mockRejectedValue(new Error('QuotaExceededError'));
+
+		const result = await getMessagesForConversation(sessionKey, OWNER, 'original');
+
+		expect(result.map(m => m.id)).toEqual(['1', '2']);
+	});
+
 	it('does not rewrite the stored list when its duplicates are already gone', async () => {
 		const duplicated = [...ORIGINAL.slice(0, 2), ORIGINAL[1]];
 		const caches = await seed([{ id: 'original' }], { original: duplicated });
