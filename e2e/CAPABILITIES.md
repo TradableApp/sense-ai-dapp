@@ -135,11 +135,11 @@ never enters a page, a trace or a screenshot.
 (loaded by `playwright.config.ts` and the scripts, never overriding the runner's exports). A
 missing or malformed variable fails once, by name, before any request.
 
-### Included in the `testnet` project (153 tests, 17 files)
+### Included in the `testnet` project (155 tests, 17 files)
 
 `smoke`, `ui`, `auth`, `chat`, `history`, `branching`, `cancel`, `metadata`, `search`,
 `versions`, `multi-device`, `live-sync`, `activity`, `graph`, `reasoning`, `remaining-features`,
-`plan`. `T-BRANCH-08` (regenerating an inherited answer inside a branch: the new answer renders in the branch, is indexed under the branch and leaves the original untouched) needs agent contracts that file a regeneration under the conversation it was asked in; against older contracts the answer is filed under the original and the test fails. It checks the stored state on a second device (a clean browser context): the original is unchanged and the regenerated answer is in the branch. `T-BRANCH-09` is a `test.fixme`: a second device does not rebuild the history a branch inherited (the copies live only in the branching device's IndexedDB), so the count below does not include it. Chain-aware adaptations: `T-INIT-SMOKE-01/02` check the configured RPC's chain id and the Graph
+`plan`. `T-BRANCH-08` (regenerating an inherited answer inside a branch: the new answer renders in the branch, is indexed under the branch and leaves the original untouched) needs agent contracts that file a regeneration under the conversation it was asked in; against older contracts the answer is filed under the original and the test fails. It checks the stored state on a second device (a clean browser context): the original is unchanged and the regenerated answer is in the branch. `T-BRANCH-09` and `T-BRANCH-10` open a branch on a second device, which holds none of the copies the branching device made: the dApp rebuilds the inherited history from the original conversation's messages, up to the branch point and no further (a prompt sent in the original after the branch was made does not appear in the branch). Chain-aware adaptations: `T-INIT-SMOKE-01/02` check the configured RPC's chain id and the Graph
 endpoint; `cancel` advances time by WAITING (`advanceTime`: Base's 2 s blocks move
 `block.timestamp` on their own) instead of `evm_increaseTime`; `T-REASON-01` asserts a real
 reasoning block with ≥ 1 step and ≥ 1 http(s) source (the mock sentinel is inert on a real
@@ -196,4 +196,5 @@ keeps the resilience specs out of the `testnet` project and the regular testnet 
 | `T-STUCK-01`, `T-PENDING-01`   | need the mock oracle's `__E2E_DROP__` to leave an escrow pending; a real oracle answers everything | `T-STUCK-01`: `testnet-resilience` R-REFUND-01 (oracle down, real stuck prompt); `T-PENDING-01`: localnet suite |
 | `T-REASON-02`                  | only the mock oracle can be told to omit reasoning                                                 | localnet suite                                                                                                  |
 | `T-PLAN-13`                    | expires a plan with `evm_increaseTime(24 h)` — time travel                                         | localnet suite; `testnet-resilience` R-EXPIRY-01 (real limit expiry, 120 s ahead)                               |
+| `T-HIST-11`                    | seven paid prompts to exercise the local message cache, which is the same code on every chain      | localnet suite                                                                                                  |
 | `mobile` (ui on Pixel 5)       | not in the first testnet pass — desktop only; add when the desktop pass is green                   | localnet suite                                                                                                  |
