@@ -182,6 +182,7 @@ describe('EVMAIAgent ABI — oracle role, on-chain encryption key, refund record
 	it('OracleEncryptionKeyUpdated carries the publishing oracle, indexed, and the new key', () => {
 		const event = find('event', 'OracleEncryptionKeyUpdated');
 		expect(event).toBeDefined();
+		expect(event.inputs).toHaveLength(2);
 		expect(event.inputs).toMatchObject([
 			{ name: 'publisher', type: 'address', indexed: true },
 			{ name: 'newKey', type: 'bytes', indexed: false },
@@ -198,6 +199,7 @@ describe('EVMAIAgent ABI — oracle role, on-chain encryption key, refund record
 	it('setOracleEncryptionKey takes the key and a proof made by it', () => {
 		const fn = find('function', 'setOracleEncryptionKey');
 		expect(fn).toBeDefined();
+		expect(fn.inputs).toHaveLength(2);
 		expect(fn.inputs).toMatchObject([
 			{ name: '_newKey', type: 'bytes' },
 			{ name: '_proof', type: 'bytes' },

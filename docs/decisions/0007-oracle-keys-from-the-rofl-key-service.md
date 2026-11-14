@@ -63,8 +63,9 @@ leaves the TEE.
 - **Still trusted:** the ROFL app's admin account (it can authorise a new image, which can derive
   the keys; the change is visible on Sapphire), the image registry until images are pinned by
   digest, the Oasis key manager, and the TEE hardware.
-- **Base Sepolia is migrated; mainnet starts this way.** Mainnet deploys fresh, with keys from
-  the key service from the first block.
+- **Base Sepolia will be migrated; mainnet will start this way.** Base Sepolia moves to these keys
+  in a planned window once the oracle can publish. Mainnet deploys fresh, with keys from the key
+  service from the first block.
 - **Not yet measured:** that two replicas running at once derive the same key. It follows from
   the Oasis documentation and source, and is checked on a machine before the migration.
 - **Alternatives rejected:** the owner sets the key (can publish a key nobody holds, and handles
