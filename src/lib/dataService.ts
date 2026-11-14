@@ -232,16 +232,17 @@ const resolveMessages = async (
 	// Read the branch again just before writing: a sync or a prompt being sent may have stored
 	// messages in it since the first read, and they must not be replaced by an older view.
 	const latest = await readCachedMessages(sessionKey, ownerAddress, conversationId);
+	const rebuilt = withInherited(latest, inherited);
 	await db.messageCache.put({
 		ownerAddress,
 		conversationId,
-		encryptedData: await encryptData(sessionKey, withInherited(latest, inherited)),
+		encryptedData: await encryptData(sessionKey, rebuilt),
 		lastAccessedAt: Date.now(),
 	});
 	console.log(
 		`[dataService] Rebuilt ${inherited.length} inherited message(s) for branch "${conversationId}".`,
 	);
-	return readCachedMessages(sessionKey, ownerAddress, conversationId);
+	return rebuilt;
 };
 
 export const getMessagesForConversation = async (

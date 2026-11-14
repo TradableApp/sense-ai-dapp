@@ -34,11 +34,12 @@ export default function inheritedHistory(
 		const message = byId.get(currentId);
 		if (!message) break;
 		seen.add(currentId);
-		path.unshift({ ...message, conversationId: branchConversationId });
+		path.push({ ...message, conversationId: branchConversationId });
 		currentId = parentIdOf(message);
 	}
 
-	return path;
+	// Collected from the branch point backwards; returned oldest first.
+	return path.reverse();
 }
 
 /**
