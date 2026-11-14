@@ -38,7 +38,7 @@ const message = (id: string): Message =>
 		role: 'user',
 		content: `message ${id}`,
 		createdAt: Number(id),
-	}) as Message;
+	} as Message);
 
 describe('writeMessageCache — one writer for a conversation’s stored messages', () => {
 	let sessionKey: CryptoKey;
