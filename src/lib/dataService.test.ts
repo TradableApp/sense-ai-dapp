@@ -387,6 +387,59 @@ describe('getMessagesForConversation — a branch rebuilds its inherited history
 		expect(mockDb.messageCache.put).not.toHaveBeenCalled();
 	});
 
+	it('shows a cut-off history without storing it, and completes it once the original is whole', async () => {
+		// The original is missing its first message on this device (its payload could not be
+		// fetched on the last sync).
+		const caches = await seed([{ id: 'original' }, BRANCH], {
+			original: ORIGINAL.slice(1),
+			branch: [message('6', 'branch', '1')],
+		});
+
+		const cutOff = await getMessagesForConversation(sessionKey, OWNER, 'branch');
+
+		expect(cutOff.map(m => m.id)).toEqual(['2', '6']);
+		expect(mockDb.messageCache.put).not.toHaveBeenCalled();
+
+		caches.set('original', { encryptedData: await encryptData(sessionKey, ORIGINAL) });
+		const whole = await getMessagesForConversation(sessionKey, OWNER, 'branch');
+
+		expect(whole.map(m => m.id)).toEqual(['1', '2', '6']);
+		expect(mockDb.messageCache.put).toHaveBeenCalledTimes(1);
+	});
+
+	it('completes a branch that holds its branch point but not the messages before it', async () => {
+		await seed([{ id: 'original' }, BRANCH], {
+			original: ORIGINAL,
+			branch: [message('2', 'branch', '1'), message('6', 'branch', '1')],
+		});
+
+		const result = await getMessagesForConversation(sessionKey, OWNER, 'branch');
+
+		expect(result.map(m => m.id)).toEqual(['1', '2', '6']);
+	});
+
+	it('keeps a message written to the branch while its history was being rebuilt', async () => {
+		const caches = await seed([{ id: 'original' }, BRANCH], { original: ORIGINAL });
+		const readConversation = mockDb.conversations.get.getMockImplementation();
+		let hasArrived = false;
+		mockDb.conversations.get.mockImplementation(async (key: [string, string]) => {
+			// Another writer (a sync, or a prompt being sent) stores the branch's own message
+			// after this read of the branch started.
+			if (!hasArrived && key[1] === 'branch') {
+				hasArrived = true;
+				caches.set('branch', {
+					encryptedData: await encryptData(sessionKey, [message('6', 'branch', '1')]),
+				});
+			}
+			return readConversation?.(key);
+		});
+
+		await getMessagesForConversation(sessionKey, OWNER, 'branch');
+		const stored = await getMessagesForConversation(sessionKey, OWNER, 'branch');
+
+		expect(stored.map(m => m.id)).toEqual(['1', '2', '6']);
+	});
+
 	it('does not loop when two conversations name each other as parent', async () => {
 		await seed(
 			[

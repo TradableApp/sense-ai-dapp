@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import inheritedHistory from './inheritedHistory';
+import inheritedHistory, { reachesFirstMessage } from './inheritedHistory';
 import type { Message } from './types';
 
 const msg = (id: string, parentId: string | undefined, role: Message['role']): Message => ({
@@ -57,6 +57,21 @@ describe('inheritedHistory', () => {
 		const withoutRoot = ORIGINAL.filter(m => m.id !== '1');
 
 		expect(inheritedHistory(withoutRoot, '4', 'branch').map(m => m.id)).toEqual(['2', '3', '4']);
+	});
+
+	it('follows a parent link stored as a number', () => {
+		// Messages written on the device that sent them can carry a numeric parent id.
+		const withNumericLink = ORIGINAL.map(m =>
+			m.id === '2' ? ({ ...m, parentId: 1 } as unknown as Message) : m,
+		);
+
+		expect(inheritedHistory(withNumericLink, '2', 'branch').map(m => m.id)).toEqual(['1', '2']);
+	});
+
+	it('says whether a path goes all the way back to the first message', () => {
+		expect(reachesFirstMessage(inheritedHistory(ORIGINAL, '4', 'branch'))).toBe(true);
+		expect(reachesFirstMessage(inheritedHistory(ORIGINAL.slice(1), '4', 'branch'))).toBe(false);
+		expect(reachesFirstMessage([])).toBe(false);
 	});
 
 	it('ends on a parent loop instead of running for ever', () => {
