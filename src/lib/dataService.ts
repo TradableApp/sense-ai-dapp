@@ -141,12 +141,20 @@ const readCachedMessages = async (
 		// Heal the stored list when duplicates were actually collapsed, so it is not collapsed
 		// again on every read and is not seen by paths that read the table directly.
 		if (sortedMessages.length < decryptedData.length) {
-			await writeMessageCache(sessionKey, ownerAddress, conversationId, current => {
-				if (!current) return null;
-				const collapsed = collapseDuplicates(current);
-				// Another reader may have healed it already: nothing to write then.
-				return collapsed.length < current.length ? collapsed : null;
-			});
+			try {
+				await writeMessageCache(sessionKey, ownerAddress, conversationId, current => {
+					if (!current) return null;
+					const collapsed = collapseDuplicates(current);
+					// Another reader may have healed it already: nothing to write then.
+					return collapsed.length < current.length ? collapsed : null;
+				});
+			} catch (error) {
+				// The read has its answer either way; the next read tries the heal again.
+				console.warn(
+					`[dataService] Could not remove the stored duplicates of conversation "${conversationId}":`,
+					error,
+				);
+			}
 		}
 
 		return sortedMessages;

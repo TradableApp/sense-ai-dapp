@@ -83,7 +83,8 @@ export const writeMessageCache = async (
 		const current = read === UNREADABLE ? [] : read;
 		// eslint-disable-next-line no-await-in-loop
 		const next = await merge(current);
-		if (next === null) return current;
+		// The empty list given in place of unreadable data is not what is stored.
+		if (next === null) return read === UNREADABLE ? null : current;
 
 		// eslint-disable-next-line no-await-in-loop
 		const encryptedData = await encryptData(sessionKey, next);
