@@ -24,9 +24,19 @@ const decryptMessages = async (
 	encryptedData: string | undefined,
 ): Promise<Message[] | null> => {
 	if (!encryptedData) return null;
-	const decrypted = await decryptData(sessionKey, encryptedData);
-	// A blob that does not hold a list is treated as empty, so the next write repairs it.
-	return Array.isArray(decrypted) ? (decrypted as Message[]) : [];
+	try {
+		const decrypted = await decryptData(sessionKey, encryptedData);
+		// A blob that does not hold a list is treated as empty, so this write repairs it.
+		return Array.isArray(decrypted) ? (decrypted as Message[]) : [];
+	} catch (error) {
+		// Unreadable with this key: nothing in it can be merged, and leaving it would block every
+		// later write to the conversation. The sync restores the messages from storage.
+		console.warn(
+			'[messageCacheStore] Stored messages could not be decrypted; replacing them.',
+			error,
+		);
+		return [];
+	}
 };
 
 /**
