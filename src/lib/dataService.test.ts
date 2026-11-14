@@ -256,20 +256,32 @@ describe('getMessagesForConversation — a branch rebuilds its inherited history
 		conversations: Array<Record<string, unknown>>,
 		caches: Record<string, unknown[]>,
 	) => {
-		const convRecords = new Map<string, unknown>();
-		for (const conv of conversations) {
-			convRecords.set(conv.id as string, {
-				ownerAddress: OWNER,
-				id: conv.id,
-				encryptedData: await encryptData(sessionKey, conv),
-			});
-		}
-		const cacheRecords = new Map<string, { encryptedData: string }>();
-		for (const [conversationId, messages] of Object.entries(caches)) {
-			cacheRecords.set(conversationId, {
-				encryptedData: await encryptData(sessionKey, messages),
-			});
-		}
+		const convRecords = new Map<string, unknown>(
+			await Promise.all(
+				conversations.map(
+					async conv =>
+						[
+							conv.id as string,
+							{
+								ownerAddress: OWNER,
+								id: conv.id,
+								encryptedData: await encryptData(sessionKey, conv),
+							},
+						] as [string, unknown],
+				),
+			),
+		);
+		const cacheRecords = new Map<string, { encryptedData: string }>(
+			await Promise.all(
+				Object.entries(caches).map(
+					async ([conversationId, messages]) =>
+						[conversationId, { encryptedData: await encryptData(sessionKey, messages) }] as [
+							string,
+							{ encryptedData: string },
+						],
+				),
+			),
+		);
 		mockDb.conversations.get.mockImplementation(async ([, id]: [string, string]) =>
 			convRecords.get(id),
 		);
