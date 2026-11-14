@@ -121,34 +121,52 @@ describe('writeMessageCache — one writer for a conversation’s stored message
 		expect(rows.get(`${OWNER}|${CONVERSATION}`)).toBe(before);
 	});
 
-	it('treats stored data that is not a list of messages as no messages', async () => {
+	const storeUnusable = async (encryptedData: string) => {
 		rows.set(`${OWNER}|${CONVERSATION}`, {
 			ownerAddress: OWNER,
 			conversationId: CONVERSATION,
-			encryptedData: await encryptData(sessionKey, { not: 'a list' }),
+			encryptedData,
 			lastAccessedAt: 1,
 		});
+		return rows.get(`${OWNER}|${CONVERSATION}`);
+	};
 
-		await writeMessageCache(sessionKey, OWNER, CONVERSATION, current => [
-			...(current ?? []),
-			message('1'),
-		]);
+	it('leaves stored data it cannot decrypt alone, and does not run the merge', async () => {
+		const before = await storeUnusable('not.ciphertext');
+		const merge = vi.fn((current: Message[] | null) => (current ?? []).filter(m => m.id !== '1'));
 
+		const result = await writeMessageCache(sessionKey, OWNER, CONVERSATION, merge);
+
+		expect(merge).not.toHaveBeenCalled();
+		expect(result).toBeNull();
+		expect(rows.get(`${OWNER}|${CONVERSATION}`)).toBe(before);
+	});
+
+	it('leaves stored data that is not a list of messages alone', async () => {
+		const before = await storeUnusable(await encryptData(sessionKey, { not: 'a list' }));
+
+		const result = await writeMessageCache(sessionKey, OWNER, CONVERSATION, () => [message('1')]);
+
+		expect(result).toBeNull();
+		expect(rows.get(`${OWNER}|${CONVERSATION}`)).toBe(before);
+	});
+
+	it('replaces stored data it cannot decrypt for a writer that says it may', async () => {
+		await storeUnusable('not.ciphertext');
+		const merge = vi.fn((current: Message[] | null) => [...(current ?? []), message('1')]);
+
+		await writeMessageCache(sessionKey, OWNER, CONVERSATION, merge, { replaceUnreadable: true });
+
+		expect(merge).toHaveBeenCalledWith([]);
 		expect(await stored()).toEqual([message('1')]);
 	});
 
-	it('treats stored data it cannot decrypt as no messages, so the write repairs it', async () => {
-		rows.set(`${OWNER}|${CONVERSATION}`, {
-			ownerAddress: OWNER,
-			conversationId: CONVERSATION,
-			encryptedData: 'not.ciphertext',
-			lastAccessedAt: 1,
-		});
+	it('replaces stored data that is not a list for a writer that says it may', async () => {
+		await storeUnusable(await encryptData(sessionKey, { not: 'a list' }));
 
-		await writeMessageCache(sessionKey, OWNER, CONVERSATION, current => [
-			...(current ?? []),
-			message('1'),
-		]);
+		await writeMessageCache(sessionKey, OWNER, CONVERSATION, () => [message('1')], {
+			replaceUnreadable: true,
+		});
 
 		expect(await stored()).toEqual([message('1')]);
 	});

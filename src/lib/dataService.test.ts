@@ -513,6 +513,52 @@ describe('getMessagesForConversation — a branch rebuilds its inherited history
 		expect(stored.map(m => m.id)).toEqual(['1', '3']);
 	});
 
+	it('sending a prompt does not bring back a message removed after the conversation was read', async () => {
+		const caches = await seed([{ id: 'original' }], { original: ORIGINAL.slice(0, 3) });
+		// A cancel removes message 3 after the send has read the conversation.
+		writeElsewhereJustBeforeTheNextWrite(caches, 'original', ORIGINAL.slice(0, 2));
+
+		await addMessageToConversation(
+			sessionKey,
+			OWNER,
+			'original',
+			'2',
+			'a new prompt',
+			'11',
+			'12',
+			queryClient,
+		);
+		const stored = await getMessagesForConversation(sessionKey, OWNER, 'original');
+
+		expect(stored.map(m => m.id).sort()).toEqual(['1', '11', '12', '2']);
+	});
+
+	it('removing a message from stored data that cannot be read leaves the data as it is', async () => {
+		const caches = await seed([{ id: 'original' }], { original: ORIGINAL.slice(0, 2) });
+		// Unreadable with this key. The sync treats such a conversation as unfinished and
+		// restores it; an empty list written here would look finished and be skipped.
+		caches.set('original', { encryptedData: 'not.ciphertext' });
+
+		await deleteMessageFromConversation(sessionKey, OWNER, 'original', '2', queryClient);
+
+		expect(mockDb.messageCache.put).not.toHaveBeenCalled();
+		expect(caches.get('original')?.encryptedData).toBe('not.ciphertext');
+	});
+
+	it('does not rewrite the stored list when its duplicates are already gone', async () => {
+		const duplicated = [...ORIGINAL.slice(0, 2), ORIGINAL[1]];
+		const caches = await seed([{ id: 'original' }], { original: duplicated });
+		// Another reader collapses the duplicates between this read and its write.
+		const collapsed = { encryptedData: await encryptData(sessionKey, ORIGINAL.slice(0, 2)) };
+		mockDb.messageCache.get
+			.mockImplementationOnce(async ([, id]: [string, string]) => caches.get(id))
+			.mockImplementation(async () => collapsed);
+
+		await getMessagesForConversation(sessionKey, OWNER, 'original');
+
+		expect(mockDb.messageCache.put).not.toHaveBeenCalled();
+	});
+
 	it('storing a message never removes the stored messages of another conversation', async () => {
 		await seed([{ id: 'original' }], { original: ORIGINAL.slice(0, 2) });
 		// Seven conversations are stored for this owner: more than the limit there used to be.

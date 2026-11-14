@@ -199,6 +199,42 @@ describe('syncWithRemote — message-aware hydration skip', () => {
 		expect(stored.map(m => m.id)).toContain('m-next-prompt');
 	});
 
+	it('records the conversations whose messages were stored, and not the one whose were not', async () => {
+		// Two conversations this device has never seen.
+		const [first] = graphConversationUpdate().conversations;
+		graphRequestMock.mockResolvedValue({ conversations: [first, { ...first, id: 'c2' }] });
+		mockDb.conversations.get.mockResolvedValue(undefined);
+		mockDb.messageCache.get.mockResolvedValue(undefined);
+		mockDb.messageCache.put.mockImplementation(async (row: { conversationId: string }) => {
+			if (row.conversationId === CONV_ID) throw new Error('QuotaExceededError');
+		});
+
+		const syncWithRemote = await importSync();
+		await syncWithRemote(sessionKey, OWNER);
+		mockDb.messageCache.put.mockReset();
+
+		// The conversation record is what lets the next sync skip a conversation, and the cursor
+		// is what lets it skip asking: neither moves for a conversation without its messages.
+		const recorded = mockDb.conversations.bulkPut.mock.calls.flatMap(([records]) => records);
+		expect(recorded.map((r: { id: string }) => r.id)).toEqual(['c2']);
+		expect(mockDb.userMetadata.put).not.toHaveBeenCalled();
+	});
+
+	it('replaces stored messages it cannot decrypt with the hydrated ones', async () => {
+		mockDb.messageCache.get.mockResolvedValue({
+			ownerAddress: OWNER,
+			conversationId: CONV_ID,
+			encryptedData: 'not.ciphertext',
+		});
+
+		const syncWithRemote = await importSync();
+		await syncWithRemote(sessionKey, OWNER);
+
+		const written = mockDb.messageCache.put.mock.calls.at(-1)?.[0];
+		const stored = (await decryptData(sessionKey, written.encryptedData)) as Array<{ id: string }>;
+		expect(stored.length).toBeGreaterThan(0);
+	});
+
 	it('still skips hydration when the cache is already fully resolved', async () => {
 		// Every assistant message already has content → the optimization should hold.
 		await seedMessageCache([
