@@ -63,6 +63,7 @@ import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import ActivatePlanCTA from './ActivatePlanCTA';
 import { cancelWindow } from './cancelWindow';
 import isQueryAhead from './messageReconcile';
+import { composerStateFor } from './promptParent';
 
 interface MarkdownParagraphProps {
 	children: ReactNode;
@@ -100,6 +101,12 @@ function BranchInfo({ originalConversationId, onNavigate }: BranchInfoProps) {
 }
 
 const STREAM_BY_WORD = true;
+
+// While a branch is held for its history (see composerStateFor): how often its messages are
+// read again from the local store, and how often a sync is asked for. The first is a local
+// read; the second is a query to the index, so it is the slower of the two.
+const HELD_BRANCH_REREAD_MS = 15_000;
+const HELD_BRANCH_RESYNC_MS = 60_000;
 const promptSchema = z.object({
 	// Any changes to schema must be updated in tokenized-ai-agent/oracle/src/payloadValidator.js
 	prompt: z.string().trim().min(1, { message: 'Message cannot be empty.' }).max(5000),
@@ -156,7 +163,11 @@ export default function Chat() {
 	const { data: conversations } = useConversations();
 	const currentConversation = conversations?.find(c => c.id === activeConversationId);
 
-	const { data: activeConversationMetadata } = useQuery({
+	const {
+		data: activeConversationMetadata,
+		isFetched: isMetadataFetched,
+		isFetching: isMetadataFetching,
+	} = useQuery({
 		queryKey: ['conversations', 'metadata', activeConversationId, sessionKey, ownerAddress],
 		queryFn: () => {
 			if (!sessionKey || !ownerAddress || !activeConversationId) return null;
@@ -262,6 +273,44 @@ export default function Chat() {
 
 		return { messagesToDisplay: displayPath, versionInfo: versions };
 	}, [activeConversationMessages, activeMessageId]);
+
+	// Whether a prompt can be sent now and what it threads off: see composerStateFor. The
+	// record comes from the list or, when the list does not have it yet (a branch just made, a
+	// sync still running), from the direct read of this one conversation.
+	const composer = composerStateFor({
+		activeConversationId,
+		conversation: currentConversation ?? activeConversationMetadata,
+		// Fetched and not being fetched again: `isFetched` stays true from an earlier visit, when
+		// the record may not have existed yet.
+		isConversationSettled: isMetadataFetched && !isMetadataFetching,
+		messagesShown: messagesToDisplay,
+		// Read, and what was read is what is shown. The third clause is needed: the store is
+		// emptied when the conversation changes and filled one render AFTER the read returns, so
+		// in between the read has messages and the screen has none.
+		areMessagesSettled:
+			isSuccess &&
+			!isFetching &&
+			((messagesFromQuery?.length ?? 0) === 0 || activeConversationMessages.length > 0),
+	});
+	const hasBranchOrigin = composer.kind === 'ready' && composer.hasBranchOrigin;
+	const isHeldForBranchHistory = composer.kind === 'hold';
+
+	// A held branch is waiting for its original's messages. They arrive with a sync, which
+	// nothing else would start while the composer cannot send; and nothing re-reads this
+	// branch's messages when they do. So while held, both are asked for again on a timer.
+	useEffect(() => {
+		if (!isHeldForBranchHistory) return undefined;
+		const rereadMessages = setInterval(() => {
+			queryClient.invalidateQueries({ queryKey: ['messages', activeConversationId, ownerAddress] });
+		}, HELD_BRANCH_REREAD_MS);
+		const resync = setInterval(() => {
+			queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
+		}, HELD_BRANCH_RESYNC_MS);
+		return () => {
+			clearInterval(rereadMessages);
+			clearInterval(resync);
+		};
+	}, [isHeldForBranchHistory, queryClient, activeConversationId, ownerAddress, sessionKey]);
 
 	useEffect(() => {
 		setActiveMessageId(null);
@@ -378,6 +427,8 @@ export default function Chat() {
 				sessionKey,
 				parentId: originalMessage.parentId ?? null,
 				parentCID: parentMessage?.messageCID ?? null,
+				// An edit is made on a message that is shown, so the composer is ready here.
+				hasBranchOrigin,
 			},
 			{
 				onSuccess: async newIds => {
@@ -671,18 +722,11 @@ export default function Chat() {
 	const onSubmit = (data: { prompt: string }) => {
 		if (!sessionKey) return;
 
-		// The new prompt threads off the last message in view. Message ids are numeric
-		// strings (e.g. "53"), so parse rather than `typeof === 'number'` (which was
-		// always false → parentId null → every follow-up stored with no parent, so the
-		// synced thread split into a disjoint branch). NaN (no prior message — a brand
-		// new conversation) correctly yields a null parent.
-		const lastDisplayedMessage = messagesToDisplay?.at(-1);
-		// `?? NaN` first: a missing/null id (brand-new conversation, or an unresolved
-		// placeholder) must map to a null parent. Number(null) is 0 — which would
-		// wrongly thread the prompt onto message id 0 — so guard it before Number().
-		const parentIdNum = Number(lastDisplayedMessage?.id ?? NaN);
-		const parentId = Number.isFinite(parentIdNum) ? parentIdNum : null;
-		const parentCID = lastDisplayedMessage?.messageCID ?? null;
+		// The new prompt threads off the last message in view (a null parent would store every
+		// follow-up with no parent, and the synced thread would split into a disjoint branch).
+		// See promptParentFor for how the parent is found and when a branch holds the prompt.
+		if (composer.kind !== 'ready') return;
+		const { parentId, parentCID } = composer;
 
 		// Whether this conversation already has a delivered (content-bearing) answer. If it
 		// doesn't (e.g. its only prior prompt was cancelled), the conversation was never
@@ -701,6 +745,7 @@ export default function Chat() {
 				parentId,
 				parentCID,
 				conversationHasAnswer,
+				hasBranchOrigin,
 			},
 			{
 				onSuccess: async newIds => {
@@ -764,9 +809,16 @@ export default function Chat() {
 		branchConversationMutation.isPending;
 
 	const hasValidationError = !!errors.prompt;
-	const isDisabled = isProcessing || isAiThinking || !sessionKey || isLoadingPlan || !hasActivePlan;
+	const isDisabled =
+		isProcessing ||
+		isAiThinking ||
+		!sessionKey ||
+		isLoadingPlan ||
+		!hasActivePlan ||
+		composer.kind !== 'ready';
 
-	const isInputDisabled = isProcessing || !sessionKey || isLoadingPlan || !hasActivePlan;
+	const isInputDisabled =
+		isProcessing || !sessionKey || isLoadingPlan || !hasActivePlan || composer.kind !== 'ready';
 
 	// Calculate UI status for the submit button
 	const submitStatus = (() => {
@@ -970,8 +1022,21 @@ export default function Chat() {
 						<PromptInputTextarea
 							placeholder="Ask about market sentiment, on-chain data..."
 							disabled={isDisabled}
+							aria-describedby={isHeldForBranchHistory ? 'branch-history-hold' : undefined}
 							{...register('prompt')}
 						/>
+						{/* Always mounted, so a screen reader announces the text when it appears. */}
+						<p
+							id="branch-history-hold"
+							className={
+								isHeldForBranchHistory ? 'px-3 py-1.5 text-xs text-muted-foreground' : 'sr-only'
+							}
+							role="status"
+							data-testid="branch-history-hold"
+						>
+							{isHeldForBranchHistory &&
+								'This branch\u2019s earlier messages have not loaded on this device yet. We keep trying, and you can send a prompt as soon as they are here.'}
+						</p>
 						{isAiThinking && refundSecondsLeft !== null && (
 							<div className="flex items-center justify-end px-3 py-1.5 text-xs text-muted-foreground">
 								{refundSecondsLeft > 0 ? (

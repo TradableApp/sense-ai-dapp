@@ -2,7 +2,7 @@ import { type BrowserContext } from '@playwright/test';
 
 import { expect, test } from '../fixtures';
 import { BUDGET } from '../helpers/budgets';
-import { LIVE_STACK } from '../helpers/chain';
+import { CHAIN, LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { openDevice } from '../helpers/devices';
 import {
@@ -450,5 +450,129 @@ test.describe('Branching (T-BRANCH)', () => {
 		await expect(deviceB.chat.userMessages).toHaveCount(1);
 		await expect(deviceB.chat.assistantMessages).toHaveCount(1);
 		await expect(deviceB.chat.userMessages.filter({ hasText: later })).toHaveCount(0);
+	});
+
+	// The branch point here is the answer to an EDITED prompt: the original holds two versions
+	// of its second prompt, and the branch inherits the path through the edit, not the first
+	// version. A second device has to rebuild exactly that path.
+	test('T-BRANCH-11: on a second device a branch made after an edit shows the edited path it inherited', async ({
+		browser,
+		freshChatPage,
+		freshUserAccount,
+	}) => {
+		const owner = freshUserAccount.address;
+		const first = 'Marrowind first prompt marker';
+		const replaced = 'Snelliwick replaced prompt marker';
+		const edited = 'Trobbleknot edited prompt marker';
+		// Three paid answers and a branch, then a second device.
+		test.setTimeout(360_000);
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse(first);
+		await freshChatPage.sendPromptAndWaitForResponse(replaced);
+		await freshChatPage.editLatestUserMessage(edited);
+		await expect(freshChatPage.versionIndicator).toHaveText(/^\s*2\s*\/\s*2\s*$/, {
+			timeout: 90_000,
+		});
+		await expect(freshChatPage.thinkingIndicator).toBeHidden({ timeout: 90_000 });
+		await expect(freshChatPage.userMessages.last()).toContainText(edited);
+
+		await freshChatPage.branchInNewChat();
+		await expect(freshChatPage.assistantMessages.first()).toBeVisible({ timeout: 20_000 });
+		const lineage = await waitForGraph(
+			() => getConversationsWithLineage(owner),
+			list => list.length === 2 && list.some(c => c.branchedFrom !== null),
+			{ label: 'branch lineage indexed' },
+		);
+		const original = lineage.find(c => c.branchedFrom === null)!;
+		// Three prompts and three answers in the original before the second device syncs.
+		await waitForGraph(
+			() => getMessages(original.id),
+			msgs => msgs.length === 6 && msgs.every(m => m.messageCID !== ''),
+			{ label: 'both versions of the second prompt indexed in the original' },
+		);
+
+		const deviceB = await openDevice(browser, freshUserAccount, openContexts);
+		await deviceB.history.goto();
+		await deviceB.history.assertConversationCount(2, { timeout: BUDGET.indexMs * 3 });
+		await deviceB.history.conversationItems.filter({ hasText: /Branch of/ }).click();
+
+		// The first pair and the edited pair, in that order; the replaced prompt is not on the
+		// path to the branch point.
+		await expect(deviceB.chat.userMessages).toHaveCount(2, { timeout: BUDGET.answerMs });
+		await expect(deviceB.chat.userMessages.nth(0)).toContainText(first);
+		await expect(deviceB.chat.userMessages.nth(1)).toContainText(edited);
+		await expect(deviceB.chat.userMessages.filter({ hasText: replaced })).toHaveCount(0);
+		await expect(deviceB.chat.assistantMessages).toHaveCount(2);
+	});
+
+	// A branch always has history. When a device cannot load it, the branch shows nothing, and
+	// a prompt sent then would have no parent: the answer would be stored as the start of a
+	// conversation and the branch would lose where it came from. So the prompt is held.
+	test('T-BRANCH-12: a branch whose history cannot be loaded holds the prompt', async ({
+		browser,
+		freshChatPage,
+		freshUserAccount,
+	}) => {
+		// Storage is made to fail with a route intercept; the hold is the same code on every chain.
+		test.skip(CHAIN === 'testnet', 'storage failure is injected by a route intercept; localnet');
+		const owner = freshUserAccount.address;
+		await freshChatPage.goto();
+		await freshChatPage.sendPromptAndWaitForResponse('Vexelbrim inherited prompt marker');
+		await freshChatPage.branchInNewChat();
+		await expect(freshChatPage.assistantMessages.first()).toBeVisible({ timeout: 20_000 });
+		const lineage = await waitForGraph(
+			() => getConversationsWithLineage(owner),
+			list => list.length === 2 && list.some(c => c.branchedFrom !== null),
+			{ label: 'branch lineage indexed' },
+		);
+		const original = lineage.find(c => c.branchedFrom === null)!;
+		const originalMessages = await waitForGraph(
+			() => getMessages(original.id),
+			msgs => msgs.length === 2 && msgs.every(m => m.messageCID !== ''),
+			{ label: 'original prompt and answer indexed' },
+		);
+		const messageCIDs = originalMessages.map(m => m.messageCID);
+
+		// The second device can read everything except the original's two messages: every
+		// storage source answers 503 for them.
+		let refusedReads = 0;
+		const deviceB = await openDevice(browser, freshUserAccount, openContexts, {
+			beforeFirstLoad: context =>
+				context.route(
+					url => messageCIDs.some(cid => url.href.includes(cid)),
+					route => {
+						refusedReads += 1;
+						return route.fulfill({ status: 503, body: 'storage unavailable' });
+					},
+				),
+		});
+		await deviceB.history.goto();
+		await deviceB.history.assertConversationCount(2, { timeout: BUDGET.indexMs * 3 });
+		await deviceB.history.conversationItems.filter({ hasText: /Branch of/ }).click();
+
+		// The hold must come from the failed reads, not from the moment before anything has
+		// loaded: so first the reads are seen to be refused and the sync to have given up on them.
+		const hold = deviceB.page.getByTestId('branch-history-hold');
+		await expect(deviceB.page.getByText('History temporarily unavailable')).toBeVisible({
+			timeout: BUDGET.answerMs,
+		});
+		expect(refusedReads).toBeGreaterThan(0);
+
+		// Nothing to thread a prompt off: the composer says so and takes no input.
+		await expect(hold).toContainText(/earlier messages have not loaded/, {
+			timeout: BUDGET.answerMs,
+		});
+		await expect(deviceB.chat.promptTextarea).toBeDisabled();
+		await expect(deviceB.chat.promptTextarea).toHaveAttribute(
+			'aria-describedby',
+			'branch-history-hold',
+		);
+		await expect(deviceB.chat.userMessages).toHaveCount(0);
+
+		// The original, opened on the same device, is not a branch: it is not held.
+		await deviceB.history.goto();
+		await deviceB.history.conversationItems.filter({ hasNotText: /Branch of/ }).click();
+		await expect(deviceB.chat.promptTextarea).toBeEnabled({ timeout: BUDGET.answerMs });
+		await expect(hold).toBeEmpty();
 	});
 });
