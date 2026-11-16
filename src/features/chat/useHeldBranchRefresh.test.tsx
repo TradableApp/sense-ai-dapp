@@ -77,6 +77,7 @@ describe('a branch held for its history', () => {
 
 		expect(result.current).toBe(false);
 		expect(asked('messages')).toBe(0);
+		expect(asked('conversations')).toBe(0);
 	});
 
 	it('asks with the keys the queries are stored under', () => {
@@ -137,6 +138,33 @@ describe('a branch held for its history', () => {
 		hidden.mockReturnValue(false);
 		act(() => vi.advanceTimersByTime(HELD_BRANCH_RESYNC_MS));
 		expect(asked('conversations')).toBe(1);
+
+		hidden.mockRestore();
+	});
+
+	// The history may have arrived while the page was hidden. Waiting for the next tick would
+	// leave the hold on screen for up to a minute after the user comes back.
+	it('asks for both at once when the page is shown again', () => {
+		const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+		const { asked, unmount } = setup('hold');
+
+		act(() => {
+			document.dispatchEvent(new Event('visibilitychange'));
+		});
+		expect(asked('messages'), 'still hidden').toBe(0);
+
+		hidden.mockReturnValue(false);
+		act(() => {
+			document.dispatchEvent(new Event('visibilitychange'));
+		});
+		expect(asked('messages')).toBe(1);
+		expect(asked('conversations')).toBe(1);
+
+		unmount();
+		act(() => {
+			document.dispatchEvent(new Event('visibilitychange'));
+		});
+		expect(asked('messages'), 'nothing after the screen is left').toBe(1);
 
 		hidden.mockRestore();
 	});
