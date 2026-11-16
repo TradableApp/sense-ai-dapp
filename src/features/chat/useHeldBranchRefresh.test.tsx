@@ -94,8 +94,50 @@ describe('a branch held for its history', () => {
 		act(() => vi.advanceTimersByTime(HELD_BRANCH_RESYNC_MS));
 
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['messages', '7', OWNER] });
-		expect(invalidateQueries).toHaveBeenCalledWith({
-			queryKey: ['conversations', SESSION_KEY, OWNER],
-		});
+		// A sync already running is left to finish, not dropped and started again.
+		expect(invalidateQueries).toHaveBeenCalledWith(
+			{ queryKey: ['conversations', SESSION_KEY, OWNER] },
+			{ cancelRefetch: false },
+		);
+	});
+
+	it('stops asking when a re-read ends with the composer ready', () => {
+		const { result, rerender, asked } = setup('hold');
+
+		rerender({ kind: 'loading', id: '7' });
+		rerender({ kind: 'ready', id: '7' });
+		act(() => vi.advanceTimersByTime(HELD_BRANCH_RESYNC_MS * 2));
+
+		expect(result.current).toBe(false);
+		expect(asked('messages')).toBe(0);
+		expect(asked('conversations')).toBe(0);
+	});
+
+	it('stops asking when the screen is left', () => {
+		const { unmount, asked } = setup('hold');
+
+		unmount();
+		act(() => vi.advanceTimersByTime(HELD_BRANCH_RESYNC_MS * 2));
+
+		expect(asked('messages')).toBe(0);
+		expect(asked('conversations')).toBe(0);
+	});
+
+	// A branch whose history never arrives would otherwise query the index every minute for as
+	// long as the tab stays open, seen or not.
+	it('asks for nothing while the page is hidden, and carries on when it is shown again', () => {
+		const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+		const { result, asked } = setup('hold');
+
+		act(() => vi.advanceTimersByTime(HELD_BRANCH_RESYNC_MS * 2));
+		expect(result.current).toBe(true);
+		expect(asked('messages')).toBe(0);
+		expect(asked('conversations')).toBe(0);
+
+		hidden.mockReturnValue(false);
+		act(() => vi.advanceTimersByTime(HELD_BRANCH_RESYNC_MS));
+		expect(asked('conversations')).toBe(1);
+
+		hidden.mockRestore();
 	});
 });
