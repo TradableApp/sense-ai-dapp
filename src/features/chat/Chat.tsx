@@ -64,6 +64,7 @@ import ActivatePlanCTA from './ActivatePlanCTA';
 import { cancelWindow } from './cancelWindow';
 import isQueryAhead from './messageReconcile';
 import { composerStateFor } from './promptParent';
+import useHeldBranchRefresh from './useHeldBranchRefresh';
 
 interface MarkdownParagraphProps {
 	children: ReactNode;
@@ -102,11 +103,6 @@ function BranchInfo({ originalConversationId, onNavigate }: BranchInfoProps) {
 
 const STREAM_BY_WORD = true;
 
-// While a branch is held for its history (see composerStateFor): how often its messages are
-// read again from the local store, and how often a sync is asked for. The first is a local
-// read; the second is a query to the index, so it is the slower of the two.
-const HELD_BRANCH_REREAD_MS = 15_000;
-const HELD_BRANCH_RESYNC_MS = 60_000;
 const promptSchema = z.object({
 	// Any changes to schema must be updated in tokenized-ai-agent/oracle/src/payloadValidator.js
 	prompt: z.string().trim().min(1, { message: 'Message cannot be empty.' }).max(5000),
@@ -293,24 +289,14 @@ export default function Chat() {
 			((messagesFromQuery?.length ?? 0) === 0 || activeConversationMessages.length > 0),
 	});
 	const hasBranchOrigin = composer.kind === 'ready' && composer.hasBranchOrigin;
-	const isHeldForBranchHistory = composer.kind === 'hold';
-
-	// A held branch is waiting for its original's messages. They arrive with a sync, which
-	// nothing else would start while the composer cannot send; and nothing re-reads this
-	// branch's messages when they do. So while held, both are asked for again on a timer.
-	useEffect(() => {
-		if (!isHeldForBranchHistory) return undefined;
-		const rereadMessages = setInterval(() => {
-			queryClient.invalidateQueries({ queryKey: ['messages', activeConversationId, ownerAddress] });
-		}, HELD_BRANCH_REREAD_MS);
-		const resync = setInterval(() => {
-			queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
-		}, HELD_BRANCH_RESYNC_MS);
-		return () => {
-			clearInterval(rereadMessages);
-			clearInterval(resync);
-		};
-	}, [isHeldForBranchHistory, queryClient, activeConversationId, ownerAddress, sessionKey]);
+	// True from the moment the branch is held until it can send, re-reads included.
+	const isHeldForBranchHistory = useHeldBranchRefresh({
+		composerKind: composer.kind,
+		activeConversationId,
+		ownerAddress,
+		sessionKey,
+		queryClient,
+	});
 
 	useEffect(() => {
 		setActiveMessageId(null);

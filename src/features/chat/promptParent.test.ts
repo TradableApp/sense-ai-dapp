@@ -167,7 +167,7 @@ describe('composerStateFor — whether a prompt can be sent now', () => {
 	});
 });
 
-describe('waiting for a branch\'s history', () => {
+describe("waiting for a branch's history", () => {
 	it('starts when the composer is held and ends when it is ready', () => {
 		expect(isWaitingForBranchHistory(false, 'hold')).toBe(true);
 		expect(isWaitingForBranchHistory(true, 'ready')).toBe(false);

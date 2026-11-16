@@ -86,3 +86,18 @@ export function composerStateFor({
 	if (!areMessagesSettled) return { kind: 'loading' };
 	return parent.kind === 'hold' ? parent : { ...parent, kind: 'ready', hasBranchOrigin };
 }
+
+/**
+ * Whether the composer is still waiting for a branch's history, given whether it was waiting
+ * and what it has become.
+ *
+ * `hold` starts the wait and `ready` ends it. `loading` changes nothing: while held, the
+ * messages are read again every few seconds and each read passes through `loading`, so ending
+ * the wait there would restart, on every re-read, everything that runs for as long as the wait
+ * lasts.
+ */
+export function isWaitingForBranchHistory(wasWaiting: boolean, kind: ComposerState['kind']) {
+	if (kind === 'hold') return true;
+	if (kind === 'ready') return false;
+	return wasWaiting;
+}
