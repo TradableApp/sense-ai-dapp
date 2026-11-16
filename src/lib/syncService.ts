@@ -18,6 +18,7 @@ import db from './db';
 import { GET_USER_UPDATES_QUERY } from './graph/queries';
 import type { GetUserUpdatesQuery, GetUserUpdatesQueryVariables } from './graph/query-types';
 import mergeMessages from './mergeMessages';
+import { writeMessageCache } from './messageCacheStore';
 import { fetchPayload, type PayloadFetchDeps, type PayloadStorageConfig } from './payloadStorage';
 import { mergeSearchIndexDeltas } from './searchService';
 import type { Message } from './types';
@@ -564,83 +565,69 @@ export default async function syncWithRemote(
 				return { ownerAddress, id: conversation.id, encryptedData: encryptedConv };
 			});
 
-		const messageCachePromises = hydratedData
+		// Each conversation's messages are merged into what is stored at the moment of writing, so
+		// a prompt sent while this sync was fetching is not replaced by the older list it read.
+		const messageWrites = hydratedData
 			.filter(item => item.messages.length > 0)
-			.map(async item => {
+			.map(item => {
 				// We need to ensure we have a valid conversationId for the cache key.
 				// If the metadata update was skipped, we grab the ID from the first message.
 				const conversationId = item.conversation
 					? item.conversation.id
 					: ((item.messages[0] as Record<string, unknown>)?.conversationId as string) || '';
 
-				// Instead of overwriting, we fetch existing messages and merge them.
-				// This preserves history when The Graph only returns the newest messages (e.g. after branching).
-				let finalMessages = item.messages;
+				const mergeHydrated = (current: Message[] | null): Message[] => {
+					// Merge by id, keyed so The Graph is authority for status/metadata, but an
+					// un-hydrated (content-less) incoming message must NOT clobber content we
+					// already delivered. See mergeMessages. This also preserves history when The
+					// Graph only returns the newest messages (e.g. after branching).
+					//
+					// item.messages is the post-hydration `allMessages` (decrypted MessageFiles +
+					// prompt requests): both carry id/content/createdAt, so the Message shape
+					// holds at runtime; the cast only bridges its loose `unknown[]` upstream typing.
+					const merged = mergeMessages(current ?? [], item.messages as unknown as Message[]);
 
-				try {
-					const existingRecord = await db.messageCache.get([ownerAddress, conversationId]);
-
-					if (existingRecord) {
-						const existingMessages = await decryptData(sessionKey, existingRecord.encryptedData);
-
-						// Merge by id, keyed so The Graph is authority for status/metadata —
-						// but an un-hydrated (content-less) incoming message must NOT clobber
-						// content we already delivered. See mergeMessages. A corrupt cache that
-						// decrypts to a non-array is treated as empty, so the result is still
-						// sorted/deduped (previously the non-array path left messages unsorted).
-						//
-						// item.messages is the post-hydration `allMessages` (decrypted
-						// MessageFiles + prompt requests) — both carry id/content/createdAt, so
-						// the Message shape holds at runtime; the cast only bridges its loose
-						// `unknown[]` upstream typing. mergeMessages keys content off `content`,
-						// which is present on both.
-						finalMessages = mergeMessages(
-							Array.isArray(existingMessages) ? (existingMessages as Message[]) : [],
-							item.messages as unknown as Message[],
-						);
-					}
-				} catch (err) {
-					console.warn(
-						`[syncService] Error merging messages for conv ${conversationId}, overwriting cache:`,
-						err,
-					);
-				}
-
-				// Drop the orphaned content-less answer placeholders of cancelled/refunded
-				// prompts so the chat doesn't stay stuck "Thinking…" after a cancel.
-				finalMessages = dropCancelledAnswerPlaceholders(
-					finalMessages as unknown as Array<{
-						id?: string | number;
-						role?: string;
-						content?: unknown;
-					}>,
-					item.cancelledAnswerIds,
-				) as typeof finalMessages;
-
-				// encryptData JSON-stringifies internally, so pass the array directly —
-				// pre-stringifying here double-encodes it, and getMessages() then decrypts
-				// to a string and crashes on `.sort` (matches dataService's usage).
-				const encryptedMessages = await encryptData(sessionKey, finalMessages);
-
-				return {
-					ownerAddress,
-					conversationId,
-					encryptedData: encryptedMessages,
-					lastAccessedAt: Date.now(),
+					// Drop the orphaned content-less answer placeholders of cancelled/refunded
+					// prompts so the chat doesn't stay stuck "Thinking…" after a cancel.
+					return dropCancelledAnswerPlaceholders(
+						merged as unknown as Array<{
+							id?: string | number;
+							role?: string;
+							content?: unknown;
+						}>,
+						item.cancelledAnswerIds,
+					) as unknown as Message[];
 				};
+
+				// The hydrated messages are the stored copy, so they replace data that cannot be read.
+				return writeMessageCache(sessionKey, ownerAddress, conversationId, mergeHydrated, {
+					replaceUnreadable: true,
+				}).then(
+					() => null,
+					(error: unknown) => {
+						console.error(
+							`[syncService] The messages of conversation "${conversationId}" could not be stored:`,
+							error,
+						);
+						return conversationId;
+					},
+				);
 			});
 
-		const [conversationsToCache, messagesToCache] = await Promise.all([
+		const [allConversationsToCache, messageWriteResults] = await Promise.all([
 			Promise.all(conversationCachePromises),
-			Promise.all(messageCachePromises),
+			Promise.all(messageWrites),
 		]);
 
-		// 5. Execute all database operations. These are highly optimized bulk operations.
+		// A conversation whose messages could not be stored is not recorded either: its record
+		// is what lets the next sync skip it, and it would then never get its messages. The
+		// others are recorded as usual, so one bad write does not hold every conversation back.
+		const notStored = new Set(messageWriteResults.filter(id => id !== null));
+		const conversationsToCache = allConversationsToCache.filter(c => !notStored.has(c.id));
+
+		// 5. Store the conversation records in one bulk operation.
 		if (conversationsToCache.length > 0) {
 			await db.conversations.bulkPut(conversationsToCache);
-		}
-		if (messagesToCache.length > 0) {
-			await db.messageCache.bulkPut(messagesToCache);
 		}
 
 		// 5. Merge search index deltas
@@ -659,7 +646,9 @@ export default async function syncWithRemote(
 		// self-healing outage — banner shown, a Sentry breadcrumb every pass, fixed by
 		// repairing the mirror or unsetting VITE_PAYLOAD_MIRROR_URL — into silent data loss
 		// whenever that 404 was a fresh upload the gateway had not propagated yet.
-		if (unavailablePayloads === 0) {
+		//
+		// The same goes for a conversation whose messages could not be stored on this device.
+		if (unavailablePayloads === 0 && notStored.size === 0) {
 			await setLastSyncedAt(sessionKey, ownerAddress, newLastSync);
 		}
 		return { unavailablePayloads };
