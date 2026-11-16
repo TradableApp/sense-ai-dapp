@@ -53,11 +53,21 @@ export default function useHeldBranchRefresh({
 
 	useEffect(() => {
 		if (!isWaiting) return undefined;
+		// Nothing is asked for while the page is hidden: a branch whose history never arrives
+		// would otherwise query the index every minute for as long as the tab stays open. The
+		// timers keep running, so asking starts again at the next tick after the page is shown.
 		const rereadMessages = setInterval(() => {
+			if (document.hidden) return;
 			queryClient.invalidateQueries({ queryKey: ['messages', activeConversationId, ownerAddress] });
 		}, HELD_BRANCH_REREAD_MS);
 		const resync = setInterval(() => {
-			queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
+			if (document.hidden) return;
+			// A sync already running is left to finish: cancelling it here would only start a
+			// second one beside it, since the sync itself cannot be stopped.
+			queryClient.invalidateQueries(
+				{ queryKey: ['conversations', sessionKey, ownerAddress] },
+				{ cancelRefetch: false },
+			);
 		}, HELD_BRANCH_RESYNC_MS);
 		return () => {
 			clearInterval(rereadMessages);
