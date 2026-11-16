@@ -53,25 +53,34 @@ export default function useHeldBranchRefresh({
 
 	useEffect(() => {
 		if (!isWaiting) return undefined;
-		// Nothing is asked for while the page is hidden: a branch whose history never arrives
-		// would otherwise query the index every minute for as long as the tab stays open. The
-		// timers keep running, so asking starts again at the next tick after the page is shown.
-		const rereadMessages = setInterval(() => {
-			if (document.hidden) return;
+		const rereadMessages = () =>
 			queryClient.invalidateQueries({ queryKey: ['messages', activeConversationId, ownerAddress] });
-		}, HELD_BRANCH_REREAD_MS);
-		const resync = setInterval(() => {
-			if (document.hidden) return;
-			// A sync already running is left to finish: cancelling it here would only start a
-			// second one beside it, since the sync itself cannot be stopped.
+		// A sync already running is left to finish: cancelling it here would only start a second
+		// one beside it, since the sync itself cannot be stopped.
+		const resync = () =>
 			queryClient.invalidateQueries(
 				{ queryKey: ['conversations', sessionKey, ownerAddress] },
 				{ cancelRefetch: false },
 			);
-		}, HELD_BRANCH_RESYNC_MS);
+		// Nothing is asked for while the page is hidden: a branch whose history never arrives
+		// would otherwise query the index every minute for as long as the tab stays open.
+		const whileShown = (ask: () => void) => () => {
+			if (!document.hidden) ask();
+		};
+		// The history may have arrived while the page was hidden, so both are asked for the
+		// moment it is shown again, not at the next tick.
+		const onShownAgain = whileShown(() => {
+			rereadMessages();
+			resync();
+		});
+
+		const rereadTimer = setInterval(whileShown(rereadMessages), HELD_BRANCH_REREAD_MS);
+		const resyncTimer = setInterval(whileShown(resync), HELD_BRANCH_RESYNC_MS);
+		document.addEventListener('visibilitychange', onShownAgain);
 		return () => {
-			clearInterval(rereadMessages);
-			clearInterval(resync);
+			document.removeEventListener('visibilitychange', onShownAgain);
+			clearInterval(rereadTimer);
+			clearInterval(resyncTimer);
 		};
 	}, [isWaiting, queryClient, activeConversationId, ownerAddress, sessionKey]);
 
