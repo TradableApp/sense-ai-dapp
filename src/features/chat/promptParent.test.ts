@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import promptParentFor, { composerStateFor } from './promptParent';
+import promptParentFor, { composerStateFor, isWaitingForBranchHistory } from './promptParent';
 
 const shown = (id: string, messageCID: string | null = `cid-${id}`) => ({ id, messageCID });
 
@@ -164,5 +164,24 @@ describe('composerStateFor — whether a prompt can be sent now', () => {
 			parentCID: null,
 			hasBranchOrigin: false,
 		});
+	});
+});
+
+describe("waiting for a branch's history", () => {
+	it('starts when the composer is held and ends when it is ready', () => {
+		expect(isWaitingForBranchHistory(false, 'hold')).toBe(true);
+		expect(isWaitingForBranchHistory(true, 'ready')).toBe(false);
+	});
+
+	// While held, the messages are read again every few seconds, and each read passes through
+	// "loading". Ending the wait there would restart everything that runs for as long as the
+	// wait lasts, on every re-read.
+	it('goes on through a re-read', () => {
+		expect(isWaitingForBranchHistory(true, 'loading')).toBe(true);
+	});
+
+	it('does not start on a first read', () => {
+		expect(isWaitingForBranchHistory(false, 'loading')).toBe(false);
+		expect(isWaitingForBranchHistory(false, 'ready')).toBe(false);
 	});
 });
