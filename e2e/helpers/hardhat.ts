@@ -685,7 +685,8 @@ export async function getPendingOwner(contractAddress: string): Promise<string> 
 }
 
 /**
- * Offer ownership of the escrow or agent to `newOwner`. Ownership moves in two steps: the offer
+ * Offer ownership of the escrow to `newOwner`. (The agent takes the same two calls, and the
+ * calldata is the same whichever ABI encodes it.) Ownership moves in two steps: the offer
  * changes nothing until `newOwner` accepts it, so the sender is still the owner afterwards.
  * @param fromAddress the CURRENT owner sending the tx (defaults to the deployer/owner, account 0).
  */
