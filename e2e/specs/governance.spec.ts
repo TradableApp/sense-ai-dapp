@@ -201,6 +201,7 @@ test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
 		expect((await getOwner(ESCROW_ADDRESS)).toLowerCase()).toBe(DEPLOYER_ADDRESS.toLowerCase());
 		expect((await getPendingOwner(ESCROW_ADDRESS)).toLowerCase()).toBe(NEW_OWNER.toLowerCase());
 		await expect(setPromptFeeFrom(ESCROW_ADDRESS, NEW_OWNER, 7n * ABLE)).rejects.toThrow();
+		await setPromptFee(ESCROW_ADDRESS, originalPromptFee as bigint);
 
 		await acceptOwnership(ESCROW_ADDRESS, NEW_OWNER);
 		expect((await getOwner(ESCROW_ADDRESS)).toLowerCase()).toBe(NEW_OWNER.toLowerCase());
