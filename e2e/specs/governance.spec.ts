@@ -184,7 +184,9 @@ test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
 					await transferOwnership(ESCROW_ADDRESS, originalOwner, currentOwner);
 				} else if (BigInt(await getPendingOwner(ESCROW_ADDRESS)) !== 0n) {
 					// A test stopped between the offer and the acceptance. Offering to the zero address
-					// withdraws it, so no account is left able to take the escrow later in the run.
+					// withdraws it, so no account is left able to take the escrow later in the run. The
+					// escrow takes transferOwnership as OpenZeppelin's Ownable2Step has it, with no
+					// zero-address check; if it ever adds one this call reverts and the hook fails loudly.
 					await offerOwnership(ESCROW_ADDRESS, ZERO_ADDRESS, currentOwner);
 				}
 			}
@@ -201,6 +203,8 @@ test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
 		expect((await getOwner(ESCROW_ADDRESS)).toLowerCase()).toBe(DEPLOYER_ADDRESS.toLowerCase());
 		expect((await getPendingOwner(ESCROW_ADDRESS)).toLowerCase()).toBe(NEW_OWNER.toLowerCase());
 		await expect(setPromptFeeFrom(ESCROW_ADDRESS, NEW_OWNER, 7n * ABLE)).rejects.toThrow();
+		// Nothing to restore: the fee has not changed. Writing the same value shows the deployer
+		// can still set it, and a revert here fails the test.
 		await setPromptFee(ESCROW_ADDRESS, originalPromptFee as bigint);
 
 		await acceptOwnership(ESCROW_ADDRESS, NEW_OWNER);
