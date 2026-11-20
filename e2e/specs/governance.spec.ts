@@ -10,14 +10,17 @@ import {
 	waitForGraph,
 } from '../helpers/graph';
 import {
+	acceptOwnership,
 	addOracle,
 	DEPLOYER_ADDRESS,
 	getABLEBalance,
 	getOwner,
+	getPendingOwner,
 	getPromptFee,
 	getSpendingLimit,
 	getTreasury,
 	isOracle,
+	offerOwnership,
 	removeOracle,
 	setBranchFee,
 	setCancellationFee,
@@ -45,6 +48,7 @@ const NEW_TREASURY = '0x000000000000000000000000000000000000beef';
 // real unlocked account so it can send owner-only txs; ownership is restored to the original in
 // afterEach so the change never bricks owner-only ops for the rest of the suite.
 const NEW_OWNER = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
 // A synthetic, non-Hardhat address used as the second oracle in a rotation. It is never a fund
 // recipient and no transaction is sent from it, so a synthetic address is fine; it is removed again
@@ -150,11 +154,12 @@ test.describe('Governance continuity (T-GOV-CFG)', () => {
 	});
 });
 
-// Area 9b — ownership transfer (of the escrow, where the fee setters live). OwnableUpgradeable is
-// single-step; the contract-level transfer is unit-tested in tokenized-ai-agent, so here we assert
-// the cross-layer effect: access control flips (old owner's setter reverts, new owner's succeeds and
-// still indexes) and users are unaffected. Ownership is snapshotted + restored so a failed restore
-// can't brick owner-only ops for the rest of the run.
+// Area 9b — ownership transfer (of the escrow, where the fee setters live). Ownership moves in two
+// steps (the owner offers, the new owner accepts); the contract-level rules are unit-tested in
+// tokenized-ai-agent, so here we assert the cross-layer effect: an offer alone changes nothing,
+// access control flips on acceptance (old owner's setter reverts, new owner's succeeds and still
+// indexes) and users are unaffected. Ownership is snapshotted + restored so a failed restore can't
+// brick owner-only ops for the rest of the run.
 test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
 	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
@@ -177,6 +182,12 @@ test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
 				const currentOwner = await getOwner(ESCROW_ADDRESS);
 				if (currentOwner.toLowerCase() !== originalOwner.toLowerCase()) {
 					await transferOwnership(ESCROW_ADDRESS, originalOwner, currentOwner);
+				} else if (BigInt(await getPendingOwner(ESCROW_ADDRESS)) !== 0n) {
+					// A test stopped between the offer and the acceptance. Offering to the zero address
+					// withdraws it, so no account is left able to take the escrow later in the run. The
+					// escrow takes transferOwnership as OpenZeppelin's Ownable2Step has it, with no
+					// zero-address check; if it ever adds one this call reverts and the hook fails loudly.
+					await offerOwnership(ESCROW_ADDRESS, ZERO_ADDRESS, currentOwner);
 				}
 			}
 		} finally {
@@ -187,7 +198,18 @@ test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
 	});
 
 	test('T-GOV-OWN-01: after an ownership transfer, only the new owner can set fees', async () => {
-		await transferOwnership(ESCROW_ADDRESS, NEW_OWNER); // from the current owner (deployer) → NEW_OWNER
+		// The offer alone moves nothing: the deployer is still the owner and can still set fees.
+		await offerOwnership(ESCROW_ADDRESS, NEW_OWNER);
+		expect((await getOwner(ESCROW_ADDRESS)).toLowerCase()).toBe(DEPLOYER_ADDRESS.toLowerCase());
+		expect((await getPendingOwner(ESCROW_ADDRESS)).toLowerCase()).toBe(NEW_OWNER.toLowerCase());
+		await expect(setPromptFeeFrom(ESCROW_ADDRESS, NEW_OWNER, 7n * ABLE)).rejects.toThrow();
+		// Nothing to restore: the fee has not changed. Writing the same value shows the deployer
+		// can still set it, and a revert here fails the test.
+		await setPromptFee(ESCROW_ADDRESS, originalPromptFee as bigint);
+
+		await acceptOwnership(ESCROW_ADDRESS, NEW_OWNER);
+		expect((await getOwner(ESCROW_ADDRESS)).toLowerCase()).toBe(NEW_OWNER.toLowerCase());
+		expect(BigInt(await getPendingOwner(ESCROW_ADDRESS))).toBe(0n);
 
 		// The old owner (deployer) can no longer set fees — the onlyOwner guard reverts the tx.
 		await expect(setPromptFee(ESCROW_ADDRESS, 7n * ABLE)).rejects.toThrow();
@@ -213,6 +235,7 @@ test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
 
 		await freshChatPage.goto();
 		await transferOwnership(ESCROW_ADDRESS, NEW_OWNER); // ownership changes while the session is live
+		expect((await getOwner(ESCROW_ADDRESS)).toLowerCase()).toBe(NEW_OWNER.toLowerCase());
 		await freshChatPage.sendPromptAndWaitForResponse(
 			'Still answering after an ownership transfer?',
 		);

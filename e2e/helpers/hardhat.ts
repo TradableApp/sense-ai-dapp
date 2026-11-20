@@ -513,6 +513,8 @@ const ESCROW_ABI = parseAbi([
 	'function setMetadataUpdateFee(uint256 _newFee)',
 	'function setTreasury(address _newTreasury)',
 	'function transferOwnership(address newOwner)',
+	'function acceptOwnership()',
+	'function pendingOwner() view returns (address)',
 	'function promptFee() view returns (uint256)',
 	'function treasury() view returns (address)',
 	'function owner() view returns (address)',
@@ -675,11 +677,20 @@ export async function getOwner(contractAddress: string): Promise<string> {
 	return `0x${result.slice(-40)}`;
 }
 
+/** Read the address ownership has been offered to and not yet accepted by (zero when none). */
+export async function getPendingOwner(contractAddress: string): Promise<string> {
+	const data = encodeFunctionData({ abi: ESCROW_ABI, functionName: 'pendingOwner', args: [] });
+	const result = await callContract(contractAddress, data);
+	return `0x${result.slice(-40)}`;
+}
+
 /**
- * Transfer ownership of an Ownable contract (single-step OwnableUpgradeable).
+ * Offer ownership of the escrow to `newOwner`. (The agent takes the same two calls, and the
+ * calldata is the same whichever ABI encodes it.) Ownership moves in two steps: the offer
+ * changes nothing until `newOwner` accepts it, so the sender is still the owner afterwards.
  * @param fromAddress the CURRENT owner sending the tx (defaults to the deployer/owner, account 0).
  */
-export async function transferOwnership(
+export async function offerOwnership(
 	contractAddress: string,
 	newOwner: string,
 	fromAddress: string = DEPLOYER_ADDRESS,
@@ -690,6 +701,25 @@ export async function transferOwnership(
 		args: [newOwner as `0x${string}`],
 	});
 	await sendFrom(fromAddress, contractAddress, data);
+}
+
+/** Accept an ownership offer as `newOwner` (an unlocked account), which makes it the owner. */
+export async function acceptOwnership(contractAddress: string, newOwner: string): Promise<void> {
+	const data = encodeFunctionData({ abi: ESCROW_ABI, functionName: 'acceptOwnership', args: [] });
+	await sendFrom(newOwner, contractAddress, data);
+}
+
+/**
+ * Move ownership to `newOwner` completely: the current owner offers it and `newOwner` accepts.
+ * @param fromAddress the CURRENT owner sending the offer (defaults to the deployer, account 0).
+ */
+export async function transferOwnership(
+	contractAddress: string,
+	newOwner: string,
+	fromAddress: string = DEPLOYER_ADDRESS,
+): Promise<void> {
+	await offerOwnership(contractAddress, newOwner, fromAddress);
+	await acceptOwnership(contractAddress, newOwner);
 }
 
 /**
