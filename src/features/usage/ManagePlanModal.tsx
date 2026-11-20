@@ -12,6 +12,7 @@ import { eth_getTransactionReceipt, getRpcClient } from 'thirdweb/rpc';
 import { parseUnits } from 'viem';
 import { z } from 'zod';
 
+import FeeTokenMismatchBanner from '@/components/FeeTokenMismatchBanner';
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -146,7 +147,8 @@ export default function ManagePlanModal({
 	// Logic to block actions if there are pending prompts
 	const hasPendingPrompts = (existingPlan?.pendingEscrowCount ?? 0) > 0;
 	// Setting a plan approves the token; not while the chain disagrees about which token.
-	const { isBlocked: isFeeTokenBlocked } = useFeeTokenCheck();
+	const feeTokenCheck = useFeeTokenCheck();
+	const isPlanSwitchedOff = feeTokenCheck.blocks('plan');
 
 	const setPlanMutation = useMutation<
 		void,
@@ -329,6 +331,7 @@ export default function ManagePlanModal({
 	});
 
 	const onSubmit = (data: FormValues) => {
+		if (isPlanSwitchedOff) return;
 		const limitInWei = parseUnits(data.limit.toString(), FEE_TOKEN.decimals);
 		const nowInSeconds = Math.floor(Date.now() / 1000);
 		const expiresAtTimestamp = BigInt(nowInSeconds + (data.days as number) * 24 * 60 * 60);
@@ -426,6 +429,8 @@ export default function ManagePlanModal({
 				</DialogHeader>
 
 				<form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-4">
+					{/* The page's own banner is behind this dialog. */}
+					<FeeTokenMismatchBanner />
 					<div className="space-y-2">
 						<Label htmlFor="limit">Spending Limit ({FEE_TOKEN.symbol})</Label>
 						<Input
@@ -557,7 +562,7 @@ export default function ManagePlanModal({
 							<Button
 								type="submit"
 								disabled={
-									isFeeTokenBlocked ||
+									isPlanSwitchedOff ||
 									hasPendingPrompts ||
 									!isValid ||
 									isProcessing ||

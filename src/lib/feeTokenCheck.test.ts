@@ -6,9 +6,9 @@ import {
 	assessFeeToken,
 	blocksAction,
 	feeTokenBlockCopy,
-	PAID_ACTIONS,
 	type FeeTokenReader,
 	type FeeTokenReadings,
+	PAID_ACTIONS,
 	readFeeTokenVerdict,
 } from './feeTokenCheck';
 
@@ -188,7 +188,7 @@ describe('readFeeTokenVerdict', () => {
 		// A restricted profile pointed at an ordinary token: the exemption read reverts, and
 		// the symbol is the answer.
 		const r = reader({ symbol: 'COIN' });
-		const token = r.token;
+		const { token } = r;
 		r.token = vi.fn(async (method, params) => {
 			if (method === 'isTransferExempt') throw new Error('execution reverted');
 			return token(method, params);

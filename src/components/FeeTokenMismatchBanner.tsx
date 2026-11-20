@@ -12,14 +12,13 @@ interface FeeTokenMismatchBannerProps {
 
 /**
  * Shown while the chain disagrees with the token this build is for (`useFeeTokenCheck`).
- * Sending a prompt and setting a plan are switched off for as long as it shows, so it has
- * no dismiss button: hiding it would leave disabled controls with no explanation. It goes
- * away by itself when a later check passes.
+ * Paying actions are switched off for as long as it shows, so it offers nothing to click:
+ * hiding it would leave disabled controls with no explanation. It goes away by itself when
+ * a later check passes.
  */
 export default function FeeTokenMismatchBanner({ className }: FeeTokenMismatchBannerProps) {
-	const { verdict, isBlocked } = useFeeTokenCheck();
-	const copy =
-		isBlocked && verdict !== 'unknown' ? feeTokenBlockCopy(verdict, FEE_TOKEN.symbol) : null;
+	const { verdict } = useFeeTokenCheck();
+	const copy = feeTokenBlockCopy(verdict, FEE_TOKEN.symbol);
 
 	if (!copy) return null;
 

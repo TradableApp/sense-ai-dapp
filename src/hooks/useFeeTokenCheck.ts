@@ -1,19 +1,19 @@
 import * as Sentry from '@sentry/react';
 import { useQuery } from '@tanstack/react-query';
 import { getContract, readContract } from 'thirdweb';
-import { useActiveWallet } from 'thirdweb/react';
+import { useActiveWalletChain } from 'thirdweb/react';
 
 import { CONTRACTS } from '@/config/contracts';
 import { FEE_TOKEN } from '@/config/feeToken';
 import { client } from '@/config/thirdweb';
 import {
+	blocksAction,
+	type FeeTokenCheckState,
 	type FeeTokenReader,
 	type FeeTokenVerdict,
+	type PaidAction,
 	readFeeTokenVerdict,
 } from '@/lib/feeTokenCheck';
-
-/** `unknown`: the check has not answered, or could not. Payments are not stopped for it. */
-export type FeeTokenCheckState = FeeTokenVerdict | 'unknown';
 
 type AbiItem = { name?: string; type?: string };
 
@@ -21,7 +21,8 @@ function contractReader(
 	contract: ReturnType<typeof getContract>,
 	abi: readonly AbiItem[],
 ): (_method: string, _params?: readonly [string]) => Promise<unknown> {
-	return (method, params) => {
+	// async, so an ABI without the function is a rejection like any other failed read.
+	return async (method, params) => {
 		const item = abi.find(entry => entry.type === 'function' && entry.name === method);
 		if (!item) throw new Error(`Fee token check: the ABI has no ${method}().`);
 		return readContract({
@@ -32,29 +33,53 @@ function contractReader(
 	};
 }
 
+// A failure is repeated on every retry and every later read. Each distinct one is reported
+// once per page load, so an unreachable node cannot fill the error tracker.
+const reported = new Set<string>();
+
+function reportOnce(error: unknown, chainId: number): void {
+	const message = error instanceof Error ? error.message : String(error);
+	const key = `${chainId}:${message}`;
+	if (reported.has(key)) return;
+	reported.add(key);
+	Sentry.captureException(error, {
+		tags: { check: 'fee-token', chainId: String(chainId), feeToken: FEE_TOKEN.symbol },
+		fingerprint: ['fee-token-check'],
+	});
+}
+
+export interface FeeTokenCheck {
+	verdict: FeeTokenCheckState;
+	/** Whether a paying action is switched off: see `blocksAction`. */
+	blocks: (_action: PaidAction) => boolean;
+}
+
 /**
- * Whether the chain agrees with the token this build is for. `isBlocked` is true only for a
- * confirmed disagreement: while the reads are in flight, or when they fail, sending stays
- * possible and the failure is reported, because an unreachable node is not a wrong token.
+ * Whether the chain agrees with the token this build is for.
+ *
+ * Something is switched off only for a confirmed disagreement. Before the first answer, or
+ * when the first read fails, the verdict is `unknown` and nothing is stopped: an unreachable
+ * node is not a wrong token. A failed read is rethrown so the query retries it and keeps the
+ * last answer it had, which means a block that was confirmed stays until a read passes.
  */
-export default function useFeeTokenCheck(): { verdict: FeeTokenCheckState; isBlocked: boolean } {
-	const activeWallet = useActiveWallet();
-	const chain = activeWallet?.getChain();
+export default function useFeeTokenCheck(): FeeTokenCheck {
+	const chain = useActiveWalletChain();
 	const contracts = chain ? CONTRACTS[chain.id] : undefined;
 	const escrowAddress: string | undefined = contracts?.escrow?.address;
 	const tokenAddress: string | undefined = contracts?.token?.address;
 	const escrowAbi = contracts?.escrow?.abi as readonly AbiItem[] | undefined;
 	const tokenAbi = contracts?.token?.abi as readonly AbiItem[] | undefined;
+	const isConfigured = !!chain && !!escrowAddress && !!tokenAddress && !!escrowAbi && !!tokenAbi;
 
 	const { data } = useQuery({
 		queryKey: ['feeTokenCheck', chain?.id, escrowAddress, tokenAddress, FEE_TOKEN.symbol],
-		queryFn: async (): Promise<FeeTokenCheckState> => {
-			if (!chain || !escrowAddress || !tokenAddress || !escrowAbi || !tokenAbi) return 'unknown';
-			const escrow = getContract({ client, chain, address: escrowAddress });
-			const token = getContract({ client, chain, address: tokenAddress });
+		queryFn: async (): Promise<FeeTokenVerdict> => {
+			if (!chain || !escrowAddress || !tokenAddress || !escrowAbi || !tokenAbi) {
+				throw new Error('Fee token check: no contracts for this chain.');
+			}
 			const reader: FeeTokenReader = {
-				escrow: contractReader(escrow, escrowAbi),
-				token: contractReader(token, tokenAbi),
+				escrow: contractReader(getContract({ client, chain, address: escrowAddress }), escrowAbi),
+				token: contractReader(getContract({ client, chain, address: tokenAddress }), tokenAbi),
 			};
 			try {
 				return await readFeeTokenVerdict({
@@ -64,11 +89,11 @@ export default function useFeeTokenCheck(): { verdict: FeeTokenCheckState; isBlo
 					profile: FEE_TOKEN,
 				});
 			} catch (error) {
-				Sentry.captureException(error, { tags: { check: 'fee-token' } });
-				return 'unknown';
+				reportOnce(error, chain.id);
+				throw error;
 			}
 		},
-		enabled: !!chain && !!escrowAddress && !!tokenAddress,
+		enabled: isConfigured,
 		// An owner can list or unlist the escrow at any time, so the answer is not kept for
 		// long: asked again every five minutes.
 		staleTime: 5 * 60 * 1000,
@@ -76,5 +101,5 @@ export default function useFeeTokenCheck(): { verdict: FeeTokenCheckState; isBlo
 	});
 
 	const verdict: FeeTokenCheckState = data ?? 'unknown';
-	return { verdict, isBlocked: verdict !== 'ok' && verdict !== 'unknown' };
+	return { verdict, blocks: action => blocksAction(verdict, action) };
 }

@@ -143,6 +143,12 @@ describe('useFeeTokenCheck', () => {
 
 		chainAnswers({ treasury: new Error('later read: connection lost') });
 		await refetch(queryClient);
+		// The failed read did happen: without this the test would pass on a read never made.
+		await waitFor(() =>
+			expect(
+				queryClient.getQueryCache().findAll({ queryKey: ['feeTokenCheck'] })[0].state.error,
+			).toBeTruthy(),
+		);
 
 		expect(result.current.verdict).toBe('escrow-not-exempt');
 		expect(result.current.blocks('prompt')).toBe(true);
@@ -156,7 +162,7 @@ describe('useFeeTokenCheck', () => {
 		chainAnswers();
 		await refetch(queryClient);
 
-		expect(result.current.verdict).toBe('ok');
+		await waitFor(() => expect(result.current.verdict).toBe('ok'));
 	});
 
 	it('reports the same failure once, however often the read is repeated', async () => {

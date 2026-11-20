@@ -61,6 +61,7 @@ import AbleTokenABI from '@/lib/abi/AbleToken.json';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 import SenseTokenABI from '@/lib/abi/SenseToken.json';
+import { feeTokenBlockCopy, FeeTokenBlockedError } from '@/lib/feeTokenCheck';
 
 import { buildErrorHandler } from './useChatMutations';
 
@@ -335,5 +336,22 @@ describe('buildErrorHandler — Generic fallbacks', () => {
 		handler({ message: 'ERC20InsufficientBalance' }, 'send message');
 		const [, options] = (toast.error as any).mock.calls[0];
 		expect(options.duration).toBe(4000);
+	});
+});
+
+describe('buildErrorHandler — an action the fee token check switched off', () => {
+	it('says what the banner says, and does not log it as a failure', () => {
+		(toast.error as any).mockClear();
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const profile = FEE_TOKEN_PROFILES.SENSE;
+		const handler = buildErrorHandler(false, false, 100, vi.fn(), profile);
+
+		handler(new FeeTokenBlockedError('treasury-not-exempt'), 'branch conversation');
+
+		const copy = feeTokenBlockCopy('treasury-not-exempt', profile.symbol);
+		expect(toast.error).toHaveBeenCalledTimes(1);
+		expect(toast.error).toHaveBeenCalledWith(copy?.title, { description: copy?.description });
+		expect(logged).not.toHaveBeenCalled();
+		logged.mockRestore();
 	});
 });

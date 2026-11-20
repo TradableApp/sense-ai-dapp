@@ -7,11 +7,7 @@ import SenseTokenABI from '@/lib/abi/SenseToken.json';
 
 import { type FeeTokenName } from './feeTokenConfig';
 
-export {
-	assertFeeTokenConfig,
-	ESCROW_FEE_TOKEN_GETTER,
-	FeeTokenConfigError,
-} from './feeTokenConfig';
+export { assertFeeTokenConfig, FeeTokenConfigError } from './feeTokenConfig';
 
 /**
  * How the plan dialog picks the limit it first offers.

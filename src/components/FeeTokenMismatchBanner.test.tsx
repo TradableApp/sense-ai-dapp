@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import FeeTokenMismatchBanner from '@/components/FeeTokenMismatchBanner';
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
-import { blocksAction, type FeeTokenCheckState, feeTokenBlockCopy } from '@/lib/feeTokenCheck';
+import { blocksAction, feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
 
 vi.mock('@/hooks/useFeeTokenCheck', () => ({ default: vi.fn() }));
 vi.mock('@/config/feeToken', () => ({ FEE_TOKEN: { symbol: 'PTS' } }));

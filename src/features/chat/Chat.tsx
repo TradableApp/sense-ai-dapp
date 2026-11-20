@@ -290,7 +290,9 @@ export default function Chat() {
 			((messagesFromQuery?.length ?? 0) === 0 || activeConversationMessages.length > 0),
 	});
 	// A build whose token the chain does not agree with sends nothing: see useFeeTokenCheck.
-	const { isBlocked: isFeeTokenBlocked } = useFeeTokenCheck();
+	// The mutations refuse too; this is what greys the composer out.
+	const feeTokenCheck = useFeeTokenCheck();
+	const arePromptsSwitchedOff = feeTokenCheck.blocks('prompt');
 	const hasBranchOrigin = composer.kind === 'ready' && composer.hasBranchOrigin;
 	// True from the moment the branch is held until it can send, re-reads included.
 	const isHeldForBranchHistory = useHeldBranchRefresh({
@@ -805,7 +807,7 @@ export default function Chat() {
 		isLoadingPlan ||
 		!hasActivePlan ||
 		composer.kind !== 'ready' ||
-		isFeeTokenBlocked;
+		arePromptsSwitchedOff;
 
 	const isInputDisabled =
 		isProcessing ||
@@ -813,7 +815,7 @@ export default function Chat() {
 		isLoadingPlan ||
 		!hasActivePlan ||
 		composer.kind !== 'ready' ||
-		isFeeTokenBlocked;
+		arePromptsSwitchedOff;
 
 	// Calculate UI status for the submit button
 	const submitStatus = (() => {
