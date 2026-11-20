@@ -75,15 +75,8 @@ export interface FeeTokenCheck {
 	blocks: (_action: PaidAction) => boolean;
 }
 
-/**
- * Whether the chain agrees with the token this build is for.
- *
- * Something is switched off only for a confirmed disagreement. Before the first answer, or
- * when the first read fails, the verdict is `unknown` and nothing is stopped: an unreachable
- * node is not a wrong token. A failed read is rethrown so the query retries it and keeps the
- * last answer it had, which means a block that was confirmed stays until a read passes.
- */
-export default function useFeeTokenCheck(): FeeTokenCheck {
+/** The check's query, shared by the hooks below: one read serves both. */
+function useFeeTokenCheckQuery(): { data: FeeTokenVerdict | undefined; isConfigured: boolean } {
 	const chain = useActiveWalletChain();
 	const contracts = chain ? CONTRACTS[chain.id] : undefined;
 	const escrowAddress: string | undefined = contracts?.escrow?.address;
@@ -134,6 +127,31 @@ export default function useFeeTokenCheck(): FeeTokenCheck {
 		refetchInterval: 5 * 60 * 1000,
 	});
 
+	return { data, isConfigured };
+}
+
+/**
+ * Whether the chain agrees with the token this build is for.
+ *
+ * Something is switched off only for a confirmed disagreement. Before the first answer, or
+ * when the first read fails, the verdict is `unknown` and nothing is stopped: an unreachable
+ * node is not a wrong token. A failed read is rethrown so the query retries it and keeps the
+ * last answer it had, which means a block that was confirmed stays until a read passes.
+ */
+export default function useFeeTokenCheck(): FeeTokenCheck {
+	const { data } = useFeeTokenCheckQuery();
 	const verdict: FeeTokenCheckState = data ?? 'unknown';
 	return { verdict, blocks: action => blocksAction(verdict, action) };
+}
+
+/**
+ * Whether the check is still waiting for its first answer on this chain. Setting a plan
+ * approves the token, so it waits for that answer; nothing else does. The query keeps its
+ * last answer through a failed read, so once any answer has come this stays false. Where
+ * the check reads nothing (no wallet, or no contracts or agent for the chain) nothing will
+ * ever answer, and this is false: waiting would leave a plan that can never be set.
+ */
+export function useIsAwaitingFirstAnswer(): boolean {
+	const { data, isConfigured } = useFeeTokenCheckQuery();
+	return isConfigured && data === undefined;
 }

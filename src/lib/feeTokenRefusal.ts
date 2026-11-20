@@ -150,3 +150,10 @@ export function switchedOffReason(
 	const title = feeTokenBlockCopy(state, symbol)?.title ?? 'This action is switched off';
 	return `${title}. ${WHERE_THE_BANNER_IS[place]}`;
 }
+
+/**
+ * Why setting a plan waits: the fee token check has not answered once on this chain yet,
+ * and a plan approves the token. It usually answers within moments.
+ */
+export const AWAITING_CHECK_REASON =
+	'Checking the payment token on the network. Try again in a moment.';

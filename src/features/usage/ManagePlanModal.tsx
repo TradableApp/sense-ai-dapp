@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { AlertCircle, Loader2, Trash2 } from 'lucide-react';
@@ -33,8 +33,10 @@ import Label from '@/components/ui/label';
 import { LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
 import { defaultPlanLimit, FEE_TOKEN } from '@/config/feeToken';
 import useFaucetRequest from '@/hooks/useFaucetRequest';
-import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
+import useFeeTokenCheck, { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
 import useTokenBalance from '@/hooks/useTokenBalance';
+import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
+import { cn } from '@/lib/utils';
 
 import shouldResetPlanForm from './planFormReset';
 import PlanValueEstimate from './PlanValueEstimate';
@@ -131,6 +133,9 @@ export default function ManagePlanModal({
 	// Setting a plan approves the token; not while the chain disagrees about which token.
 	const feeTokenCheck = useFeeTokenCheck();
 	const isPlanSwitchedOff = feeTokenCheck.blocks('plan');
+	// Before the check's first answer the approval waits; the submit stays focusable and says why.
+	const isAwaitingFirstAnswer = useIsAwaitingFirstAnswer();
+	const holdReasonId = useId();
 
 	const { setPlanMutation, revokeMutation } = usePlanMutations({
 		onStatus: setStatusText,
@@ -138,7 +143,7 @@ export default function ManagePlanModal({
 	});
 
 	const onSubmit = (data: FormValues) => {
-		if (isPlanSwitchedOff) return;
+		if (isPlanSwitchedOff || isAwaitingFirstAnswer) return;
 		const limitInWei = parseUnits(data.limit.toString(), FEE_TOKEN.decimals);
 		const nowInSeconds = Math.floor(Date.now() / 1000);
 		const expiresAtTimestamp = BigInt(nowInSeconds + (data.days as number) * 24 * 60 * 60);
@@ -243,6 +248,11 @@ export default function ManagePlanModal({
 						{errors.days && <p className="text-sm text-destructive">{errors.days.message}</p>}
 					</div>
 
+					{isAwaitingFirstAnswer && (
+						<p id={holdReasonId} className="text-sm text-muted-foreground">
+							{AWAITING_CHECK_REASON}
+						</p>
+					)}
 					<DialogFooter className="flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-between">
 						<div className="w-full sm:w-auto">
 							{existingPlan && (
@@ -312,7 +322,12 @@ export default function ManagePlanModal({
 									setPlanMutation.isPending ||
 									revokeMutation.isPending
 								}
-								className="w-full sm:w-auto"
+								aria-disabled={isAwaitingFirstAnswer}
+								aria-describedby={isAwaitingFirstAnswer ? holdReasonId : undefined}
+								className={cn(
+									'w-full sm:w-auto',
+									isAwaitingFirstAnswer && 'cursor-not-allowed opacity-50',
+								)}
 							>
 								{setPlanMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
 								{setPlanMutation.isPending ? statusText : existingPlan ? 'Save Changes' : 'Confirm'}

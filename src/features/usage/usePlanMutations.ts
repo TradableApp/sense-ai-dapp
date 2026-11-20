@@ -6,16 +6,18 @@ import { useActiveWallet, useSendAndConfirmTransaction } from 'thirdweb/react';
 import { CONTRACTS } from '@/config/contracts';
 import { FEE_TOKEN } from '@/config/feeToken';
 import { client } from '@/config/thirdweb';
-import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
+import useFeeTokenCheck, { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
 import { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
 import { FeeTokenBlockedError } from '@/lib/feeTokenCheck';
+import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
 import { wait } from '@/lib/utils';
 
 /**
  * Setting and revoking a spending plan: the only transactions the plan dialog sends.
  *
  * Setting a plan approves the fee token for the escrow, so it asks the fee token check
- * first and refuses before anything is built while plans are switched off. Revoking a plan
+ * first and refuses before anything is built while plans are switched off, or while the
+ * check has not answered once. Revoking a plan
  * never asks: taking back a permission must stay possible whatever the check found.
  */
 
@@ -132,12 +134,15 @@ function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 	const { mutateAsync: send } = useSendAndConfirmTransaction();
 	const queryClient = useQueryClient();
 	const feeTokenCheck = useFeeTokenCheck();
+	const isAwaitingFirstAnswer = useIsAwaitingFirstAnswer();
 
 	return useMutation<void, Error, PlanRequest>({
 		mutationFn: async plan => {
 			// The form is disabled too; this is the refusal that holds whoever calls it.
 			if (feeTokenCheck.blocks('plan'))
 				throw new FeeTokenBlockedError(feeTokenCheck.verdict, FEE_TOKEN.symbol);
+			// Nothing has said yet that this is the right token to approve.
+			if (isAwaitingFirstAnswer) throw new Error(AWAITING_CHECK_REASON);
 			const { chain, contracts } = connectedContracts(activeWallet);
 			await approveAndSetLimit(send, chain, contracts, plan, onStatus);
 		},
