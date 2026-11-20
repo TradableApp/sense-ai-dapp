@@ -9,10 +9,10 @@ import leaksPartOf from '@/test/leaksPartOf';
 import {
 	assertFeeTokenConfig,
 	defaultPlanLimit,
-	offersFullBalance,
 	FEE_TOKEN_PROFILES,
 	FeeTokenConfigError,
 	type FeeTokenProfile,
+	offersFullBalance,
 	selectFeeToken,
 } from './feeToken';
 
