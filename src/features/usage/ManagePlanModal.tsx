@@ -34,7 +34,10 @@ import Label from '@/components/ui/label';
 import { LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
 import { defaultPlanLimit, FEE_TOKEN, offersFullBalance } from '@/config/feeToken';
 import useFaucetRequest from '@/hooks/useFaucetRequest';
-import useFeeTokenCheck, { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
+import useFeeTokenCheck, {
+	useAskFeeTokenAgain,
+	useIsAwaitingFirstAnswer,
+} from '@/hooks/useFeeTokenCheck';
 import useTokenBalance from '@/hooks/useTokenBalance';
 import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
 import { cn } from '@/lib/utils';
@@ -150,6 +153,7 @@ export default function ManagePlanModal({
 	const isPlanSwitchedOff = feeTokenCheck.blocks('plan');
 	// Before the check's first answer the approval waits; the submit stays focusable and says why.
 	const isAwaitingFirstAnswer = useIsAwaitingFirstAnswer();
+	const askFeeTokenAgain = useAskFeeTokenAgain();
 	const holdReasonId = useId();
 	const fullBalanceId = useId();
 
@@ -159,6 +163,8 @@ export default function ManagePlanModal({
 	});
 
 	const onSubmit = (data: FormValues) => {
+		// A press while held asks the check at once, so "try again in a moment" holds true.
+		if (isAwaitingFirstAnswer) askFeeTokenAgain();
 		if (isPlanSwitchedOff || isAwaitingFirstAnswer) return;
 		const limitInWei = parseUnits(data.limit.toString(), FEE_TOKEN.decimals);
 		const nowInSeconds = Math.floor(Date.now() / 1000);
