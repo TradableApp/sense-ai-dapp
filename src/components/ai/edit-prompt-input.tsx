@@ -44,7 +44,8 @@ export default function EditPromptInput({
 	});
 	// Saving an edit sends the prompt again, so it is off while prompts are.
 	// Nor is it sent twice: it waits while a prompt is being sent.
-	const saveOff = useSwitchedOffReason('prompt') ?? (isSending ? SENDING_REASON : null);
+	const saveSwitchedOff = useSwitchedOffReason('prompt');
+	const saveOff = saveSwitchedOff ?? (isSending ? SENDING_REASON : null);
 	const reasonId = useId();
 	const save = handleSubmit(data => {
 		if (!saveOff) onSave(data);

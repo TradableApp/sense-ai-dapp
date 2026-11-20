@@ -142,10 +142,10 @@ export default function MessageActions({
 	const [isCopied, setIsCopied] = useState(false);
 	const [feedback, setFeedback] = useState<string | null>(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const regenerateSwitchedOff = useSwitchedOffReason('prompt');
+	const branchSwitchedOff = useSwitchedOffReason('branch');
 	// Each also waits while a prompt is being sent, so a second choice sends nothing.
 	const sendingReason = isSending ? SENDING_REASON : null;
-	const regenerateSwitchedOff = useSwitchedOffReason('prompt') ?? sendingReason;
-	const branchSwitchedOff = useSwitchedOffReason('branch') ?? sendingReason;
 
 	useEffect(() => {
 		setFeedback(initialFeedback || null);
@@ -303,7 +303,7 @@ export default function MessageActions({
 				label="Try again"
 				icon={RotateCcwIcon}
 				align="start"
-				disabledReason={regenerateSwitchedOff}
+				disabledReason={regenerateSwitchedOff ?? sendingReason}
 			>
 				<DropdownMenuItem onClick={() => onRegenerate?.('default')}>
 					<RotateCcwIcon className="mr-2 size-4" />
@@ -329,7 +329,7 @@ export default function MessageActions({
 				label="More actions"
 				icon={MoreHorizontal}
 				align="end"
-				disabledReason={branchSwitchedOff}
+				disabledReason={branchSwitchedOff ?? sendingReason}
 			>
 				<DropdownMenuItem onClick={() => onBranch?.()}>
 					<Split className="mr-2 size-4 rotate-90" />
