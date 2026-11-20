@@ -317,6 +317,17 @@ describe('readFeeTokenVerdict', () => {
 		await expect(outcome).rejects.toThrow(message);
 	});
 
+	it.each(['0x01', '0xfe', '0x6080', '0x00ff'])(
+		'treats short code such as %s as a contract: only zeros mean none',
+		async code => {
+			const r = reader({ codeAt: { [ESCROW]: code, [TOKEN]: code } });
+
+			const verdict = await check(r);
+
+			expect(verdict).toBe('ok');
+		},
+	);
+
 	it('names a wrong agent before a token address with no code', async () => {
 		const r = reader({ agent: OTHER_AGENT, codeAt: { [TOKEN]: '0x' } });
 

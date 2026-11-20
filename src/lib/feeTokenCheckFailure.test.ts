@@ -49,6 +49,11 @@ describe('describeFailure', () => {
 		['an aborted request', named('AbortError', 'signal is aborted without reason'), 'node'],
 		['a request that timed out', named('TimeoutError', 'The operation timed out.'), 'node'],
 		['anything else', new Error('the ABI has no paused()'), 'other'],
+		[
+			'an Error that happens to carry a numeric code',
+			Object.assign(new Error('something broke'), { code: -32000 }),
+			'other',
+		],
 		['a value that is not an error', 'boom', 'other'],
 	])('sorts %s', (_label, error, kind) => {
 		const failure = describeFailure(error);

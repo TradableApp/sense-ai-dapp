@@ -9,6 +9,7 @@ import { eth_getCode as getCodeAt, getRpcClient } from 'thirdweb/rpc';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ESCROW_FEE_TOKEN_GETTER } from '@/config/feeTokenConfig';
+import { PAID_ACTIONS } from '@/lib/feeTokenCheck';
 
 import useFeeTokenCheck, { FEE_TOKEN_RECHECK_MS, forgetReportedFailures } from './useFeeTokenCheck';
 
@@ -101,6 +102,34 @@ const refetch = (queryClient: QueryClient) =>
 		await queryClient.refetchQueries({ queryKey: ['feeTokenCheck'] });
 	});
 
+/**
+ * Lets a query that should not run have every chance to run, then checks it did nothing:
+ * no read, no report, no answer and nothing switched off.
+ */
+async function expectNothingRead(
+	queryClient: QueryClient,
+	result: { current: ReturnType<typeof useFeeTokenCheck> },
+) {
+	await act(async () => {
+		await new Promise(resolve => {
+			setTimeout(resolve, 20);
+		});
+	});
+	const queries = queryClient.getQueryCache().findAll({ queryKey: ['feeTokenCheck'] });
+	queries.forEach(query => {
+		// Never started: a query that ran and failed is idle too, but not pending.
+		expect(query.state.status).toBe('pending');
+		expect(query.state.fetchStatus).toBe('idle');
+		expect(query.state.errorUpdateCount).toBe(0);
+		expect(query.state.data).toBeUndefined();
+	});
+	expect(readContract).not.toHaveBeenCalled();
+	expect(getCodeAt).not.toHaveBeenCalled();
+	expect(Sentry.captureException).not.toHaveBeenCalled();
+	expect(result.current.verdict).toBe('unknown');
+	expect(PAID_ACTIONS.filter(action => result.current.blocks(action))).toEqual([]);
+}
+
 const onChain = (id: number) =>
 	vi
 		.mocked(useActiveWalletChain)
@@ -151,14 +180,13 @@ describe('useFeeTokenCheck', () => {
 		expect(result.current.blocks('plan')).toBe(true);
 	});
 
-	it('reads nothing when the build has no agent for the chain', () => {
+	it('reads nothing, reports nothing and stops nothing when the build has no agent for the chain', async () => {
 		onChain(CHAIN_WITHOUT_AGENT);
 		chainAnswers();
 
-		const { result } = harness();
+		const { result, queryClient } = harness();
 
-		expect(result.current.verdict).toBe('unknown');
-		expect(readContract).not.toHaveBeenCalled();
+		await expectNothingRead(queryClient, result);
 	});
 
 	it('stops every paying action when there is no contract at the escrow address', async () => {
@@ -334,11 +362,13 @@ describe('useFeeTokenCheck', () => {
 		await waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(2));
 	});
 
-	it('reads nothing on a chain the build has no contracts for', () => {
+	it('reads nothing, reports nothing and stops nothing on a chain the build has no contracts for', async () => {
 		onChain(1);
-		const { result } = harness();
-		expect(result.current.verdict).toBe('unknown');
-		expect(readContract).not.toHaveBeenCalled();
+		chainAnswers();
+
+		const { result, queryClient } = harness();
+
+		await expectNothingRead(queryClient, result);
 	});
 
 	it('follows the wallet to another configured chain', async () => {
@@ -351,11 +381,13 @@ describe('useFeeTokenCheck', () => {
 		expect(result.current.verdict).toBe('unknown');
 	});
 
-	it('reads nothing with no wallet connected', () => {
+	it('reads nothing, reports nothing and stops nothing with no wallet connected', async () => {
 		vi.mocked(useActiveWalletChain).mockReturnValue(undefined);
-		const { result } = harness();
-		expect(result.current.verdict).toBe('unknown');
-		expect(readContract).not.toHaveBeenCalled();
+		chainAnswers();
+
+		const { result, queryClient } = harness();
+
+		await expectNothingRead(queryClient, result);
 	});
 });
 
