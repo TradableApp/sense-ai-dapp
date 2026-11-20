@@ -4,7 +4,9 @@ import { ESCROW_FEE_TOKEN_GETTER, FEE_TOKEN_NAMES } from '@/config/feeTokenConfi
 
 import {
 	assessFeeToken,
+	blocksAction,
 	feeTokenBlockCopy,
+	PAID_ACTIONS,
 	type FeeTokenReader,
 	type FeeTokenReadings,
 	readFeeTokenVerdict,
@@ -18,16 +20,17 @@ const TREASURY = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 const restricted = { symbol: 'PTS', transferable: false };
 const open = { symbol: 'COIN', transferable: true };
 
-const readings = (over: Partial<FeeTokenReadings> = {}): FeeTokenReadings => ({
-	configuredToken: TOKEN,
-	escrowToken: TOKEN,
-	onChainSymbol: 'PTS',
-	expectedSymbol: 'PTS',
-	restricted: true,
-	escrowExempt: true,
-	treasuryExempt: true,
-	...over,
-});
+const readings = (over: Record<string, unknown> = {}): FeeTokenReadings =>
+	({
+		configuredToken: TOKEN,
+		escrowToken: TOKEN,
+		onChainSymbol: 'PTS',
+		expectedSymbol: 'PTS',
+		restricted: true,
+		escrowExempt: true,
+		treasuryExempt: true,
+		...over,
+	} as FeeTokenReadings);
 
 describe('assessFeeToken', () => {
 	it('passes when the escrow, the symbol and both exemptions agree with the build', () => {
@@ -53,6 +56,11 @@ describe('assessFeeToken', () => {
 		expect(assessFeeToken(readings({ onChainSymbol: ' pts ' }))).toBe('ok');
 	});
 
+	it('treats an exemption that was never read as not listed', () => {
+		const unread = { ...readings(), escrowExempt: undefined } as unknown as FeeTokenReadings;
+		expect(assessFeeToken(unread)).toBe('escrow-not-exempt');
+	});
+
 	it('says which party is not listed when a restricted token would refuse it', () => {
 		expect(assessFeeToken(readings({ escrowExempt: false }))).toBe('escrow-not-exempt');
 		expect(assessFeeToken(readings({ treasuryExempt: false }))).toBe('treasury-not-exempt');
@@ -66,15 +74,13 @@ describe('assessFeeToken', () => {
 
 	it('ignores exemptions for a token anyone can send', () => {
 		expect(
-			assessFeeToken(
-				readings({
-					restricted: false,
-					onChainSymbol: 'COIN',
-					expectedSymbol: 'COIN',
-					escrowExempt: undefined,
-					treasuryExempt: undefined,
-				}),
-			),
+			assessFeeToken({
+				configuredToken: TOKEN,
+				escrowToken: TOKEN,
+				onChainSymbol: 'COIN',
+				expectedSymbol: 'COIN',
+				restricted: false,
+			}),
 		).toBe('ok');
 	});
 
@@ -154,13 +160,40 @@ describe('readFeeTokenVerdict', () => {
 	});
 
 	it.each([
-		['an escrow token that is not an address', { escrowToken: 'not-an-address' }],
-		['a treasury that is not an address', { treasury: 42 }],
-		['a symbol that is not text', { symbol: 7 }],
-		['an exemption that is not yes or no', { exempt: { [ESCROW]: 'yes', [TREASURY]: true } }],
-		['a missing exemption', { exempt: { [ESCROW]: true } }],
-	])('throws on %s: a reading that cannot be trusted is not a verdict', async (_label, over) => {
-		await expect(check(reader(over))).rejects.toThrow(/fee token check/i);
+		[
+			'an escrow token that is not an address',
+			{ escrowToken: 'not-an-address' },
+			/escrow token is not an address/,
+		],
+		['a treasury that is not an address', { treasury: 42 }, /treasury is not an address/],
+		['a symbol that is not text', { symbol: 7 }, /symbol is not text/],
+		[
+			'an escrow exemption that is not yes or no',
+			{ exempt: { [ESCROW]: 'yes', [TREASURY]: true } },
+			/escrow exemption is not yes or no/,
+		],
+		[
+			'a missing treasury exemption',
+			{ exempt: { [ESCROW]: true } },
+			/treasury exemption is not yes or no/,
+		],
+	])(
+		'throws on %s: a reading that cannot be trusted is not a verdict',
+		async (_label, over, message) => {
+			await expect(check(reader(over))).rejects.toThrow(message);
+		},
+	);
+
+	it('gives the symbol verdict even when the token cannot answer about exemptions', async () => {
+		// A restricted profile pointed at an ordinary token: the exemption read reverts, and
+		// the symbol is the answer.
+		const r = reader({ symbol: 'COIN' });
+		const token = r.token;
+		r.token = vi.fn(async (method, params) => {
+			if (method === 'isTransferExempt') throw new Error('execution reverted');
+			return token(method, params);
+		});
+		await expect(check(r)).resolves.toBe('symbol-mismatch');
 	});
 
 	it('lets a failed read reach the caller', async () => {
@@ -170,33 +203,74 @@ describe('readFeeTokenVerdict', () => {
 	});
 });
 
-describe('feeTokenBlockCopy', () => {
-	it('has nothing to say when the check passed', () => {
-		expect(feeTokenBlockCopy('ok', 'PTS')).toBeNull();
-	});
+describe('blocksAction', () => {
+	const table = {
+		ok: [],
+		unknown: [],
+		'escrow-uses-other-token': ['prompt', 'plan', 'branch', 'metadata'],
+		'symbol-mismatch': ['prompt', 'plan', 'branch', 'metadata'],
+		'escrow-not-exempt': ['prompt', 'plan', 'branch', 'metadata'],
+		// Prompts go from the user to the escrow and on to the treasury, and either end being
+		// listed is enough. Only a fee paid straight from the user to the treasury is refused.
+		'treasury-not-exempt': ['branch', 'metadata'],
+	} as const;
 
-	it.each([
+	it.each(Object.entries(table))(
+		'%s stops exactly the actions that would fail',
+		(state, stopped) => {
+			const blocked = PAID_ACTIONS.filter(action =>
+				blocksAction(state as keyof typeof table, action),
+			);
+			expect([...blocked].sort()).toEqual([...stopped].sort());
+		},
+	);
+});
+
+describe('feeTokenBlockCopy', () => {
+	const blocking = [
 		'escrow-uses-other-token',
 		'symbol-mismatch',
 		'escrow-not-exempt',
 		'treasury-not-exempt',
-	] as const)('tells the user payments are off and nothing was charged for %s', verdict => {
-		const copy = feeTokenBlockCopy(verdict, 'PTS');
-		expect(copy?.title).toMatch(/payments are switched off/i);
-		expect(copy?.description).toMatch(/nothing (has been|was) (approved|charged)/i);
+	] as const;
+
+	it('has nothing to say when the check passed or has no answer', () => {
+		expect(feeTokenBlockCopy('ok', 'PTS')).toBeNull();
+		expect(feeTokenBlockCopy('unknown', 'PTS')).toBeNull();
 	});
 
-	it('names only the token the build is for', () => {
-		const all = (
-			[
-				'escrow-uses-other-token',
-				'symbol-mismatch',
-				'escrow-not-exempt',
-				'treasury-not-exempt',
-			] as const
-		)
+	it.each(blocking)('says what is switched off for %s', verdict => {
+		const copy = feeTokenBlockCopy(verdict, 'PTS');
+		expect(copy?.title).toMatch(/switched off/i);
+		expect(copy?.description).toMatch(/switched off/i);
+	});
+
+	it('does not claim to know what the wallet approved or paid earlier', () => {
+		blocking.forEach(verdict => {
+			expect(feeTokenBlockCopy(verdict, 'PTS')?.description).not.toMatch(/nothing (has been|was)/i);
+		});
+	});
+
+	it('tells a wrong pairing apart from a token that cannot be received', () => {
+		expect(feeTokenBlockCopy('symbol-mismatch', 'PTS')?.description).not.toMatch(/cannot receive/i);
+		expect(feeTokenBlockCopy('escrow-uses-other-token', 'PTS')?.description).toMatch(/same token/i);
+		expect(feeTokenBlockCopy('escrow-not-exempt', 'PTS')?.description).toMatch(
+			/cannot receive PTS/,
+		);
+	});
+
+	it('says prompts still work when only the treasury is not listed', () => {
+		const copy = feeTokenBlockCopy('treasury-not-exempt', 'PTS');
+		expect(copy?.title).toMatch(/some actions/i);
+		expect(copy?.description).toMatch(/prompts still work/i);
+		expect(copy?.description).toMatch(/cancel/i);
+	});
+
+	it('points to support inside the app, and names only the token the build is for', () => {
+		const all = blocking
 			.map(verdict => JSON.stringify(feeTokenBlockCopy(verdict, 'PTS')))
 			.join(' ');
+		expect(all).toMatch(/Support in the menu/);
 		expect(all).not.toMatch(new RegExp(`\\b(${FEE_TOKEN_NAMES.join('|')})\\b`));
 	});
 });

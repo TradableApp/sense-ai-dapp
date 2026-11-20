@@ -3,13 +3,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import FeeTokenMismatchBanner from '@/components/FeeTokenMismatchBanner';
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
+import { blocksAction, type FeeTokenCheckState, feeTokenBlockCopy } from '@/lib/feeTokenCheck';
 
 vi.mock('@/hooks/useFeeTokenCheck', () => ({ default: vi.fn() }));
+vi.mock('@/config/feeToken', () => ({ FEE_TOKEN: { symbol: 'PTS' } }));
 
-const checkReturns = (verdict: string, isBlocked: boolean) =>
-	vi
-		.mocked(useFeeTokenCheck)
-		.mockReturnValue({ verdict, isBlocked } as ReturnType<typeof useFeeTokenCheck>);
+const checkReturns = (verdict: FeeTokenCheckState) =>
+	vi.mocked(useFeeTokenCheck).mockReturnValue({
+		verdict,
+		blocks: action => blocksAction(verdict, action),
+	});
 
 const banner = () => screen.queryByRole('alert');
 
@@ -17,26 +20,36 @@ describe('FeeTokenMismatchBanner', () => {
 	afterEach(cleanup);
 
 	it('renders nothing when the check passed', () => {
-		checkReturns('ok', false);
+		checkReturns('ok');
 		render(<FeeTokenMismatchBanner />);
 		expect(banner()).toBeNull();
 	});
 
 	it('renders nothing while the check has no answer: an unreachable node must not stop payments', () => {
-		checkReturns('unknown', false);
+		checkReturns('unknown');
 		render(<FeeTokenMismatchBanner />);
 		expect(banner()).toBeNull();
 	});
 
-	it('says payments are switched off when the escrow uses another token', () => {
-		checkReturns('escrow-uses-other-token', true);
+	it.each([
+		'escrow-uses-other-token',
+		'symbol-mismatch',
+		'escrow-not-exempt',
+		'treasury-not-exempt',
+	] as const)('shows the title and the explanation for %s', verdict => {
+		checkReturns(verdict);
 		render(<FeeTokenMismatchBanner />);
-		expect(banner()?.textContent).toMatch(/payments are switched off/i);
+		const copy = feeTokenBlockCopy(verdict, 'PTS');
+		expect(banner()?.textContent).toContain(copy?.title);
+		expect(banner()?.textContent).toContain(copy?.description);
 	});
 
-	it('cannot be dismissed', () => {
-		checkReturns('escrow-not-exempt', true);
+	it('offers nothing to click, so it cannot be dismissed', () => {
+		checkReturns('escrow-not-exempt');
 		render(<FeeTokenMismatchBanner />);
-		expect(screen.queryByRole('button')).toBeNull();
+		expect(banner()).not.toBeNull();
+		expect(
+			banner()?.querySelector('button, a, [role="button"], [aria-label], [tabindex]'),
+		).toBeNull();
 	});
 });
