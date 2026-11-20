@@ -111,19 +111,21 @@ async function settle(
 ): Promise<void> {
 	const sentToastId = announceSent(txHash, chain.id === LOCAL_CHAIN_ID);
 	let outcome: FaucetOutcome;
+	// The try holds only the wait, so the sent notice comes down on both of its ends, and
+	// before whatever notice follows.
 	try {
 		outcome = await waitForFaucet(chain, txHash, expected);
 	} catch (error) {
 		// Reading the receipt failed outright (no RPC client, or an error the wait does not
 		// retry): the transfer was sent, but whether it arrived is not known.
+		toast.dismiss(sentToastId);
 		console.error('Error waiting for faucet receipt:', error);
 		toast.error('Transfer Not Confirmed', {
 			description: 'The transfer could not be confirmed. Check your balance in a moment.',
 		});
 		return;
-	} finally {
-		toast.dismiss(sentToastId);
 	}
+	toast.dismiss(sentToastId);
 	showNotice(outcome);
 	// Only tokens that arrived, or may still arrive, change the balance.
 	if (outcome.kind !== 'received' && outcome.kind !== 'timeout') return;
