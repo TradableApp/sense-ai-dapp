@@ -433,6 +433,9 @@ describe('feeTokenBlockCopy', () => {
 		'symbol-mismatch',
 		'escrow-not-exempt',
 		'treasury-not-exempt',
+		'escrow-serves-other-agent',
+		'contract-not-found',
+		'token-paused',
 	] as const;
 
 	it('has nothing to say when the check passed or has no answer', () => {
@@ -458,6 +461,39 @@ describe('feeTokenBlockCopy', () => {
 		expect(feeTokenBlockCopy('escrow-not-exempt', 'PTS')?.description).toMatch(
 			/cannot receive PTS/,
 		);
+	});
+
+	it('says no contract was found when an address the app uses has none', () => {
+		const copy = feeTokenBlockCopy('contract-not-found', 'PTS');
+
+		expect(copy?.title).toMatch(/payments are switched off/i);
+		expect(copy?.description).toMatch(/no contract was found/i);
+	});
+
+	it('says the payment contract serves another agent, so a prompt would not be answered', () => {
+		const copy = feeTokenBlockCopy('escrow-serves-other-agent', 'PTS');
+
+		expect(copy?.title).toMatch(/payments are switched off/i);
+		expect(copy?.description).toMatch(/different agent/i);
+		expect(copy?.description).toMatch(/never answered/i);
+	});
+
+	it('says a paused token also stops cancelling and refunds, and where a payment stays', () => {
+		const copy = feeTokenBlockCopy('token-paused', 'PTS');
+
+		expect(copy?.title).toMatch(/payments are switched off/i);
+		expect(copy?.description).toMatch(/PTS is paused/);
+		expect(copy?.description).toMatch(/cancelling a prompt or claiming a refund will also be refused/i);
+		expect(copy?.description).toMatch(/until PTS can move/);
+		expect(copy?.description).toMatch(/stays with the SenseAI payment contract/);
+	});
+
+	it('names no price and no market value for any verdict', () => {
+		blocking.forEach(verdict => {
+			const description = feeTokenBlockCopy(verdict, 'PTS')?.description ?? '';
+
+			expect(description, verdict).not.toMatch(/\$|USD|price|market|value/i);
+		});
 	});
 
 	it('says prompts still work when only the treasury is not listed', () => {
