@@ -27,7 +27,7 @@ interface ReceiptLog {
 }
 
 export interface FaucetReceipt {
-	status?: unknown;
+	status?: 'success' | 'reverted' | (string & {});
 	logs?: readonly ReceiptLog[] | null;
 }
 
