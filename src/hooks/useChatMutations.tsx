@@ -13,6 +13,7 @@ import { CONTRACTS, LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts'
 import { FEE_TOKEN, type FeeTokenProfile, TRANSFER_RESTRICTION_ABI } from '@/config/feeToken';
 import { client } from '@/config/thirdweb';
 import useFaucetConfig from '@/hooks/useFaucetConfig';
+import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 import { messageNamesError } from '@/lib/contractErrorSelector';
@@ -25,6 +26,7 @@ import requestTestTokens, {
 	FAUCET_WAIT_ATTEMPTS,
 	FAUCET_WAIT_MS,
 } from '@/lib/faucetService';
+import { feeTokenBlockCopy, FeeTokenBlockedError, type PaidAction } from '@/lib/feeTokenCheck';
 import { wait } from '@/lib/utils';
 
 import { getTokenBalanceQueryKey } from './useTokenBalance';
@@ -176,6 +178,14 @@ export function buildErrorHandler(
 	feeToken: FeeTokenProfile = FEE_TOKEN,
 ): (_error: unknown, _action: string) => void {
 	return function genericOnError(error: unknown, action: string): void {
+		if (error instanceof FeeTokenBlockedError) {
+			// Refused before anything was sent; the banner says the same.
+			const copy = feeTokenBlockCopy(error.state, feeToken.symbol);
+			toast.error(copy?.title ?? 'Payments are switched off', {
+				description: copy?.description,
+			});
+			return;
+		}
 		console.error(`Failed to ${action}:`, error);
 		const errorMessage =
 			(error instanceof Error
@@ -377,6 +387,12 @@ export default function useChatMutations() {
 	const { data: faucetConfig } = useFaucetConfig();
 	const faucetAmount = faucetConfig?.amount ?? DEFAULT_FAUCET_AMOUNT;
 	const queryClient = useQueryClient();
+	const feeTokenCheck = useFeeTokenCheck();
+	// Every paying mutation asks this first, so a new caller cannot send what the check has
+	// switched off. Cancel and refund never ask: getting money back stays possible.
+	const refuseIfSwitchedOff = (action: PaidAction) => {
+		if (feeTokenCheck.blocks(action)) throw new FeeTokenBlockedError(feeTokenCheck.verdict);
+	};
 
 	const handleFaucetRequest = async () => {
 		toast.dismiss();
@@ -497,6 +513,7 @@ export default function useChatMutations() {
 			conversationHasAnswer?: boolean;
 			hasBranchOrigin?: boolean;
 		}) => {
+			refuseIfSwitchedOff('prompt');
 			const chain = activeWallet?.getChain();
 			if (!activeWallet || !chain || !sessionKey || !activeAccount) {
 				throw new Error('Wallet not connected or session not ready.');
@@ -588,6 +605,7 @@ export default function useChatMutations() {
 			promptMessageCID: string;
 			originalAnswerMessageCID: string;
 		}) => {
+			refuseIfSwitchedOff('prompt');
 			const chain = activeWallet?.getChain();
 			if (!activeWallet || !chain || !sessionKey || !activeAccount) {
 				throw new Error('Wallet not connected or session not ready.');
@@ -668,6 +686,7 @@ export default function useChatMutations() {
 			originalTitle: string;
 			sessionKey: CryptoKey;
 		}) => {
+			refuseIfSwitchedOff('branch');
 			const chain = activeWallet?.getChain();
 			if (!activeWallet || !chain || !sessionKey || !activeAccount) {
 				throw new Error('Wallet not connected or session not ready.');
@@ -740,6 +759,7 @@ export default function useChatMutations() {
 			isDeleted: boolean;
 			sessionKey: CryptoKey;
 		}) => {
+			refuseIfSwitchedOff('metadata');
 			const chain = activeWallet?.getChain();
 			if (!activeWallet || !chain || !sessionKey || !activeAccount) {
 				throw new Error('Wallet not connected or session not ready.');
