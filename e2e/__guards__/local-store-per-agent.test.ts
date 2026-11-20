@@ -38,13 +38,25 @@ const DEXIE_VALUE_IMPORT = new RegExp(
 	`^(?!\\s*(?:import|export)\\s+type\\b).*\\bfrom\\s+${DEXIE}|\\b(require|import)\\s*\\(\\s*${DEXIE}|^\\s*import\\s+${DEXIE}`,
 );
 
+// The naming module, by its relative path or by the alias.
+const NAMING_IMPORT = /import\{([^}]*)\}from['"](?:\.\/localStoreName|@\/lib\/localStoreName)['"]/;
+const LOCAL_DECLARATION = /(?:function|const|let|var|class)resolveLocalStoreName\b/;
+
+/** Whether `flat` (whitespace removed) imports the naming function itself, under its own name. */
+function importsNamingFunction(flat: string): boolean {
+	const names = NAMING_IMPORT.exec(flat)?.[1].split(',') ?? [];
+	return names.includes('resolveLocalStoreName') && !LOCAL_DECLARATION.test(flat);
+}
+
 /**
  * Whether `source` opens exactly one database, under the name the shared naming function
- * gives the build's chain id, agent address and mode.
+ * gives the build's chain id, agent address and mode. The function must be the one imported
+ * from the naming module, which is the one the build check applies.
  */
 function opensOneStoreNamedPerAgent(source: string): boolean {
 	const flat = stripComments(source).replace(/\s+/g, '');
 	return (
+		importsNamingFunction(flat) &&
 		(flat.match(/newDexie\(/g) ?? []).length === 1 &&
 		!/extendsDexie/.test(flat) &&
 		flat.includes(
