@@ -40,13 +40,23 @@ const DEXIE_VALUE_IMPORT = new RegExp(
 
 // The naming module, by its relative path or by the alias.
 const NAMING_IMPORT = /import\{([^}]*)\}from['"](?:\.\/localStoreName|@\/lib\/localStoreName)['"]/;
-const LOCAL_DECLARATION = /(?:function|const|let|var|class)resolveLocalStoreName\b/;
+// The name as a whole identifier. Read before whitespace is removed, so `const x` and a
+// following name stay apart.
+const NAMING_IDENTIFIER = /(?<![\w$])resolveLocalStoreName(?![\w$])/g;
 
 /** Whether `flat` (whitespace removed) imports the naming function itself, under its own name. */
 function importsNamingFunction(flat: string): boolean {
 	const names = NAMING_IMPORT.exec(flat)?.[1].split(',') ?? [];
-	return names.includes('resolveLocalStoreName') && !LOCAL_DECLARATION.test(flat);
+	return names.includes('resolveLocalStoreName');
 }
+
+/**
+ * Whether the name appears exactly twice: in the import and in the call that names the
+ * store. Any other appearance (a local declaration, a parameter, a destructured binding)
+ * could stand in for the imported function, so it fails rather than being told apart.
+ */
+const namedOnlyByImportAndCall = (code: string): boolean =>
+	(code.match(NAMING_IDENTIFIER) ?? []).length === 2;
 
 /**
  * Whether `source` opens exactly one database, under the name the shared naming function
@@ -54,9 +64,11 @@ function importsNamingFunction(flat: string): boolean {
  * from the naming module, which is the one the build check applies.
  */
 function opensOneStoreNamedPerAgent(source: string): boolean {
-	const flat = stripComments(source).replace(/\s+/g, '');
+	const code = stripComments(source);
+	const flat = code.replace(/\s+/g, '');
 	return (
 		importsNamingFunction(flat) &&
+		namedOnlyByImportAndCall(code) &&
 		(flat.match(/newDexie\(/g) ?? []).length === 1 &&
 		!/extendsDexie/.test(flat) &&
 		flat.includes(
