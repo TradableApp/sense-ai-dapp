@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-	LocalStoreConfigError,
 	assertLocalStoreConfig,
+	LocalStoreConfigError,
 	localStoreName,
 	resolveLocalStoreName,
 } from './localStoreName';
