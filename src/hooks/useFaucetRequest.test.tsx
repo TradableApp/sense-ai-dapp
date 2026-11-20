@@ -306,3 +306,27 @@ describe('when a faucet request refreshes the balance', () => {
 		expect(refreshed).toBe(false);
 	});
 });
+
+describe('a faucet call that fails outright', () => {
+	it('takes the loading notice down, says so, announces nothing and refreshes nothing', async () => {
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+		vi.mocked(requestTestTokens).mockRejectedValue(new Error('network down'));
+		const queryClient = new QueryClient();
+		const refreshed = vi.spyOn(queryClient, 'invalidateQueries');
+		const wrapper = ({ children }: { children: ReactNode }) => (
+			<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		);
+		const { result } = renderHook(() => useFaucetRequest(), { wrapper });
+
+		await act(async () => {
+			await expect(result.current.requestTokens()).resolves.toBeUndefined();
+		});
+
+		expect(toast.dismiss).toHaveBeenCalledWith('loading');
+		expect(toast.error).toHaveBeenCalledWith('Faucet Failed', expect.any(Object));
+		expect(toast.success).not.toHaveBeenCalled();
+		expect(refreshed).not.toHaveBeenCalled();
+		expect(logged).toHaveBeenCalled();
+		logged.mockRestore();
+	});
+});
