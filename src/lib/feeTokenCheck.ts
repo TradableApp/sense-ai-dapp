@@ -108,7 +108,8 @@ function asBoolean(value: unknown, what: string): boolean {
  * not what the contract declares, throws: no answer is not the same as a wrong token, and
  * the caller must not switch payments off for it.
  *
- * The reads are made in the order the verdicts are decided. A build for a restricted token
+ * The reads are made in the order the verdicts are decided, the treasury only when a
+ * restricted token needs it. A build for a restricted token
  * pointed at an ordinary one cannot be asked about listings at all (that read reverts), and
  * its symbol is the answer; asked together, the revert would hide it.
  */
@@ -123,16 +124,12 @@ export async function readFeeTokenVerdict({
 	escrowAddress: string;
 	profile: { symbol: string; transferable: boolean };
 }): Promise<FeeTokenVerdict> {
-	const [rawEscrowToken, rawTreasury] = await Promise.all([
-		reader.escrow(ESCROW_FEE_TOKEN_GETTER),
-		reader.escrow('treasury'),
-	]);
-	const escrowToken = asAddress(rawEscrowToken, 'the escrow token');
-	// Everything below is read from the configured token. If the escrow uses another one,
-	// those reads would describe a contract no payment touches, and its treasury does not
-	// matter either: the wrong token is the answer whatever else is wrong with it.
+	// One read at a time, each decided before the next is made: a later read that fails must
+	// not take away an answer an earlier one already gave.
+	const escrowToken = asAddress(await reader.escrow(ESCROW_FEE_TOKEN_GETTER), 'the escrow token');
+	// Everything below describes the configured token and the escrow's treasury. If the escrow
+	// uses another token, none of it matters: the wrong token is the answer.
 	if (!sameAddress(escrowToken, configuredToken)) return 'escrow-uses-other-token';
-	const treasury = asAddress(rawTreasury, 'the treasury');
 
 	const rawSymbol = await reader.token('symbol');
 	if (typeof rawSymbol !== 'string') throw unreadable('the symbol is not text');
@@ -146,6 +143,7 @@ export async function readFeeTokenVerdict({
 		return assessFeeToken({ ...pair, restricted: false });
 	}
 
+	const treasury = asAddress(await reader.escrow('treasury'), 'the treasury');
 	const [rawEscrowExempt, rawTreasuryExempt] = await Promise.all([
 		reader.token('isTransferExempt', [escrowAddress]),
 		reader.token('isTransferExempt', [treasury]),

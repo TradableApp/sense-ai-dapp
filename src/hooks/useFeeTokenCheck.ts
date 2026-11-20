@@ -37,6 +37,11 @@ function contractReader(
 // once per page load, so an unreachable node cannot fill the error tracker.
 const reported = new Set<string>();
 
+/** Starts reporting afresh, as a page load does. For tests, which share this module. */
+export function forgetReportedFailures(): void {
+	reported.clear();
+}
+
 function reportOnce(error: unknown, chainId: number): void {
 	const message = error instanceof Error ? error.message : String(error);
 	const key = `${chainId}:${message}`;

@@ -48,6 +48,7 @@ import requestTestTokens, {
 	FAUCET_WAIT_ATTEMPTS,
 	FAUCET_WAIT_MS,
 } from '@/lib/faucetService';
+import { FeeTokenBlockedError } from '@/lib/feeTokenCheck';
 import { wait } from '@/lib/utils';
 
 import shouldResetPlanForm from './planFormReset';
@@ -162,6 +163,8 @@ export default function ManagePlanModal({
 			limitInWei: bigint;
 			expiresAtTimestamp: bigint;
 		}): Promise<void> => {
+			// The form is disabled too; this is the refusal that holds whoever calls it.
+			if (isPlanSwitchedOff) throw new FeeTokenBlockedError(feeTokenCheck.verdict);
 			if (!activeWallet || !chainId) {
 				throw new Error('Wallet not connected');
 			}
