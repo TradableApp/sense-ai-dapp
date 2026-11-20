@@ -1,0 +1,126 @@
+import { describe, expect, it } from 'vitest';
+
+import { describeFailure, failureReport } from './feeTokenCheckFailure';
+
+const ADDRESS = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
+
+const named = (name: string, message: string) => Object.assign(new Error(message), { name });
+
+describe('describeFailure', () => {
+	it.each([
+		[
+			'a reading the contract does not declare',
+			named('FeeTokenCheckError', 'Fee token check: the symbol is not text.'),
+			'invalid-reading',
+		],
+		[
+			'a build with no contracts for the chain',
+			new Error('Fee token check: no contracts for this chain.'),
+			'no-contracts',
+		],
+		[
+			'an empty answer that cannot be decoded',
+			new Error('Cannot decode zero data ("0x") with ABI parameters.'),
+			'zero-data',
+		],
+		[
+			'a function that returned no data',
+			new Error('The contract function "symbol" returned no data ("0x").'),
+			'zero-data',
+		],
+		[
+			'a node that answered with an HTTP error',
+			new Error('RPC request failed with status 429 - Too Many Requests: rate limited'),
+			'rpc',
+		],
+		[
+			'a batch the node did not answer',
+			new Error('RPC Error from https://84532.rpc.example/key:\nrequests: []'),
+			'rpc',
+		],
+		['a JSON-RPC error object', { code: -32000, message: 'header not found' }, 'rpc'],
+		['a fetch that never reached the node', new TypeError('Failed to fetch'), 'node'],
+		['a fetch that failed on the server side', new Error('fetch failed'), 'node'],
+		[
+			'a browser network error',
+			new Error('NetworkError when attempting to fetch resource.'),
+			'node',
+		],
+		['an aborted request', named('AbortError', 'signal is aborted without reason'), 'node'],
+		['a request that timed out', named('TimeoutError', 'The operation timed out.'), 'node'],
+		['anything else', new Error('the ABI has no paused()'), 'other'],
+		['a value that is not an error', 'boom', 'other'],
+	])('sorts %s', (_label, error, kind) => {
+		const failure = describeFailure(error);
+
+		expect(failure.kind).toBe(kind);
+	});
+
+	it('keeps only the first line', () => {
+		const error = new Error('RPC Error from node:\nrequests: [{"params":[]}]\nresponses: []');
+
+		const { line } = describeFailure(error);
+
+		expect(line).toBe('RPC Error from node:');
+	});
+
+	it('replaces a URL, with whatever key it carries', () => {
+		const error = new Error('RPC Error from https://84532.rpc.example/abc123?key=s3cret: oops');
+
+		const { line } = describeFailure(error);
+
+		expect(line).toBe('RPC Error from <url> oops');
+	});
+
+	it('replaces 0x and eight or more hex digits, which can be a wallet address or call data', () => {
+		const error = new Error(`execution reverted for ${ADDRESS} with 0xdeadbeef01`);
+
+		const { line } = describeFailure(error);
+
+		expect(line).toBe('execution reverted for <hex> with <hex>');
+	});
+
+	it('leaves shorter hex alone: an empty answer and a status code are not private', () => {
+		const error = new Error('returned no data ("0x"), code 0x1234567');
+
+		const { line } = describeFailure(error);
+
+		expect(line).toBe('returned no data ("0x"), code 0x1234567');
+	});
+
+	it('caps the line at 120 characters', () => {
+		const error = new Error('x'.repeat(500));
+
+		const { line } = describeFailure(error);
+
+		expect(line).toHaveLength(120);
+	});
+
+	it('takes the message of a JSON-RPC error object', () => {
+		const { line } = describeFailure({ code: 3, message: 'execution reverted' });
+
+		expect(line).toBe('execution reverted');
+	});
+
+	it('has an empty line for nothing at all', () => {
+		const failure = describeFailure(undefined);
+
+		expect(failure).toEqual({ kind: 'other', line: '' });
+	});
+});
+
+describe('failureReport', () => {
+	it('is a new error carrying only the kind and the line', () => {
+		const report = failureReport({ kind: 'rpc', line: 'RPC Error from <url>' });
+
+		expect(report).toBeInstanceOf(Error);
+		expect(report.name).toBe('FeeTokenCheckFailure');
+		expect(report.message).toBe('rpc: RPC Error from <url>');
+	});
+
+	it('carries the kind alone when there is no line', () => {
+		const report = failureReport({ kind: 'other', line: '' });
+
+		expect(report.message).toBe('other');
+	});
+});

@@ -210,14 +210,16 @@ describe('useFeeTokenCheck', () => {
 	});
 
 	it('does not stop payments when the first read fails, and reports the failure', async () => {
-		chainAnswers({ treasury: new Error('first read: 429 Too Many Requests') });
+		chainAnswers({
+			treasury: new Error('RPC request failed with status 429 - Too Many Requests: slow down'),
+		});
 		const { result } = harness();
 		await waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(1));
 		expect(result.current.verdict).toBe('unknown');
 		expect(result.current.blocks('prompt')).toBe(false);
 		expect(vi.mocked(Sentry.captureException).mock.calls[0][1]).toMatchObject({
-			tags: { check: 'fee-token' },
-			fingerprint: ['fee-token-check'],
+			tags: { check: 'fee-token', failure: 'rpc' },
+			fingerprint: ['fee-token-check', 'rpc'],
 		});
 	});
 
@@ -256,6 +258,50 @@ describe('useFeeTokenCheck', () => {
 		await waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(1));
 		await refetch(queryClient);
 		await refetch(queryClient);
+		expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+	});
+
+	it('never sends the original error, only its kind and a scrubbed first line', async () => {
+		const original = new Error(
+			`RPC Error from https://84532.rpc.example/s3cret-key:\nrequests: [{"data":"${TREASURY}"}]`,
+		);
+		chainAnswers({ treasury: original });
+
+		harness();
+
+		await waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(1));
+		const [sent, context] = vi.mocked(Sentry.captureException).mock.calls[0];
+		expect(sent).not.toBe(original);
+		expect((sent as Error).message).toBe('rpc: RPC Error from <url>');
+		expect(JSON.stringify([String(sent), context])).not.toMatch(/s3cret|requests|70997970/i);
+	});
+
+	it('reports failures of a different kind apart', async () => {
+		chainAnswers({ treasury: new TypeError('Failed to fetch') });
+		const { queryClient } = harness();
+		await waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(1));
+		chainAnswers({ treasury: new Error('Cannot decode zero data ("0x") with ABI parameters.') });
+
+		await refetch(queryClient);
+
+		await waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(2));
+		const fingerprints = vi
+			.mocked(Sentry.captureException)
+			.mock.calls.map(([, context]) => (context as { fingerprint: string[] }).fingerprint);
+		expect(fingerprints).toEqual([
+			['fee-token-check', 'node'],
+			['fee-token-check', 'zero-data'],
+		]);
+	});
+
+	it('reports a failure once when only the batch it came in differs', async () => {
+		chainAnswers({ treasury: new Error('RPC Error from https://a.example/1:\nrequests: [1]') });
+		const { queryClient } = harness();
+		await waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(1));
+		chainAnswers({ treasury: new Error('RPC Error from https://b.example/2:\nrequests: [2]') });
+
+		await refetch(queryClient);
+
 		expect(Sentry.captureException).toHaveBeenCalledTimes(1);
 	});
 
