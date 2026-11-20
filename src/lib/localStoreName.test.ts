@@ -30,7 +30,15 @@ describe('localStoreName', () => {
 		expect(localStoreName(84532, AGENT_A)).toBe(localStoreName('84532', AGENT_A));
 	});
 
-	it.each([undefined, '', 'undefined', '0x1234', 'not-an-address', `0x${'a'.repeat(41)}`])(
+	it.each([
+		undefined,
+		'',
+		'undefined',
+		'0x1234',
+		'not-an-address',
+		`0x${'a'.repeat(41)}`,
+		`0x${'g'.repeat(40)}`,
+	])(
 		'refuses the agent address %j rather than naming a store all agents would share',
 		agent => {
 			expect(() => localStoreName('84532', agent)).toThrow(LocalStoreConfigError);
@@ -39,6 +47,78 @@ describe('localStoreName', () => {
 
 	it.each([undefined, '', 'abc', '0', '-1', '1.5'])('refuses the chain id %j', chainId => {
 		expect(() => localStoreName(chainId, AGENT_A)).toThrow(LocalStoreConfigError);
+	});
+});
+
+// A value in the wrong setting can be a secret: a private key pasted where the address goes
+// is 64 hex digits, with or without 0x. The message goes to a terminal or a CI log, so it
+// says what was expected and what was got by its shape only, never the value itself.
+describe('localStoreName error messages', () => {
+	const KEY = '4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318';
+	const messageFor = (run: () => unknown): string => {
+		try {
+			run();
+		} catch (error) {
+			return (error as Error).message;
+		}
+		throw new Error('expected a throw');
+	};
+	// Any six digits in a row from the key, anywhere in the message, would be a leak.
+	const leaksPartOf = (message: string, value: string): boolean =>
+		Array.from({ length: value.length - 5 }, (_, i) => value.slice(i, i + 6)).some(part =>
+			message.includes(part),
+		);
+
+	it.each([KEY, `0x${KEY}`])('does not print an agent address that looks like a key', value => {
+		const message = messageFor(() => localStoreName('84532', value));
+
+		expect(leaksPartOf(message, KEY)).toBe(false);
+	});
+
+	it('does not print a chain id that looks like a key', () => {
+		const message = messageFor(() => localStoreName(KEY, AGENT_A));
+
+		expect(leaksPartOf(message, KEY)).toBe(false);
+	});
+
+	it('does not print the value when it stops a build', () => {
+		const message = messageFor(() =>
+			assertLocalStoreConfig('testnet', {
+				VITE_CHAIN_ID: '84532',
+				VITE_AGENT_CONTRACT_ADDRESS: KEY,
+			}),
+		);
+
+		expect(leaksPartOf(message, KEY)).toBe(false);
+	});
+
+	it('says what an address should be and describes the value by its shape', () => {
+		const message = messageFor(() => localStoreName('84532', KEY));
+
+		expect(message).toMatch(/0x followed by 40 hex digits/);
+		expect(message).toMatch(/64 characters/);
+		expect(message).toMatch(/does not start with 0x/);
+		expect(message).toMatch(/all hex/);
+	});
+
+	it('describes a prefixed value that is not all hex', () => {
+		const message = messageFor(() => localStoreName('84532', `0x${'g'.repeat(40)}`));
+
+		expect(message).toMatch(/42 characters/);
+		expect(message).toMatch(/starts with 0x/);
+		expect(message).toMatch(/not all hex/);
+	});
+
+	it.each([undefined, ''])('says an agent address of %j is empty', value => {
+		expect(messageFor(() => localStoreName('84532', value))).toMatch(/got nothing/);
+	});
+
+	it('says what a chain id should be and describes the value by its shape', () => {
+		const message = messageFor(() => localStoreName('abc', AGENT_A));
+
+		expect(message).toMatch(/a whole number above 0/);
+		expect(message).toMatch(/3 characters/);
+		expect(message).not.toMatch(/abc/);
 	});
 });
 
