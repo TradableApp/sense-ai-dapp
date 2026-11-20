@@ -133,9 +133,18 @@ export function faucetReceiptOutcome(
 /** How long to wait between looks for a faucet transaction's receipt. */
 export const FAUCET_POLL_MS = 2000;
 
+/** How many looks before the wait gives up: about a minute. One number for every caller. */
+export const FAUCET_WAIT_ATTEMPTS = 30;
+
+/** The longest the wait can last, which is also how long the "sent" notice stays up. */
+export const FAUCET_WAIT_MS = FAUCET_WAIT_ATTEMPTS * FAUCET_POLL_MS;
+
 export type FaucetWaitOutcome = 'received' | 'failed' | 'timeout';
 
-// What thirdweb throws while a transaction is not yet mined. Expected, so not reported.
+// What thirdweb throws while a transaction is not yet mined ("Transaction receipt not
+// found.", `eth_getTransactionReceipt` in thirdweb 5.118.0). Expected, so not reported. It
+// carries no error code, so the text is the only signal; if a later version words it
+// differently the wait still works and each look is logged as a warning.
 const RECEIPT_NOT_FOUND = 'receipt not found';
 
 /**

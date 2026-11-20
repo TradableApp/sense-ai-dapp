@@ -43,6 +43,8 @@ import requestTestTokens, {
 	awaitFaucetReceipt,
 	DEFAULT_FAUCET_AMOUNT,
 	FAUCET_POLL_MS,
+	FAUCET_WAIT_ATTEMPTS,
+	FAUCET_WAIT_MS,
 } from '@/lib/faucetService';
 import { wait } from '@/lib/utils';
 
@@ -62,8 +64,6 @@ const managePlanSchema = z.object({
 type FormValues = z.infer<typeof managePlanSchema>;
 
 const DEFAULT_DAYS = 365;
-// About 40 seconds at the faucet's polling interval.
-const FAUCET_WAIT_ATTEMPTS = 20;
 
 interface ExistingPlan {
 	allowance: number;
@@ -356,7 +356,7 @@ export default function ManagePlanModal({
 								onClick: () => window.open(`https://sepolia.basescan.org/tx/${txHash}`, '_blank'),
 							},
 					  }),
-				duration: 10000,
+				duration: FAUCET_WAIT_MS,
 			});
 
 			// 2. Poll for confirmation using Thirdweb RPC

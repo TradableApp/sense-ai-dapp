@@ -22,6 +22,8 @@ import requestTestTokens, {
 	awaitFaucetReceipt,
 	DEFAULT_FAUCET_AMOUNT,
 	FAUCET_POLL_MS,
+	FAUCET_WAIT_ATTEMPTS,
+	FAUCET_WAIT_MS,
 } from '@/lib/faucetService';
 import { wait } from '@/lib/utils';
 
@@ -125,9 +127,6 @@ export function buildInitiatePromptPayload({
 		previousMessageCID: parentCID || null,
 	};
 }
-
-// About 60 seconds at the faucet's polling interval.
-const FAUCET_WAIT_ATTEMPTS = 30;
 
 const CANCEL_ACTION = 'cancel prompt';
 const REFUND_ACTION = 'process refund';
@@ -405,7 +404,7 @@ export default function useChatMutations() {
 								onClick: () => window.open(`https://sepolia.basescan.org/tx/${txHash}`, '_blank'),
 							},
 					  }),
-				duration: 10000,
+				duration: FAUCET_WAIT_MS,
 			});
 
 			// 2. Poll for confirmation using Thirdweb RPC
