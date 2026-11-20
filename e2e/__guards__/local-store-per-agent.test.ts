@@ -28,8 +28,9 @@ const isSource = (file: string) =>
 const read = (...parts: string[]) => stripComments(readFileSync(path.join(...parts), 'utf8'));
 
 // The library itself, not its types: `import type { Table } from 'dexie'` opens nothing.
+// A path under the package (`dexie/dist/...`) is the same library by another door.
 const DEXIE_VALUE_IMPORT =
-	/^(?!\s*import\s+type\b).*\bfrom\s+['"]dexie['"]|\b(require|import)\s*\(\s*['"]dexie['"]/;
+	/^(?!\s*import\s+type\b).*\bfrom\s+['"]dexie(\/[^'"]*)?['"]|\b(require|import)\s*\(\s*['"]dexie(\/[^'"]*)?['"]/;
 
 describe('local store is opened once, per agent', () => {
 	it.each([

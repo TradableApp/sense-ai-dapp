@@ -64,15 +64,16 @@ export function resolveLocalStoreName(
 }
 
 /**
- * Stops a build or dev server whose chain id or agent address cannot name a store, in every
- * mode but the two `resolveLocalStoreName` lets run without an agent. Called from
- * `vite.config.ts`: the store module is in the first bundle, so the same fault found in the
- * browser would fail before error reporting or any page exists and leave a blank screen.
+ * Stops a build or dev server whose settings the browser could not name a store from. It
+ * applies `resolveLocalStoreName` itself, so the two cannot disagree: a localnet build may
+ * leave the agent address out, but one that sets it must set it, and the chain id, properly.
+ * Called from `vite.config.ts`: the store module is in the first bundle, so the same fault
+ * found in the browser would fail before error reporting or any page exists and leave a
+ * blank screen.
  */
 export function assertLocalStoreConfig(
 	mode: string,
 	env: Record<string, string | undefined>,
 ): void {
-	if (mayRunWithoutAgent(mode)) return;
-	localStoreName(env.VITE_CHAIN_ID, env.VITE_AGENT_CONTRACT_ADDRESS);
+	resolveLocalStoreName(env.VITE_CHAIN_ID, env.VITE_AGENT_CONTRACT_ADDRESS, mode);
 }
