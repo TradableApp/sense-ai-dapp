@@ -42,8 +42,9 @@ const LOCALNET_MODE = 'localnet';
 /** The mode Vitest runs in. */
 const UNIT_TEST_MODE = 'test';
 const UNCONFIGURED_LOCALNET_STORE = `${STORE_PREFIX}:${LOCALNET_MODE}:unconfigured`;
-/** Build modes that are deployed, where a store shared between agents would reach users. */
-const DEPLOYED_MODES = ['testnet', 'mainnet'];
+
+const mayRunWithoutAgent = (mode: string | undefined): boolean =>
+	mode === LOCALNET_MODE || mode === UNIT_TEST_MODE;
 
 /**
  * The name the app opens its store under.
@@ -58,21 +59,20 @@ export function resolveLocalStoreName(
 	agentAddress: string | undefined,
 	mode: string | undefined,
 ): string {
-	const mayRunWithoutAgent = mode === LOCALNET_MODE || mode === UNIT_TEST_MODE;
-	if (mayRunWithoutAgent && !agentAddress) return UNCONFIGURED_LOCALNET_STORE;
+	if (mayRunWithoutAgent(mode) && !agentAddress) return UNCONFIGURED_LOCALNET_STORE;
 	return localStoreName(chainId, agentAddress);
 }
 
 /**
- * Stops a testnet or mainnet build or dev server whose chain id or agent address cannot
- * name a store. Called from `vite.config.ts`: the store module is in the first bundle, so
- * the same fault found in the browser would fail before error reporting or any page exists
- * and leave a blank screen.
+ * Stops a build or dev server whose chain id or agent address cannot name a store, in every
+ * mode but the two `resolveLocalStoreName` lets run without an agent. Called from
+ * `vite.config.ts`: the store module is in the first bundle, so the same fault found in the
+ * browser would fail before error reporting or any page exists and leave a blank screen.
  */
 export function assertLocalStoreConfig(
 	mode: string,
 	env: Record<string, string | undefined>,
 ): void {
-	if (!DEPLOYED_MODES.includes(mode)) return;
+	if (mayRunWithoutAgent(mode)) return;
 	localStoreName(env.VITE_CHAIN_ID, env.VITE_AGENT_CONTRACT_ADDRESS);
 }

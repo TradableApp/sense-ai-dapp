@@ -10,9 +10,10 @@ import svgr from 'vite-plugin-svgr';
 import { assertLocalStoreConfig } from './src/lib/localStoreName';
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => {
-	// A testnet or mainnet build that cannot name its local store stops here, with the reason.
-	assertLocalStoreConfig(mode, loadEnv(mode, process.cwd(), 'VITE_'));
+export default defineConfig(({ mode, isPreview }) => {
+	// A build or dev server that cannot name its local store stops here, with the reason.
+	// `vite preview` only serves a bundle that already passed this.
+	if (!isPreview) assertLocalStoreConfig(mode, loadEnv(mode, process.cwd(), 'VITE_'));
 
 	const isProduction = mode === 'mainnet' || mode === 'testnet' || mode === 'production';
 	const sentryActive =
