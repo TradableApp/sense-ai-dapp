@@ -37,14 +37,46 @@ function isOperandOf(expression: string, name: string): boolean {
 		.some(operand => operand.trim() === name);
 }
 
+/** Where the `{…}` opened at `open` closes, counting nested braces; -1 if it never does. */
+function closingBrace(text: string, open: number): number {
+	let depth = 0;
+	for (let i = open; i < text.length; i += 1) {
+		if (text[i] === '{') depth += 1;
+		if (text[i] === '}') depth -= 1;
+		if (depth === 0) return i;
+	}
+	return -1;
+}
+
+/** The opening tag that starts at `start` (`<Tag` … `>`), skipping `>` inside `{…}`. */
+function openingTagAt(text: string, start: number): string {
+	let depth = 0;
+	for (let i = start; i < text.length; i += 1) {
+		if (text[i] === '{') depth += 1;
+		if (text[i] === '}') depth -= 1;
+		if (text[i] === '>' && depth === 0) return text.slice(start, i + 1);
+	}
+	throw new Error('an opening tag that never closes');
+}
+
 /**
- * The `disabled` expression of the `<tag …>` element whose opening tag holds `marker` (the
- * handler that sends). Throws when that element or its `disabled` cannot be found.
+ * The `disabled` expression of the `<tag …>` element whose own opening tag holds `marker`
+ * (the handler that sends). Only that tag is read, so no other element's attribute can
+ * stand in for it. Throws when the element or its `disabled` cannot be found.
  */
 function disabledOf(source: string, tag: string, marker: string): string {
-	const found = source.slice(source.indexOf(marker)).match(/disabled=\{([^}]+)\}/)?.[1];
-	if (found === undefined) throw new Error(`no disabled for ${marker}`);
-	return found;
+	const at = source.indexOf(marker);
+	if (at === -1) throw new Error(`${marker} not found`);
+	const start = source.lastIndexOf(`<${tag}`, at);
+	if (start === -1) throw new Error(`no <${tag}> before ${marker}`);
+	const opening = openingTagAt(source, start);
+	if (start + opening.length < at) throw new Error(`${marker} is not inside a <${tag}> tag`);
+	const attribute = opening.search(/\sdisabled=\{/);
+	if (attribute === -1) throw new Error(`the <${tag}> with ${marker} has no disabled`);
+	const open = opening.indexOf('{', attribute);
+	const close = closingBrace(opening, open);
+	if (close === -1) throw new Error(`the disabled of <${tag}> never closes`);
+	return opening.slice(open + 1, close).trim();
 }
 
 /** Whether an expression depends on the fee token check. */
