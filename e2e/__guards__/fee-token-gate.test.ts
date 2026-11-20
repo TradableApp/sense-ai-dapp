@@ -264,6 +264,12 @@ describe('how the guard reads the button that sends a refund', () => {
 		expect(isGatedByCheck(disabledOf(source, 'Button', marker))).toBe(true);
 	});
 
+	it('does not count a marker that starts right after the tag closes as inside it', () => {
+		const source = `<Button disabled={isRefundSwitchedOff}>${marker}{ id: 1 })</Button>`;
+
+		expect(() => disabledOf(source, 'Button', marker)).toThrow(/not inside/);
+	});
+
 	it('fails when the button cannot be found', () => {
 		expect(() => disabledOf('<Button disabled={x}>Refund</Button>', 'Button', marker)).toThrow();
 		expect(() => disabledOf(`<Link onClick={() => ${marker})} />`, 'Button', marker)).toThrow();
