@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # Copy the canonical contract ABIs out of the sibling repos, and record WHICH COMMIT they came from.
 #
-# The recording half is the point. Artifacts are gitignored build output in both contract repos, so
+# The recording half is the point. Artifacts are gitignored build output in every contract repo, so
 # there is no way to fetch a canonical ABI without compiling — which means a consumer cannot tell a
 # current ABI from a stale one by looking at it. AbleToken and EVMAIAgentEscrow sat 12 days behind
 # able-contracts#24 and tokenized-ai-agent#86 with a green suite the whole time, because nothing
@@ -27,6 +27,7 @@ ABI_DIR="./src/lib/abi"
 AGENT_SRC="$R/tokenized-ai-agent/artifacts/contracts/EVMAIAgent.sol/EVMAIAgent.json"
 ESCROW_SRC="$R/tokenized-ai-agent/artifacts/contracts/EVMAIAgentEscrow.sol/EVMAIAgentEscrow.json"
 ABLE_SRC="$R/able-contracts/artifacts/contracts/AbleToken.sol/AbleToken.json"
+SENSE_SRC="$R/sense-contracts/artifacts/contracts/SenseToken.sol/SenseToken.json"
 
 # VALIDATE EVERYTHING BEFORE WRITING ANYTHING.
 #
@@ -43,7 +44,7 @@ command -v bun > /dev/null 2>&1 || {
   exit 1
 }
 
-for src in "$AGENT_SRC" "$ESCROW_SRC" "$ABLE_SRC"; do
+for src in "$AGENT_SRC" "$ESCROW_SRC" "$ABLE_SRC" "$SENSE_SRC"; do
   if [ ! -f "$src" ]; then
     echo "error: canonical artifact missing: $src" >&2
     echo "       compile the sibling repo first (its artifacts/ is gitignored build output)." >&2
@@ -56,6 +57,7 @@ done
 # committed; only the provenance is soft. Compiling the siblings here would make the pairing true
 # by construction, and is left as a follow-up.
 ABLE_SHA=$(git -C "$R/able-contracts" rev-parse HEAD)
+SENSE_SHA=$(git -C "$R/sense-contracts" rev-parse HEAD)
 TA_SHA=$(git -C "$R/tokenized-ai-agent" rev-parse HEAD)
 
 # Warn when the compiled artifacts cannot be honestly attributed to the recorded commit.
@@ -71,7 +73,7 @@ TA_SHA=$(git -C "$R/tokenized-ai-agent" rev-parse HEAD)
 # that fires on the harmless case and stays quiet on the harmful one trains people to ignore it.
 # It also fetched from the network on every run, swallowing failures, which made its own result
 # untrustworthy offline.
-for repo in able-contracts tokenized-ai-agent; do
+for repo in able-contracts sense-contracts tokenized-ai-agent; do
   if [ -n "$(git -C "$R/$repo" status --porcelain --untracked-files=no)" ]; then
     echo "warning: $repo has uncommitted changes — the recorded commit may not describe these ABIs." >&2
   fi
@@ -100,11 +102,12 @@ fingerprint() {
 # identical either way, but reading the source means a malformed artifact aborts here, with the
 # destination still untouched. Under `set -e` a failing fingerprint ends the script.
 ABLE_FP=$(fingerprint "$ABLE_SRC")
+SENSE_FP=$(fingerprint "$SENSE_SRC")
 AGENT_FP=$(fingerprint "$AGENT_SRC")
 ESCROW_FP=$(fingerprint "$ESCROW_SRC")
 
 # Past this line the destination changes.
-cp "$AGENT_SRC" "$ESCROW_SRC" "$ABLE_SRC" "$ABI_DIR/"
+cp "$AGENT_SRC" "$ESCROW_SRC" "$ABLE_SRC" "$SENSE_SRC" "$ABI_DIR/"
 
 cat > "$ABI_DIR/SOURCE.json" <<JSON
 {
@@ -125,9 +128,10 @@ cat > "$ABI_DIR/SOURCE.json" <<JSON
   "sources": {
     "AbleToken.json":        { "repo": "TradableApp/able-contracts",     "commit": "$ABLE_SHA", "abiSha256": "$ABLE_FP" },
     "EVMAIAgent.json":       { "repo": "TradableApp/tokenized-ai-agent", "commit": "$TA_SHA", "abiSha256": "$AGENT_FP" },
-    "EVMAIAgentEscrow.json": { "repo": "TradableApp/tokenized-ai-agent", "commit": "$TA_SHA", "abiSha256": "$ESCROW_FP" }
+    "EVMAIAgentEscrow.json": { "repo": "TradableApp/tokenized-ai-agent", "commit": "$TA_SHA", "abiSha256": "$ESCROW_FP" },
+    "SenseToken.json":       { "repo": "TradableApp/sense-contracts",    "commit": "$SENSE_SHA", "abiSha256": "$SENSE_FP" }
   }
 }
 JSON
 
-printf 'ABIs synced. able-contracts=%.7s tokenized-ai-agent=%.7s\n' "$ABLE_SHA" "$TA_SHA"
+printf 'ABIs synced. able-contracts=%.7s sense-contracts=%.7s tokenized-ai-agent=%.7s\n' "$ABLE_SHA" "$SENSE_SHA" "$TA_SHA"

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { CONTRACTS, LOCAL_CHAIN_ID, SUPPORTED_TOKENS, TESTNET_CHAIN_ID } from './contracts';
+import { FEE_TOKEN } from './feeToken';
 
 describe('contracts config', () => {
 	describe('chain ID constants', () => {
@@ -53,6 +54,12 @@ describe('contracts config', () => {
 		});
 	});
 
+	it("reads and decodes the token with the fee token's own ABI", () => {
+		Object.values(CONTRACTS).forEach(config => {
+			expect(config.token.abi).toBe(FEE_TOKEN.abi);
+		});
+	});
+
 	describe('SUPPORTED_TOKENS', () => {
 		it('has at least one chain entry', () => {
 			const chainIds = Object.keys(SUPPORTED_TOKENS);
@@ -66,8 +73,9 @@ describe('contracts config', () => {
 					expect(token).toHaveProperty('address');
 					expect(token).toHaveProperty('name');
 					expect(token).toHaveProperty('symbol');
-					expect(token.symbol).toBe('ABLE');
-					expect(token.name).toBe('ABLE Token');
+					expect(token.symbol).toBe(FEE_TOKEN.symbol);
+					expect(token.name).toBe(FEE_TOKEN.name);
+					expect(token.icon).toBe(FEE_TOKEN.icon);
 				});
 			});
 		});

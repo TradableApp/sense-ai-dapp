@@ -12,7 +12,14 @@ vi.mock('@/lib/crypto', () => ({
 	decryptData: vi.fn(),
 	deriveKeyFromEntropy: vi.fn(),
 }));
-vi.mock('@/lib/faucetService', () => ({ default: vi.fn() }));
+vi.mock('@/lib/faucetService', () => ({
+	default: vi.fn(),
+	awaitFaucetReceipt: vi.fn(),
+	DEFAULT_FAUCET_AMOUNT: 100,
+	FAUCET_POLL_MS: 2000,
+	FAUCET_WAIT_ATTEMPTS: 30,
+	FAUCET_WAIT_MS: 60000,
+}));
 
 import { postTxInvalidationKeys } from './useChatMutations';
 

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { FEE_TOKEN } from '@/config/feeToken';
 import useChatMutations from '@/hooks/useChatMutations';
 import useStuckRequests from '@/hooks/useStuckRequests';
 
@@ -142,8 +143,8 @@ export default function PlanStatusCard({ plan }: { plan: Plan }) {
 											<TooltipContent className="max-w-xs">
 												<p className="font-semibold mb-1">Authorization Gap</p>
 												<p>
-													You have {allowanceGap.toFixed(2)} ABLE unused in your plan, but your
-													wallet allowance is lower. Use "Manage Limit" to re-sync.
+													You have {allowanceGap.toFixed(2)} {FEE_TOKEN.symbol} unused in your plan,
+													but your wallet allowance is lower. Use "Manage Limit" to re-sync.
 												</p>
 											</TooltipContent>
 										</Tooltip>
@@ -157,7 +158,7 @@ export default function PlanStatusCard({ plan }: { plan: Plan }) {
 										Spent
 									</span>
 									<span className="font-semibold" data-testid="plan-spent-value">
-										{formattedSpentAmount} ABLE
+										{formattedSpentAmount} {FEE_TOKEN.symbol}
 									</span>
 								</div>
 
@@ -168,7 +169,7 @@ export default function PlanStatusCard({ plan }: { plan: Plan }) {
 											Available
 										</span>
 										<span className="font-bold text-green-600 dark:text-green-500">
-											{formattedAvailable} ABLE
+											{formattedAvailable} {FEE_TOKEN.symbol}
 										</span>
 									</div>
 								)}
@@ -178,7 +179,7 @@ export default function PlanStatusCard({ plan }: { plan: Plan }) {
 										Limit
 									</span>
 									<span className="font-semibold" data-testid="plan-allowance">
-										{formattedAllowance} ABLE
+										{formattedAllowance} {FEE_TOKEN.symbol}
 									</span>
 								</div>
 							</div>
@@ -232,9 +233,9 @@ export default function PlanStatusCard({ plan }: { plan: Plan }) {
 								<AlertTriangle className="h-5 w-5 mt-0.5 text-amber-500 shrink-0" />
 								<span>
 									<b className="text-foreground">Note:</b> Your wallet allowance is lower than your
-									plan limit by {Number(allowanceGap.toFixed(2))} ABLE. This happens after prompt
-									cancellations/refunds because the ERC-20 allowance does not add these amounts back
-									in. You will need to reset your allowance to use the full plan.
+									plan limit by {Number(allowanceGap.toFixed(2))} {FEE_TOKEN.symbol}. This happens
+									after prompt cancellations/refunds because the ERC-20 allowance does not add these
+									amounts back in. You will need to reset your allowance to use the full plan.
 								</span>
 							</div>
 						)}

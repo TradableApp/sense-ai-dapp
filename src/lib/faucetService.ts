@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { encodeFunctionData, erc20Abi, parseUnits } from 'viem';
 
 import { LOCAL_CHAIN_ID } from '@/config/contracts';
+import { FEE_TOKEN } from '@/config/feeToken';
 import { db, functions } from '@/config/firebase';
 
 import type { FaucetConfig, FaucetResponse } from './types';
@@ -15,13 +16,13 @@ interface FaucetCallableResult {
 	amount?: number;
 }
 
-// Localnet "treasury": Hardhat account #0 holds the full ABLE supply and is
+// Localnet "treasury": Hardhat account #0 holds the full fee token supply and is
 // unlocked on the local node, so eth_sendTransaction needs no signature. This is
 // the localnet equivalent of the testnet faucet — on localnet we NEVER call the
 // Firebase cloud function (which dispenses Base Sepolia tokens).
 const HARDHAT_DEPLOYER = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
-/** Default ABLE per request when the Firestore config is unavailable. */
-export const FAUCET_AMOUNT_ABLE = 100;
+/** Default tokens per request when the Firestore config is unavailable. */
+export const DEFAULT_FAUCET_AMOUNT = 100;
 const DEFAULT_RATE_LIMIT_HOURS = 24;
 // Mirror the cloud function's circuit breaker so the displayed/transferred amount
 // matches what the server will actually dispense.
@@ -32,14 +33,18 @@ const MAX_FAUCET_AMOUNT = 10_000;
  * 0 / negative / NaN / non-numeric / out-of-range (the `??` operator only guards
  * null/undefined, so a fat-fingered 0 or "abc" would otherwise slip through).
  */
-const sanitizePositive = (raw: unknown, fallback: number, max = Number.POSITIVE_INFINITY): number => {
+const sanitizePositive = (
+	raw: unknown,
+	fallback: number,
+	max = Number.POSITIVE_INFINITY,
+): number => {
 	const n = Number(raw);
 	return Number.isFinite(n) && n > 0 && n <= max ? n : fallback;
 };
 
 /**
  * Like sanitizePositive but floored to a whole number — the faucet dispenses whole
- * ABLE, and keeping the amount integer keeps the UI/on-chain figures exact.
+ * tokens, and keeping the amount integer keeps the UI/on-chain figures exact.
  */
 const sanitizeWholeAmount = (raw: unknown, fallback: number, max: number): number => {
 	const n = Math.floor(Number(raw));
@@ -55,7 +60,7 @@ const isLocalnet = (): boolean => Number(import.meta.env.VITE_CHAIN_ID) === LOCA
  */
 export const getFaucetConfig = async (): Promise<FaucetConfig> => {
 	const defaults: FaucetConfig = {
-		amount: FAUCET_AMOUNT_ABLE,
+		amount: DEFAULT_FAUCET_AMOUNT,
 		rateLimitHours: DEFAULT_RATE_LIMIT_HOURS,
 	};
 	if (!db) return defaults;
@@ -63,7 +68,7 @@ export const getFaucetConfig = async (): Promise<FaucetConfig> => {
 		const snap = await getDoc(doc(db, 'general', 'sense_ai'));
 		const faucet = (snap.exists() ? snap.data()?.faucet : null) ?? {};
 		return {
-			amount: sanitizeWholeAmount(faucet.amount, FAUCET_AMOUNT_ABLE, MAX_FAUCET_AMOUNT),
+			amount: sanitizeWholeAmount(faucet.amount, DEFAULT_FAUCET_AMOUNT, MAX_FAUCET_AMOUNT),
 			rateLimitHours: sanitizePositive(faucet.rateLimitHours, DEFAULT_RATE_LIMIT_HOURS),
 		};
 	} catch (error) {
@@ -73,7 +78,7 @@ export const getFaucetConfig = async (): Promise<FaucetConfig> => {
 };
 
 /**
- * Fund the user by transferring ABLE from the unlocked Hardhat deployer directly
+ * Fund the user by transferring the fee token from the unlocked Hardhat deployer directly
  * over JSON-RPC. No cloud function, no signature — returns the same
  * { success, txHash, amount } shape as the testnet faucet so the caller's
  * receipt-polling and display work unchanged.
@@ -88,7 +93,7 @@ const fundFromLocalnetTreasury = async (
 	const data = encodeFunctionData({
 		abi: erc20Abi,
 		functionName: 'transfer',
-		args: [walletAddress as `0x${string}`, parseUnits(String(amount), 18)],
+		args: [walletAddress as `0x${string}`, parseUnits(String(amount), FEE_TOKEN.decimals)],
 	});
 
 	const response = await fetch(rpcUrl, {
@@ -111,6 +116,67 @@ const fundFromLocalnetTreasury = async (
 
 	return { success: true, txHash: json.result, amount };
 };
+
+export type FaucetReceiptOutcome = 'pending' | 'received' | 'failed';
+
+/**
+ * What a faucet transaction's receipt says. A transfer the token refuses is still mined,
+ * so a receipt alone is not proof the tokens arrived: only a successful one is.
+ */
+export function faucetReceiptOutcome(
+	receipt: { status?: unknown } | null | undefined,
+): FaucetReceiptOutcome {
+	if (!receipt) return 'pending';
+	return receipt.status === 'success' ? 'received' : 'failed';
+}
+
+/** How long to wait between looks for a faucet transaction's receipt. */
+export const FAUCET_POLL_MS = 2000;
+
+/** How many looks before the wait gives up: about a minute. One number for every caller. */
+export const FAUCET_WAIT_ATTEMPTS = 30;
+
+/** The longest the wait can last, which is also how long the "sent" notice stays up. */
+export const FAUCET_WAIT_MS = FAUCET_WAIT_ATTEMPTS * FAUCET_POLL_MS;
+
+export type FaucetWaitOutcome = 'received' | 'failed' | 'timeout';
+
+// What thirdweb throws while a transaction is not yet mined ("Transaction receipt not
+// found.", `eth_getTransactionReceipt` in thirdweb 5.118.0). Expected, so not reported. It
+// carries no error code, so the text is the only signal; if a later version words it
+// differently the wait still works and each look is logged as a warning.
+const RECEIPT_NOT_FOUND = 'receipt not found';
+
+/**
+ * Waits for a faucet transaction to be mined and says how it ended. Shared by every place
+ * that offers the faucet, so none of them can announce tokens on a receipt alone.
+ *
+ * `timeout` is its own outcome: the transfer may still arrive, so the caller says it is
+ * still confirming and refreshes the balance, where giving up in silence left the user
+ * with no answer. An error other than "not mined yet" is logged and the wait goes on.
+ */
+export async function awaitFaucetReceipt(
+	getReceipt: () => Promise<{ status?: unknown } | null | undefined>,
+	{ wait, maxAttempts }: { wait: () => Promise<unknown>; maxAttempts: number },
+): Promise<FaucetWaitOutcome> {
+	for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+		if (attempt > 0) {
+			// eslint-disable-next-line no-await-in-loop
+			await wait();
+		}
+		try {
+			// eslint-disable-next-line no-await-in-loop
+			const outcome = faucetReceiptOutcome(await getReceipt());
+			if (outcome !== 'pending') return outcome;
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			if (!message.toLowerCase().includes(RECEIPT_NOT_FOUND)) {
+				console.warn('[faucetService] Could not read the faucet receipt, retrying:', message);
+			}
+		}
+	}
+	return 'timeout';
+}
 
 const requestTestTokens = async (
 	walletAddress: string,

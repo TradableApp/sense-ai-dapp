@@ -50,13 +50,13 @@ describe('local store is opened once, per agent', () => {
 		);
 	});
 
-	it('checks the same two values when a testnet or mainnet build starts', () => {
+	it('checks the same two values, and the fee token, before a build or dev server starts', () => {
 		// The store module is part of the first bundle, so a bad value there fails before
 		// error reporting or any page exists. The build is stopped instead.
 		const config = read(ROOT, 'vite.config.ts').replace(/\s+/g, '');
 
-		expect(config).toMatch(
-			/assertLocalStoreConfig\(mode,loadEnv\(mode,process\.cwd\(\),'VITE_'\)\)/,
-		);
+		expect(config).toContain("constenv=loadEnv(mode,process.cwd(),'VITE_');");
+		expect(config).toContain('assertLocalStoreConfig(mode,env);');
+		expect(config).toContain('assertFeeTokenConfig(mode,env);');
 	});
 });

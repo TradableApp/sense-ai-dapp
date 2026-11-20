@@ -7,13 +7,19 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import { VitePWA } from 'vite-plugin-pwa';
 import svgr from 'vite-plugin-svgr';
 
+import { assertFeeTokenConfig } from './src/config/feeTokenConfig';
 import { assertLocalStoreConfig } from './src/lib/localStoreName';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode, isPreview }) => {
 	// A build or dev server that cannot name its local store stops here, with the reason.
 	// `vite preview` only serves a bundle that already passed this.
-	if (!isPreview) assertLocalStoreConfig(mode, loadEnv(mode, process.cwd(), 'VITE_'));
+	// So does one that does not name the token that pays its fees.
+	if (!isPreview) {
+		const env = loadEnv(mode, process.cwd(), 'VITE_');
+		assertLocalStoreConfig(mode, env);
+		assertFeeTokenConfig(mode, env);
+	}
 
 	const isProduction = mode === 'mainnet' || mode === 'testnet' || mode === 'production';
 	const sentryActive =

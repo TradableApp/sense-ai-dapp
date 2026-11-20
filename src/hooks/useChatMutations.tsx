@@ -6,26 +6,25 @@ import { getContract, prepareContractCall, sendAndConfirmTransaction } from 'thi
 import { useActiveAccount, useActiveWallet } from 'thirdweb/react';
 // eslint-disable-next-line camelcase
 import { eth_getTransactionReceipt, getRpcClient } from 'thirdweb/rpc';
-import {
-	type AbiEvent,
-	type AbiFunction,
-	decodeEventLog,
-	getAbiItem,
-	toEventSelector,
-	toFunctionSelector,
-	toHex,
-} from 'viem';
+import { type AbiEvent, decodeEventLog, getAbiItem, toEventSelector, toHex } from 'viem';
 
 import { Button } from '@/components/ui/button';
 import { CONTRACTS, LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
+import { FEE_TOKEN, type FeeTokenProfile, TRANSFER_RESTRICTION_ABI } from '@/config/feeToken';
 import { client } from '@/config/thirdweb';
 import useFaucetConfig from '@/hooks/useFaucetConfig';
-import AbleTokenABI from '@/lib/abi/AbleToken.json';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
+import { messageNamesError } from '@/lib/contractErrorSelector';
 import { encryptData } from '@/lib/crypto';
 import eciesEncrypt from '@/lib/ecies';
-import requestTestTokens, { FAUCET_AMOUNT_ABLE } from '@/lib/faucetService';
+import requestTestTokens, {
+	awaitFaucetReceipt,
+	DEFAULT_FAUCET_AMOUNT,
+	FAUCET_POLL_MS,
+	FAUCET_WAIT_ATTEMPTS,
+	FAUCET_WAIT_MS,
+} from '@/lib/faucetService';
 import { wait } from '@/lib/utils';
 
 import { getTokenBalanceQueryKey } from './useTokenBalance';
@@ -129,12 +128,44 @@ export function buildInitiatePromptPayload({
 	};
 }
 
+const CANCEL_ACTION = 'cancel prompt';
+const REFUND_ACTION = 'process refund';
+
+/**
+ * What to say when the token refuses a transfer, which depends on what was being done.
+ * A refused payment took nothing. A refused cancellation leaves the prompt's fee held and
+ * will be refused again: the refund is the way out. A refused refund also took nothing,
+ * but the user is owed tokens and needs a person.
+ */
+function refusedTransferMessage(action: string): { title: string; description: string } {
+	if (action === CANCEL_ACTION) {
+		return {
+			title: 'Could Not Cancel',
+			description:
+				'The cancellation could not be completed, so your payment for this prompt is still held. You can claim a refund one hour after the prompt was sent.',
+		};
+	}
+	if (action === REFUND_ACTION) {
+		return {
+			title: 'Refund Not Sent',
+			description:
+				'The refund could not be sent and your payment is still held. Please contact support.',
+		};
+	}
+	return {
+		title: 'Payment Not Accepted',
+		description:
+			'SenseAI could not take this payment, so no tokens were taken. Please try again later or contact support.',
+	};
+}
+
 /**
  * Builds the centralized contract-error handler. Exported for testability.
  * @param {boolean} isTestnet
  * @param {boolean} isLocalnet
  * @param {number} faucetAmount
  * @param {Function} handleFaucetRequest
+ * @param {FeeTokenProfile} feeToken - the token that pays the fees; names the token in messages
  * @returns {(error: unknown, action: string) => void}
  */
 export function buildErrorHandler(
@@ -142,6 +173,7 @@ export function buildErrorHandler(
 	isLocalnet: boolean,
 	faucetAmount: number,
 	handleFaucetRequest: () => Promise<void>,
+	feeToken: FeeTokenProfile = FEE_TOKEN,
 ): (_error: unknown, _action: string) => void {
 	return function genericOnError(error: unknown, action: string): void {
 		console.error(`Failed to ${action}:`, error);
@@ -152,21 +184,15 @@ export function buildErrorHandler(
 				? String((error as { message: unknown }).message)
 				: String(error)) || '';
 
-		const isError = (abi: Parameters<typeof getAbiItem>[0]['abi'], name: string) => {
-			const item = getAbiItem({ abi, name });
-			if (!item) return false;
-			return (
-				errorMessage.includes(toFunctionSelector(item as AbiFunction)) ||
-				errorMessage.includes(name)
-			);
-		};
+		const isError = (abi: readonly unknown[], name: string) =>
+			messageNamesError(errorMessage, abi, name);
 
 		// --- Token Errors ---
-		if (isError(AbleTokenABI.abi, 'ERC20InsufficientBalance')) {
-			toast.error('Insufficient ABLE Balance', {
+		if (isError(feeToken.abi, 'ERC20InsufficientBalance')) {
+			toast.error(`Insufficient ${feeToken.symbol} Balance`, {
 				description: (
 					<div className="flex flex-col gap-3 mt-1">
-						<p>You need more ABLE tokens to pay for this action.</p>
+						<p>You need more {feeToken.symbol} to pay for this action.</p>
 						{(isTestnet || isLocalnet) && (
 							<Button
 								size="sm"
@@ -174,7 +200,7 @@ export function buildErrorHandler(
 								className="w-full border-primary/20 bg-primary/10 hover:bg-primary/20 text-primary"
 								onClick={handleFaucetRequest as React.MouseEventHandler<HTMLButtonElement>}
 							>
-								{`Get ${faucetAmount} ${isLocalnet ? 'Localnet' : 'Testnet'} ABLE`}
+								{`Get ${faucetAmount} ${isLocalnet ? 'Localnet' : 'Testnet'} ${feeToken.symbol}`}
 							</Button>
 						)}
 					</div>
@@ -186,10 +212,36 @@ export function buildErrorHandler(
 			return;
 		}
 
-		if (isError(AbleTokenABI.abi, 'ERC20InsufficientAllowance')) {
+		if (isError(feeToken.abi, 'ERC20InsufficientAllowance')) {
 			toast.error('Spending Limit Reached', {
 				description:
 					'The contract is not authorized to spend your tokens. Please increase your limit.',
+			});
+			return;
+		}
+
+		// A token that moves only to or from listed addresses refuses a transfer whose other
+		// party is not listed. Nothing the user can do changes that. Looked for whichever token
+		// the build is for: only that kind of token can raise it, and a build pointed at the
+		// wrong token should still explain the failure.
+		if (isError(TRANSFER_RESTRICTION_ABI, 'TransferNotAllowed')) {
+			const { title, description } = refusedTransferMessage(action);
+			toast.error(title, { description });
+			return;
+		}
+
+		if (isError(feeToken.abi, 'EnforcedPause')) {
+			toast.error('Payments Paused', {
+				description:
+					'Payments are paused for now, so no tokens were taken. Please try again later.',
+			});
+			return;
+		}
+
+		if (isError(EVMAIAgentEscrowABI.abi, 'SafeERC20FailedOperation')) {
+			toast.error('Payment Failed', {
+				description:
+					'The token transfer did not go through, so no tokens were taken. Please try again.',
 			});
 			return;
 		}
@@ -323,7 +375,7 @@ export default function useChatMutations() {
 	const isTestnet = chainId === TESTNET_CHAIN_ID;
 	const isLocalnet = chainId === LOCAL_CHAIN_ID;
 	const { data: faucetConfig } = useFaucetConfig();
-	const faucetAmount = faucetConfig?.amount ?? FAUCET_AMOUNT_ABLE;
+	const faucetAmount = faucetConfig?.amount ?? DEFAULT_FAUCET_AMOUNT;
 	const queryClient = useQueryClient();
 
 	const handleFaucetRequest = async () => {
@@ -352,7 +404,7 @@ export default function useChatMutations() {
 								onClick: () => window.open(`https://sepolia.basescan.org/tx/${txHash}`, '_blank'),
 							},
 					  }),
-				duration: 10000,
+				duration: FAUCET_WAIT_MS,
 			});
 
 			// 2. Poll for confirmation using Thirdweb RPC
@@ -363,42 +415,38 @@ export default function useChatMutations() {
 				if (!chain) throw new Error('Chain not found');
 				const rpcRequest = getRpcClient({ client, chain });
 
-				let attempts = 0;
-				const maxAttempts = 30; // Try for ~60 seconds (2s interval)
-				while (attempts < maxAttempts) {
-					try {
-						// Check if receipt exists
-						// eslint-disable-next-line no-await-in-loop
-						const receipt = await eth_getTransactionReceipt(rpcRequest, {
-							hash: txHash as `0x${string}`,
+				const outcome = await awaitFaucetReceipt(
+					() => eth_getTransactionReceipt(rpcRequest, { hash: txHash as `0x${string}` }),
+					{ wait: () => wait(FAUCET_POLL_MS), maxAttempts: FAUCET_WAIT_ATTEMPTS },
+				);
+
+				toast.dismiss(sentToastId);
+				if (outcome === 'failed') {
+					toast.error('Tokens Not Received', {
+						description: 'The faucet could not send the tokens. Nothing was added to your wallet.',
+					});
+				} else {
+					if (outcome === 'received') {
+						toast.success('Tokens Received', {
+							description: `${dispensed} ${FEE_TOKEN.symbol} added to your wallet.`,
 						});
-
-						if (receipt) {
-							toast.dismiss(sentToastId); // Dismiss the "Tokens Sent" info toast
-							toast.success('Tokens Received', {
-								description: `${dispensed} ABLE tokens have been added to your wallet.`,
-							});
-
-							// Refresh balance
-							const queryKey = getTokenBalanceQueryKey(
-								chainId ?? 0,
-								address,
-								CONTRACTS[chainId ?? 0]?.token?.address,
-							);
-							// eslint-disable-next-line no-await-in-loop
-							await queryClient.invalidateQueries({ queryKey });
-
-							break;
-						}
-					} catch (e) {
-						// Receipt not found yet, ignore
+					} else {
+						toast.info('Still Confirming', {
+							description:
+								'The transfer has not been confirmed yet. Your balance will update when it is.',
+						});
 					}
 
-					// eslint-disable-next-line no-await-in-loop
-					await wait(2000);
-					attempts += 1;
+					const queryKey = getTokenBalanceQueryKey(
+						chainId ?? 0,
+						address,
+						CONTRACTS[chainId ?? 0]?.token?.address,
+					);
+					await queryClient.invalidateQueries({ queryKey });
 				}
 			} catch (error) {
+				// The wait never started, so nothing above took the "Tokens Sent" notice down.
+				toast.dismiss(sentToastId);
 				console.error('Error waiting for faucet receipt:', error);
 			}
 		}
@@ -772,7 +820,7 @@ export default function useChatMutations() {
 			// Immediate RPC update
 			genericOnSuccess();
 		},
-		onError: error => genericOnError(error, 'cancel prompt'),
+		onError: error => genericOnError(error, CANCEL_ACTION),
 	});
 
 	/**
@@ -813,7 +861,7 @@ export default function useChatMutations() {
 			// Immediate RPC update
 			genericOnSuccess();
 		},
-		onError: error => genericOnError(error, 'process refund'),
+		onError: error => genericOnError(error, REFUND_ACTION),
 	});
 
 	return {

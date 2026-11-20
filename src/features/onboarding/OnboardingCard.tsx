@@ -2,12 +2,13 @@ import { ArrowRight, Repeat, ShieldCheck, Wallet } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { FEE_TOKEN } from '@/config/feeToken';
 
 const features = [
 	{
 		icon: Wallet,
 		title: 'Set a Limit',
-		description: 'Approve how many ABLE tokens your AI agent can use. No surprises.',
+		description: `Approve how much ${FEE_TOKEN.symbol} your AI agent can use. No surprises.`,
 	},
 	{
 		icon: Repeat,

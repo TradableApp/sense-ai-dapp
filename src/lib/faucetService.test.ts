@@ -1,11 +1,21 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { getDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { decodeFunctionData, erc20Abi, parseUnits } from 'viem';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import requestTestTokens, { getFaucetConfig } from './faucetService';
+import requestTestTokens, {
+	awaitFaucetReceipt,
+	FAUCET_POLL_MS,
+	FAUCET_WAIT_ATTEMPTS,
+	FAUCET_WAIT_MS,
+	faucetReceiptOutcome,
+	getFaucetConfig,
+} from './faucetService';
 
-// Hardhat account #0 — the deployer/treasury that holds the full ABLE supply and
+// Hardhat account #0 — the deployer/treasury that holds the full fee token supply and
 // is unlocked on the local node, so eth_sendTransaction needs no signature.
 const HARDHAT_DEPLOYER = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 const TOKEN = '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512';
@@ -62,7 +72,7 @@ describe('getFaucetConfig', () => {
 		await expect(getFaucetConfig()).resolves.toMatchObject({ amount: 100 });
 	});
 
-	it('floors a fractional amount to whole ABLE', async () => {
+	it('floors a fractional amount to whole tokens', async () => {
 		stubFaucetConfig({ amount: 50.9, rateLimitHours: 24 });
 		await expect(getFaucetConfig()).resolves.toMatchObject({ amount: 50 });
 	});
@@ -149,5 +159,117 @@ describe('requestTestTokens — testnet (Firebase callable, unchanged)', () => {
 		expect(httpsCallable).toHaveBeenCalledWith(expect.anything(), 'requestTestTokens');
 		expect(callable).toHaveBeenCalledWith({ walletAddress: USER });
 		expect(fetchMock).not.toHaveBeenCalled();
+	});
+});
+
+// A transfer the token refuses is still mined: the receipt exists and says it reverted.
+// Announcing "Tokens Received" for any receipt would tell the user they hold tokens they
+// do not, and the next prompt would fail on an empty balance.
+describe('faucetReceiptOutcome', () => {
+	it('is pending until a receipt exists', () => {
+		expect(faucetReceiptOutcome(null)).toBe('pending');
+		expect(faucetReceiptOutcome(undefined)).toBe('pending');
+	});
+
+	it('is received for a successful receipt', () => {
+		expect(faucetReceiptOutcome({ status: 'success' })).toBe('received');
+	});
+
+	it('is failed for a reverted receipt', () => {
+		expect(faucetReceiptOutcome({ status: 'reverted' })).toBe('failed');
+	});
+
+	it('is failed for a receipt whose status is missing or unknown', () => {
+		expect(faucetReceiptOutcome({})).toBe('failed');
+		expect(faucetReceiptOutcome({ status: '0x0' })).toBe('failed');
+	});
+});
+
+// The wait both faucet callers use. thirdweb throws "Transaction receipt not found." until
+// the transaction is mined; anything else thrown is a real fault and is reported, not hidden.
+describe('awaitFaucetReceipt', () => {
+	const notMinedYet = () => Promise.reject(new Error('Transaction receipt not found.'));
+	const noWait = () => Promise.resolve();
+
+	it('reports received once a successful receipt arrives', async () => {
+		const getReceipt = vi
+			.fn()
+			.mockImplementationOnce(notMinedYet)
+			.mockImplementationOnce(notMinedYet)
+			.mockResolvedValue({ status: 'success' });
+
+		await expect(awaitFaucetReceipt(getReceipt, { wait: noWait, maxAttempts: 5 })).resolves.toBe(
+			'received',
+		);
+		expect(getReceipt).toHaveBeenCalledTimes(3);
+	});
+
+	it('reports failed for a reverted receipt and stops asking', async () => {
+		const getReceipt = vi.fn().mockResolvedValue({ status: 'reverted' });
+
+		await expect(awaitFaucetReceipt(getReceipt, { wait: noWait, maxAttempts: 5 })).resolves.toBe(
+			'failed',
+		);
+		expect(getReceipt).toHaveBeenCalledTimes(1);
+	});
+
+	it('reports a timeout, not success or silence, when no receipt arrives in time', async () => {
+		const getReceipt = vi.fn().mockImplementation(notMinedYet);
+
+		await expect(awaitFaucetReceipt(getReceipt, { wait: noWait, maxAttempts: 4 })).resolves.toBe(
+			'timeout',
+		);
+		expect(getReceipt).toHaveBeenCalledTimes(4);
+	});
+
+	it('waits between looks only: four looks are three waits, so a timeout is reported at once', async () => {
+		const wait = vi.fn().mockResolvedValue(undefined);
+		const getReceipt = vi.fn().mockImplementation(notMinedYet);
+
+		await awaitFaucetReceipt(getReceipt, { wait, maxAttempts: 4 });
+
+		expect(getReceipt).toHaveBeenCalledTimes(4);
+		expect(wait).toHaveBeenCalledTimes(3);
+	});
+
+	it('keeps trying through an unexpected error, and says so', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const getReceipt = vi
+			.fn()
+			.mockRejectedValueOnce(new Error('429 Too Many Requests'))
+			.mockResolvedValue({ status: 'success' });
+
+		await expect(awaitFaucetReceipt(getReceipt, { wait: noWait, maxAttempts: 5 })).resolves.toBe(
+			'received',
+		);
+		expect(warn).toHaveBeenCalledTimes(1);
+		warn.mockRestore();
+	});
+
+	it('does not report a receipt still being waited for as an error', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const getReceipt = vi.fn().mockImplementation(notMinedYet);
+
+		await awaitFaucetReceipt(getReceipt, { wait: noWait, maxAttempts: 3 });
+
+		expect(warn).not.toHaveBeenCalled();
+		warn.mockRestore();
+	});
+});
+
+describe('how long the faucet is waited for', () => {
+	it('is the number of looks times the time between them', () => {
+		expect(FAUCET_WAIT_MS).toBe(FAUCET_WAIT_ATTEMPTS * FAUCET_POLL_MS);
+		expect(FAUCET_WAIT_ATTEMPTS).toBeGreaterThan(0);
+	});
+
+	it('is defined once, so the two places that offer the faucet wait the same time', () => {
+		const callers = ['src/features/usage/ManagePlanModal.tsx', 'src/hooks/useChatMutations.tsx'];
+		callers.forEach(file => {
+			const source = readFileSync(resolve(process.cwd(), file), 'utf8');
+			expect(source, file).not.toMatch(/const\s+FAUCET_WAIT_(ATTEMPTS|MS)\b/);
+			expect(source, file).toMatch(/maxAttempts:\s*FAUCET_WAIT_ATTEMPTS/);
+			expect(source, file).toMatch(/duration:\s*FAUCET_WAIT_MS/);
+		});
 	});
 });

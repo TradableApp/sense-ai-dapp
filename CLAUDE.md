@@ -18,7 +18,7 @@ Frontend dApp for SenseAI — the AI Agent providing sentiment and fundamental o
 | `bun run deploy:mainnet`               | Guarded: needs `DEPLOY_MAINNET_CONFIRMED=1`; `build:mainnet` + deploy `--project prod`   |
 | `bun run lint` / `bun run lint:fix`    | ESLint                                                                                   |
 | `bun run format`                       | Prettier                                                                                 |
-| `bun run sync-contracts`               | Copy ABI files from `able-contracts` and `tokenized-ai-agent` repos                      |
+| `bun run sync-contracts`               | Copy ABI files from `able-contracts`, `sense-contracts` and `tokenized-ai-agent`         |
 | `bun run test`                         | Vitest unit tests + the `e2e/__guards__/` static guards                                  |
 | `bun run typecheck:e2e`                | Type-check the Playwright suite (separate tsconfig)                                      |
 | `bun run test:e2e`                     | Playwright — **see the warning below before running this directly**                      |
@@ -112,6 +112,14 @@ All write operations go through `src/hooks/useChatMutations.jsx`. Every mutation
 3. Calls a contract method on `EVMAIAgentEscrow` via Thirdweb (`sendAndConfirmTransaction`).
 4. Parses the transaction receipt logs to extract on-chain IDs returned by the contract.
 
+**Fee token (`src/config/feeToken.ts`)** — which token pays the fees is a build setting, `VITE_FEE_TOKEN`, exactly `SENSE` or `ABLE`. A build or dev server in any mode but localnet stops unless it is set (`assertFeeTokenConfig` in `src/config/feeTokenConfig.ts`, called from `vite.config.ts`); a misspelt value stops everywhere. Only localnet and the unit tests fall back to `SENSE` when it is unset. The fallback is not safe for a deployed build: `SENSE` settings on another token mean a wrong label, no value shown and a first offer to approve the whole balance.
+
+The setting selects a profile: symbol, name, logo, ABI, decimals, whether a market value may be shown (`showsMarketValue`, with `plannedPriceUsd` for test-chain estimates), whether the wallet panel offers send and buy (`transferable`, `purchasable`), and the default plan limit (`fixed`, or the wallet's balance). Components read `FEE_TOKEN` and never test for a particular token, so a build for the other token changes only the setting; `feeToken.test.ts` pins both profiles. No price is fetched or shown when `showsMarketValue` is false (`shouldFetchMarketPrice` in `useTokenPrice.ts`; `PlanValueEstimate.tsx` renders nothing and never mounts the price hook). The four connected-wallet buttons share `src/config/walletPanel.ts` (the `wallet-panel-shared` guard); hiding send and buy hides them for every asset in that panel, which is deliberate. The `e2e/__guards__/fee-token-literals` guard forbids a token's name anywhere in `src/` outside the two fee token modules and the ABIs, comments included.
+
+**Contract errors (`buildErrorHandler` in `useChatMutations.tsx`, `src/lib/contractErrorSelector.ts`)** — an error is recognised by its name or by its selector. Both are needed: a local node writes the name into the message, while a public node returns only revert data, and thirdweb decodes that against the contract that was called, so an error raised by the token inside an escrow call arrives as a bare selector. The selector is taken from the canonical signature (name and bare parameter types); viem's `toFunctionSelector` given an error item hashes the `error` keyword and parameter names too and matches nothing. A new message needs a row in the by-selector table in `useChatMutations.errors.test.ts`. A refused transfer (`TransferNotAllowed`) is worded by action: a payment took nothing, a cancellation leaves the fee held until a refund, a refund needs support.
+
+**Faucet (`src/lib/faucetService.ts`)** — both places that offer the faucet wait with `awaitFaucetReceipt` and announce tokens only on a successful receipt; a reverted one says so, and a timeout says the transfer is still confirming.
+
 Contracts are configured in `src/config/contracts.js` keyed by `chainId`, populated from Vite env vars (`VITE_CHAIN_ID`, `VITE_TOKEN_CONTRACT_ADDRESS`, `VITE_AGENT_CONTRACT_ADDRESS`, `VITE_ESCROW_CONTRACT_ADDRESS`). ABIs live in `src/lib/abi/`.
 
 ### Redux Store (`src/store/`)
@@ -158,11 +166,12 @@ Production builds strip `console.log/info/debug` but keep `console.error/warn` f
 
 This dApp is the user-facing layer of the SenseAI stack. It depends on three sibling repos:
 
-| Sibling              | Role                                                                                             |
-| -------------------- | ------------------------------------------------------------------------------------------------ |
-| `tokenized-ai-agent` | Provides `EVMAIAgent` and `EVMAIAgentEscrow` contracts that handle all writes                    |
-| `sense-ai-subgraph`  | Provides the GraphQL API for all read queries (conversations, messages, prompt status, activity) |
-| `able-contracts`     | Provides `AbleToken` — the ERC20 payment token users must approve before prompting               |
+| Sibling              | Role                                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------- |
+| `tokenized-ai-agent` | Provides `EVMAIAgent` and `EVMAIAgentEscrow` contracts that handle all writes                     |
+| `sense-ai-subgraph`  | Provides the GraphQL API for all read queries (conversations, messages, prompt status, activity)  |
+| `able-contracts`     | Provides `AbleToken` — the ERC20 payment token users must approve before prompting                |
+| `sense-contracts`    | Provides `SenseToken` — the other fee token; moves only to or from addresses its owner has listed |
 
 ### ABI Sync Process
 
@@ -171,6 +180,7 @@ ABIs in `src/lib/abi/` are not hand-maintained — they are synced from compiled
 ```bash
 # 1. Compile contracts in their repos (required first)
 cd ../able-contracts && bun run compile
+cd ../sense-contracts && bun run compile
 cd ../tokenized-ai-agent && bun run compile
 
 # 2. Sync ABIs into this repo

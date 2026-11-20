@@ -1,5 +1,4 @@
-import ableTokenLogo from '@/assets/able-token-logo.svg';
-import AbleTokenABI from '@/lib/abi/AbleToken.json';
+import { FEE_TOKEN } from '@/config/feeToken';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 
@@ -30,7 +29,7 @@ export const CONTRACTS = {
 		// These will be populated from environment variables during the build process.
 		token: {
 			address: import.meta.env.VITE_TOKEN_CONTRACT_ADDRESS,
-			abi: AbleTokenABI.abi,
+			abi: FEE_TOKEN.abi,
 		},
 		agent: {
 			address: import.meta.env.VITE_AGENT_CONTRACT_ADDRESS,
@@ -47,9 +46,9 @@ export const SUPPORTED_TOKENS = {
 	[import.meta.env.VITE_CHAIN_ID]: [
 		{
 			address: import.meta.env.VITE_TOKEN_CONTRACT_ADDRESS,
-			name: 'ABLE Token',
-			symbol: 'ABLE',
-			icon: ableTokenLogo,
+			name: FEE_TOKEN.name,
+			symbol: FEE_TOKEN.symbol,
+			icon: FEE_TOKEN.icon,
 		},
 	],
 };

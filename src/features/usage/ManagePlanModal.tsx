@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, Info, Loader2, Trash2 } from 'lucide-react';
+import { AlertCircle, Loader2, Trash2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { getContract, prepareContractCall } from 'thirdweb';
@@ -35,12 +35,21 @@ import {
 import Input from '@/components/ui/input';
 import Label from '@/components/ui/label';
 import { CONTRACTS, LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
+import { defaultPlanLimit, FEE_TOKEN } from '@/config/feeToken';
 import { client } from '@/config/thirdweb';
 import useFaucetConfig from '@/hooks/useFaucetConfig';
 import useTokenBalance, { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
-import useTokenPrice from '@/hooks/useTokenPrice';
-import requestTestTokens, { FAUCET_AMOUNT_ABLE } from '@/lib/faucetService';
+import requestTestTokens, {
+	awaitFaucetReceipt,
+	DEFAULT_FAUCET_AMOUNT,
+	FAUCET_POLL_MS,
+	FAUCET_WAIT_ATTEMPTS,
+	FAUCET_WAIT_MS,
+} from '@/lib/faucetService';
 import { wait } from '@/lib/utils';
+
+import shouldResetPlanForm from './planFormReset';
+import PlanValueEstimate from './PlanValueEstimate';
 
 const managePlanSchema = z.object({
 	limit: z
@@ -54,15 +63,7 @@ const managePlanSchema = z.object({
 
 type FormValues = z.infer<typeof managePlanSchema>;
 
-const TGE_PRICE_USD = 0.015;
-const DEFAULT_USD_LIMIT = 15;
-const DEFAULT_TOKEN_LIMIT = DEFAULT_USD_LIMIT / TGE_PRICE_USD;
 const DEFAULT_DAYS = 365;
-
-interface PriceInfoDialogProps {
-	title: string;
-	description: string;
-}
 
 interface ExistingPlan {
 	allowance: number;
@@ -73,25 +74,6 @@ interface ManagePlanModalProps {
 	open: boolean;
 	onOpenChange: (_open: boolean) => void;
 	existingPlan: ExistingPlan | null;
-}
-
-function PriceInfoDialog({ title, description }: PriceInfoDialogProps) {
-	return (
-		<AlertDialog>
-			<AlertDialogTrigger asChild>
-				<Info className="mr-1 h-4 w-4 cursor-pointer text-muted-foreground hover:text-foreground" />
-			</AlertDialogTrigger>
-			<AlertDialogContent>
-				<AlertDialogHeader>
-					<AlertDialogTitle>{title}</AlertDialogTitle>
-					<AlertDialogDescription>{description}</AlertDialogDescription>
-				</AlertDialogHeader>
-				<AlertDialogFooter>
-					<AlertDialogAction>OK</AlertDialogAction>
-				</AlertDialogFooter>
-			</AlertDialogContent>
-		</AlertDialog>
-	);
 }
 
 export default function ManagePlanModal({
@@ -107,7 +89,7 @@ export default function ManagePlanModal({
 	// Live faucet amount (adjustable via Firestore general/sense_ai); falls back to
 	// the default until the config loads.
 	const { data: faucetConfig } = useFaucetConfig();
-	const faucetAmount = faucetConfig?.amount ?? FAUCET_AMOUNT_ABLE;
+	const faucetAmount = faucetConfig?.amount ?? DEFAULT_FAUCET_AMOUNT;
 
 	// Use the confirmation-aware hook
 	const { mutateAsync: sendAndConfirm } = useSendAndConfirmTransaction();
@@ -122,39 +104,41 @@ export default function ManagePlanModal({
 	// The raw BigInt is now in `balanceData.value`
 	const formattedBalance = balanceData ? Number(balanceData.displayValue) : 0;
 
+	// What a new plan is first offered: a fixed amount, or what the wallet holds, as the fee
+	// token's profile says. An existing plan keeps its own limit.
+	const suggestedLimit = defaultPlanLimit(FEE_TOKEN, balanceData ? formattedBalance : undefined);
+	const initialLimit = existingPlan ? existingPlan.allowance : suggestedLimit;
+
 	const {
 		register,
 		handleSubmit,
 		watch,
 		reset,
-		formState: { errors, isValid },
+		formState: { errors, isValid, isDirty },
 	} = useForm<FormValues>({
 		resolver: zodResolver(managePlanSchema),
 		mode: 'onChange',
 		defaultValues: {
-			limit: existingPlan ? existingPlan.allowance : DEFAULT_TOKEN_LIMIT,
-			days: existingPlan ? 365 : DEFAULT_DAYS,
+			limit: initialLimit,
+			days: DEFAULT_DAYS,
 		},
 	});
 
+	// See shouldResetPlanForm: always on opening, and afterwards only while nothing is typed.
+	const wasOpen = useRef(false);
 	useEffect(() => {
-		if (open) {
+		if (shouldResetPlanForm({ open, wasOpen: wasOpen.current, isDirty })) {
 			reset({
-				limit: existingPlan ? existingPlan.allowance : DEFAULT_TOKEN_LIMIT,
-				days: existingPlan ? 365 : DEFAULT_DAYS,
+				limit: initialLimit,
+				days: DEFAULT_DAYS,
 			});
 		}
-	}, [open, existingPlan, reset]);
+		wasOpen.current = open;
+		// `isDirty` is read, not watched: becoming dirty must not trigger a reset.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [open, existingPlan, initialLimit, reset]);
 
 	const currentLimit = watch('limit');
-	const { data: livePrice, isLoading: isLoadingPrice, isError: isErrorPrice } = useTokenPrice();
-	const currentPrice = isLocalnet || isTestnet ? TGE_PRICE_USD : livePrice;
-
-	const usdValue = useMemo(() => {
-		if (currentPrice === undefined) return null;
-		return (currentLimit || 0) * currentPrice;
-	}, [currentLimit, currentPrice]);
-
 	const isExceedingBalance =
 		!isLoadingBalance && balanceData !== undefined && currentLimit > formattedBalance;
 
@@ -342,7 +326,7 @@ export default function ManagePlanModal({
 	});
 
 	const onSubmit = (data: FormValues) => {
-		const limitInWei = parseUnits(data.limit.toString(), 18);
+		const limitInWei = parseUnits(data.limit.toString(), FEE_TOKEN.decimals);
 		const nowInSeconds = Math.floor(Date.now() / 1000);
 		const expiresAtTimestamp = BigInt(nowInSeconds + (data.days as number) * 24 * 60 * 60);
 		setPlanMutation.mutate({ limitInWei, expiresAtTimestamp });
@@ -362,7 +346,7 @@ export default function ManagePlanModal({
 		if (success && txHash) {
 			// 1. Show initial Toast. On testnet, offer an explorer link; localnet
 			// (Hardhat) has no block explorer, so omit the action there.
-			toast.info('Tokens Sent', {
+			const sentToastId = toast.info('Tokens Sent', {
 				description: 'Waiting for network confirmation...',
 				...(isLocalnet
 					? {}
@@ -372,7 +356,7 @@ export default function ManagePlanModal({
 								onClick: () => window.open(`https://sepolia.basescan.org/tx/${txHash}`, '_blank'),
 							},
 					  }),
-				duration: 10000,
+				duration: FAUCET_WAIT_MS,
 			});
 
 			// 2. Poll for confirmation using Thirdweb RPC
@@ -383,44 +367,41 @@ export default function ManagePlanModal({
 				if (!chain) throw new Error('Chain not found');
 				const rpcRequest = getRpcClient({ client, chain });
 
-				let attempts = 0;
-				const maxAttempts = 20; // Try for ~40 seconds (2s interval)
-				while (attempts < maxAttempts) {
-					try {
-						// Check if receipt exists
-						// eslint-disable-next-line no-await-in-loop
-						const receipt = await eth_getTransactionReceipt(rpcRequest, {
-							hash: txHash as `0x${string}`,
+				const outcome = await awaitFaucetReceipt(
+					() => eth_getTransactionReceipt(rpcRequest, { hash: txHash as `0x${string}` }),
+					{ wait: () => wait(FAUCET_POLL_MS), maxAttempts: FAUCET_WAIT_ATTEMPTS },
+				);
+
+				toast.dismiss(sentToastId);
+				if (outcome === 'failed') {
+					toast.error('Tokens Not Received', {
+						description: 'The faucet could not send the tokens. Nothing was added to your wallet.',
+					});
+				} else {
+					if (outcome === 'received') {
+						toast.success('Tokens Received', {
+							description: `${dispensed} ${FEE_TOKEN.symbol} added to your wallet.`,
 						});
-
-						if (receipt) {
-							toast.success('Tokens Received', {
-								description: `${dispensed} ABLE tokens have been added to your wallet.`,
-							});
-
-							// Refresh balance
-							const queryKey = getTokenBalanceQueryKey(
-								chainId ?? 0,
-								address,
-								CONTRACTS[chainId ?? 0]?.token?.address,
-							);
-							// eslint-disable-next-line no-await-in-loop
-							await queryClient.invalidateQueries({
-								queryKey,
-								refetchType: 'all', // Forces refetch even if component is unmounted or data is "fresh"
-							});
-
-							break;
-						}
-					} catch (e) {
-						// Receipt not found yet, ignore
+					} else {
+						toast.info('Still Confirming', {
+							description:
+								'The transfer has not been confirmed yet. Your balance will update when it is.',
+						});
 					}
 
-					// eslint-disable-next-line no-await-in-loop
-					await wait(2000);
-					attempts += 1;
+					const queryKey = getTokenBalanceQueryKey(
+						chainId ?? 0,
+						address,
+						CONTRACTS[chainId ?? 0]?.token?.address,
+					);
+					await queryClient.invalidateQueries({
+						queryKey,
+						refetchType: 'all', // Forces refetch even if component is unmounted or data is "fresh"
+					});
 				}
 			} catch (error) {
+				// The wait never started, so nothing above took the "Tokens Sent" notice down.
+				toast.dismiss(sentToastId);
 				console.error('Error waiting for faucet receipt:', error);
 			}
 		}
@@ -430,86 +411,24 @@ export default function ManagePlanModal({
 
 	const isProcessing = setPlanMutation.isPending || revokeMutation.isPending;
 
-	const renderPriceInfo = () => {
-		if (isLocalnet || isTestnet) {
-			return (
-				<div className="flex items-center justify-end text-sm text-muted-foreground">
-					<PriceInfoDialog
-						title="Test Price"
-						description={`You are on a ${
-							isLocalnet ? 'local' : 'test'
-						} network. The USD value is an estimate based on the planned TGE price of $${TGE_PRICE_USD}.`}
-					/>
-					<span>
-						Est. Value: ≈ $
-						{(usdValue ?? 0).toLocaleString(undefined, {
-							minimumFractionDigits: 2,
-							maximumFractionDigits: 2,
-						})}{' '}
-						USD
-					</span>
-				</div>
-			);
-		}
-
-		if (isLoadingPrice) {
-			return (
-				<div className="flex items-center justify-end text-sm text-muted-foreground">
-					<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-					<span>Fetching live price...</span>
-				</div>
-			);
-		}
-
-		if (isErrorPrice) {
-			return (
-				<div className="flex items-center justify-end text-sm text-destructive">
-					<AlertCircle className="mr-2 h-4 w-4" />
-					<span>Could not fetch live price.</span>
-				</div>
-			);
-		}
-
-		if (usdValue !== null) {
-			return (
-				<div className="flex items-center justify-end text-sm text-muted-foreground">
-					<PriceInfoDialog
-						title="Live Market Value"
-						description="The USD value is a real-time estimate based on the current market price of ABLE and may fluctuate."
-					/>
-					<span>
-						Current Value: ≈ $
-						{(usdValue ?? 0).toLocaleString(undefined, {
-							minimumFractionDigits: 2,
-							maximumFractionDigits: 2,
-						})}{' '}
-						USD
-					</span>
-				</div>
-			);
-		}
-
-		return null;
-	};
-
 	return (
 		<Dialog open={open} onOpenChange={openState => !isProcessing && onOpenChange(openState)}>
 			<DialogContent className="sm:max-w-[480px]">
 				<DialogHeader>
 					<DialogTitle>{existingPlan ? 'Manage' : 'Set'} Your Spending Limit</DialogTitle>
 					<DialogDescription>
-						Approve a total amount of ABLE tokens the AI agent can use. This requires{' '}
+						Approve the total amount of {FEE_TOKEN.symbol} the AI agent can use. This requires{' '}
 						{existingPlan ? 'up to ' : ''}two transactions.
 					</DialogDescription>
 				</DialogHeader>
 
 				<form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-4">
 					<div className="space-y-2">
-						<Label htmlFor="limit">Spending Limit (ABLE)</Label>
+						<Label htmlFor="limit">Spending Limit ({FEE_TOKEN.symbol})</Label>
 						<Input
 							id="limit"
 							type="number"
-							placeholder={String(DEFAULT_TOKEN_LIMIT)}
+							placeholder={String(suggestedLimit)}
 							{...register('limit', { valueAsNumber: true })}
 							disabled={
 								hasPendingPrompts ||
@@ -527,8 +446,8 @@ export default function ManagePlanModal({
 									<span className="font-semibold">Insufficient Balance</span>
 								</div>
 								<p className="mb-3">
-									You have {formattedBalance.toFixed(2)} ABLE, but you are trying to set a limit of{' '}
-									{currentLimit}.
+									You have {formattedBalance.toFixed(2)} {FEE_TOKEN.symbol}, but you are trying to
+									set a limit of {currentLimit}.
 								</p>
 
 								{(isTestnet || isLocalnet) && (
@@ -545,14 +464,16 @@ export default function ManagePlanModal({
 												<Loader2 className="mr-2 h-3 w-3 animate-spin" /> Sending Tokens...
 											</>
 										) : (
-											`Get ${faucetAmount} ${isLocalnet ? 'Localnet' : 'Testnet'} ABLE`
+											`Get ${faucetAmount} ${isLocalnet ? 'Localnet' : 'Testnet'} ${
+												FEE_TOKEN.symbol
+											}`
 										)}
 									</Button>
 								)}
 							</div>
 						)}
 
-						{renderPriceInfo()}
+						<PlanValueEstimate limit={currentLimit} chainId={chainId} />
 					</div>
 					<div className="space-y-2">
 						<Label htmlFor="days">Expires In (Days)</Label>
@@ -599,8 +520,8 @@ export default function ManagePlanModal({
 										<AlertDialogHeader>
 											<AlertDialogTitle>Are you sure?</AlertDialogTitle>
 											<AlertDialogDescription>
-												This will revoke the AI agent's permission to spend your ABLE tokens. You
-												will need to set a new limit to continue using the service. This action
+												This will revoke the AI agent's permission to spend your {FEE_TOKEN.symbol}.
+												You will need to set a new limit to continue using the service. This action
 												requires a transaction.
 											</AlertDialogDescription>
 										</AlertDialogHeader>
