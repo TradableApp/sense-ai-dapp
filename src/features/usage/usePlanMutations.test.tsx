@@ -3,9 +3,10 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { toast } from 'sonner';
-import { prepareContractCall } from 'thirdweb';
+import { getContract, prepareContractCall } from 'thirdweb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CONTRACTS } from '@/config/contracts';
 import { FEE_TOKEN } from '@/config/feeToken';
 import useFeeTokenCheck, { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
 import { blocksAction, feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
@@ -16,6 +17,7 @@ import usePlanMutations from './usePlanMutations';
 
 // What the wallet is asked to sign. Mocked here so the test can see each request.
 const sendAndConfirm = vi.hoisted(() => vi.fn());
+const getChain = vi.hoisted(() => vi.fn(() => ({ id: 31337 })));
 
 vi.mock('sonner', () => ({
 	toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), dismiss: vi.fn() },
@@ -26,7 +28,7 @@ vi.mock('thirdweb', () => ({
 }));
 vi.mock('thirdweb/react', () => {
 	const account = { address: '0x00000000000000000000000000000000000000aa' };
-	const wallet = { getChain: () => ({ id: 31337 }), getAccount: () => account };
+	const wallet = { getChain, getAccount: () => account };
 	return {
 		useActiveWallet: () => wallet,
 		useSendAndConfirmTransaction: () => ({ mutateAsync: sendAndConfirm }),
@@ -196,5 +198,57 @@ describe('a plan that was sent and failed', () => {
 		expect(toast.error).toHaveBeenCalledWith('Transaction Failed', {
 			description: 'user rejected',
 		});
+	});
+
+	// A dismissal of every toast would also take down the notice of a new version.
+	it('takes down its own wallet notice, and no other toast', async () => {
+		withVerdict('ok');
+		vi.mocked(toast.info).mockReturnValue('approve-notice');
+		sendAndConfirm.mockRejectedValue(new Error('user rejected'));
+
+		await attempt(setPlan);
+
+		expect(toast.dismiss).toHaveBeenCalledWith('approve-notice');
+		expect(vi.mocked(toast.dismiss).mock.calls.every(call => call.length === 1)).toBe(true);
+	});
+
+	it('takes down the second notice when setting the limit fails', async () => {
+		withVerdict('ok');
+		vi.mocked(toast.info).mockReturnValueOnce('approve-notice').mockReturnValueOnce('limit-notice');
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockRejectedValueOnce(new Error('x'));
+
+		await attempt(setPlan);
+
+		expect(toast.dismiss).toHaveBeenCalledWith('limit-notice');
+		expect(vi.mocked(toast.dismiss).mock.calls.every(call => call.length === 1)).toBe(true);
+	});
+});
+
+describe('a revoke that was sent and failed', () => {
+	it('takes down its wallet notice and says the revoke failed', async () => {
+		withVerdict('ok');
+		vi.mocked(toast.info).mockReturnValue('revoke-notice');
+		sendAndConfirm.mockRejectedValue(new Error('user rejected'));
+
+		await attempt(revoke);
+
+		expect(toast.dismiss).toHaveBeenCalledWith('revoke-notice');
+		expect(toast.error).toHaveBeenCalledWith('Revoke Failed', { description: 'user rejected' });
+	});
+});
+
+describe('the connected chain', () => {
+	it('is read once, so the contracts and the chain a call is built for cannot differ', async () => {
+		withVerdict('ok');
+		// The wallet changes network between two reads.
+		getChain.mockReturnValueOnce({ id: 31337 }).mockReturnValueOnce({ id: 999 });
+
+		await attempt(revoke);
+
+		expect(getContract).toHaveBeenCalledWith(
+			expect.objectContaining({ chain: { id: 31337 }, address: CONTRACTS[31337].escrow.address }),
+		);
 	});
 });
