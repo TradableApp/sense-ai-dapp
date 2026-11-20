@@ -3,7 +3,11 @@ import { httpsCallable } from 'firebase/functions';
 import { decodeFunctionData, erc20Abi, parseUnits } from 'viem';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import requestTestTokens, { faucetReceiptOutcome, getFaucetConfig } from './faucetService';
+import requestTestTokens, {
+	awaitFaucetReceipt,
+	faucetReceiptOutcome,
+	getFaucetConfig,
+} from './faucetService';
 
 // Hardhat account #0 — the deployer/treasury that holds the full fee token supply and
 // is unlocked on the local node, so eth_sendTransaction needs no signature.
@@ -172,5 +176,67 @@ describe('faucetReceiptOutcome', () => {
 	it('is failed for a receipt whose status is missing or unknown', () => {
 		expect(faucetReceiptOutcome({})).toBe('failed');
 		expect(faucetReceiptOutcome({ status: '0x0' })).toBe('failed');
+	});
+});
+
+// The wait both faucet callers use. thirdweb throws "Transaction receipt not found." until
+// the transaction is mined; anything else thrown is a real fault and is reported, not hidden.
+describe('awaitFaucetReceipt', () => {
+	const notMinedYet = () => Promise.reject(new Error('Transaction receipt not found.'));
+	const noWait = () => Promise.resolve();
+
+	it('reports received once a successful receipt arrives', async () => {
+		const getReceipt = vi
+			.fn()
+			.mockImplementationOnce(notMinedYet)
+			.mockImplementationOnce(notMinedYet)
+			.mockResolvedValue({ status: 'success' });
+
+		await expect(awaitFaucetReceipt(getReceipt, { wait: noWait, maxAttempts: 5 })).resolves.toBe(
+			'received',
+		);
+		expect(getReceipt).toHaveBeenCalledTimes(3);
+	});
+
+	it('reports failed for a reverted receipt and stops asking', async () => {
+		const getReceipt = vi.fn().mockResolvedValue({ status: 'reverted' });
+
+		await expect(awaitFaucetReceipt(getReceipt, { wait: noWait, maxAttempts: 5 })).resolves.toBe(
+			'failed',
+		);
+		expect(getReceipt).toHaveBeenCalledTimes(1);
+	});
+
+	it('reports a timeout, not success or silence, when no receipt arrives in time', async () => {
+		const getReceipt = vi.fn().mockImplementation(notMinedYet);
+
+		await expect(awaitFaucetReceipt(getReceipt, { wait: noWait, maxAttempts: 4 })).resolves.toBe(
+			'timeout',
+		);
+		expect(getReceipt).toHaveBeenCalledTimes(4);
+	});
+
+	it('keeps trying through an unexpected error, and says so', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const getReceipt = vi
+			.fn()
+			.mockRejectedValueOnce(new Error('429 Too Many Requests'))
+			.mockResolvedValue({ status: 'success' });
+
+		await expect(awaitFaucetReceipt(getReceipt, { wait: noWait, maxAttempts: 5 })).resolves.toBe(
+			'received',
+		);
+		expect(warn).toHaveBeenCalledTimes(1);
+		warn.mockRestore();
+	});
+
+	it('does not report a receipt still being waited for as an error', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const getReceipt = vi.fn().mockImplementation(notMinedYet);
+
+		await awaitFaucetReceipt(getReceipt, { wait: noWait, maxAttempts: 3 });
+
+		expect(warn).not.toHaveBeenCalled();
+		warn.mockRestore();
 	});
 });

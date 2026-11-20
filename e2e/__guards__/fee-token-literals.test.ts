@@ -33,10 +33,24 @@ const isChecked = (file: string) =>
 	!/\.test\.(ts|tsx|js|jsx)$/.test(file) &&
 	!ALLOWED.some(allowed => file === allowed || file.startsWith(allowed));
 
-// Upper-case names as whole words (not the "able" in "available"), the lower-case forms
-// used as keys, and the file names of one token's logo and ABI.
-const TOKEN_NAME =
-	/\b(ABLE|SENSE)\b|\bAble(Token)?\b|\bSenseToken\b|['"`](able|sense)['"`]|able-token-logo/;
+// A token's name in any letter case, wherever it is not part of a longer word: on its own,
+// joined by `_` or `-`, at a camelCase boundary (`ableTokenAbi`, `isSenseBuild`), or in a
+// file name. "available", "disabled" and the product name "SenseAI" are longer words and
+// do not match; neither does lower-case "sense" or "able" on its own in a sentence, which
+// would forbid ordinary English.
+const BOUNDED = (name: string) =>
+	`(?:^|[^A-Za-z])(?:${name.toUpperCase()}|${name[0].toUpperCase()}${name.slice(1)})(?![A-Za-z])`;
+const TOKEN_NAME = new RegExp(
+	[
+		BOUNDED('able'),
+		BOUNDED('sense'),
+		'(?:Able|Sense)Token',
+		// lower-case forms that can only be the token: a key, or part of an identifier or file
+		'[\'"`](?:able|sense)[\'"`]',
+		'(?:^|[^A-Za-z])(?:able|sense)(?:Token|[-_]token)',
+		'[a-z](?:Able|Sense)(?:Token|Build|Profile|Abi)\\b',
+	].join('|'),
+);
 
 describe('the fee token is named only in its profile', () => {
 	it('finds no token name anywhere else in src/', () => {
@@ -49,15 +63,44 @@ describe('the fee token is named only in its profile', () => {
 		expect(offenders).toEqual([]);
 	});
 
+	it('scans the files where a token name would be shown', () => {
+		const scanned = sourceFiles(SRC, isChecked);
+
+		expect(scanned).toContain(path.join('config', 'contracts.ts'));
+		expect(scanned).toContain(path.join('features', 'usage', 'ManagePlanModal.tsx'));
+		expect(scanned).not.toContain(path.join('config', 'feeToken.ts'));
+		expect(scanned.length).toBeGreaterThan(100);
+	});
+
 	it('still recognises the names it forbids', () => {
 		const samples = [
 			'Insufficient ABLE Balance',
 			'{amount} SENSE',
+			'${amount} ABLEs'.replace('ABLEs', 'ABLE.'),
 			"import AbleTokenABI from '@/lib/abi/AbleToken.json';",
+			"import SenseTokenABI from '@/lib/abi/SenseToken.json';",
 			"queryKey: ['tokenPrice', 'able', chainId]",
+			"profile === 'sense'",
 			"import logo from '@/assets/able-token-logo.svg';",
+			"import logo from '@/assets/sense-token-logo.svg';",
+			'export const FAUCET_AMOUNT_ABLE = 100;',
+			'const IS_SENSE_BUILD = true;',
+			'const ableTokenAbi = load();',
+			'const isSenseBuild = true;',
+			'Sense credits cannot be sent',
 		];
-		const allowed = ['available', 'SenseAI', 'disabled', 'a sensible default', 'purchasable'];
+		const allowed = [
+			'available',
+			'SenseAI',
+			'senseai-logo.svg',
+			'disabled',
+			'a sensible default',
+			'purchasable',
+			'transferable',
+			'it makes sense to wait',
+			'you will be able to cancel',
+			'isTransferable',
+		];
 
 		samples.forEach(sample => expect(TOKEN_NAME.test(sample), sample).toBe(true));
 		allowed.forEach(sample => expect(TOKEN_NAME.test(sample), sample).toBe(false));

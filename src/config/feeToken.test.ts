@@ -1,11 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import ableTokenLogo from '@/assets/able-token-logo.svg';
 import senseLogo from '@/assets/logos/senseai-logo.svg';
 import AbleTokenABI from '@/lib/abi/AbleToken.json';
 import SenseTokenABI from '@/lib/abi/SenseToken.json';
 
-import { defaultPlanLimit, FEE_TOKEN_PROFILES, selectFeeToken } from './feeToken';
+import {
+	assertFeeTokenConfig,
+	defaultPlanLimit,
+	FEE_TOKEN_PROFILES,
+	FeeTokenConfigError,
+	selectFeeToken,
+} from './feeToken';
 
 const { SENSE, ABLE } = FEE_TOKEN_PROFILES;
 const hasError = (abi: readonly unknown[], name: string) =>
@@ -80,5 +86,75 @@ describe('defaultPlanLimit', () => {
 		expect(defaultPlanLimit(SENSE, 0.4)).toBe(rule.whenEmpty);
 		expect(defaultPlanLimit(SENSE, undefined)).toBe(rule.whenEmpty);
 		expect(defaultPlanLimit(SENSE, Number.NaN)).toBe(rule.whenEmpty);
+	});
+});
+
+describe('fee token profiles — what the contracts fix', () => {
+	// Amounts are converted with 18 decimals throughout the dApp. Both tokens use 18.
+	it.each(Object.values(FEE_TOKEN_PROFILES))('$symbol has 18 decimals', profile => {
+		expect(profile.decimals).toBe(18);
+	});
+
+	it('only a priced token carries a planned price for test-chain estimates', () => {
+		expect(SENSE.plannedPriceUsd).toBeUndefined();
+		expect(ABLE.plannedPriceUsd).toBe(0.015);
+	});
+
+	// An empty wallet must still be offered a limit the form accepts (greater than zero).
+	// 25 is a small round amount: enough for a first few prompts once the wallet is funded.
+	it('offers an empty SENSE wallet a limit of 25', () => {
+		expect(SENSE.defaultPlanLimit).toEqual({ kind: 'walletBalance', whenEmpty: 25 });
+	});
+});
+
+describe('FEE_TOKEN — the build setting is what selects the profile', () => {
+	afterEach(() => {
+		vi.unstubAllEnvs();
+		vi.resetModules();
+	});
+
+	it.each(['ABLE', 'SENSE'])('a build set to %s gets that profile', async value => {
+		vi.stubEnv('VITE_FEE_TOKEN', value);
+		vi.resetModules();
+
+		const { FEE_TOKEN } = await import('./feeToken');
+
+		expect(FEE_TOKEN.symbol).toBe(value);
+	});
+});
+
+// The fallback to SENSE is right for a developer's machine and wrong for a deployed build:
+// SENSE settings on another token mean a wrong label, no value shown, and a first offer
+// to approve the wallet's whole balance. A deployed build must name its token.
+describe('assertFeeTokenConfig', () => {
+	it.each(['testnet', 'mainnet', 'production', 'development'])(
+		'stops a %s build with no fee token named',
+		mode => {
+			expect(() => assertFeeTokenConfig(mode, {})).toThrow(FeeTokenConfigError);
+			expect(() => assertFeeTokenConfig(mode, { VITE_FEE_TOKEN: '' })).toThrow(FeeTokenConfigError);
+		},
+	);
+
+	it.each(['ABEL', 'able', ' ABLE', 'SENSE ', 'ABLE_TOKEN', 'true'])(
+		'stops a build whose fee token is written %j',
+		value => {
+			expect(() => assertFeeTokenConfig('testnet', { VITE_FEE_TOKEN: value })).toThrow(
+				FeeTokenConfigError,
+			);
+		},
+	);
+
+	it.each(['SENSE', 'ABLE'])('accepts a build that names %s exactly', value => {
+		expect(() => assertFeeTokenConfig('mainnet', { VITE_FEE_TOKEN: value })).not.toThrow();
+	});
+
+	it.each(['localnet', 'test'])('lets a %s run fall back when none is named', mode => {
+		expect(() => assertFeeTokenConfig(mode, {})).not.toThrow();
+	});
+
+	it.each(['localnet', 'test'])('still stops a %s run that names an unknown token', mode => {
+		expect(() => assertFeeTokenConfig(mode, { VITE_FEE_TOKEN: 'ABEL' })).toThrow(
+			FeeTokenConfigError,
+		);
 	});
 });

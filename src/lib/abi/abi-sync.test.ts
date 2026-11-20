@@ -384,3 +384,36 @@ describe('SOURCE.json — upstream provenance for every committed ABI', () => {
 		expect(Object.keys(manifest.sources).sort()).toEqual(onDisk);
 	});
 });
+
+// The sync script is the only route an ABI takes into this directory. An ABI it validates
+// and fingerprints but forgets to copy, or copies but leaves out of the manifest, stays
+// stale with nothing to say so until someone compares by hand.
+describe('sync-contracts.sh — every committed ABI is copied and recorded', () => {
+	const script = readFileSync(path.resolve(abiDir, '../../../scripts/sync-contracts.sh'), 'utf8');
+	const sourceVars = [...script.matchAll(/^([A-Z]+_SRC)=/gm)].map(match => match[1]);
+	const committed = readdirSync(abiDir).filter(
+		file => file.endsWith('.json') && file !== 'SOURCE.json',
+	);
+
+	it('declares one source artifact per committed ABI', () => {
+		expect(sourceVars).toHaveLength(committed.length);
+		committed.forEach(file => expect(script).toContain(`/${file}"`));
+	});
+
+	it('checks, fingerprints and copies every source it declares', () => {
+		const copyLine = script.split('\n').find(line => line.startsWith('cp ')) ?? '';
+		const existenceLoop = script.split('\n').find(line => /^for src in /.test(line)) ?? '';
+
+		sourceVars.forEach(name => {
+			expect(copyLine, `${name} is not copied`).toContain(`"$${name}"`);
+			expect(existenceLoop, `${name} is not checked to exist`).toContain(`"$${name}"`);
+			expect(script, `${name} is not fingerprinted`).toContain(`$(fingerprint "$${name}")`);
+		});
+	});
+
+	it('writes a manifest entry for every committed ABI', () => {
+		const manifestTemplate = script.slice(script.indexOf('"sources": {'));
+
+		committed.forEach(file => expect(manifestTemplate, file).toContain(`"${file}":`));
+	});
+});
