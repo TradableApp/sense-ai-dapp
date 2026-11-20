@@ -19,7 +19,8 @@ export type FeeTokenVerdict =
 	| 'escrow-not-exempt'
 	| 'treasury-not-exempt'
 	| 'escrow-serves-other-agent'
-	| 'contract-not-found';
+	| 'contract-not-found'
+	| 'token-paused';
 
 /** The escrow's getter for the agent contract it serves. */
 export const ESCROW_AGENT_GETTER = 'evmAIAgent';
@@ -87,7 +88,10 @@ export interface FeeTokenReader {
 	escrow: (
 		_method: typeof ESCROW_FEE_TOKEN_GETTER | typeof ESCROW_AGENT_GETTER | 'treasury',
 	) => Promise<unknown>;
-	token: (_method: 'symbol' | 'isTransferExempt', _params?: readonly [string]) => Promise<unknown>;
+	token: (
+		_method: 'symbol' | 'paused' | 'isTransferExempt',
+		_params?: readonly [string],
+	) => Promise<unknown>;
 	/** The code the node holds at an address, read fresh each time. */
 	code: (_address: string) => Promise<unknown>;
 }
@@ -134,7 +138,7 @@ interface VerdictInput {
 	/** The agent contract this build sends prompts to. */
 	configuredAgent: string;
 	escrowAddress: string;
-	profile: { symbol: string; transferable: boolean };
+	profile: { symbol: string; transferable: boolean; pausable: boolean };
 }
 
 /**
@@ -157,7 +161,7 @@ async function readEscrowSide({
 }
 
 /**
- * The token's side: that it exists, its symbol, then, for a restricted token, whether the escrow and the
+ * The token's side: that it exists, its symbol, whether it is paused, then, for a restricted token, whether the escrow and the
  * treasury the escrow holds are listed. A build for a restricted token pointed at an
  * ordinary one cannot be asked about listings at all (that read reverts), and its symbol
  * is the answer; asked together, the revert would hide it.
@@ -177,9 +181,12 @@ async function readTokenSide({
 		onChainSymbol: rawSymbol,
 		expectedSymbol: profile.symbol,
 	};
-	if (profile.transferable || !sameSymbol(rawSymbol, profile.symbol)) {
-		return assessFeeToken({ ...pair, restricted: false });
+	if (!sameSymbol(rawSymbol, profile.symbol)) return 'symbol-mismatch';
+	// A paused token refuses every movement, whoever is listed: the pause is the answer.
+	if (profile.pausable && asBoolean(await reader.token('paused'), 'the pause flag')) {
+		return 'token-paused';
 	}
+	if (profile.transferable) return assessFeeToken({ ...pair, restricted: false });
 
 	const treasury = asAddress(await reader.escrow('treasury'), 'the treasury');
 	const [rawEscrowExempt, rawTreasuryExempt] = await Promise.all([
