@@ -9,10 +9,11 @@ import { eth_getTransactionReceipt } from 'thirdweb/rpc';
 import { encodeAbiParameters, keccak256, pad, parseUnits, stringToBytes } from 'viem';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { UPDATE_TOAST_ID } from '@/components/UpdatePrompt';
 import { FEE_TOKEN } from '@/config/feeToken';
 import requestTestTokens from '@/lib/faucetService';
 
-import useFaucetRequest, { forgetFaucetReports } from './useFaucetRequest';
+import useFaucetRequest, { FAUCET_OFFER_TOAST_ID, forgetFaucetReports } from './useFaucetRequest';
 
 const TOKEN = '0x00000000000000000000000000000000000000C1';
 const USER = '0x00000000000000000000000000000000000000AA';
@@ -62,16 +63,23 @@ function minedWith(receipt: Record<string, unknown>) {
 	vi.mocked(eth_getTransactionReceipt).mockResolvedValue(receipt as never);
 }
 
-async function requestTokens() {
+type Faucet = ReturnType<typeof useFaucetRequest>;
+
+/** Asks for tokens the way one place does: the plan dialog's button unless told otherwise. */
+async function requestTokens(start: (_f: Faucet) => Promise<void> = f => f.requestTokens()) {
 	const queryClient = new QueryClient();
 	const wrapper = ({ children }: { children: ReactNode }) => (
 		<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 	);
 	const { result } = renderHook(() => useFaucetRequest(), { wrapper });
 	await act(async () => {
-		await result.current.requestTokens();
+		await start(result.current);
 	});
 }
+
+/** Whether any call closed every toast at once (sonner's dismiss with no id). */
+const closedEveryToast = () =>
+	vi.mocked(toast.dismiss).mock.calls.some(call => call.length === 0 || call[0] === undefined);
 
 beforeEach(() => {
 	vi.clearAllMocks();
@@ -82,6 +90,38 @@ beforeEach(() => {
 
 afterEach(() => {
 	cleanup();
+});
+
+// A dismissal of every toast also takes down notices the faucet did not raise, and the
+// update prompt reads a dismissal it did not cause as the user declining the new version.
+describe('which toasts a faucet request closes', () => {
+	it('closes no other toast when asked from the plan dialog', async () => {
+		minedWith({ status: 'success', logs: [transferLog(TOKEN, USER, '100')] });
+
+		await requestTokens();
+
+		expect(closedEveryToast()).toBe(false);
+		expect(toast.dismiss).not.toHaveBeenCalledWith(FAUCET_OFFER_TOAST_ID);
+		expect(toast.dismiss).not.toHaveBeenCalledWith(UPDATE_TOAST_ID);
+	});
+
+	it('closes only the toast that offered the faucet when asked from it', async () => {
+		minedWith({ status: 'success', logs: [transferLog(TOKEN, USER, '100')] });
+
+		await requestTokens(f => f.requestTokensFromOffer());
+
+		expect(closedEveryToast()).toBe(false);
+		expect(toast.dismiss).toHaveBeenCalledWith(FAUCET_OFFER_TOAST_ID);
+		expect(toast.dismiss).not.toHaveBeenCalledWith(UPDATE_TOAST_ID);
+	});
+
+	it('closes no other toast when the faucet sends nothing', async () => {
+		vi.mocked(requestTestTokens).mockResolvedValue({ success: false });
+
+		await requestTokens(f => f.requestTokensFromOffer());
+
+		expect(closedEveryToast()).toBe(false);
+	});
 });
 
 describe('useFaucetRequest', () => {

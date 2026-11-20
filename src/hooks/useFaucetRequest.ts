@@ -25,6 +25,9 @@ import requestTestTokens, {
 } from '@/lib/faucetService';
 import { wait } from '@/lib/utils';
 
+/** The id of the toast that offers the faucet (an insufficient balance); kept as a stub. */
+export const FAUCET_OFFER_TOAST_ID = 'faucet-offer';
+
 type Wallet = NonNullable<ReturnType<typeof useActiveWallet>>;
 
 // A successful receipt that brought the user nothing means the faucet is sending another
@@ -96,6 +99,7 @@ async function waitForFaucet(wallet: Wallet, txHash: string, recipient: string) 
  */
 export default function useFaucetRequest(): {
 	requestTokens: () => Promise<void>;
+	requestTokensFromOffer: () => Promise<void>;
 	faucetAmount: number;
 } {
 	const activeWallet = useActiveWallet();
@@ -136,5 +140,5 @@ export default function useFaucetRequest(): {
 		}
 	};
 
-	return { requestTokens, faucetAmount };
+	return { requestTokens, requestTokensFromOffer: requestTokens, faucetAmount };
 }

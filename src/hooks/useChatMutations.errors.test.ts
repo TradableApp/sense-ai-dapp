@@ -65,6 +65,7 @@ import { feeTokenBlockCopy, FeeTokenBlockedError } from '@/lib/feeTokenCheck';
 import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
 
 import { buildErrorHandler } from './useChatMutations';
+import { FAUCET_OFFER_TOAST_ID } from './useFaucetRequest';
 
 // Helper that creates a pre-built handler with test defaults (no faucet network)
 // Every case asserts on the one shared toast mock. Without this a case can pass on a call an
@@ -411,6 +412,15 @@ describe('buildErrorHandler — Generic fallbacks', () => {
 		const handler = makeHandler();
 		expect(() => handler(null, 'send message')).not.toThrow();
 		expect(toast.error).toHaveBeenCalledWith('Failed to send message', expect.any(Object));
+	});
+
+	it('raises the faucet offer under its own id, so a faucet request can close it alone', () => {
+		const handler = buildErrorHandler(true, false, 100, vi.fn());
+
+		handler({ message: 'ERC20InsufficientBalance' }, 'send message');
+
+		const [, options] = vi.mocked(toast.error).mock.calls[0];
+		expect((options as { id?: unknown }).id).toBe(FAUCET_OFFER_TOAST_ID);
 	});
 
 	it('isTestnet=true renders faucet button in ERC20InsufficientBalance toast', () => {
