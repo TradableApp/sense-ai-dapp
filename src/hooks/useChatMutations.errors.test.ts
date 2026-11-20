@@ -320,13 +320,18 @@ describe('buildErrorHandler — every explained error is recognised by its selec
 	});
 
 	// A paused token has one message per action, whichever token the build is for.
-	it.each([
+	const pausedRows = [
 		['send message', 'Payments Paused', /no tokens were taken/i],
 		['cancel prompt', 'Could Not Cancel', /until the token is resumed/i],
 		['process refund', 'Refund Not Sent', /once the token is resumed/i],
-	] as const)('EnforcedPause during "%s" shows "%s"', (action, title, description) => {
-		for (const profile of [FEE_TOKEN_PROFILES.ABLE, FEE_TOKEN_PROFILES.SENSE]) {
-			vi.mocked(toast.error).mockClear();
+	] as const;
+	it.each(
+		[FEE_TOKEN_PROFILES.ABLE, FEE_TOKEN_PROFILES.SENSE].flatMap(profile =>
+			pausedRows.map(([action, title, description]) => ({ profile, action, title, description })),
+		),
+	)(
+		'EnforcedPause during $action shows $title ($profile.symbol build)',
+		({ profile, action, title, description }) => {
 			const handler = buildErrorHandler(false, false, 100, vi.fn(), profile);
 
 			handler(
@@ -339,8 +344,8 @@ describe('buildErrorHandler — every explained error is recognised by its selec
 				title,
 				expect.objectContaining({ description: expect.stringMatching(description) }),
 			);
-		}
-	});
+		},
+	);
 
 	// The refused transfer has one message per action and, for a cancellation, per what the
 	// check says about the refund.

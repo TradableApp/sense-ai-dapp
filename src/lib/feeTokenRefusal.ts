@@ -47,15 +47,49 @@ const CANCEL_REFUSED: Record<RefundOutlook, string> = {
 };
 
 /**
+ * Why the token refused: a party to the transfer is not listed, or the token is paused.
+ * A paused token refuses every movement until its owner resumes it.
+ */
+export type RefusalCause = 'restricted' | 'paused';
+
+/**
+ * What to say when a paused token refuses a transfer. The pause is the newer fact than any
+ * verdict of the check, since the token reported it just now, so the verdict plays no part.
+ * Nobody here knows when the token will be resumed, so no time is promised.
+ */
+function pausedTransferMessage(action: string): Notice {
+	if (action === CANCEL_ACTION) {
+		return {
+			title: 'Could Not Cancel',
+			description: `${STILL_HELD} The token is paused, so it stays with the SenseAI payment contract until the token is resumed; you can then cancel again or ask for a refund.`,
+		};
+	}
+	if (action === REFUND_ACTION) {
+		return {
+			title: 'Refund Not Sent',
+			description:
+				'The token is paused, so the refund could not be sent and your payment is still held. Please try again once the token is resumed.',
+		};
+	}
+	return {
+		title: 'Payments Paused',
+		description: 'Payments are paused for now, so no tokens were taken. Please try again later.',
+	};
+}
+
+/**
  * What to say when the token refuses a transfer, which depends on what was being done.
  * A refused payment took nothing. A refused cancellation leaves the prompt's fee held, and
  * whether the refund is the way out depends on what the check found. A refused refund also
- * took nothing, but the user is owed tokens and needs a person.
+ * took nothing, but the user is owed tokens and needs a person. A paused token is worded by
+ * action too, but waits for the token to be resumed rather than for a person.
  */
 export function refusedTransferMessage(
 	action: string,
 	verdict: FeeTokenCheckState = 'unknown',
+	cause: RefusalCause = 'restricted',
 ): Notice {
+	if (cause === 'paused') return pausedTransferMessage(action);
 	if (action === CANCEL_ACTION) {
 		return {
 			title: 'Could Not Cancel',
