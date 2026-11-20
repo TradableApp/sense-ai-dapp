@@ -116,17 +116,24 @@ function asAddress(value: unknown, what: string): string {
 const HEX = /^0x[0-9a-fA-F]*$/;
 const NO_CODE = /^0x0*$/;
 
-/**
- * Whether nothing is deployed at an address. A call to such an address "succeeds" and
- * returns nothing, so without this a wrong address reads as an unreachable node. Only an
- * empty answer means no contract; anything that is not hex is no answer at all.
- */
-async function hasNoCode(reader: FeeTokenReader, address: string, what: string): Promise<boolean> {
+async function readsEmpty(reader: FeeTokenReader, address: string, what: string): Promise<boolean> {
 	const code = await reader.code(address);
 	if (typeof code !== 'string' || !HEX.test(code)) {
 		throw unreadable(`the code at ${what} is not hex`);
 	}
 	return NO_CODE.test(code);
+}
+
+/**
+ * Whether nothing is deployed at an address. A call to such an address "succeeds" and
+ * returns nothing, so without this a wrong address reads as an unreachable node. Only an
+ * empty answer means no contract; anything that is not hex is no answer at all. An empty
+ * answer is asked for once more before it counts: a node behind a load balancer can have
+ * a backend that lags behind the chain, and one stale answer must not switch payments off.
+ */
+async function hasNoCode(reader: FeeTokenReader, address: string, what: string): Promise<boolean> {
+	if (!(await readsEmpty(reader, address, what))) return false;
+	return readsEmpty(reader, address, what);
 }
 
 function asBoolean(value: unknown, what: string): boolean {
@@ -144,8 +151,9 @@ interface VerdictInput {
 }
 
 /**
- * The escrow's side: that it exists, the token it takes, then the agent it serves. Null when both are the
- * ones the build names. A wrong token is named first, and nothing is asked after it.
+ * The escrow's side: that it exists, the token it takes, then the agent it serves. Null
+ * when both are the ones the build names. A wrong token is named first, and nothing is
+ * asked after it.
  */
 async function readEscrowSide({
 	reader,
@@ -163,8 +171,8 @@ async function readEscrowSide({
 }
 
 /**
- * The token's side: that it exists, its symbol, whether it is paused, then, for a restricted token, whether the escrow and the
- * treasury the escrow holds are listed. A build for a restricted token pointed at an
+ * The token's side: that it exists, its symbol, whether it is paused, then, for a
+ * restricted token, whether the escrow and the treasury the escrow holds are listed. A build for a restricted token pointed at an
  * ordinary one cannot be asked about listings at all (that read reverts), and its symbol
  * is the answer; asked together, the revert would hide it.
  */
