@@ -28,7 +28,7 @@ interface ReceiptLog {
 
 export interface FaucetReceipt {
 	status?: unknown;
-	logs?: readonly ReceiptLog[];
+	logs?: readonly ReceiptLog[] | null;
 }
 
 export interface FaucetExpectation {

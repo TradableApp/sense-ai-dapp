@@ -76,6 +76,12 @@ describe('faucetOutcome', () => {
 		expect(faucetOutcome({ status: 'success', logs }, expected)).toEqual({ kind: 'no-transfer' });
 	});
 
+	it('is no-transfer for a successful receipt whose logs are null, as viem gives none', () => {
+		expect(faucetOutcome({ status: 'success', logs: null }, expected)).toEqual({
+			kind: 'no-transfer',
+		});
+	});
+
 	it('is a timeout when no receipt came', () => {
 		expect(faucetOutcome('timeout', expected)).toEqual({ kind: 'timeout' });
 	});

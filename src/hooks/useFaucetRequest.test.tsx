@@ -32,15 +32,25 @@ vi.mock('sonner', () => ({
 		dismiss: vi.fn(),
 	},
 }));
+// The chain the wallet is on, changeable between render and request.
+const walletChain = vi.hoisted(() => ({ id: 31337 }));
 vi.mock('thirdweb/react', () => {
-	const wallet = { getChain: () => ({ id: 31337 }), getAccount: () => ({ address: USER }) };
+	const wallet = {
+		getChain: () => ({ id: walletChain.id }),
+		getAccount: () => ({ address: '0x00000000000000000000000000000000000000AA' }),
+	};
 	return { useActiveWallet: () => wallet };
 });
 vi.mock('thirdweb/rpc', () => ({ eth_getTransactionReceipt: vi.fn(), getRpcClient: vi.fn() }));
 vi.mock('@/config/thirdweb', () => ({ client: {} }));
 vi.mock('@/config/contracts', () => ({
 	LOCAL_CHAIN_ID: 31337,
-	CONTRACTS: { 31337: { token: { address: '0x00000000000000000000000000000000000000C1' } } },
+	CONTRACTS: {
+		31337: { token: { address: '0x00000000000000000000000000000000000000C1' } },
+		84532: { token: { address: '0x00000000000000000000000000000000000000B2' } },
+		// A chain this build has no token for.
+		99: {},
+	},
 }));
 vi.mock('@/hooks/useFaucetConfig', () => ({ default: () => ({ data: { amount: 100 } }) }));
 vi.mock('@/lib/utils', () => ({ wait: vi.fn(async () => undefined) }));
@@ -84,6 +94,7 @@ const closedEveryToast = () =>
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	walletChain.id = 31337;
 	forgetFaucetReports();
 	// The faucet says it sent 100; only the receipt says what arrived.
 	vi.mocked(requestTestTokens).mockResolvedValue({ success: true, txHash: TX, amount: 100 });
@@ -200,5 +211,55 @@ describe('useFaucetRequest', () => {
 
 		expect(eth_getTransactionReceipt).not.toHaveBeenCalled();
 		expect(toast.success).not.toHaveBeenCalled();
+	});
+});
+
+describe('a faucet request on a build with no token for the chain', () => {
+	it('asks the faucet for nothing and says the faucet is not available', async () => {
+		walletChain.id = 99;
+
+		await requestTokens();
+
+		expect(requestTestTokens).not.toHaveBeenCalled();
+		expect(toast.success).not.toHaveBeenCalled();
+		expect(toast.error).toHaveBeenCalledWith('Faucet Not Available', expect.any(Object));
+	});
+
+	it('reports a setup fault, not a faucet that sent nothing', async () => {
+		walletChain.id = 99;
+
+		await requestTokens();
+
+		expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+		const [error, context] = vi.mocked(Sentry.captureException).mock.calls[0];
+		expect(String(error)).toMatch(/no fee token is configured/i);
+		expect(context).toEqual(
+			expect.objectContaining({ tags: expect.objectContaining({ check: 'faucet' }) }),
+		);
+	});
+});
+
+describe('the chain a faucet request uses', () => {
+	const TOKEN_B = '0x00000000000000000000000000000000000000B2';
+
+	it('is the one the wallet is on when the request is made, for the receipt and the balance', async () => {
+		minedWith({ status: 'success', logs: [transferLog(TOKEN_B, USER, '7')] });
+		const queryClient = new QueryClient();
+		const refreshed = vi.spyOn(queryClient, 'invalidateQueries');
+		const wrapper = ({ children }: { children: ReactNode }) => (
+			<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		);
+		const { result } = renderHook(() => useFaucetRequest(), { wrapper });
+
+		walletChain.id = 84532;
+		await act(async () => {
+			await result.current.requestTokens();
+		});
+
+		expect(toast.success).toHaveBeenCalledWith('Tokens Received', {
+			description: `7 ${FEE_TOKEN.symbol} added to your wallet.`,
+		});
+		const [[{ queryKey }]] = refreshed.mock.calls as unknown as [[{ queryKey: unknown[] }]];
+		expect(queryKey).toContain(84532);
 	});
 });
