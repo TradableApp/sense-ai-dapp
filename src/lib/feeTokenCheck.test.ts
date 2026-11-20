@@ -22,8 +22,9 @@ const OTHER_AGENT = '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9';
 /** What a node returns for an address with a contract on it. */
 const DEPLOYED = '0x6080604052348015600e575f5ffd5b50';
 
-const restricted = { symbol: 'PTS', transferable: false };
-const open = { symbol: 'COIN', transferable: true };
+const restricted = { symbol: 'PTS', transferable: false, pausable: true };
+const open = { symbol: 'COIN', transferable: true, pausable: true };
+const unpausable = { ...restricted, pausable: false };
 
 const readings = (over: Record<string, unknown> = {}): FeeTokenReadings =>
 	({
@@ -103,6 +104,7 @@ function reader(over: {
 	agent?: unknown;
 	treasury?: unknown;
 	symbol?: unknown;
+	paused?: unknown;
 	exempt?: Record<string, unknown>;
 	codeAt?: Record<string, unknown>;
 }): FeeTokenReader & { calls: string[] } {
@@ -123,7 +125,9 @@ function reader(over: {
 		}),
 		token: vi.fn(async (method, params) => {
 			calls.push(`token.${method}${params ? `(${params[0]})` : ''}`);
-			return method === 'symbol' ? over.symbol ?? 'PTS' : exempt[params?.[0] as string];
+			if (method === 'symbol') return over.symbol ?? 'PTS';
+			if (method === 'paused') return 'paused' in over ? over.paused : false;
+			return exempt[params?.[0] as string];
 		}),
 	};
 }
@@ -138,7 +142,7 @@ const check = (r: FeeTokenReader, profile = restricted) =>
 	});
 
 describe('readFeeTokenVerdict', () => {
-	it('reads the escrow token, its agent, the treasury, the symbol and both exemptions for a restricted token', async () => {
+	it('reads both codes, the escrow token, its agent, the treasury, the symbol, the pause flag and both exemptions for a restricted token', async () => {
 		const r = reader({});
 		await expect(check(r)).resolves.toBe('ok');
 		expect(r.calls.sort()).toEqual(
@@ -149,6 +153,7 @@ describe('readFeeTokenVerdict', () => {
 				`escrow.${ESCROW_AGENT_GETTER}`,
 				'escrow.treasury',
 				'token.symbol',
+				'token.paused',
 				`token.isTransferExempt(${ESCROW})`,
 				`token.isTransferExempt(${TREASURY})`,
 			].sort(),
@@ -227,12 +232,13 @@ describe('readFeeTokenVerdict', () => {
 
 		await check(r);
 
-		expect(r.calls.slice(0, 5)).toEqual([
+		expect(r.calls.slice(0, 6)).toEqual([
 			`code(${ESCROW})`,
 			`escrow.${ESCROW_FEE_TOKEN_GETTER}`,
 			`escrow.${ESCROW_AGENT_GETTER}`,
 			`code(${TOKEN})`,
 			'token.symbol',
+			'token.paused',
 		]);
 	});
 
@@ -295,6 +301,49 @@ describe('readFeeTokenVerdict', () => {
 		await expect(outcome).rejects.toThrow('fetch failed');
 	});
 
+	it('says the token is paused when its owner has stopped every transfer', async () => {
+		const r = reader({ paused: true });
+
+		const verdict = await check(r);
+
+		expect(verdict).toBe('token-paused');
+	});
+
+	it('asks a token anyone can send whether it is paused too', async () => {
+		const r = reader({ symbol: 'COIN', paused: true });
+
+		const verdict = await check(r, open);
+
+		expect(verdict).toBe('token-paused');
+	});
+
+	it('does not ask a token that cannot be paused', async () => {
+		const r = reader({ paused: true });
+
+		const verdict = await check(r, unpausable);
+
+		expect(verdict).toBe('ok');
+		expect(r.calls).not.toContain('token.paused');
+	});
+
+	it('names a different symbol before asking about a pause', async () => {
+		const r = reader({ symbol: 'COIN', paused: true });
+
+		const verdict = await check(r);
+
+		expect(verdict).toBe('symbol-mismatch');
+		expect(r.calls).not.toContain('token.paused');
+	});
+
+	it('names a pause before the listings, and does not ask about them', async () => {
+		const r = reader({ paused: true, exempt: { [ESCROW]: false, [TREASURY]: false } });
+
+		const verdict = await check(r);
+
+		expect(verdict).toBe('token-paused');
+		expect(r.calls.some(call => call.startsWith('token.isTransferExempt'))).toBe(false);
+	});
+
 	it('passes each verdict through', async () => {
 		await expect(check(reader({ symbol: 'COIN' }))).resolves.toBe('symbol-mismatch');
 		await expect(check(reader({ exempt: { [ESCROW]: false, [TREASURY]: true } }))).resolves.toBe(
@@ -311,6 +360,7 @@ describe('readFeeTokenVerdict', () => {
 		['an agent that is not an address', { agent: 'agent' }, /agent is not an address/],
 		['a treasury that is not an address', { treasury: 42 }, /treasury is not an address/],
 		['a symbol that is not text', { symbol: 7 }, /symbol is not text/],
+		['a pause flag that is not yes or no', { paused: 'no' }, /pause flag is not yes or no/],
 		[
 			'an escrow exemption that is not yes or no',
 			{ exempt: { [ESCROW]: 'yes', [TREASURY]: true } },
@@ -356,6 +406,7 @@ describe('blocksAction', () => {
 		'escrow-not-exempt': ['prompt', 'plan', 'branch', 'metadata'],
 		'escrow-serves-other-agent': ['prompt', 'plan', 'branch', 'metadata'],
 		'contract-not-found': ['prompt', 'plan', 'branch', 'metadata'],
+		'token-paused': ['prompt', 'plan', 'branch', 'metadata'],
 		// Prompts go from the user to the escrow and on to the treasury, and either end being
 		// listed is enough. Only a fee paid straight from the user to the treasury is refused.
 		'treasury-not-exempt': ['branch', 'metadata'],

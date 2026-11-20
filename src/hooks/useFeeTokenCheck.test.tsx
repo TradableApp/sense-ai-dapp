@@ -34,13 +34,13 @@ vi.mock('thirdweb/rpc', () => ({
 	eth_getCode: vi.fn(),
 }));
 vi.mock('@/config/feeToken', () => ({
-	FEE_TOKEN: { symbol: 'PTS', transferable: false },
+	FEE_TOKEN: { symbol: 'PTS', transferable: false, pausable: true },
 }));
 vi.mock('@/config/contracts', () => {
 	const fn = (name: string) => ({ type: 'function', name });
 	const token = {
 		address: '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
-		abi: [fn('symbol'), fn('isTransferExempt')],
+		abi: [fn('symbol'), fn('paused'), fn('isTransferExempt')],
 	};
 	const escrow = {
 		address: '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
@@ -69,6 +69,7 @@ function chainAnswers(over: Record<string, unknown> = {}) {
 			evmAIAgent: AGENT,
 			treasury: TREASURY,
 			symbol: 'PTS',
+			paused: false,
 			[`exempt:${ESCROW}`]: true,
 			[`exempt:${TREASURY}`]: true,
 			...over,
@@ -188,6 +189,16 @@ describe('useFeeTokenCheck', () => {
 		await waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(1));
 		expect(result.current.verdict).toBe('unknown');
 		expect(result.current.blocks('prompt')).toBe(false);
+	});
+
+	it('stops every paying action while the token is paused', async () => {
+		chainAnswers({ paused: true });
+
+		const { result } = harness();
+
+		await waitFor(() => expect(result.current.verdict).toBe('token-paused'));
+		expect(result.current.blocks('prompt')).toBe(true);
+		expect(result.current.blocks('metadata')).toBe(true);
 	});
 
 	it('stops only direct fees when the treasury is not listed', async () => {
