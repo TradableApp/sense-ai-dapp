@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { toast } from 'sonner';
 // eslint-disable-next-line camelcase
-import { eth_getTransactionReceipt } from 'thirdweb/rpc';
+import { eth_getTransactionReceipt, getRpcClient } from 'thirdweb/rpc';
 import { encodeAbiParameters, keccak256, pad, parseUnits, stringToBytes } from 'viem';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -326,6 +326,26 @@ describe('a faucet call that fails outright', () => {
 		expect(toast.error).toHaveBeenCalledWith('Faucet Failed', expect.any(Object));
 		expect(toast.success).not.toHaveBeenCalled();
 		expect(refreshed).not.toHaveBeenCalled();
+		expect(logged).toHaveBeenCalled();
+		logged.mockRestore();
+	});
+});
+
+describe('a wait for the receipt that fails', () => {
+	it('replaces the sent notice with a plain failure, announces nothing and logs it', async () => {
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+		vi.mocked(getRpcClient).mockImplementationOnce(() => {
+			throw new Error('no RPC for this chain');
+		});
+
+		await requestTokens();
+
+		expect(toast.dismiss).toHaveBeenCalledWith('sent');
+		expect(toast.error).toHaveBeenCalledWith(
+			'Transfer Not Confirmed',
+			expect.objectContaining({ description: expect.stringMatching(/check your balance/i) }),
+		);
+		expect(toast.success).not.toHaveBeenCalled();
 		expect(logged).toHaveBeenCalled();
 		logged.mockRestore();
 	});
