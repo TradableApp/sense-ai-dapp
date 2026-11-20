@@ -57,6 +57,12 @@ describe('resolveLocalStoreName', () => {
 		expect(name).not.toBe(localStoreName('31337', AGENT_A));
 	});
 
+	it('gives a unit-test run with no agent that same store, so a test that loads the module unmocked is not failed by configuration', () => {
+		expect(resolveLocalStoreName(undefined, undefined, 'test')).toBe(
+			'SenseAI:localnet:unconfigured',
+		);
+	});
+
 	it.each(['testnet', 'mainnet', 'production', 'development', undefined])(
 		'refuses a missing agent in %s mode',
 		mode => {
