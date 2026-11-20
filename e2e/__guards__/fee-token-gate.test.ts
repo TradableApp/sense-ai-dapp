@@ -202,6 +202,10 @@ describe('where the fee token check is asked', () => {
 			'src/features/history/RenameConversationModal.tsx',
 			"const renameSwitchedOff = useSwitchedOffReason('metadata', 'dialog');",
 		],
+		[
+			'src/features/history/DeleteConversationDialog.tsx',
+			"const deleteSwitchedOff = useSwitchedOffReason('metadata', 'dialog');",
+		],
 	])('%s asks whether its action is switched off: %s', (file, statement) => {
 		expect(hasStatement(code(file), statement)).toBe(true);
 	});
@@ -209,6 +213,9 @@ describe('where the fee token check is asked', () => {
 	it('the history list disables rename and delete while renames and deletes are switched off', () => {
 		const history = code('src/features/history/History.tsx');
 		expect(history).toContain('<ConversationActionsMenu');
+		// The confirmation is its own dialog, which carries the banner and the switched-off state.
+		expect(history).toContain('<DeleteConversationDialog');
+		expect(history).not.toContain('<AlertDialogAction');
 		expect(history).not.toContain('<DropdownMenuItem');
 
 		const menu = code('src/features/history/ConversationActionsMenu.tsx');
@@ -242,6 +249,7 @@ describe('where the fee token check is asked', () => {
 	it.each([
 		'src/features/usage/ManagePlanModal.tsx',
 		'src/features/history/RenameConversationModal.tsx',
+		'src/features/history/DeleteConversationDialog.tsx',
 	])('%s carries the banner itself', file => {
 		const dialog = code(file);
 		expect(dialog).toMatch(/\n\t+<FeeTokenMismatchBanner /);
