@@ -32,3 +32,9 @@ export function assertFeeTokenConfig(mode: string, env: Record<string, string | 
 		)} for a ${mode} build, got "${value}".`,
 	);
 }
+
+/**
+ * The escrow's getter for the token it takes. The name is from the escrow's first deploy
+ * and is kept by the contract whichever token it holds; it is spelled out here only.
+ */
+export const ESCROW_FEE_TOKEN_GETTER = 'ableToken';
