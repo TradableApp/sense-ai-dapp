@@ -7,6 +7,7 @@ import { useActiveWallet } from 'thirdweb/react';
 import { parseUnits } from 'viem';
 import { z } from 'zod';
 
+import CommunityLinksNotice from '@/components/CommunityLinksNotice';
 import FeeTokenMismatchBanner from '@/components/FeeTokenMismatchBanner';
 import {
 	AlertDialog,
@@ -37,6 +38,7 @@ import useFeeTokenCheck, { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenC
 import useTokenBalance from '@/hooks/useTokenBalance';
 import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
 import { cn } from '@/lib/utils';
+import pointsToCommunity from '@/lib/whereToGetToken';
 
 import shouldResetPlanForm from './planFormReset';
 import PlanValueEstimate from './PlanValueEstimate';
@@ -124,6 +126,14 @@ export default function ManagePlanModal({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [open, existingPlan, initialLimit, reset]);
 
+	// A wallet with none of a token the app offers no way to get is told where to ask.
+	const isFaucetOffered = isTestnet || isLocalnet;
+	const showsCommunityLinks = pointsToCommunity({
+		balance: balanceData ? formattedBalance : undefined,
+		profile: FEE_TOKEN,
+		isFaucetOffered,
+	});
+
 	const currentLimit = watch('limit');
 	const isExceedingBalance =
 		!isLoadingBalance && balanceData !== undefined && currentLimit > formattedBalance;
@@ -206,7 +216,7 @@ export default function ManagePlanModal({
 									set a limit of {currentLimit}.
 								</p>
 
-								{(isTestnet || isLocalnet) && (
+								{isFaucetOffered && (
 									<Button
 										type="button"
 										size="sm"
@@ -226,6 +236,12 @@ export default function ManagePlanModal({
 										)}
 									</Button>
 								)}
+							</div>
+						)}
+
+						{showsCommunityLinks && (
+							<div className="rounded-md border p-3 text-xs">
+								<CommunityLinksNotice symbol={FEE_TOKEN.symbol} hasNone />
 							</div>
 						)}
 

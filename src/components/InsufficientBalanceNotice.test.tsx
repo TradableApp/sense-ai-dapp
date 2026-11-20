@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { FEE_TOKEN_PROFILES } from '@/config/feeToken';
+import { FEE_TOKEN_PROFILES, type FeeTokenProfile } from '@/config/feeToken';
 
 import InsufficientBalanceNotice from './InsufficientBalanceNotice';
 
@@ -9,15 +9,12 @@ const { SENSE, ABLE } = FEE_TOKEN_PROFILES;
 
 afterEach(cleanup);
 
-const renderNotice = (profile = SENSE, faucet: 'testnet' | 'localnet' | null = null) =>
-	render(
-		<InsufficientBalanceNotice
-			profile={profile}
-			faucetNetwork={faucet}
-			faucetAmount={100}
-			onFaucetRequest={vi.fn()}
-		/>,
-	);
+const TESTNET_OFFER = { label: 'Get 100 Testnet tokens', onRequest: vi.fn(async () => undefined) };
+
+const renderNotice = (
+	profile: FeeTokenProfile = SENSE,
+	faucetOffer: typeof TESTNET_OFFER | null = null,
+) => render(<InsufficientBalanceNotice profile={profile} faucetOffer={faucetOffer} />);
 
 describe('InsufficientBalanceNotice', () => {
 	it('points to the community for a token that cannot be got in the app, with no faucet', () => {
@@ -28,9 +25,9 @@ describe('InsufficientBalanceNotice', () => {
 	});
 
 	it('offers the faucet instead where there is one', () => {
-		renderNotice(SENSE, 'testnet');
+		renderNotice(SENSE, TESTNET_OFFER);
 
-		expect(screen.getByRole('button', { name: `Get 100 Testnet ${SENSE.symbol}` })).toBeTruthy();
+		expect(screen.getByRole('button', { name: TESTNET_OFFER.label })).toBeTruthy();
 		expect(screen.queryAllByRole('link')).toEqual([]);
 	});
 
