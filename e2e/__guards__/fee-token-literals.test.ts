@@ -158,6 +158,17 @@ describe('the fee token is named only in its profile', () => {
 		).toEqual([3]);
 	});
 
+	it('the exempt comment in vite-env.d.ts says what the build does with the setting', () => {
+		const lines = readFileSync(path.join(ROOT, VITE_ENV), 'utf8').split('\n');
+		const documented = lines.filter((_, i) => isExemptLine(VITE_ENV, lines, i));
+
+		expect(documented).toHaveLength(1);
+		// Unset stops every build but localnet's, and a misspelt value stops every build.
+		expect(documented[0]).not.toMatch(/unknown means/i);
+		expect(documented[0]).toMatch(/localnet/i);
+		expect(documented[0]).toMatch(/stops/i);
+	});
+
 	it('still recognises the names it forbids', () => {
 		const samples = [
 			'Insufficient ABLE Balance',
