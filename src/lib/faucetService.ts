@@ -163,10 +163,15 @@ export async function awaitFaucetReceipt<Receipt extends object>(
 	return 'timeout';
 }
 
+/**
+ * Asks the faucet. Never throws: a failure is logged, told to the user and returned as
+ * `{ success: false }`. Given the caller's loading notice id, the failure notice takes
+ * that notice's place instead of appearing beside it.
+ */
 const requestTestTokens = async (
 	walletAddress: string,
 	configuredAmount?: number,
-	_loadingToastId?: string | number,
+	loadingToastId?: string | number,
 ): Promise<FaucetResponse> => {
 	try {
 		// On localnet the "faucet" is a direct deployer transfer; on testnet it is
@@ -196,10 +201,12 @@ const requestTestTokens = async (
 		// Handle specific rate limit messages nicely
 		if (error instanceof Error && error.message.includes('rate limit')) {
 			toast.error('Rate Limit Exceeded', {
+				id: loadingToastId,
 				description: 'You can only request tokens once every 24 hours.',
 			});
 		} else {
 			toast.error('Faucet Failed', {
+				id: loadingToastId,
 				description: 'Could not dispense tokens. Please try again later.',
 			});
 		}

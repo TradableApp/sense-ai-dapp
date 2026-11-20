@@ -135,9 +135,10 @@ async function settle(
 }
 
 /**
- * Asks the faucet, with a loading notice that is taken down however the call ends. Gives
- * the transaction hash, or null when nothing was sent; a call that throws is logged (kept
- * in production builds for Sentry) and told to the user, never left unhandled.
+ * Asks the faucet, with a loading notice. Gives the transaction hash, or null when nothing
+ * was sent. The service never throws: a failure comes back as `{ success: false }` with its
+ * notice shown in the loading notice's place (it is given the id), so the two are never up
+ * together and the loading notice is left to it; only a send takes the loading notice down.
  */
 async function askFaucet(
 	recipient: string,
@@ -147,18 +148,9 @@ async function askFaucet(
 	const loadingToastId = toast.loading(
 		isLocalnet ? 'Requesting Localnet Tokens...' : 'Requesting Testnet Tokens...',
 	);
-	try {
-		const { success, txHash } = await requestTestTokens(recipient, amount);
-		return success && txHash ? txHash : null;
-	} catch (error) {
-		console.error('Faucet request failed:', error);
-		toast.error('Faucet Failed', {
-			description: 'Could not request test tokens. Please try again later.',
-		});
-		return null;
-	} finally {
-		toast.dismiss(loadingToastId);
-	}
+	const { success, txHash } = await requestTestTokens(recipient, amount, loadingToastId);
+	if (success) toast.dismiss(loadingToastId);
+	return success && txHash ? txHash : null;
 }
 
 /**
