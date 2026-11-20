@@ -124,6 +124,8 @@ describe('the fee token is named only in its profile', () => {
 
 		expect(scanned).toContain(path.join('src', 'config', 'contracts.ts'));
 		expect(scanned).toContain(path.join('src', 'features', 'usage', 'ManagePlanModal.tsx'));
+		// Stylesheets are served too: a class or a `content:` can carry a name to the screen.
+		expect(scanned).toContain(path.join('src', 'index.css'));
 		expect(scanned).not.toContain(path.join('src', 'config', 'feeToken.ts'));
 		expect(scanned.length).toBeGreaterThan(100);
 	});
@@ -233,6 +235,17 @@ describe('the fee token is named only in its profile', () => {
 			'const ableTokenAbi = load();',
 			'const isSenseBuild = true;',
 			'Sense credits cannot be sent',
+			// glued to letters on either side
+			'const buyABLE = true;',
+			'getSENSE()',
+			'const SENSEpoints = 1;',
+			'ABLEbalance',
+			'const buyAble = true;',
+			'getSense()',
+			// in a stylesheet
+			'.able-badge { color: red; }',
+			'--sense-accent: #fff;',
+			'content: "SENSE";',
 		];
 		const allowed = [
 			'available',
@@ -245,6 +258,14 @@ describe('the fee token is named only in its profile', () => {
 			'it makes sense to wait',
 			'you will be able to cancel',
 			'isTransferable',
+			'useSenseAI()',
+			'const DISABLED = true;',
+			'TABLE_NAME',
+			'ENABLE_SYNC',
+			'isCapable',
+			'Senses and sensed',
+			'sense-ai-dapp',
+			'general/sense_ai',
 		];
 
 		samples.forEach(sample => expect(TOKEN_NAME.test(sample), sample).toBe(true));

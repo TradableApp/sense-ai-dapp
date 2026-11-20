@@ -4,6 +4,7 @@ import ableTokenLogo from '@/assets/able-token-logo.svg';
 import senseLogo from '@/assets/logos/senseai-logo.svg';
 import AbleTokenABI from '@/lib/abi/AbleToken.json';
 import SenseTokenABI from '@/lib/abi/SenseToken.json';
+import leaksPartOf from '@/test/leaksPartOf';
 
 import {
 	assertFeeTokenConfig,
@@ -154,8 +155,40 @@ describe('assertFeeTokenConfig', () => {
 		expect(() => assertFeeTokenConfig('mainnet', { VITE_FEE_TOKEN: value })).not.toThrow();
 	});
 
-	it.each(['localnet', 'test'])('lets a %s run fall back when none is named', mode => {
-		expect(() => assertFeeTokenConfig(mode, {})).not.toThrow();
+	// Vitest has its own configuration and never runs this; the build check's own test calls
+	// the real Vite configuration in the test mode, which must keep working with no setting.
+	it('lets a unit-test run fall back when none is named', () => {
+		expect(() => assertFeeTokenConfig('test', {})).not.toThrow();
+	});
+
+	// The e2e harness's sync always writes the setting on localnet, so a localnet run without
+	// it is a mistake in setting up, and it stops with the reason like every other build.
+	it('stops a localnet run with no fee token named', () => {
+		expect(() => assertFeeTokenConfig('localnet', {})).toThrow(FeeTokenConfigError);
+		expect(() => assertFeeTokenConfig('localnet', { VITE_FEE_TOKEN: '' })).toThrow(
+			/VITE_FEE_TOKEN/,
+		);
+	});
+
+	it('describes a refused value by its shape and never prints it', () => {
+		const KEY = '4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318';
+		let message = '';
+		try {
+			assertFeeTokenConfig('testnet', { VITE_FEE_TOKEN: `0x${KEY}` });
+		} catch (error) {
+			message = (error as Error).message;
+		}
+
+		expect(message).toMatch(/VITE_FEE_TOKEN must be one of/);
+		expect(message).toMatch(/66 characters, starts with 0x, all hex/);
+		expect(leaksPartOf(message, KEY)).toBe(false);
+	});
+
+	it('does not print a misspelt name either', () => {
+		expect(() => assertFeeTokenConfig('mainnet', { VITE_FEE_TOKEN: 'ABEL' })).toThrow(
+			/got 4 characters, does not start with 0x, not all hex/,
+		);
+		expect(() => assertFeeTokenConfig('mainnet', { VITE_FEE_TOKEN: 'ABEL' })).not.toThrow(/ABEL/);
 	});
 
 	it.each(['localnet', 'test'])('still stops a %s run that names an unknown token', mode => {

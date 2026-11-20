@@ -65,17 +65,31 @@ describe('build configuration checks', () => {
 		expect(() => build({ mode: 'localnet' })).toThrow(/agent contract address/);
 	});
 
-	it.each(['localnet', 'test'])(
-		'lets a %s run through with no agent address and no fee token',
-		mode => {
-			vi.stubEnv('VITE_CHAIN_ID', '31337');
-			vi.stubEnv('VITE_AGENT_CONTRACT_ADDRESS', '');
-			vi.stubEnv('VITE_FEE_TOKEN', '');
+	it('lets a localnet run through with no agent address when the fee token is set', () => {
+		vi.stubEnv('VITE_CHAIN_ID', '31337');
+		vi.stubEnv('VITE_AGENT_CONTRACT_ADDRESS', '');
 
-			expect(() => build({ mode })).not.toThrow();
-			expect(() => build({ mode, command: 'serve' })).not.toThrow();
-		},
-	);
+		expect(() => build({ mode: 'localnet' })).not.toThrow();
+		expect(() => build({ mode: 'localnet', command: 'serve' })).not.toThrow();
+	});
+
+	// The e2e harness's sync always writes the fee token on localnet.
+	it('stops a localnet build or dev server with no fee token, with the reason', () => {
+		vi.stubEnv('VITE_CHAIN_ID', '31337');
+		vi.stubEnv('VITE_FEE_TOKEN', '');
+
+		expect(() => build({ mode: 'localnet' })).toThrow(/VITE_FEE_TOKEN/);
+		expect(() => build({ mode: 'localnet', command: 'serve' })).toThrow(/VITE_FEE_TOKEN/);
+	});
+
+	it('lets a unit-test run through with no agent address and no fee token', () => {
+		vi.stubEnv('VITE_CHAIN_ID', '31337');
+		vi.stubEnv('VITE_AGENT_CONTRACT_ADDRESS', '');
+		vi.stubEnv('VITE_FEE_TOKEN', '');
+
+		expect(() => build({ mode: 'test' })).not.toThrow();
+		expect(() => build({ mode: 'test', command: 'serve' })).not.toThrow();
+	});
 
 	it('checks when Vite does not say whether this is a preview', () => {
 		vi.stubEnv('VITE_AGENT_CONTRACT_ADDRESS', '');
