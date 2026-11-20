@@ -123,8 +123,8 @@ describe('faucetNotice', () => {
 		const { description } = faucetNotice({ kind: 'timeout' }, symbol);
 
 		expect(description).not.toMatch(/will update/i);
-		expect(description).toMatch(/will not refresh by itself/i);
-		expect(description).toMatch(/reload/i);
+		expect(description).toMatch(/not checked again for it/i);
+		expect(description).toMatch(/coming back to this tab or reloading the page/i);
 	});
 
 	it('refuses an outcome it does not know rather than calling it still confirming', () => {

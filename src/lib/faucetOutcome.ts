@@ -104,8 +104,10 @@ export function faucetNotice(outcome: FaucetOutcome, symbol: string): FaucetNoti
 			return {
 				tone: 'info',
 				title: 'Still Confirming',
+				// The balance is asked again once, now; after that only a return to the tab or a
+				// reload asks again, so nothing here promises that it updates by itself.
 				description:
-					'The transfer has not been confirmed yet. Your balance will update when it is.',
+					'The transfer has not been confirmed yet. The balance shown here is not checked again for it, so look again in a minute by coming back to this tab or reloading the page.',
 			};
 		default:
 			return unknownOutcome(outcome);
