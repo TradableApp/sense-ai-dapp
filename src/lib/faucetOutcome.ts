@@ -71,6 +71,11 @@ export function faucetOutcome(
 	return { kind: 'received', amount: formatUnits(total, expected.decimals) };
 }
 
+/** Every outcome has its notice: one added to the type without one fails to compile. */
+function unknownOutcome(outcome: never): never {
+	throw new Error(`Faucet: no notice for the outcome ${JSON.stringify(outcome)}.`);
+}
+
 /** The notice for an outcome. Only `received` announces tokens. */
 export function faucetNotice(outcome: FaucetOutcome, symbol: string): FaucetNotice {
 	switch (outcome.kind) {
@@ -93,12 +98,14 @@ export function faucetNotice(outcome: FaucetOutcome, symbol: string): FaucetNoti
 				description:
 					'The faucet transaction went through, but no tokens arrived in your wallet. Please try again later or contact support.',
 			};
-		default:
+		case 'timeout':
 			return {
 				tone: 'info',
 				title: 'Still Confirming',
 				description:
 					'The transfer has not been confirmed yet. Your balance will update when it is.',
 			};
+		default:
+			return unknownOutcome(outcome);
 	}
 }

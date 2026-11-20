@@ -10,20 +10,27 @@ export const REFUND_ACTION = 'process refund';
 
 type Notice = { title: string; description: string };
 
+type RefundOutlook = 'works' | 'refused' | 'uncertain';
+
 /**
  * Whether a refund would get through. A refund goes from the escrow back to the user, and
  * a restricted token lets a transfer through only when one end is listed: users are not,
- * so it depends on the escrow. A state not listed here says nothing about the refund.
+ * so it depends on the escrow. Every state has its row, so a verdict added to the check
+ * fails to compile here until someone decides how a refused cancellation speaks of it.
  */
-export const REFUND_OUTLOOK: Partial<Record<FeeTokenCheckState, 'works' | 'refused'>> = {
-	'treasury-not-exempt': 'works',
+export const REFUND_OUTLOOK: Record<FeeTokenCheckState, RefundOutlook> = {
+	ok: 'uncertain',
+	unknown: 'uncertain',
+	'escrow-uses-other-token': 'uncertain',
+	'symbol-mismatch': 'uncertain',
 	'escrow-not-exempt': 'refused',
+	'treasury-not-exempt': 'works',
 };
 
 const STILL_HELD =
 	'The cancellation could not be completed, so your payment for this prompt is still held.';
 
-const CANCEL_REFUSED: Record<'works' | 'refused' | 'uncertain', string> = {
+const CANCEL_REFUSED: Record<RefundOutlook, string> = {
 	works: `${STILL_HELD} You can claim a refund one hour after the prompt was sent.`,
 	refused: `${STILL_HELD} A refund would be refused too until this is fixed, so please contact support.`,
 	uncertain: `${STILL_HELD} You can ask for a refund one hour after the prompt was sent; if that is refused too, please contact support.`,
@@ -42,6 +49,7 @@ export function refusedTransferMessage(
 	if (action === CANCEL_ACTION) {
 		return {
 			title: 'Could Not Cancel',
+			// A state the build does not know (an answer from a newer check) is uncertain.
 			description: CANCEL_REFUSED[REFUND_OUTLOOK[verdict] ?? 'uncertain'],
 		};
 	}
@@ -52,6 +60,9 @@ export function refusedTransferMessage(
 				'The refund could not be sent and your payment is still held. Please contact support.',
 		};
 	}
+	// Any other action is a payment, and a refused payment took nothing. Kept as the default
+	// rather than an exhaustive list: the actions are the error handler's free-text names, and
+	// a new paying action must get this wording without a change here.
 	return {
 		title: 'Payment Not Accepted',
 		description:
