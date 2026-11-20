@@ -347,6 +347,11 @@ describe('a wait for the receipt that fails', () => {
 		);
 		expect(toast.success).not.toHaveBeenCalled();
 		expect(logged).toHaveBeenCalled();
+		// The sent notice goes first, as it does when the wait succeeds.
+		const dismissedAt = vi.mocked(toast.dismiss).mock.invocationCallOrder[
+			vi.mocked(toast.dismiss).mock.calls.findIndex(([id]) => id === 'sent')
+		];
+		expect(dismissedAt).toBeLessThan(vi.mocked(toast.error).mock.invocationCallOrder[0]);
 		logged.mockRestore();
 	});
 });
