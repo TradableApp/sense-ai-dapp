@@ -222,7 +222,7 @@ describe('the fee token is named only in its profile', () => {
 		const documented = lines.filter((_, i) => isExemptLine(VITE_ENV, lines, i)).join(' ');
 
 		expect(documented).not.toBe('');
-		// Unset stops every build but localnet's, and a misspelt value stops every build.
+		// Unset stops every build, localnet's included, and a misspelt value stops every build.
 		expect(documented).not.toMatch(/unknown means/i);
 		expect(documented).toMatch(/localnet/i);
 		expect(documented).toMatch(/stops/i);

@@ -93,8 +93,8 @@ export const TRANSFER_RESTRICTION_ABI: Abi = SenseTokenABI.abi as Abi;
 /**
  * The profile a build setting names; anything but a known name is SENSE.
  *
- * The fallback exists for a developer's machine and the unit tests only. It is not safe for
- * a deployed build: SENSE settings on another token mean a wrong label, no value shown and
+ * The fallback exists for the unit tests only; every build must name its token. It is not
+ * safe for a deployed build: SENSE settings on another token mean a wrong label, no value shown and
  * a first offer to approve the wallet's whole balance. `assertFeeTokenConfig` stops such a
  * build before it exists.
  */

@@ -130,7 +130,7 @@ describe('FEE_TOKEN — the build setting is what selects the profile', () => {
 	});
 });
 
-// The fallback to SENSE is right for a developer's machine and wrong for a deployed build:
+// The fallback to SENSE is right for the unit tests and wrong for a deployed build:
 // SENSE settings on another token mean a wrong label, no value shown, and a first offer
 // to approve the wallet's whole balance. A deployed build must name its token.
 describe('assertFeeTokenConfig', () => {
