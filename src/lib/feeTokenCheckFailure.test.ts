@@ -98,10 +98,28 @@ describe('describeFailure', () => {
 		['a URL with no scheme', 'refused by node.example.com/v2/KEY123 now', 'refused by <url> now'],
 		['upper-case 0X hex', `from 0X${ADDRESS.slice(2)}`, 'from <hex>'],
 		['bare long hex', 'request 9f3c2a7b1d4e8f60aa12 failed', 'request <hex> failed'],
+		[
+			'a host and port',
+			'connect refused api.node.example.com:8545 now',
+			'connect refused <url> now',
+		],
+		['a host, port and path', 'refused by node.example.com:8545/v2/KEY123', 'refused by <url>'],
+		['localhost and a port', 'connect ECONNREFUSED localhost:8545', 'connect ECONNREFUSED <url>'],
 	])('replaces %s', (_label, message, expected) => {
 		const { line } = describeFailure(new Error(message));
 
 		expect(line).toBe(expected);
+	});
+
+	it.each([
+		'Error: 500',
+		'timeout: 30',
+		'status:429 after retry 3:2',
+		'block 12:45 at height 1.5: 7',
+	])('leaves the ordinary colon and number in %j alone', message => {
+		const { line } = describeFailure(new Error(message));
+
+		expect(line).toBe(message);
 	});
 
 	it('leaves plain words and a short code alone', () => {
