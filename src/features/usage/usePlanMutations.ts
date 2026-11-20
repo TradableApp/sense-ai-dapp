@@ -52,12 +52,11 @@ const NODE_CATCH_UP_MS = 2000;
 
 /** The connected chain and its contracts, or an error saying which is missing. */
 function connectedContracts(wallet: ReturnType<typeof useActiveWallet>) {
-	const chainId = wallet?.getChain()?.id;
-	if (!wallet || !chainId) throw new Error('Wallet not connected');
-	const contracts = CONTRACTS[chainId];
+	// Read once: a network change between two reads would pair one chain with another's contracts.
+	const chain = wallet?.getChain();
+	if (!wallet || !chain?.id) throw new Error('Wallet not connected');
+	const contracts = CONTRACTS[chain.id];
 	if (!contracts) throw new Error('Contracts not configured for this chain');
-	const chain = wallet.getChain();
-	if (!chain) throw new Error('Could not determine connected chain.');
 	return { chain, contracts };
 }
 
@@ -94,6 +93,9 @@ async function approveAndSetLimit(
 	const approvalToastId = toast.info(
 		'Step 1/2: Please approve the token spending limit in your wallet.',
 	);
+	// The notice now showing. Only it is taken down on a failure: a dismissal of every toast
+	// would also take down the notice of a new version.
+	let noticeId = approvalToastId;
 	try {
 		await send(
 			contractCall(chain, contracts.token, 'approve', [contracts.escrow.address, limitInWei]),
@@ -107,12 +109,13 @@ async function approveAndSetLimit(
 		const limitToastId = toast.info(
 			'Step 2/2: Please confirm setting the new spending limit in your wallet.',
 		);
+		noticeId = limitToastId;
 		await send(
 			contractCall(chain, contracts.escrow, 'setSpendingLimit', [limitInWei, expiresAtTimestamp]),
 		);
 		toast.dismiss(limitToastId);
 	} catch (error) {
-		toast.dismiss(); // Clear loading toasts on error
+		toast.dismiss(noticeId);
 		throw error;
 	}
 }
@@ -181,8 +184,11 @@ function useRevokePlanMutation({ onDone }: Pick<PlanMutationOptions, 'onDone'>) 
 			const revokeToastId = toast.info(
 				'Please confirm the transaction in your wallet to revoke access.',
 			);
-			await send(contractCall(chain, contracts.escrow, 'cancelSpendingLimit'));
-			toast.dismiss(revokeToastId);
+			try {
+				await send(contractCall(chain, contracts.escrow, 'cancelSpendingLimit'));
+			} finally {
+				toast.dismiss(revokeToastId);
+			}
 		},
 		onSuccess: async () => {
 			toast.success('Access Revoked', {
