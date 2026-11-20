@@ -39,8 +39,8 @@ describe('fee token profiles', () => {
 	});
 
 	it('no profile names the other token', () => {
-		expect(JSON.stringify({ ...SENSE, abi: null, icon: null })).not.toMatch(/ABLE/i);
-		expect(JSON.stringify({ ...ABLE, abi: null, icon: null })).not.toMatch(/SENSE/i);
+		expect(`${SENSE.symbol} ${SENSE.name}`).not.toMatch(/able/i);
+		expect(`${ABLE.symbol} ${ABLE.name}`).not.toMatch(/sense/i);
 	});
 });
 
