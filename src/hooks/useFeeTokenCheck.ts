@@ -41,9 +41,10 @@ function contractReader(
  */
 export const FEE_TOKEN_RECHECK_MS = 5 * 60 * 1000;
 
-// A failure is repeated on every retry and every later read. Each distinct one (its kind and
-// scrubbed first line) is reported once per page load, so an unreachable node cannot fill
-// the error tracker.
+// A failure is repeated on every retry and every later read. Each kind is reported once per
+// chain per page load, so an unreachable node cannot fill the error tracker. The line is
+// not part of the key: a provider that puts request ids in its errors would make every
+// retry a new report.
 const reported = new Set<string>();
 
 /** Starts reporting afresh, as a page load does. For tests, which share this module. */
@@ -54,7 +55,7 @@ export function forgetReportedFailures(): void {
 function reportOnce(error: unknown, chainId: number): void {
 	// Never the original error: see feeTokenCheckFailure.ts for what it can carry.
 	const failure = describeFailure(error);
-	const key = `${chainId}:${failure.kind}:${failure.line}`;
+	const key = `${chainId}:${failure.kind}`;
 	if (reported.has(key)) return;
 	reported.add(key);
 	Sentry.captureException(failureReport(failure), {
