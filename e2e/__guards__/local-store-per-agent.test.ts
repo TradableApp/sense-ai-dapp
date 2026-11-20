@@ -153,6 +153,25 @@ describe('local store is opened once, per agent', () => {
 			),
 		],
 		['a second database', `${OPENED_PER_AGENT}\nconst other = new Dexie('SenseAI');`],
+		// The import is kept in these, so only a second binding of the name can fail them.
+		[
+			'a local declaration beside the import',
+			`${OPENED_PER_AGENT}\nfunction resolveLocalStoreName() {\n\treturn 'SenseAI';\n}`,
+		],
+		[
+			'a parameter that shadows the imported function',
+			OPENED_PER_AGENT.replace(
+				'const db = new Dexie(',
+				'const open = (resolveLocalStoreName: (...names: unknown[]) => string) =>\n\tnew Dexie(',
+			),
+		],
+		[
+			'a destructured binding that shadows the imported function',
+			OPENED_PER_AGENT.replace(
+				'const db = new Dexie(',
+				'const open = ({ resolveLocalStoreName }: Naming) =>\n\tnew Dexie(',
+			),
+		],
 	])('refuses %s', (_, source) => {
 		expect(opensOneStoreNamedPerAgent(source)).toBe(false);
 	});
