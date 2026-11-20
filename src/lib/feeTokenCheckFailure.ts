@@ -7,7 +7,13 @@
  * The report carries a kind and the first line of the message, scrubbed.
  */
 
-export type FailureKind = 'invalid-reading' | 'zero-data' | 'rpc' | 'node' | 'no-contracts' | 'other';
+export type FailureKind =
+	| 'invalid-reading'
+	| 'zero-data'
+	| 'rpc'
+	| 'node'
+	| 'no-contracts'
+	| 'other';
 
 export interface Failure {
 	kind: FailureKind;
@@ -20,7 +26,8 @@ const URL_PATTERN = /https?:\/\/\S+/gi;
 const LONG_HEX = /0x[0-9a-fA-F]{8,}/g;
 
 const NETWORK_ERROR_NAMES = ['AbortError', 'TimeoutError'];
-const NETWORK_MESSAGE = /failed to fetch|fetch failed|networkerror|network request failed|timed out/i;
+const NETWORK_MESSAGE =
+	/failed to fetch|fetch failed|networkerror|network request failed|timed out/i;
 
 function messageOf(error: unknown): string {
 	if (typeof error === 'string') return error;

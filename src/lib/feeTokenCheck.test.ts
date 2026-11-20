@@ -483,7 +483,9 @@ describe('feeTokenBlockCopy', () => {
 
 		expect(copy?.title).toMatch(/payments are switched off/i);
 		expect(copy?.description).toMatch(/PTS is paused/);
-		expect(copy?.description).toMatch(/cancelling a prompt or claiming a refund will also be refused/i);
+		expect(copy?.description).toMatch(
+			/cancelling a prompt or claiming a refund will also be refused/i,
+		);
 		expect(copy?.description).toMatch(/until PTS can move/);
 		expect(copy?.description).toMatch(/stays with the SenseAI payment contract/);
 	});

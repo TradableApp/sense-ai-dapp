@@ -78,7 +78,10 @@ function chainAnswers(over: Record<string, unknown> = {}) {
 		if (answer instanceof Error) throw answer;
 		return answer;
 	}) as unknown as typeof readContract);
-	vi.mocked(getCodeAt).mockImplementation((async (_rpc: unknown, { address }: { address: string }) => {
+	vi.mocked(getCodeAt).mockImplementation((async (
+		_rpc: unknown,
+		{ address }: { address: string },
+	) => {
 		const answer = over[`code:${address}`] ?? DEPLOYED;
 		if (answer instanceof Error) throw answer;
 		return answer;
