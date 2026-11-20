@@ -1,7 +1,7 @@
-import type { ErrorEvent, TransactionEvent } from '@sentry/react';
+import type { ErrorEvent } from '@sentry/react';
 import { describe, expect, it } from 'vitest';
 
-import { scrubErrorEvent, scrubTransactionEvent } from './sentryEvent';
+import { scrubErrorEvent, scrubTransactionEvent, type TransactionEvent } from './sentryEvent';
 
 // thirdweb's error text names the RPC endpoint, key included, and a batch's call data.
 const KEY = 'KEY123abc';
@@ -26,7 +26,7 @@ const errorEvent = (over: Partial<ErrorEvent> = {}): ErrorEvent => ({
 		],
 	},
 	message: `failed at ${RPC}`,
-	logentry: { message: `RPC ${RPC}`, formatted: `RPC ${RPC} for ${WALLET}`, params: [RPC] },
+	logentry: { message: `RPC ${RPC} for ${WALLET}`, params: [RPC] },
 	extra: { url: RPC, attempt: 2, nested: { url: RPC } },
 	contexts: { rpc: { endpoint: RPC, code: -32000, deep: { url: RPC } } },
 	transaction: `/chat?rpc=${RPC}`,
