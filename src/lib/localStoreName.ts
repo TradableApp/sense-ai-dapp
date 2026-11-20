@@ -9,6 +9,22 @@ export class LocalStoreConfigError extends Error {
 const STORE_PREFIX = 'SenseAI';
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const CHAIN_ID = /^[1-9][0-9]*$/;
+const HEX = /^[0-9a-fA-F]+$/;
+
+/**
+ * What a refused value looks like, without the value: a private key pasted into the wrong
+ * setting is 64 hex digits, and this message is printed to a terminal or a CI log.
+ */
+function describeShape(value: string): string {
+	if (value === '') return 'nothing';
+	const prefixed = value.startsWith('0x');
+	const digits = prefixed ? value.slice(2) : value;
+	return [
+		`${value.length} characters`,
+		prefixed ? 'starts with 0x' : 'does not start with 0x',
+		HEX.test(digits) ? 'all hex' : 'not all hex',
+	].join(', ');
+}
 
 /**
  * Name of the browser database for one agent contract on one chain.
@@ -20,7 +36,8 @@ const CHAIN_ID = /^[1-9][0-9]*$/;
  * no change to the keys.
  *
  * A missing or malformed value throws: a name such as `SenseAI:84532:undefined` would be one
- * store shared by every agent, which is the fault this name exists to prevent.
+ * store shared by every agent, which is the fault this name exists to prevent. The message
+ * describes the refused value by its shape and never repeats it.
  */
 export function localStoreName(
 	chainId: string | number | undefined,
@@ -28,11 +45,15 @@ export function localStoreName(
 ): string {
 	const chain = String(chainId ?? '');
 	if (!CHAIN_ID.test(chain)) {
-		throw new LocalStoreConfigError(`Local store needs a chain id, got "${chain}".`);
+		throw new LocalStoreConfigError(
+			`Local store needs a chain id, a whole number above 0; got ${describeShape(chain)}.`,
+		);
 	}
 	if (!agentAddress || !ADDRESS.test(agentAddress)) {
 		throw new LocalStoreConfigError(
-			`Local store needs the agent contract address, got "${agentAddress ?? ''}".`,
+			`Local store needs the agent contract address, 0x followed by 40 hex digits; got ${describeShape(
+				agentAddress ?? '',
+			)}.`,
 		);
 	}
 	return `${STORE_PREFIX}:${chain}:${agentAddress.toLowerCase()}`;

@@ -208,10 +208,8 @@ export function buildErrorHandler(
 		}
 
 		if (isError(feeToken.abi, 'EnforcedPause')) {
-			toast.error('Payments Paused', {
-				description:
-					'Payments are paused for now, so no tokens were taken. Please try again later.',
-			});
+			const { title, description } = refusedTransferMessage(action, verdict, 'paused');
+			toast.error(title, { description });
 			return;
 		}
 

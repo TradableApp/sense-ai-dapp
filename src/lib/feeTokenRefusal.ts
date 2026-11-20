@@ -38,24 +38,68 @@ export const REFUND_OUTLOOK: Record<FeeTokenCheckState, RefundOutlook> = {
 const STILL_HELD =
 	'The cancellation could not be completed, so your payment for this prompt is still held.';
 
+/**
+ * A cancellation a paused token refused. Every clause follows the escrow: the payment stays
+ * pending; after the token is resumed the oracle's retry may answer the prompt and take the
+ * payment first, and otherwise it can be cancelled, or refunded once the escrow's fixed hour
+ * has passed. When the token will be resumed is not known, so no time is given for that.
+ */
+const PAUSED_CANCEL = `${STILL_HELD} The token is paused, and nothing can move until it is resumed. After that, the prompt may still be answered; if not, you can cancel it again, or you can claim a refund one hour after the prompt was sent.`;
+
 const CANCEL_REFUSED: Record<RefundOutlook, string> = {
 	works: `${STILL_HELD} You can claim a refund one hour after the prompt was sent.`,
 	refused: `${STILL_HELD} A refund would be refused too until this is fixed, so please contact support.`,
 	uncertain: `${STILL_HELD} You can ask for a refund one hour after the prompt was sent; if that is refused too, please contact support.`,
-	paused: `${STILL_HELD} The token is paused, so a refund would be refused too until it is resumed; your payment stays with the SenseAI payment contract until then.`,
+	paused: PAUSED_CANCEL,
 	support: `${STILL_HELD} Please contact support so it can be returned.`,
 };
+
+/**
+ * Why the token refused: a party to the transfer is not listed, or the token is paused.
+ * A paused token refuses every movement until its owner resumes it.
+ */
+export type RefusalCause = 'restricted' | 'paused';
+
+/**
+ * What to say when a paused token refuses a transfer. The pause is the newer fact than any
+ * verdict of the check, since the token reported it just now, so the verdict plays no part.
+ * Nobody here knows when the token will be resumed, so no time is promised for that. A
+ * refund needs the escrow still pending, so after the resume it works only if the oracle has
+ * not answered the prompt first.
+ */
+function pausedTransferMessage(action: string): Notice {
+	if (action === CANCEL_ACTION) {
+		return {
+			title: 'Could Not Cancel',
+			description: PAUSED_CANCEL,
+		};
+	}
+	if (action === REFUND_ACTION) {
+		return {
+			title: 'Refund Not Sent',
+			description:
+				'The token is paused, so the refund could not be sent and your payment is still held. Once the token is resumed you can try again, unless the prompt has been answered by then.',
+		};
+	}
+	return {
+		title: 'Payments Paused',
+		description: 'Payments are paused for now, so no tokens were taken. Please try again later.',
+	};
+}
 
 /**
  * What to say when the token refuses a transfer, which depends on what was being done.
  * A refused payment took nothing. A refused cancellation leaves the prompt's fee held, and
  * whether the refund is the way out depends on what the check found. A refused refund also
- * took nothing, but the user is owed tokens and needs a person.
+ * took nothing, but the user is owed tokens and needs a person. A paused token is worded by
+ * action too, but waits for the token to be resumed rather than for a person.
  */
 export function refusedTransferMessage(
 	action: string,
 	verdict: FeeTokenCheckState = 'unknown',
+	cause: RefusalCause = 'restricted',
 ): Notice {
+	if (cause === 'paused') return pausedTransferMessage(action);
 	if (action === CANCEL_ACTION) {
 		return {
 			title: 'Could Not Cancel',

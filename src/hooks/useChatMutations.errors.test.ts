@@ -164,6 +164,44 @@ describe('buildErrorHandler — Token errors', () => {
 		expect(toast.error).toHaveBeenCalledWith('Payments Paused', expect.any(Object));
 	});
 
+	// A paused token refuses every movement, so what it means depends on what was being done.
+	// A payment took nothing. A cancellation leaves the fee held; once the token is resumed the
+	// oracle may still answer (and take) it, or it can be cancelled, or refunded an hour after
+	// it was sent, the escrow's fixed wait. Nobody here knows when the token will be resumed,
+	// so no resume time is promised.
+	const promisesResumeTime = /resum\w*\s+(?:in|within|by|soon|shortly|after\s+\d)/i;
+	const pausedCases = [
+		['send message', 'Payments Paused', /no tokens were taken/i],
+		['regenerate response', 'Payments Paused', /no tokens were taken/i],
+		['branch conversation', 'Payments Paused', /no tokens were taken/i],
+		['update conversation', 'Payments Paused', /no tokens were taken/i],
+		[
+			'cancel prompt',
+			'Could Not Cancel',
+			/still held.*nothing can move until it is resumed.*may still be answered.*cancel.*claim a refund one hour after the prompt was sent/i,
+		],
+		[
+			'process refund',
+			'Refund Not Sent',
+			/still held.*once the token is resumed.*unless the prompt has been answered/i,
+		],
+	] as const;
+
+	it.each(pausedCases)('a paused token during "%s" says %s', (action, title, description) => {
+		handlerFor(FEE_TOKEN_PROFILES.SENSE)(
+			{ message: 'execution reverted: EnforcedPause()' },
+			action,
+		);
+
+		const [shown, options] = vi.mocked(toast.error).mock.calls.at(-1) ?? [];
+		const text = (options as { description: string }).description;
+		expect(toast.error).toHaveBeenCalledTimes(1);
+		expect(shown).toBe(title);
+		expect(text).toMatch(description);
+		expect(text).not.toMatch(promisesResumeTime);
+		expect(`${shown} ${text}`).not.toMatch(/\b(SENSE|ABLE)\b/);
+	});
+
 	it('a token transfer that fails without a reason is explained', () => {
 		makeHandler()({ message: 'SafeERC20FailedOperation - 0x1234' }, 'send message');
 
@@ -220,9 +258,11 @@ describe('buildErrorHandler — Token errors', () => {
 				expect(description).toMatch(/contact support/i);
 			}
 			if (outlook === 'paused') {
-				expect(description).not.toMatch(anyRefundTime);
 				expect(description).toMatch(/paused/i);
-				expect(description).toMatch(/refund would be refused too until .* resume/i);
+				expect(description).toMatch(/nothing can move until it is resumed/i);
+				expect(description).toMatch(/may still be answered/i);
+				expect(description).toMatch(promisesRefund);
+				expect(description).not.toMatch(promisesResumeTime);
 			}
 			if (outlook === 'support') {
 				expect(description).not.toMatch(anyRefundTime);
@@ -291,6 +331,34 @@ describe('buildErrorHandler — every explained error is recognised by its selec
 		expect(toast.error).toHaveBeenCalledTimes(1);
 		expect(toast.error).toHaveBeenCalledWith(title, expect.any(Object));
 	});
+
+	// A paused token has one message per action, whichever token the build is for.
+	const pausedRows = [
+		['send message', 'Payments Paused', /no tokens were taken/i],
+		['cancel prompt', 'Could Not Cancel', /claim a refund one hour after the prompt was sent/i],
+		['process refund', 'Refund Not Sent', /unless the prompt has been answered/i],
+	] as const;
+	it.each(
+		[FEE_TOKEN_PROFILES.ABLE, FEE_TOKEN_PROFILES.SENSE].flatMap(profile =>
+			pausedRows.map(([action, title, description]) => ({ profile, action, title, description })),
+		),
+	)(
+		'EnforcedPause during $action shows $title ($profile.symbol build)',
+		({ profile, action, title, description }) => {
+			const handler = buildErrorHandler(false, false, 100, vi.fn(), profile);
+
+			handler(
+				{ message: undecoded(realSelector(profile.abi as unknown[], 'EnforcedPause')) },
+				action,
+			);
+
+			expect(toast.error).toHaveBeenCalledTimes(1);
+			expect(toast.error).toHaveBeenCalledWith(
+				title,
+				expect.objectContaining({ description: expect.stringMatching(description) }),
+			);
+		},
+	);
 
 	// The refused transfer has one message per action and, for a cancellation, per what the
 	// check says about the refund.
