@@ -1,4 +1,4 @@
-import { Table } from 'dexie';
+import type { Table } from 'dexie';
 
 // Conversation types
 export interface ConversationRecord {
