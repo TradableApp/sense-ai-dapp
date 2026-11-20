@@ -150,8 +150,18 @@ describe('where the fee token check is asked', () => {
 		// The switched-off reason comes first, so nothing else can hide it.
 		expect(menu).toMatch(/^\t*const renameReason =\s*switchedOff \?\?/m);
 		expect(menu).toMatch(/^\t*const deleteReason =\s*switchedOff \?\?/m);
-		expect(hasStatement(menu, 'disabled={!!renameReason}')).toBe(true);
-		expect(hasStatement(menu, 'disabled={!!deleteReason}')).toBe(true);
+		// Marked disabled for assistive technology but kept reachable by the arrow keys, so
+		// the click handler is what refuses: it must do nothing while there is a reason.
+		[
+			['renameReason', 'onRename'],
+			['deleteReason', 'onDelete'],
+		].forEach(([reason, handler]) => {
+			expect(hasStatement(menu, `aria-disabled={!!${reason}}`), reason).toBe(true);
+			expect(
+				hasStatement(menu, `onClick={e => (${reason} ? e.preventDefault() : ${handler}(e))}`),
+				handler,
+			).toBe(true);
+		});
 	});
 
 	it('the cancel and refund buttons are never disabled by the check', () => {

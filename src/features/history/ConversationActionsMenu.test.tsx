@@ -76,6 +76,53 @@ describe('ConversationActionsMenu while renames and deletes are switched off', (
 	});
 });
 
+describe('ConversationActionsMenu, switched off, by keyboard', () => {
+	it('can still reach rename and delete with the arrow keys', () => {
+		checkReturns('escrow-not-exempt');
+		openMenu();
+		const menu = screen.getByRole('menu');
+
+		act(() => {
+			fireEvent.keyDown(menu, { key: 'ArrowDown' });
+		});
+		const first = document.activeElement;
+		act(() => {
+			fireEvent.keyDown(document.activeElement ?? menu, { key: 'ArrowDown' });
+		});
+
+		expect([first, document.activeElement]).toEqual([item('Rename'), item('Delete')]);
+	});
+
+	it('does nothing on Enter or Space, and the menu stays open', () => {
+		checkReturns('escrow-not-exempt');
+		const { onRename, onDelete } = openMenu();
+
+		['Rename', 'Delete'].forEach(name => {
+			act(() => {
+				fireEvent.keyDown(item(name), { key: 'Enter' });
+				fireEvent.keyDown(item(name), { key: ' ' });
+			});
+		});
+
+		expect(onRename).not.toHaveBeenCalled();
+		expect(onDelete).not.toHaveBeenCalled();
+		expect(screen.queryByRole('menu')).not.toBeNull();
+	});
+
+	it('shows why when an item takes the focus', () => {
+		checkReturns('escrow-not-exempt');
+		openMenu();
+
+		act(() => {
+			item('Rename').focus();
+		});
+
+		const tips = screen.queryAllByRole('tooltip').map(tip => tip.textContent);
+		expect(document.activeElement).toBe(item('Rename'));
+		expect(tips.join(' ')).toContain(feeTokenBlockCopy('escrow-not-exempt', 'PTS')?.title);
+	});
+});
+
 describe('ConversationActionsMenu while renames and deletes are allowed', () => {
 	it.each(FEE_TOKEN_STATES.filter(state => !blocksAction(state, 'metadata')))(
 		'leaves rename and delete on under %s',
