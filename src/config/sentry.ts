@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/react';
 
+import { scrubErrorEvent, scrubTransactionEvent } from '@/config/sentryEvent';
 import scrubSecrets from '@/lib/scrubSecrets';
 
 const TRACE_RATES: Record<string, number> = {
@@ -64,11 +65,8 @@ export function initSentry() {
 		tracesSampleRate,
 		sampleRate,
 		beforeBreadcrumb: scrubBreadcrumb,
-		beforeSend(event) {
-			// Strip request body — may contain encrypted payloads; not useful for debugging
-			// eslint-disable-next-line no-param-reassign
-			if (event.request?.data) event.request.data = undefined;
-			return event;
-		},
+		// Scrubbed text only, and no request body (it can hold encrypted payloads).
+		beforeSend: scrubErrorEvent,
+		beforeSendTransaction: scrubTransactionEvent,
 	});
 }
