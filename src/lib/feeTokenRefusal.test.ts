@@ -17,4 +17,18 @@ describe('REFUND_OUTLOOK', () => {
 		expect(REFUND_OUTLOOK.ok).toBe('uncertain');
 		expect(REFUND_OUTLOOK.unknown).toBe('uncertain');
 	});
+
+	// A paused token refuses every movement: the refund fails too until it resumes.
+	it('says a refund waits for the token to resume while it is paused', () => {
+		expect(REFUND_OUTLOOK['token-paused']).toBe('paused');
+	});
+
+	// With no contract at an address the app pays through, or an escrow serving another agent,
+	// nothing on this device can say when a refund would work: no time is promised.
+	it.each(['contract-not-found', 'escrow-serves-other-agent'] as const)(
+		'sends the user to support with no refund time under %s',
+		verdict => {
+			expect(REFUND_OUTLOOK[verdict]).toBe('support');
+		},
+	);
 });

@@ -61,7 +61,11 @@ import AbleTokenABI from '@/lib/abi/AbleToken.json';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 import SenseTokenABI from '@/lib/abi/SenseToken.json';
-import { feeTokenBlockCopy, FeeTokenBlockedError } from '@/lib/feeTokenCheck';
+import {
+	feeTokenBlockCopy,
+	FeeTokenBlockedError,
+	type FeeTokenCheckState,
+} from '@/lib/feeTokenCheck';
 import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
 
 import { buildErrorHandler } from './useChatMutations';
@@ -173,15 +177,19 @@ describe('buildErrorHandler — Token errors', () => {
 	// only the treasury not listed the refund works and may be promised. Any other state says
 	// nothing about the refund, so it is offered without a promise.
 	const promisesRefund = /can claim a refund one hour after/i;
+	// What each state says about a refund. Any state not named is uncertain.
+	const OUTLOOK_BY_STATE: Partial<Record<FeeTokenCheckState, string>> = {
+		'treasury-not-exempt': 'works',
+		'escrow-not-exempt': 'refused',
+		'token-paused': 'paused',
+		'contract-not-found': 'support',
+		'escrow-serves-other-agent': 'support',
+	};
 	const cancelCases = FEE_TOKEN_STATES.map(verdict => ({
 		verdict,
-		outlook:
-			verdict === 'treasury-not-exempt'
-				? 'works'
-				: verdict === 'escrow-not-exempt'
-				? 'refused'
-				: 'uncertain',
+		outlook: OUTLOOK_BY_STATE[verdict] ?? 'uncertain',
 	}));
+	const anyRefundTime = /hour/i;
 
 	it.each(cancelCases)(
 		'a refused cancellation under $verdict speaks of the refund as it is ($outlook)',
@@ -209,6 +217,15 @@ describe('buildErrorHandler — Token errors', () => {
 			}
 			if (outlook === 'uncertain') {
 				expect(description).not.toMatch(promisesRefund);
+				expect(description).toMatch(/contact support/i);
+			}
+			if (outlook === 'paused') {
+				expect(description).not.toMatch(anyRefundTime);
+				expect(description).toMatch(/paused/i);
+				expect(description).toMatch(/refund would be refused too until .* resume/i);
+			}
+			if (outlook === 'support') {
+				expect(description).not.toMatch(anyRefundTime);
 				expect(description).toMatch(/contact support/i);
 			}
 		},

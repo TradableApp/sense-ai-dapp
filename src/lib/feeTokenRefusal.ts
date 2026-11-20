@@ -27,6 +27,9 @@ export const REFUND_OUTLOOK: Record<FeeTokenCheckState, RefundOutlook> = {
 	'symbol-mismatch': 'uncertain',
 	'escrow-not-exempt': 'refused',
 	'treasury-not-exempt': 'works',
+	'contract-not-found': 'uncertain',
+	'escrow-serves-other-agent': 'uncertain',
+	'token-paused': 'uncertain',
 };
 
 const STILL_HELD =

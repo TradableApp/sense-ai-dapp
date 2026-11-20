@@ -10,6 +10,9 @@ const EVERY_STATE = {
 	'symbol-mismatch': true,
 	'escrow-not-exempt': true,
 	'treasury-not-exempt': true,
+	'contract-not-found': true,
+	'escrow-serves-other-agent': true,
+	'token-paused': true,
 } as const satisfies Record<FeeTokenCheckState, true>;
 
 export const FEE_TOKEN_STATES = Object.keys(EVERY_STATE) as FeeTokenCheckState[];
