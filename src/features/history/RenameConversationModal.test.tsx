@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
@@ -21,16 +21,29 @@ const checkReturns = (verdict: FeeTokenCheckState) =>
 	});
 
 function renderDialog(error: Error | null = null) {
+	const onRenameSubmit = vi.fn();
 	render(
 		<RenameConversationModal
 			open
 			onOpenChange={vi.fn()}
-			onRenameSubmit={vi.fn()}
+			onRenameSubmit={onRenameSubmit}
 			isProcessing={false}
 			error={error}
 			conversationToRename={{ id: '1', title: 'Old title' }}
 		/>,
 	);
+	return onRenameSubmit;
+}
+
+const renameButton = () => screen.getByRole('button', { name: 'Rename' }) as HTMLButtonElement;
+
+/** Types a valid new title and lets the form validate it. */
+async function typeValidTitle() {
+	const input = screen.getByPlaceholderText('Conversation title');
+	await act(async () => {
+		fireEvent.change(input, { target: { value: 'A new title' } });
+	});
+	return input.closest('form') as HTMLFormElement;
 }
 
 afterEach(cleanup);
@@ -47,15 +60,46 @@ describe('RenameConversationModal', () => {
 		expect(screen.getByRole('dialog').textContent).not.toMatch(/fee token check/i);
 	});
 
-	it('disables Rename and says why while renames are switched off', () => {
-		checkReturns('treasury-not-exempt');
-
+	it('enables Rename for a valid title while renames are allowed', async () => {
+		checkReturns('ok');
 		renderDialog();
 
-		const rename = screen.getByRole('button', { name: 'Rename' }) as HTMLButtonElement;
-		expect(rename.disabled).toBe(true);
-		expect(screen.getByRole('dialog').textContent).toContain(
-			feeTokenBlockCopy('treasury-not-exempt', 'PTS')?.title,
-		);
+		await typeValidTitle();
+
+		await waitFor(() => expect(renameButton().disabled).toBe(false));
+	});
+
+	it('keeps Rename disabled for a valid title while renames are switched off, and says why', async () => {
+		checkReturns('treasury-not-exempt');
+		renderDialog();
+
+		await typeValidTitle();
+
+		const title = feeTokenBlockCopy('treasury-not-exempt', 'PTS')?.title ?? '';
+		expect(renameButton().disabled).toBe(true);
+		expect(screen.getByRole('dialog').textContent).toContain(title);
+	});
+
+	it('names the reason as the description of Rename', async () => {
+		checkReturns('treasury-not-exempt');
+		renderDialog();
+
+		await typeValidTitle();
+
+		const ids = (renameButton().getAttribute('aria-describedby') ?? '').split(' ');
+		const described = ids.map(id => document.getElementById(id)?.textContent ?? '').join(' ');
+		expect(described).toContain(feeTokenBlockCopy('treasury-not-exempt', 'PTS')?.title);
+	});
+
+	it('sends nothing when the form is submitted while renames are switched off', async () => {
+		checkReturns('escrow-not-exempt');
+		const onRenameSubmit = renderDialog();
+
+		const form = await typeValidTitle();
+		await act(async () => {
+			fireEvent.submit(form);
+		});
+
+		expect(onRenameSubmit).not.toHaveBeenCalled();
 	});
 });
