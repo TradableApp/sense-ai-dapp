@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { ESCROW_FEE_TOKEN_GETTER, FEE_TOKEN_NAMES } from '@/config/feeTokenConfig';
+
 import {
 	assessFeeToken,
 	feeTokenBlockCopy,
@@ -86,7 +88,7 @@ describe('assessFeeToken', () => {
 });
 
 function reader(over: {
-	ableToken?: unknown;
+	escrowToken?: unknown;
 	treasury?: unknown;
 	symbol?: unknown;
 	exempt?: Record<string, unknown>;
@@ -97,7 +99,9 @@ function reader(over: {
 		calls,
 		escrow: vi.fn(async method => {
 			calls.push(`escrow.${method}`);
-			return method === 'ableToken' ? over.ableToken ?? TOKEN : over.treasury ?? TREASURY;
+			return method === ESCROW_FEE_TOKEN_GETTER
+				? over.escrowToken ?? TOKEN
+				: over.treasury ?? TREASURY;
 		}),
 		token: vi.fn(async (method, params) => {
 			calls.push(`token.${method}${params ? `(${params[0]})` : ''}`);
@@ -115,7 +119,7 @@ describe('readFeeTokenVerdict', () => {
 		await expect(check(r)).resolves.toBe('ok');
 		expect(r.calls.sort()).toEqual(
 			[
-				'escrow.ableToken',
+				`escrow.${ESCROW_FEE_TOKEN_GETTER}`,
 				'escrow.treasury',
 				'token.symbol',
 				`token.isTransferExempt(${ESCROW})`,
@@ -137,7 +141,7 @@ describe('readFeeTokenVerdict', () => {
 	});
 
 	it('does not read the configured token at all when the escrow uses another one', async () => {
-		const r = reader({ ableToken: OTHER_TOKEN });
+		const r = reader({ escrowToken: OTHER_TOKEN });
 		await expect(check(r)).resolves.toBe('escrow-uses-other-token');
 		expect(r.calls.some(call => call.startsWith('token.'))).toBe(false);
 	});
@@ -150,7 +154,7 @@ describe('readFeeTokenVerdict', () => {
 	});
 
 	it.each([
-		['an escrow token that is not an address', { ableToken: 'not-an-address' }],
+		['an escrow token that is not an address', { escrowToken: 'not-an-address' }],
 		['a treasury that is not an address', { treasury: 42 }],
 		['a symbol that is not text', { symbol: 7 }],
 		['an exemption that is not yes or no', { exempt: { [ESCROW]: 'yes', [TREASURY]: true } }],
@@ -193,6 +197,6 @@ describe('feeTokenBlockCopy', () => {
 		)
 			.map(verdict => JSON.stringify(feeTokenBlockCopy(verdict, 'PTS')))
 			.join(' ');
-		expect(all).not.toMatch(/\b(ABLE|SENSE)\b/);
+		expect(all).not.toMatch(new RegExp(`\\b(${FEE_TOKEN_NAMES.join('|')})\\b`));
 	});
 });

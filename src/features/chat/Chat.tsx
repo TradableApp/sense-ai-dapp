@@ -38,6 +38,7 @@ import { db } from '@/config/firebase';
 import { useSession } from '@/features/auth/SessionProvider';
 import useChatMutations from '@/hooks/useChatMutations';
 import useConversations from '@/hooks/useConversations';
+import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
 import useFirestoreCollectionListener from '@/hooks/useFirestoreCollectionListener';
 import useUsagePlan from '@/hooks/useUsagePlan';
 import { CANCELLATION_TIMEOUT_MS, REFUND_TIMEOUT_MS } from '@/lib/constants';
@@ -288,6 +289,8 @@ export default function Chat() {
 			!isFetching &&
 			((messagesFromQuery?.length ?? 0) === 0 || activeConversationMessages.length > 0),
 	});
+	// A build whose token the chain does not agree with sends nothing: see useFeeTokenCheck.
+	const { isBlocked: isFeeTokenBlocked } = useFeeTokenCheck();
 	const hasBranchOrigin = composer.kind === 'ready' && composer.hasBranchOrigin;
 	// True from the moment the branch is held until it can send, re-reads included.
 	const isHeldForBranchHistory = useHeldBranchRefresh({
@@ -801,10 +804,16 @@ export default function Chat() {
 		!sessionKey ||
 		isLoadingPlan ||
 		!hasActivePlan ||
-		composer.kind !== 'ready';
+		composer.kind !== 'ready' ||
+		isFeeTokenBlocked;
 
 	const isInputDisabled =
-		isProcessing || !sessionKey || isLoadingPlan || !hasActivePlan || composer.kind !== 'ready';
+		isProcessing ||
+		!sessionKey ||
+		isLoadingPlan ||
+		!hasActivePlan ||
+		composer.kind !== 'ready' ||
+		isFeeTokenBlocked;
 
 	// Calculate UI status for the submit button
 	const submitStatus = (() => {

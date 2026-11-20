@@ -38,6 +38,7 @@ import { CONTRACTS, LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts'
 import { defaultPlanLimit, FEE_TOKEN } from '@/config/feeToken';
 import { client } from '@/config/thirdweb';
 import useFaucetConfig from '@/hooks/useFaucetConfig';
+import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
 import useTokenBalance, { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
 import requestTestTokens, {
 	awaitFaucetReceipt,
@@ -144,6 +145,8 @@ export default function ManagePlanModal({
 
 	// Logic to block actions if there are pending prompts
 	const hasPendingPrompts = (existingPlan?.pendingEscrowCount ?? 0) > 0;
+	// Setting a plan approves the token; not while the chain disagrees about which token.
+	const { isBlocked: isFeeTokenBlocked } = useFeeTokenCheck();
 
 	const setPlanMutation = useMutation<
 		void,
@@ -554,6 +557,7 @@ export default function ManagePlanModal({
 							<Button
 								type="submit"
 								disabled={
+									isFeeTokenBlocked ||
 									hasPendingPrompts ||
 									!isValid ||
 									isProcessing ||
