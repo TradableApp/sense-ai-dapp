@@ -1,15 +1,7 @@
 import { type ChangeEvent, type MouseEvent, useEffect, useMemo, useState } from 'react';
 
 import { useQueryClient } from '@tanstack/react-query';
-import {
-	FilePenLine,
-	Loader2,
-	MessageSquare,
-	MoreHorizontal,
-	PlusCircle,
-	Search,
-	Trash2,
-} from 'lucide-react';
+import { Loader2, MessageSquare, PlusCircle, Search } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -25,16 +17,9 @@ import {
 	AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import Input from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSession } from '@/features/auth/SessionProvider';
 import useChatMutations from '@/hooks/useChatMutations';
 import useConversations from '@/hooks/useConversations';
@@ -51,6 +36,7 @@ import {
 } from '@/store/chatSlice';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
+import ConversationActionsMenu from './ConversationActionsMenu';
 import RenameConversationModal from './RenameConversationModal';
 
 export default function History() {
@@ -316,69 +302,13 @@ export default function History() {
 										</div>
 
 										<div className="flex-shrink-0">
-											<DropdownMenu>
-												<DropdownMenuTrigger asChild>
-													<Button
-														aria-haspopup="true"
-														size="icon"
-														variant="ghost"
-														onClick={e => e.stopPropagation()}
-														disabled={!isSessionReady}
-													>
-														<MoreHorizontal className="size-4" />
-														<span className="sr-only">Toggle menu</span>
-													</Button>
-												</DropdownMenuTrigger>
-												<DropdownMenuContent align="end" onClick={e => e.stopPropagation()}>
-													<TooltipProvider>
-														<Tooltip>
-															<TooltipTrigger asChild>
-																<div className="w-full">
-																	<DropdownMenuItem
-																		disabled={!hasActivePlan}
-																		onClick={e => hasActivePlan && handleRenameClick(e, item)}
-																	>
-																		<FilePenLine className="mr-2 size-4" />
-																		Rename
-																	</DropdownMenuItem>
-																</div>
-															</TooltipTrigger>
-															{!hasActivePlan && (
-																<TooltipContent>
-																	<p>You must have an active plan to rename.</p>
-																</TooltipContent>
-															)}
-														</Tooltip>
-														<Tooltip>
-															<TooltipTrigger asChild>
-																<div className="w-full">
-																	<DropdownMenuItem
-																		className="text-destructive"
-																		disabled={!hasActivePlan || hasPendingPrompts}
-																		onClick={e =>
-																			hasActivePlan &&
-																			!hasPendingPrompts &&
-																			handleDeleteClick(e, item.id)
-																		}
-																	>
-																		<Trash2 className="mr-2 size-4" />
-																		Delete
-																	</DropdownMenuItem>
-																</div>
-															</TooltipTrigger>
-															{(!hasActivePlan || hasPendingPrompts) && (
-																<TooltipContent>
-																	<p>
-																		{hasPendingPrompts
-																			? 'Cannot delete while prompts are pending.'
-																			: 'You must have an active plan to delete.'}
-																	</p>
-																</TooltipContent>
-															)}
-														</Tooltip>
-													</TooltipProvider>
-												</DropdownMenuContent>
-											</DropdownMenu>
+											<ConversationActionsMenu
+												isSessionReady={isSessionReady}
+												hasActivePlan={hasActivePlan}
+												hasPendingPrompts={hasPendingPrompts}
+												onRename={e => handleRenameClick(e, item)}
+												onDelete={e => handleDeleteClick(e, item.id)}
+											/>
 										</div>
 									</div>
 								);

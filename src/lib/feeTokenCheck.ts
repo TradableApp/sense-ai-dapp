@@ -285,12 +285,16 @@ export function feeTokenBlockCopy(
 	}
 }
 
-/** Thrown by a paying action that the check has switched off, before anything is sent. */
+/**
+ * Thrown by a paying action that the check has switched off, before anything is sent. Its
+ * message is the banner's words, so any place that shows it reads plainly.
+ */
 export class FeeTokenBlockedError extends Error {
 	readonly state: FeeTokenCheckState;
 
-	constructor(state: FeeTokenCheckState) {
-		super('This action is switched off: the fee token check did not pass.');
+	constructor(state: FeeTokenCheckState, symbol: string) {
+		const copy = feeTokenBlockCopy(state, symbol);
+		super(copy ? `${copy.title}. ${copy.description}` : 'This action is switched off.');
 		this.name = 'FeeTokenBlockedError';
 		this.state = state;
 	}

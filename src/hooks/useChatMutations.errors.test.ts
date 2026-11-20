@@ -61,9 +61,15 @@ import AbleTokenABI from '@/lib/abi/AbleToken.json';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 import SenseTokenABI from '@/lib/abi/SenseToken.json';
-import { feeTokenBlockCopy, FeeTokenBlockedError } from '@/lib/feeTokenCheck';
+import {
+	feeTokenBlockCopy,
+	FeeTokenBlockedError,
+	type FeeTokenCheckState,
+} from '@/lib/feeTokenCheck';
+import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
 
 import { buildErrorHandler } from './useChatMutations';
+import { FAUCET_OFFER_TOAST_ID } from './useFaucetRequest';
 
 // Helper that creates a pre-built handler with test defaults (no faucet network)
 // Every case asserts on the one shared toast mock. Without this a case can pass on a call an
@@ -165,6 +171,87 @@ describe('buildErrorHandler — Token errors', () => {
 		expect(toast.error).toHaveBeenCalledWith('Payment Failed', expect.any(Object));
 	});
 
+	// A refund goes from the escrow back to the user, and a restricted token lets a transfer
+	// through only when one end is listed. With the escrow not listed the refund is refused
+	// too, so a refused cancellation must not send the user off to wait an hour for it. With
+	// only the treasury not listed the refund works and may be promised. Any other state says
+	// nothing about the refund, so it is offered without a promise.
+	const promisesRefund = /can claim a refund one hour after/i;
+	// What each state says about a refund. Any state not named is uncertain.
+	const OUTLOOK_BY_STATE: Partial<Record<FeeTokenCheckState, string>> = {
+		'treasury-not-exempt': 'works',
+		'escrow-not-exempt': 'refused',
+		'token-paused': 'paused',
+		'contract-not-found': 'support',
+		'escrow-serves-other-agent': 'support',
+	};
+	const cancelCases = FEE_TOKEN_STATES.map(verdict => ({
+		verdict,
+		outlook: OUTLOOK_BY_STATE[verdict] ?? 'uncertain',
+	}));
+	const anyRefundTime = /hour/i;
+
+	it.each(cancelCases)(
+		'a refused cancellation under $verdict speaks of the refund as it is ($outlook)',
+		({ verdict, outlook }) => {
+			const handler = buildErrorHandler(
+				false,
+				false,
+				100,
+				vi.fn(),
+				FEE_TOKEN_PROFILES.SENSE,
+				verdict,
+			);
+
+			handler({ message: 'TransferNotAllowed' }, 'cancel prompt');
+
+			const [title, options] = vi.mocked(toast.error).mock.calls.at(-1) ?? [];
+			const { description } = options as { description: string };
+			expect(title).toBe('Could Not Cancel');
+			expect(description).toMatch(/still held/i);
+			if (outlook === 'works') expect(description).toMatch(promisesRefund);
+			if (outlook === 'refused') {
+				expect(description).not.toMatch(/refund one hour|in an hour|after an hour/i);
+				expect(description).toMatch(/refund would be refused too/i);
+				expect(description).toMatch(/contact support/i);
+			}
+			if (outlook === 'uncertain') {
+				expect(description).not.toMatch(promisesRefund);
+				expect(description).toMatch(/contact support/i);
+			}
+			if (outlook === 'paused') {
+				expect(description).not.toMatch(anyRefundTime);
+				expect(description).toMatch(/paused/i);
+				expect(description).toMatch(/refund would be refused too until .* resume/i);
+			}
+			if (outlook === 'support') {
+				expect(description).not.toMatch(anyRefundTime);
+				expect(description).toMatch(/contact support/i);
+			}
+		},
+	);
+
+	it.each(FEE_TOKEN_STATES)(
+		'a refused payment under %s still says no tokens were taken',
+		verdict => {
+			const handler = buildErrorHandler(
+				false,
+				false,
+				100,
+				vi.fn(),
+				FEE_TOKEN_PROFILES.SENSE,
+				verdict,
+			);
+
+			handler({ message: 'TransferNotAllowed' }, 'send message');
+
+			expect(toast.error).toHaveBeenCalledWith(
+				'Payment Not Accepted',
+				expect.objectContaining({ description: expect.stringMatching(/no tokens were taken/i) }),
+			);
+		},
+	);
+
 	it('the refused-transfer message names no token', () => {
 		handlerFor(FEE_TOKEN_PROFILES.SENSE)({ message: 'TransferNotAllowed' }, 'send message');
 
@@ -204,6 +291,37 @@ describe('buildErrorHandler — every explained error is recognised by its selec
 		expect(toast.error).toHaveBeenCalledTimes(1);
 		expect(toast.error).toHaveBeenCalledWith(title, expect.any(Object));
 	});
+
+	// The refused transfer has one message per action and, for a cancellation, per what the
+	// check says about the refund.
+	it.each([
+		['send message', 'unknown', 'Payment Not Accepted', /no tokens were taken/i],
+		['cancel prompt', 'treasury-not-exempt', 'Could Not Cancel', /can claim a refund/i],
+		['cancel prompt', 'escrow-not-exempt', 'Could Not Cancel', /refund would be refused too/i],
+		['cancel prompt', 'unknown', 'Could Not Cancel', /if that is refused too/i],
+		['process refund', 'escrow-not-exempt', 'Refund Not Sent', /contact support/i],
+	] as const)(
+		'TransferNotAllowed during "%s" under %s shows "%s"',
+		(action, verdict, title, description) => {
+			const handler = buildErrorHandler(
+				false,
+				false,
+				100,
+				vi.fn(),
+				FEE_TOKEN_PROFILES.ABLE,
+				verdict,
+			);
+			const selector = realSelector(SenseTokenABI.abi, 'TransferNotAllowed');
+
+			handler({ message: undecoded(selector) }, action);
+
+			expect(toast.error).toHaveBeenCalledTimes(1);
+			expect(toast.error).toHaveBeenCalledWith(
+				title,
+				expect.objectContaining({ description: expect.stringMatching(description) }),
+			);
+		},
+	);
 });
 
 describe('buildErrorHandler — Escrow errors', () => {
@@ -313,6 +431,15 @@ describe('buildErrorHandler — Generic fallbacks', () => {
 		expect(toast.error).toHaveBeenCalledWith('Failed to send message', expect.any(Object));
 	});
 
+	it('raises the faucet offer under its own id, so a faucet request can close it alone', () => {
+		const handler = buildErrorHandler(true, false, 100, vi.fn());
+
+		handler({ message: 'ERC20InsufficientBalance' }, 'send message');
+
+		const [, options] = vi.mocked(toast.error).mock.calls[0];
+		expect((options as { id?: unknown }).id).toBe(FAUCET_OFFER_TOAST_ID);
+	});
+
 	it('isTestnet=true renders faucet button in ERC20InsufficientBalance toast', () => {
 		(toast.error as any).mockClear();
 		const handler = buildErrorHandler(true, false, 100, vi.fn());
@@ -346,7 +473,7 @@ describe('buildErrorHandler — an action the fee token check switched off', () 
 		const profile = FEE_TOKEN_PROFILES.SENSE;
 		const handler = buildErrorHandler(false, false, 100, vi.fn(), profile);
 
-		handler(new FeeTokenBlockedError('treasury-not-exempt'), 'branch conversation');
+		handler(new FeeTokenBlockedError('treasury-not-exempt', profile.symbol), 'branch conversation');
 
 		const copy = feeTokenBlockCopy('treasury-not-exempt', profile.symbol);
 		expect(toast.error).toHaveBeenCalledTimes(1);

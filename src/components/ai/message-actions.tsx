@@ -16,6 +16,7 @@ import {
 	ThumbsUp,
 } from 'lucide-react';
 
+import SwitchedOffButton from '@/components/ai/switched-off-button';
 import { Button } from '@/components/ui/button';
 import {
 	DropdownMenu,
@@ -25,6 +26,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSession } from '@/features/auth/SessionProvider';
+import useSwitchedOffReason from '@/hooks/useSwitchedOffReason';
 import sendAiFeedback from '@/lib/feedbackService';
 import { copyMarkdownToClipboard } from '@/lib/utils';
 
@@ -39,6 +41,8 @@ interface DropdownActionProps {
 	icon: LucideIcon;
 	children?: ReactNode;
 	align?: 'center' | 'end' | 'start';
+	/** Set while the menu's action is switched off: the trigger is disabled and says why. */
+	disabledReason?: string | null;
 }
 
 interface MessageActionsProps {
@@ -74,9 +78,21 @@ function ActionButton({ label, icon, onClick }: ActionButtonProps) {
 	);
 }
 
-function DropdownAction({ label, icon, children, align }: DropdownActionProps) {
+function DropdownAction({ label, icon, children, align, disabledReason }: DropdownActionProps) {
 	const Icon = icon;
 	const [isTooltipOpen, setIsTooltipOpen] = useState(false);
+
+	if (disabledReason) {
+		return (
+			<SwitchedOffButton
+				label={label}
+				reason={disabledReason}
+				className="size-7 text-muted-foreground shrink-0"
+			>
+				<Icon className="size-4" />
+			</SwitchedOffButton>
+		);
+	}
 
 	const handleDropdownOpenChange = (open: boolean) => {
 		if (open) {
@@ -122,6 +138,8 @@ export default function MessageActions({
 	const [isCopied, setIsCopied] = useState(false);
 	const [feedback, setFeedback] = useState<string | null>(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const regenerateSwitchedOff = useSwitchedOffReason('prompt');
+	const branchSwitchedOff = useSwitchedOffReason('branch');
 
 	useEffect(() => {
 		setFeedback(initialFeedback || null);
@@ -275,7 +293,12 @@ export default function MessageActions({
 
 			<ActionButton label="Share" icon={Share} />
 
-			<DropdownAction label="Try again" icon={RotateCcwIcon} align="start">
+			<DropdownAction
+				label="Try again"
+				icon={RotateCcwIcon}
+				align="start"
+				disabledReason={regenerateSwitchedOff}
+			>
 				<DropdownMenuItem onClick={() => onRegenerate?.('default')}>
 					<RotateCcwIcon className="mr-2 size-4" />
 					Try again
@@ -290,7 +313,18 @@ export default function MessageActions({
 				</DropdownMenuItem>
 			</DropdownAction>
 
-			<DropdownAction label="More actions" icon={MoreHorizontal} align="end">
+			{/*
+				The branch's switched-off reason disables this whole trigger, so the menu cannot be
+				opened at all while branching is off. That is right only because the menu holds the
+				branch alone today. Anything added to it needs its own switched-off handling on its
+				own item, and the trigger must then stop sharing this flag.
+			*/}
+			<DropdownAction
+				label="More actions"
+				icon={MoreHorizontal}
+				align="end"
+				disabledReason={branchSwitchedOff}
+			>
 				<DropdownMenuItem onClick={() => onBranch?.()}>
 					<Split className="mr-2 size-4 rotate-90" />
 					Branch in new chat

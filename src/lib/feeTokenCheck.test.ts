@@ -8,6 +8,7 @@ import {
 	ESCROW_AGENT_GETTER,
 	FEE_TOKEN_VERDICTS,
 	feeTokenBlockCopy,
+	FeeTokenBlockedError,
 	type FeeTokenReader,
 	type FeeTokenReadings,
 	PAID_ACTIONS,
@@ -586,5 +587,15 @@ describe('feeTokenBlockCopy', () => {
 			.join(' ');
 		expect(all).toMatch(/Support in the menu/);
 		expect(all).not.toMatch(new RegExp(`\\b(${FEE_TOKEN_NAMES.join('|')})\\b`));
+	});
+});
+
+describe('FeeTokenBlockedError', () => {
+	it('carries the banner words as its message, so any place that shows it reads plainly', () => {
+		const error = new FeeTokenBlockedError('escrow-not-exempt', 'PTS');
+
+		const copy = feeTokenBlockCopy('escrow-not-exempt', 'PTS');
+		expect(error.message).toBe(`${copy?.title}. ${copy?.description}`);
+		expect(error.state).toBe('escrow-not-exempt');
 	});
 });
