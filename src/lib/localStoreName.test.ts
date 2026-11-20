@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { LocalStoreConfigError, localStoreName } from './localStoreName';
+import {
+	LocalStoreConfigError,
+	assertLocalStoreConfig,
+	localStoreName,
+	resolveLocalStoreName,
+} from './localStoreName';
 
 const AGENT_A = '0xAbCdEf0123456789aBcDeF0123456789AbCdEf01';
 const AGENT_B = '0x1111111111111111111111111111111111111111';
@@ -34,5 +39,52 @@ describe('localStoreName', () => {
 
 	it.each([undefined, '', 'abc', '0', '-1', '1.5'])('refuses the chain id %j', chainId => {
 		expect(() => localStoreName(chainId, AGENT_A)).toThrow(LocalStoreConfigError);
+	});
+});
+
+describe('resolveLocalStoreName', () => {
+	it.each(['localnet', 'testnet', 'mainnet'])(
+		'names the store after the chain and agent in %s mode',
+		mode => {
+			expect(resolveLocalStoreName('84532', AGENT_A, mode)).toBe(localStoreName('84532', AGENT_A));
+		},
+	);
+
+	it('gives a localnet build with no agent its own store, so a run with no contracts still loads', () => {
+		const name = resolveLocalStoreName('31337', undefined, 'localnet');
+
+		expect(name).toBe('SenseAI:localnet:unconfigured');
+		expect(name).not.toBe(localStoreName('31337', AGENT_A));
+	});
+
+	it.each(['testnet', 'mainnet', 'production', 'development', undefined])(
+		'refuses a missing agent in %s mode',
+		mode => {
+			expect(() => resolveLocalStoreName('84532', undefined, mode)).toThrow(LocalStoreConfigError);
+		},
+	);
+});
+
+describe('assertLocalStoreConfig', () => {
+	const good = { VITE_CHAIN_ID: '84532', VITE_AGENT_CONTRACT_ADDRESS: AGENT_A };
+
+	it.each(['testnet', 'mainnet'])('accepts a %s build that names its chain and agent', mode => {
+		expect(() => assertLocalStoreConfig(mode, good)).not.toThrow();
+	});
+
+	it.each(['testnet', 'mainnet'])('stops a %s build with no agent address', mode => {
+		expect(() => assertLocalStoreConfig(mode, { VITE_CHAIN_ID: '84532' })).toThrow(
+			LocalStoreConfigError,
+		);
+	});
+
+	it.each(['testnet', 'mainnet'])('stops a %s build with no chain id', mode => {
+		expect(() => assertLocalStoreConfig(mode, { VITE_AGENT_CONTRACT_ADDRESS: AGENT_A })).toThrow(
+			LocalStoreConfigError,
+		);
+	});
+
+	it.each(['localnet', 'test', 'development'])('leaves a %s run alone', mode => {
+		expect(() => assertLocalStoreConfig(mode, {})).not.toThrow();
 	});
 });

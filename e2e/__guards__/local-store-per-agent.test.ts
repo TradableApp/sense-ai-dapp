@@ -20,23 +20,43 @@ import { E2E_DIR, offenders, stripComments } from './source-scan';
  * only, under a name built from the chain and the agent address.
  */
 
-const SRC = path.resolve(E2E_DIR, '..', 'src');
+const ROOT = path.resolve(E2E_DIR, '..');
+const SRC = path.join(ROOT, 'src');
 const DB_MODULE = path.join('lib', 'db.ts');
 const isSource = (file: string) =>
-	/\.(ts|tsx|js|jsx)$/.test(file) && !/\.test\.(ts|tsx)$/.test(file);
+	/\.(ts|tsx|js|jsx)$/.test(file) && !/\.test\.(ts|tsx|js|jsx)$/.test(file);
+const read = (...parts: string[]) => stripComments(readFileSync(path.join(...parts), 'utf8'));
+
+// The library itself, not its types: `import type { Table } from 'dexie'` opens nothing.
+const DEXIE_VALUE_IMPORT =
+	/^(?!\s*import\s+type\b).*\bfrom\s+['"]dexie['"]|\b(require|import)\s*\(\s*['"]dexie['"]/;
 
 describe('local store is opened once, per agent', () => {
-	it('opens a Dexie database only in src/lib/db.ts', () => {
+	it('loads the database library only in src/lib/db.ts', () => {
+		// Stricter than looking for `new Dexie(`: a subclass calling `super('name')` or an
+		// aliased import would open a second database without those words.
 		expect(
-			offenders(SRC, file => isSource(file) && file !== DB_MODULE, /new\s+Dexie\s*\(/),
+			offenders(SRC, file => isSource(file) && file !== DB_MODULE, DEXIE_VALUE_IMPORT),
 		).toEqual([]);
 	});
 
-	it('names the database with localStoreName, never a fixed string', () => {
-		const source = stripComments(readFileSync(path.join(SRC, DB_MODULE), 'utf8'));
-		const opens = source.match(/new\s+Dexie\s*\(([^)]*)\)?/g) ?? [];
+	it("opens one database, named from the build's chain id and agent address", () => {
+		const source = read(SRC, DB_MODULE).replace(/\s+/g, '');
 
-		expect(opens).toHaveLength(1);
-		expect(opens[0]).toMatch(/new\s+Dexie\s*\(\s*localStoreName\(/);
+		expect(source.match(/newDexie\(/g) ?? []).toHaveLength(1);
+		expect(source).not.toMatch(/extendsDexie|super\(/);
+		expect(source).toContain(
+			'newDexie(resolveLocalStoreName(import.meta.env.VITE_CHAIN_ID,import.meta.env.VITE_AGENT_CONTRACT_ADDRESS,import.meta.env.MODE,),)',
+		);
+	});
+
+	it('checks the same two values when a testnet or mainnet build starts', () => {
+		// The store module is part of the first bundle, so a bad value there fails before
+		// error reporting or any page exists. The build is stopped instead.
+		const config = read(ROOT, 'vite.config.ts').replace(/\s+/g, '');
+
+		expect(config).toMatch(
+			/assertLocalStoreConfig\(mode,loadEnv\(mode,process\.cwd\(\),'VITE_'\)\)/,
+		);
 	});
 });
