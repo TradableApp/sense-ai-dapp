@@ -48,13 +48,22 @@ function closingBrace(text: string, open: number): number {
 	return -1;
 }
 
-/** The opening tag that starts at `start` (`<Tag` … `>`), skipping `>` inside `{…}`. */
+/**
+ * The opening tag that starts at `start` (`<Tag` … `>`), skipping a `>` inside `{…}` and
+ * anything inside a quoted attribute value.
+ */
 function openingTagAt(text: string, start: number): string {
 	let depth = 0;
 	for (let i = start; i < text.length; i += 1) {
-		if (text[i] === '{') depth += 1;
-		if (text[i] === '}') depth -= 1;
-		if (text[i] === '>' && depth === 0) return text.slice(start, i + 1);
+		const char = text[i];
+		if (depth === 0 && (char === '"' || char === "'")) {
+			// A quoted attribute value: nothing inside it opens, closes or ends the tag.
+			const end = text.indexOf(char, i + 1);
+			if (end === -1) break;
+			i = end;
+		} else if (char === '{') depth += 1;
+		else if (char === '}') depth -= 1;
+		else if (char === '>' && depth === 0) return text.slice(start, i + 1);
 	}
 	throw new Error('an opening tag that never closes');
 }
