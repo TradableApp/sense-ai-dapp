@@ -75,7 +75,11 @@ const AGENT_ADDRESS = '0x00000000000000000000000000000000000000a9';
 
 type Sends = ReturnType<typeof useOneSendAtATime>;
 /** What the chat passes to `mutate` besides the variables. */
-type CallerCallbacks = { onSuccess?: () => void; onError?: () => void; onSettled?: () => void };
+type CallerCallbacks = {
+	onSuccess?: () => void | Promise<void>;
+	onError?: () => void;
+	onSettled?: () => void;
+};
 
 /**
  * The three things the chat starts that send a paid prompt, started as the chat starts them,
@@ -346,6 +350,74 @@ describe("the caller's own callbacks", () => {
 
 	it.each(SENDS)('$name failed: onError, then onSettled, each once', async c => {
 		expect(await callbacksWhenEnded(c.start)).toEqual(['onError', 'onSettled']);
+	});
+});
+
+describe('a confirmed send whose caller is still finishing', () => {
+	/** A caller's `onSuccess` that is still working until `finish` or `fail` is called. */
+	function unfinishedWork() {
+		let finish: () => void = () => undefined;
+		let fail: () => void = () => undefined;
+		const work = new Promise<void>((resolve, reject) => {
+			finish = resolve;
+			fail = () => reject(new Error('the local write failed'));
+		});
+		return { work, finish: () => finish(), fail: () => fail() };
+	}
+
+	/** Starts `c` with `work` as what its caller does on success, and confirms it. */
+	async function confirmedWith(c: (typeof SENDS)[number], work: Promise<void>) {
+		const sends = renderSends().result;
+		await startAndWait(sends, m => c.start(m, { onSuccess: () => work }));
+		await act(async () => {
+			confirm(receiptWith(c.event));
+		});
+		await waitFor(() => expect(sends.current.initiatePromptMutation.isPending).toBe(false));
+		await waitFor(() => expect(sends.current.regenerateMutation.isPending).toBe(false));
+		await waitFor(() => expect(sends.current.branchConversationMutation.isPending).toBe(false));
+		await settleStarts();
+		return sends;
+	}
+
+	it.each(pairs.map(({ first, second }) => [second.name, first.name, first, second] as const))(
+		'%s is refused while the caller of %s is still finishing',
+		async (_second, _first, first, second) => {
+			const { work } = unfinishedWork();
+			const sends = await confirmedWith(first, work);
+
+			await act(async () => {
+				second.start(sends.current);
+			});
+			await settleStarts();
+
+			expect(sendAndConfirmTransaction).toHaveBeenCalledTimes(1);
+			expect(sends.current.isSending).toBe(true);
+		},
+	);
+
+	it.each(SENDS)('$name: the next send goes through once the caller has finished', async c => {
+		const { work, finish } = unfinishedWork();
+		const sends = await confirmedWith(c, work);
+
+		await act(async () => {
+			finish();
+		});
+		await waitFor(() => expect(sends.current.isSending).toBe(false));
+
+		await startAndWait(sends, c.start, 2);
+	});
+
+	it.each(SENDS)('$name: the next send goes through when the caller has failed', async c => {
+		const { work, fail } = unfinishedWork();
+		const sends = await confirmedWith(c, work);
+
+		await act(async () => {
+			fail();
+		});
+		await waitFor(() => expect(sends.current.isSending).toBe(false));
+
+		await startAndWait(sends, c.start, 2);
+		expect(console.error).toHaveBeenCalled();
 	});
 });
 
