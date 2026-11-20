@@ -6,6 +6,10 @@
 export const LEAK_WINDOW = 4;
 
 export default function leaksPartOf(message: string, value: string): boolean {
+	// A shorter value has no window to look for and would pass any message.
+	if (value.length < LEAK_WINDOW) {
+		throw new Error(`leaksPartOf needs a value of at least ${LEAK_WINDOW} characters.`);
+	}
 	return Array.from({ length: value.length - LEAK_WINDOW + 1 }, (_, i) =>
 		value.slice(i, i + LEAK_WINDOW),
 	).some(part => message.includes(part));

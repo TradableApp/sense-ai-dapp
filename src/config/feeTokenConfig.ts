@@ -1,6 +1,6 @@
-// Kept free of imports but one: `vite.config.ts` loads this file before any alias or asset
-// loader exists, so it cannot pull in the profiles' logos and ABIs. The shape description
-// has no imports of its own, and without the alias it can only be reached by this path.
+// Kept free of imports but this one, so `vite.config.ts` can load it without the profiles'
+// logos and ABIs.
+// Relative: Vite loads its config before the `@/` alias exists (an `@/` import fails there).
 import describeShape from '../lib/settingShape';
 
 /** The tokens a build can be for. `feeToken.ts` holds one profile per name. */
