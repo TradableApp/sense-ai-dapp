@@ -128,7 +128,9 @@ export default function useFeeTokenCheck(): FeeTokenCheck {
 		},
 		enabled: isConfigured,
 		staleTime: FEE_TOKEN_RECHECK_MS,
-		refetchInterval: FEE_TOKEN_RECHECK_MS,
+		// FEE_TOKEN_RECHECK_MS, written out: the polling-cadence guard reads only a literal
+		// here. The recheck tests advance the clock by the constant and fail if this is longer.
+		refetchInterval: 5 * 60 * 1000,
 	});
 
 	const verdict: FeeTokenCheckState = data ?? 'unknown';
