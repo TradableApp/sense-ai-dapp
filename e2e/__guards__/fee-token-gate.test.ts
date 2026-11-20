@@ -3,6 +3,8 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { stripComments } from './source-scan';
+
 /**
  * The fee token check decides nothing by itself: it has to be asked at each place that
  * sends a payment. Nothing renders those components in a unit test, so this reads the
@@ -10,19 +12,27 @@ import { describe, expect, it } from 'vitest';
  */
 const read = (file: string) => readFileSync(resolve(process.cwd(), file), 'utf8');
 
-/** The source as the checks below see it. */
-const code = (file: string) => read(file);
+/** The source as the checks below see it: code only, so a commented-out call does not count. */
+const code = (file: string) => stripComments(read(file));
 
-/** Where `statement` stands as a whole line of code, or -1. */
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Where `statement` stands as a whole line of code, or -1. The whole line, so a condition
+ * added before or after it (`if (false) …`, `… && false`) is not the statement any more.
+ */
 function statementAt(source: string, statement: string): number {
-	return source.indexOf(statement.replace(/;$/, ''));
+	const line = new RegExp(`^[ \\t]*${escape(statement)}[ \\t]*$`, 'm');
+	return line.exec(stripComments(source))?.index ?? -1;
 }
 
 const hasStatement = (source: string, statement: string) => statementAt(source, statement) > -1;
 
-/** Whether `name` is one of the conditions joined by `||` in `expression`. */
+/** Whether `name` is one of the conditions joined by `||` in `expression`, as it stands. */
 function isOperandOf(expression: string, name: string): boolean {
-	return expression.includes(name);
+	return stripComments(expression)
+		.split('||')
+		.some(operand => operand.trim() === name);
 }
 
 /** The body of the `useMutation` assigned to `name`, up to the next mutation or the return. */
@@ -89,7 +99,10 @@ describe('where the fee token check is asked', () => {
 		expect(hasStatement(dialog, 'if (isPlanSwitchedOff) return;')).toBe(true);
 		// The mutation refuses too, before the approval is built, like the ones in useChatMutations.
 		const plan = dialog.slice(dialog.indexOf('const setPlanMutation = useMutation'));
-		const refusal = plan.indexOf('if (isPlanSwitchedOff) throw new FeeTokenBlockedError(');
+		const refusal = statementAt(
+			plan,
+			'if (isPlanSwitchedOff) throw new FeeTokenBlockedError(feeTokenCheck.verdict);',
+		);
 		expect(refusal, 'setPlanMutation does not refuse').toBeGreaterThan(-1);
 		expect(refusal).toBeLessThan(plan.indexOf('prepareContractCall('));
 		expect(dialog).toContain('<FeeTokenMismatchBanner');
