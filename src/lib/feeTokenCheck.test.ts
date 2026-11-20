@@ -19,6 +19,8 @@ const ESCROW = '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0';
 const TREASURY = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 const AGENT = '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9';
 const OTHER_AGENT = '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9';
+/** What a node returns for an address with a contract on it. */
+const DEPLOYED = '0x6080604052348015600e575f5ffd5b50';
 
 const restricted = { symbol: 'PTS', transferable: false };
 const open = { symbol: 'COIN', transferable: true };
@@ -102,11 +104,17 @@ function reader(over: {
 	treasury?: unknown;
 	symbol?: unknown;
 	exempt?: Record<string, unknown>;
+	codeAt?: Record<string, unknown>;
 }): FeeTokenReader & { calls: string[] } {
 	const calls: string[] = [];
 	const exempt = over.exempt ?? { [ESCROW]: true, [TREASURY]: true };
+	const codeAt: Record<string, unknown> = { [ESCROW]: DEPLOYED, [TOKEN]: DEPLOYED, ...over.codeAt };
 	return {
 		calls,
+		code: vi.fn(async address => {
+			calls.push(`code(${address})`);
+			return codeAt[address];
+		}),
 		escrow: vi.fn(async method => {
 			calls.push(`escrow.${method}`);
 			if (method === ESCROW_FEE_TOKEN_GETTER) return over.escrowToken ?? TOKEN;
@@ -135,6 +143,8 @@ describe('readFeeTokenVerdict', () => {
 		await expect(check(r)).resolves.toBe('ok');
 		expect(r.calls.sort()).toEqual(
 			[
+				`code(${ESCROW})`,
+				`code(${TOKEN})`,
 				`escrow.${ESCROW_FEE_TOKEN_GETTER}`,
 				`escrow.${ESCROW_AGENT_GETTER}`,
 				'escrow.treasury',
@@ -212,6 +222,79 @@ describe('readFeeTokenVerdict', () => {
 		expect(verdict).toBe('ok');
 	});
 
+	it('makes the reads in the order the verdicts are decided', async () => {
+		const r = reader({});
+
+		await check(r);
+
+		expect(r.calls.slice(0, 5)).toEqual([
+			`code(${ESCROW})`,
+			`escrow.${ESCROW_FEE_TOKEN_GETTER}`,
+			`escrow.${ESCROW_AGENT_GETTER}`,
+			`code(${TOKEN})`,
+			'token.symbol',
+		]);
+	});
+
+	it('says no contract is found when the escrow address has no code, and reads nothing else', async () => {
+		const r = reader({ codeAt: { [ESCROW]: '0x' } });
+
+		const verdict = await check(r);
+
+		expect(verdict).toBe('contract-not-found');
+		expect(r.calls).toEqual([`code(${ESCROW})`]);
+	});
+
+	it('says no contract is found when the token address has no code, and does not ask the token', async () => {
+		const r = reader({ codeAt: { [TOKEN]: '0x' } });
+
+		const verdict = await check(r);
+
+		expect(verdict).toBe('contract-not-found');
+		expect(r.calls.some(call => call.startsWith('token.'))).toBe(false);
+	});
+
+	it.each(['0x0', '0x00', '0x0000000000'])('treats %s, zeros only, as no code', empty => {
+		const r = reader({ codeAt: { [ESCROW]: empty } });
+
+		return expect(check(r)).resolves.toBe('contract-not-found');
+	});
+
+	it('names a wrong agent before a token address with no code', async () => {
+		const r = reader({ agent: OTHER_AGENT, codeAt: { [TOKEN]: '0x' } });
+
+		const verdict = await check(r);
+
+		expect(verdict).toBe('escrow-serves-other-agent');
+	});
+
+	it.each([
+		['nothing', undefined],
+		['a number', 42],
+		['an empty string', ''],
+		['text that is not hex', 'deployed'],
+		['hex digits without the prefix', '6080'],
+		['a prefix followed by something that is not hex', '0x60zz'],
+	])(
+		'has no answer when the code reading is %s: only an empty answer means no contract',
+		async (_label, value) => {
+			const r = reader({ codeAt: { [ESCROW]: value } });
+
+			const outcome = check(r);
+
+			await expect(outcome).rejects.toThrow(/code at the escrow is not hex/);
+		},
+	);
+
+	it('has no answer when the code read itself fails', async () => {
+		const r = reader({});
+		r.code = vi.fn().mockRejectedValue(new Error('fetch failed'));
+
+		const outcome = check(r);
+
+		await expect(outcome).rejects.toThrow('fetch failed');
+	});
+
 	it('passes each verdict through', async () => {
 		await expect(check(reader({ symbol: 'COIN' }))).resolves.toBe('symbol-mismatch');
 		await expect(check(reader({ exempt: { [ESCROW]: false, [TREASURY]: true } }))).resolves.toBe(
@@ -272,6 +355,7 @@ describe('blocksAction', () => {
 		'symbol-mismatch': ['prompt', 'plan', 'branch', 'metadata'],
 		'escrow-not-exempt': ['prompt', 'plan', 'branch', 'metadata'],
 		'escrow-serves-other-agent': ['prompt', 'plan', 'branch', 'metadata'],
+		'contract-not-found': ['prompt', 'plan', 'branch', 'metadata'],
 		// Prompts go from the user to the escrow and on to the treasury, and either end being
 		// listed is enough. Only a fee paid straight from the user to the treasury is refused.
 		'treasury-not-exempt': ['branch', 'metadata'],

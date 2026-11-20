@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { readContract } from 'thirdweb';
 import { useActiveWalletChain } from 'thirdweb/react';
+import { eth_getCode, getRpcClient } from 'thirdweb/rpc';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ESCROW_FEE_TOKEN_GETTER } from '@/config/feeTokenConfig';
@@ -17,6 +18,7 @@ const ESCROW = '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0';
 const TREASURY = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 const AGENT = '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9';
 const OTHER_AGENT = '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9';
+const DEPLOYED = '0x6080604052348015600e575f5ffd5b50';
 /** A chain the build has a token and an escrow for, but no agent. */
 const CHAIN_WITHOUT_AGENT = 31337;
 
@@ -27,6 +29,10 @@ vi.mock('thirdweb', () => ({
 	readContract: vi.fn(),
 }));
 vi.mock('thirdweb/react', () => ({ useActiveWalletChain: vi.fn() }));
+vi.mock('thirdweb/rpc', () => ({
+	getRpcClient: vi.fn(() => 'rpc-request'),
+	eth_getCode: vi.fn(),
+}));
 vi.mock('@/config/feeToken', () => ({
 	FEE_TOKEN: { symbol: 'PTS', transferable: false },
 }));
@@ -71,6 +77,11 @@ function chainAnswers(over: Record<string, unknown> = {}) {
 		if (answer instanceof Error) throw answer;
 		return answer;
 	}) as unknown as typeof readContract);
+	vi.mocked(eth_getCode).mockImplementation((async (_rpc: unknown, { address }: { address: string }) => {
+		const answer = over[`code:${address}`] ?? DEPLOYED;
+		if (answer instanceof Error) throw answer;
+		return answer;
+	}) as unknown as typeof eth_getCode);
 }
 
 function harness() {
@@ -144,6 +155,39 @@ describe('useFeeTokenCheck', () => {
 
 		expect(result.current.verdict).toBe('unknown');
 		expect(readContract).not.toHaveBeenCalled();
+	});
+
+	it('stops every paying action when there is no contract at the escrow address', async () => {
+		chainAnswers({ [`code:${ESCROW}`]: '0x' });
+
+		const { result } = harness();
+
+		await waitFor(() => expect(result.current.verdict).toBe('contract-not-found'));
+		expect(result.current.blocks('prompt')).toBe(true);
+		expect(readContract).not.toHaveBeenCalled();
+	});
+
+	it('asks the node itself for the code at the escrow and the token', async () => {
+		chainAnswers();
+
+		const { result } = harness();
+
+		await waitFor(() => expect(result.current.verdict).toBe('ok'));
+		expect(getRpcClient).toHaveBeenCalledWith(
+			expect.objectContaining({ chain: expect.objectContaining({ id: CHAIN_ID }) }),
+		);
+		expect(eth_getCode).toHaveBeenCalledWith('rpc-request', { address: ESCROW });
+		expect(eth_getCode).toHaveBeenCalledWith('rpc-request', { address: TOKEN });
+	});
+
+	it('does not stop payments when the code read fails', async () => {
+		chainAnswers({ [`code:${ESCROW}`]: new Error('fetch failed') });
+
+		const { result } = harness();
+
+		await waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(1));
+		expect(result.current.verdict).toBe('unknown');
+		expect(result.current.blocks('prompt')).toBe(false);
 	});
 
 	it('stops only direct fees when the treasury is not listed', async () => {
