@@ -38,6 +38,14 @@ type SendAndConfirm = ReturnType<typeof useSendAndConfirmTransaction>['mutateAsy
 type ContractCall = Parameters<typeof prepareContractCall>[0];
 type ContractAbi = Parameters<typeof getContract>[0]['abi'];
 
+/** Setting a plan waits for the fee token check's first answer; nothing has been sent. */
+class PlanHeldError extends Error {
+	constructor() {
+		super(AWAITING_CHECK_REASON);
+		this.name = 'PlanHeldError';
+	}
+}
+
 // How long to let the node catch up: before the second transaction (so it sees the first
 // one's nonce) and before the queries are asked again (so they do not read the old state).
 const NODE_CATCH_UP_MS = 2000;
@@ -142,7 +150,7 @@ function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 			if (feeTokenCheck.blocks('plan'))
 				throw new FeeTokenBlockedError(feeTokenCheck.verdict, FEE_TOKEN.symbol);
 			// Nothing has said yet that this is the right token to approve.
-			if (isAwaitingFirstAnswer) throw new Error(AWAITING_CHECK_REASON);
+			if (isAwaitingFirstAnswer) throw new PlanHeldError();
 			const { chain, contracts } = connectedContracts(activeWallet);
 			await approveAndSetLimit(send, chain, contracts, plan, onStatus);
 		},
@@ -153,7 +161,9 @@ function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 		},
 		onError: error => {
 			console.error('setPlanMutation Error:', error);
-			toast.error('Transaction Failed', {
+			// Refused or held before anything was sent: not a failed transaction.
+			const wasNotSent = error instanceof FeeTokenBlockedError || error instanceof PlanHeldError;
+			toast.error(wasNotSent ? 'Not sent' : 'Transaction Failed', {
 				description: error.message || 'An unexpected error occurred. Please try again.',
 			});
 		},

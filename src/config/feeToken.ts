@@ -130,4 +130,17 @@ export function offersFullBalance(
 	return Math.floor(walletBalance) >= 1;
 }
 
+/**
+ * What the plan dialog says beside a first offer drawn from the wallet's balance: "your
+ * full balance" only when the offer is all of it, "your balance in whole tokens" when the
+ * balance has a fraction the offer leaves out, and nothing otherwise.
+ */
+export function fullBalanceLabel(
+	profile: FeeTokenProfile,
+	walletBalance: number | undefined,
+): string | null {
+	if (!offersFullBalance(profile, walletBalance) || walletBalance === undefined) return null;
+	return Number.isInteger(walletBalance) ? 'your full balance' : 'your balance in whole tokens';
+}
+
 export const FEE_TOKEN: FeeTokenProfile = selectFeeToken(import.meta.env.VITE_FEE_TOKEN);

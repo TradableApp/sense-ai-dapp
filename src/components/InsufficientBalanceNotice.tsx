@@ -22,7 +22,9 @@ interface InsufficientBalanceNoticeProps {
  * community links. The balance is not known there, only that it is not enough.
  */
 export function offersAWayToGetMore(profile: FeeTokenProfile, faucetOffered: boolean): boolean {
-	return faucetOffered || pointsToCommunity({ balance: 0, profile, isFaucetOffered: false });
+	return (
+		faucetOffered || pointsToCommunity({ balance: 0, needed: 1, profile, isFaucetOffered: false })
+	);
 }
 
 /** The body of the insufficient-balance toast: what is missing, and how to get more. */

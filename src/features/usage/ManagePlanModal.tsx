@@ -32,7 +32,7 @@ import {
 import Input from '@/components/ui/input';
 import Label from '@/components/ui/label';
 import { LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
-import { defaultPlanLimit, FEE_TOKEN, offersFullBalance } from '@/config/feeToken';
+import { defaultPlanLimit, FEE_TOKEN, fullBalanceLabel } from '@/config/feeToken';
 import useFaucetRequest from '@/hooks/useFaucetRequest';
 import useFeeTokenCheck, {
 	useAskFeeTokenAgain,
@@ -131,18 +131,20 @@ export default function ManagePlanModal({
 
 	// A wallet with none of a token the app offers no way to get is told where to ask.
 	const isFaucetOffered = isTestnet || isLocalnet;
+	const knownBalance = balanceData ? formattedBalance : undefined;
 	const showsCommunityLinks = pointsToCommunity({
-		balance: balanceData ? formattedBalance : undefined,
+		balance: knownBalance,
+		needed: suggestedLimit,
 		profile: FEE_TOKEN,
 		isFaucetOffered,
 	});
 
 	const currentLimit = watch('limit');
 	// Said beside the field while the offer stands, so a whole balance is never approved unseen.
-	const isFullBalanceOffer =
-		!existingPlan &&
-		offersFullBalance(FEE_TOKEN, balanceData ? formattedBalance : undefined) &&
-		currentLimit === suggestedLimit;
+	const balanceLabel =
+		!existingPlan && currentLimit === suggestedLimit
+			? fullBalanceLabel(FEE_TOKEN, balanceData ? formattedBalance : undefined)
+			: null;
 	const isExceedingBalance =
 		!isLoadingBalance && balanceData !== undefined && currentLimit > formattedBalance;
 
@@ -204,15 +206,15 @@ export default function ManagePlanModal({
 					<div className="space-y-2">
 						<div className="flex items-baseline justify-between gap-2">
 							<Label htmlFor="limit">Spending Limit ({FEE_TOKEN.symbol})</Label>
-							{isFullBalanceOffer && (
+							{balanceLabel && (
 								<span id={fullBalanceId} className="text-xs text-muted-foreground">
-									your full balance
+									{balanceLabel}
 								</span>
 							)}
 						</div>
 						<Input
 							id="limit"
-							aria-describedby={isFullBalanceOffer ? fullBalanceId : undefined}
+							aria-describedby={balanceLabel ? fullBalanceId : undefined}
 							type="number"
 							placeholder={String(suggestedLimit)}
 							{...register('limit', { valueAsNumber: true })}
@@ -261,7 +263,7 @@ export default function ManagePlanModal({
 
 						{showsCommunityLinks && (
 							<div className="rounded-md border p-3 text-xs">
-								<CommunityLinksNotice symbol={FEE_TOKEN.symbol} hasNone />
+								<CommunityLinksNotice symbol={FEE_TOKEN.symbol} hasNone={knownBalance === 0} />
 							</div>
 						)}
 

@@ -174,10 +174,7 @@ describe('where the fee token check is asked', () => {
 		expect(plans.slice(revokeAt)).not.toContain('feeTokenCheck');
 		// Before the check's first answer the approval is held too, in the mutation and in the
 		// dialog; revoking is never held.
-		const hold = statementAt(
-			setPlan,
-			'if (isAwaitingFirstAnswer) throw new Error(AWAITING_CHECK_REASON);',
-		);
+		const hold = statementAt(setPlan, 'if (isAwaitingFirstAnswer) throw new PlanHeldError();');
 		expect(hold, 'setting a plan does not wait for the first answer').toBeGreaterThan(-1);
 		expect(hold).toBeLessThan(setPlan.indexOf('approveAndSetLimit('));
 		expect(plans.slice(revokeAt)).not.toContain('isAwaitingFirstAnswer');
