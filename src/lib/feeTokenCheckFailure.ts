@@ -23,6 +23,8 @@ export interface Failure {
 
 const MAX_LINE = 120;
 // Any scheme (http, https, ws, wss), or a host with a dot followed by a path.
+// Everything up to the next space goes with the URL, punctuation included: a key can sit
+// in the path or the query, and a colon after it is not worth the risk of keeping a tail.
 const URL_PATTERN = /[a-z][a-z0-9+.-]*:\/\/\S+|\b[\w-]+(?:\.[\w-]+)+\/\S*/gi;
 // 0x or 0X and eight or more hex digits, or sixteen or more hex digits on their own.
 const LONG_HEX = /0x[0-9a-f]{8,}|\b[0-9a-f]{16,}\b/gi;

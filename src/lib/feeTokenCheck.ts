@@ -175,9 +175,10 @@ async function readEscrowSide({
 
 /**
  * The token's side: that it exists, its symbol, whether it is paused, then, for a
- * restricted token, whether the escrow and the treasury the escrow holds are listed. A build for a restricted token pointed at an
- * ordinary one cannot be asked about listings at all (that read reverts), and its symbol
- * is the answer; asked together, the revert would hide it.
+ * restricted token, whether the escrow and the treasury the escrow holds are listed.
+ * A build for a restricted token pointed at an ordinary one cannot be asked about
+ * listings at all (that read reverts), and its symbol is the answer; asked together,
+ * the revert would hide it.
  */
 async function readTokenSide({
 	reader,
