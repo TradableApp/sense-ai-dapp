@@ -151,6 +151,10 @@ export async function awaitFaucetReceipt(
 	{ wait, maxAttempts }: { wait: () => Promise<unknown>; maxAttempts: number },
 ): Promise<FaucetWaitOutcome> {
 	for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+		if (attempt > 0) {
+			// eslint-disable-next-line no-await-in-loop
+			await wait();
+		}
 		try {
 			// eslint-disable-next-line no-await-in-loop
 			const outcome = faucetReceiptOutcome(await getReceipt());
@@ -161,8 +165,6 @@ export async function awaitFaucetReceipt(
 				console.warn('[faucetService] Could not read the faucet receipt, retrying:', message);
 			}
 		}
-		// eslint-disable-next-line no-await-in-loop
-		await wait();
 	}
 	return 'timeout';
 }

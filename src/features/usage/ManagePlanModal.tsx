@@ -400,6 +400,8 @@ export default function ManagePlanModal({
 					});
 				}
 			} catch (error) {
+				// The wait never started, so nothing above took the "Tokens Sent" notice down.
+				toast.dismiss(sentToastId);
 				console.error('Error waiting for faucet receipt:', error);
 			}
 		}
