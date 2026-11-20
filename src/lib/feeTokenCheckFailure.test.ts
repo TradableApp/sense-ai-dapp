@@ -105,6 +105,11 @@ describe('describeFailure', () => {
 		],
 		['a host, port and path', 'refused by node.example.com:8545/v2/KEY123', 'refused by <url>'],
 		['localhost and a port', 'connect ECONNREFUSED localhost:8545', 'connect ECONNREFUSED <url>'],
+		[
+			'a host and port before a comma',
+			'from node.example.com:8545, retrying',
+			'from <url> retrying',
+		],
 	])('replaces %s', (_label, message, expected) => {
 		const { line } = describeFailure(new Error(message));
 
