@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ESCROW_FEE_TOKEN_GETTER } from '@/config/feeTokenConfig';
 
-import useFeeTokenCheck from './useFeeTokenCheck';
+import useFeeTokenCheck, { forgetReportedFailures } from './useFeeTokenCheck';
 
 const CHAIN_ID = 84532;
 const TOKEN = '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512';
@@ -85,6 +85,7 @@ const onChain = (id: number) =>
 describe('useFeeTokenCheck', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		forgetReportedFailures();
 		onChain(CHAIN_ID);
 	});
 	afterEach(cleanup);
@@ -172,6 +173,17 @@ describe('useFeeTokenCheck', () => {
 		await refetch(queryClient);
 		await refetch(queryClient);
 		expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+	});
+
+	it('reports a failure again after a new page load, even with the same words', async () => {
+		chainAnswers({ treasury: new Error('same words') });
+		harness();
+		await waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(1));
+		cleanup();
+
+		forgetReportedFailures();
+		harness();
+		await waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(2));
 	});
 
 	it('reads nothing on a chain the build has no contracts for', () => {

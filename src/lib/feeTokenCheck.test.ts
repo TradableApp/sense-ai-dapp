@@ -160,6 +160,16 @@ describe('readFeeTokenVerdict', () => {
 		);
 	});
 
+	it('says the escrow uses another token even when its treasury cannot be read at all', async () => {
+		const r = reader({ escrowToken: OTHER_TOKEN });
+		const { escrow } = r;
+		r.escrow = vi.fn(async method => {
+			if (method === 'treasury') throw new Error('429 Too Many Requests');
+			return escrow(method);
+		});
+		await expect(check(r)).resolves.toBe('escrow-uses-other-token');
+	});
+
 	it('passes each verdict through', async () => {
 		await expect(check(reader({ symbol: 'COIN' }))).resolves.toBe('symbol-mismatch');
 		await expect(check(reader({ exempt: { [ESCROW]: false, [TREASURY]: true } }))).resolves.toBe(

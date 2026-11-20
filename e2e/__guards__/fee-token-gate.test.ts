@@ -59,6 +59,11 @@ describe('where the fee token check is asked', () => {
 		const submit = dialog.match(/type="submit"\s+disabled=\{([^}]+)\}/)?.[1] ?? '';
 		expect(submit).toContain('isPlanSwitchedOff');
 		expect(dialog).toMatch(/if \(isPlanSwitchedOff\) return;/);
+		// The mutation refuses too, before the approval is built, like the ones in useChatMutations.
+		const plan = dialog.slice(dialog.indexOf('const setPlanMutation = useMutation'));
+		const refusal = plan.indexOf('throw new FeeTokenBlockedError(');
+		expect(refusal, 'setPlanMutation does not refuse').toBeGreaterThan(-1);
+		expect(refusal).toBeLessThan(plan.indexOf('prepareContractCall('));
 		expect(dialog).toContain('<FeeTokenMismatchBanner');
 		const revoke = dialog.match(
 			/<AlertDialogAction onClick=\{handleRevoke\} disabled=\{([^}]+)\}/,
