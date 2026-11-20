@@ -116,6 +116,19 @@ const fundFromLocalnetTreasury = async (
 	return { success: true, txHash: json.result, amount };
 };
 
+export type FaucetReceiptOutcome = 'pending' | 'received' | 'failed';
+
+/**
+ * What a faucet transaction's receipt says. A transfer the token refuses is still mined,
+ * so a receipt alone is not proof the tokens arrived: only a successful one is.
+ */
+export function faucetReceiptOutcome(
+	receipt: { status?: unknown } | null | undefined,
+): FaucetReceiptOutcome {
+	if (!receipt) return 'pending';
+	return receipt.status === 'success' ? 'received' : 'failed';
+}
+
 const requestTestTokens = async (
 	walletAddress: string,
 	configuredAmount?: number,

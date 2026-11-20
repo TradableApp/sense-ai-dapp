@@ -25,7 +25,10 @@ import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 import { encryptData } from '@/lib/crypto';
 import eciesEncrypt from '@/lib/ecies';
-import requestTestTokens, { DEFAULT_FAUCET_AMOUNT } from '@/lib/faucetService';
+import requestTestTokens, {
+	DEFAULT_FAUCET_AMOUNT,
+	faucetReceiptOutcome,
+} from '@/lib/faucetService';
 import { wait } from '@/lib/utils';
 
 import { getTokenBalanceQueryKey } from './useTokenBalance';
@@ -387,7 +390,15 @@ export default function useChatMutations() {
 							hash: txHash as `0x${string}`,
 						});
 
-						if (receipt) {
+						const outcome = faucetReceiptOutcome(receipt);
+						if (outcome === 'failed') {
+							toast.dismiss(sentToastId);
+							toast.error('Tokens Not Received', {
+								description: 'The faucet transaction did not go through. Please try again.',
+							});
+							break;
+						}
+						if (outcome === 'received') {
 							toast.dismiss(sentToastId); // Dismiss the "Tokens Sent" info toast
 							toast.success('Tokens Received', {
 								description: `${dispensed} ${FEE_TOKEN.symbol} added to your wallet.`,
