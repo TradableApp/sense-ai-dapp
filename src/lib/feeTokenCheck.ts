@@ -128,10 +128,11 @@ export async function readFeeTokenVerdict({
 		reader.escrow('treasury'),
 	]);
 	const escrowToken = asAddress(rawEscrowToken, 'the escrow token');
-	const treasury = asAddress(rawTreasury, 'the treasury');
 	// Everything below is read from the configured token. If the escrow uses another one,
-	// those reads would describe a contract no payment touches.
+	// those reads would describe a contract no payment touches, and its treasury does not
+	// matter either: the wrong token is the answer whatever else is wrong with it.
 	if (!sameAddress(escrowToken, configuredToken)) return 'escrow-uses-other-token';
+	const treasury = asAddress(rawTreasury, 'the treasury');
 
 	const rawSymbol = await reader.token('symbol');
 	if (typeof rawSymbol !== 'string') throw unreadable('the symbol is not text');
