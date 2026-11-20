@@ -328,7 +328,9 @@ describe("the caller's own callbacks", () => {
 		const sends = renderSends().result;
 		await startAndWait(sends, m =>
 			start(m, {
-				onSuccess: () => called.push('onSuccess'),
+				onSuccess: () => {
+					called.push('onSuccess');
+				},
 				onError: () => called.push('onError'),
 				onSettled: () => called.push('onSettled'),
 			}),
@@ -346,6 +348,18 @@ describe("the caller's own callbacks", () => {
 			'onSuccess',
 			'onSettled',
 		]);
+	});
+
+	it.each(SENDS)('$name failed, with no onSuccess given: onError is still called', async c => {
+		const onError = vi.fn();
+		const sends = renderSends().result;
+		await startAndWait(sends, m => c.start(m, { onError }));
+
+		await act(async () => {
+			confirm();
+		});
+
+		await waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
 	});
 
 	it.each(SENDS)('$name failed: onError, then onSettled, each once', async c => {
