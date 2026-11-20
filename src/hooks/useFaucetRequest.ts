@@ -127,6 +127,33 @@ async function settle(
 }
 
 /**
+ * Asks the faucet, with a loading notice that is taken down however the call ends. Gives
+ * the transaction hash, or null when nothing was sent; a call that throws is logged (kept
+ * in production builds for Sentry) and told to the user, never left unhandled.
+ */
+async function askFaucet(
+	recipient: string,
+	amount: number,
+	isLocalnet: boolean,
+): Promise<string | null> {
+	const loadingToastId = toast.loading(
+		isLocalnet ? 'Requesting Localnet Tokens...' : 'Requesting Testnet Tokens...',
+	);
+	try {
+		const { success, txHash } = await requestTestTokens(recipient, amount);
+		return success && txHash ? txHash : null;
+	} catch (error) {
+		console.error('Faucet request failed:', error);
+		toast.error('Faucet Failed', {
+			description: 'Could not request test tokens. Please try again later.',
+		});
+		return null;
+	} finally {
+		toast.dismiss(loadingToastId);
+	}
+}
+
+/**
  * Asks the faucet for test tokens and says what came of it. The one handler for every
  * place that offers the faucet: tokens are announced only when the receipt shows the fee
  * token arriving in the user's wallet (`faucetOutcome`), with the amount from that log.
@@ -154,15 +181,9 @@ export default function useFaucetRequest(): {
 			});
 			return;
 		}
-		const loadingToastId = toast.loading(
-			chain.id === LOCAL_CHAIN_ID
-				? 'Requesting Localnet Tokens...'
-				: 'Requesting Testnet Tokens...',
-		);
 		const recipient = activeWallet.getAccount()?.address ?? '';
-		const { success, txHash } = await requestTestTokens(recipient, faucetAmount);
-		toast.dismiss(loadingToastId);
-		if (!success || !txHash) return;
+		const txHash = await askFaucet(recipient, faucetAmount, chain.id === LOCAL_CHAIN_ID);
+		if (!txHash) return;
 		await settle(queryClient, chain, txHash, { token, recipient, decimals: FEE_TOKEN.decimals });
 	};
 
