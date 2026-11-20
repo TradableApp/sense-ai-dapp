@@ -11,7 +11,6 @@ import requestTestTokens, {
 	FAUCET_POLL_MS,
 	FAUCET_WAIT_ATTEMPTS,
 	FAUCET_WAIT_MS,
-	faucetReceiptOutcome,
 	getFaucetConfig,
 } from './faucetService';
 
@@ -165,50 +164,32 @@ describe('requestTestTokens — testnet (Firebase callable, unchanged)', () => {
 // A transfer the token refuses is still mined: the receipt exists and says it reverted.
 // Announcing "Tokens Received" for any receipt would tell the user they hold tokens they
 // do not, and the next prompt would fail on an empty balance.
-describe('faucetReceiptOutcome', () => {
-	it('is pending until a receipt exists', () => {
-		expect(faucetReceiptOutcome(null)).toBe('pending');
-		expect(faucetReceiptOutcome(undefined)).toBe('pending');
-	});
-
-	it('is received for a successful receipt', () => {
-		expect(faucetReceiptOutcome({ status: 'success' })).toBe('received');
-	});
-
-	it('is failed for a reverted receipt', () => {
-		expect(faucetReceiptOutcome({ status: 'reverted' })).toBe('failed');
-	});
-
-	it('is failed for a receipt whose status is missing or unknown', () => {
-		expect(faucetReceiptOutcome({})).toBe('failed');
-		expect(faucetReceiptOutcome({ status: '0x0' })).toBe('failed');
-	});
-});
-
 // The wait both faucet callers use. thirdweb throws "Transaction receipt not found." until
 // the transaction is mined; anything else thrown is a real fault and is reported, not hidden.
 describe('awaitFaucetReceipt', () => {
 	const notMinedYet = () => Promise.reject(new Error('Transaction receipt not found.'));
 	const noWait = () => Promise.resolve();
 
-	it('reports received once a successful receipt arrives', async () => {
+	it('gives back the receipt once it is mined, logs and all', async () => {
+		const receipt = { status: 'success', logs: [{ address: TOKEN }] };
 		const getReceipt = vi
 			.fn()
 			.mockImplementationOnce(notMinedYet)
 			.mockImplementationOnce(notMinedYet)
-			.mockResolvedValue({ status: 'success' });
+			.mockResolvedValue(receipt);
 
 		await expect(awaitFaucetReceipt(getReceipt, { wait: noWait, maxAttempts: 5 })).resolves.toBe(
-			'received',
+			receipt,
 		);
 		expect(getReceipt).toHaveBeenCalledTimes(3);
 	});
 
-	it('reports failed for a reverted receipt and stops asking', async () => {
-		const getReceipt = vi.fn().mockResolvedValue({ status: 'reverted' });
+	it('gives back a reverted receipt too, and stops asking', async () => {
+		const receipt = { status: 'reverted' };
+		const getReceipt = vi.fn().mockResolvedValue(receipt);
 
 		await expect(awaitFaucetReceipt(getReceipt, { wait: noWait, maxAttempts: 5 })).resolves.toBe(
-			'failed',
+			receipt,
 		);
 		expect(getReceipt).toHaveBeenCalledTimes(1);
 	});
@@ -239,8 +220,8 @@ describe('awaitFaucetReceipt', () => {
 			.mockRejectedValueOnce(new Error('429 Too Many Requests'))
 			.mockResolvedValue({ status: 'success' });
 
-		await expect(awaitFaucetReceipt(getReceipt, { wait: noWait, maxAttempts: 5 })).resolves.toBe(
-			'received',
+		await expect(awaitFaucetReceipt(getReceipt, { wait: noWait, maxAttempts: 5 })).resolves.toEqual(
+			{ status: 'success' },
 		);
 		expect(warn).toHaveBeenCalledTimes(1);
 		warn.mockRestore();
@@ -263,13 +244,20 @@ describe('how long the faucet is waited for', () => {
 		expect(FAUCET_WAIT_ATTEMPTS).toBeGreaterThan(0);
 	});
 
-	it('is defined once, so the two places that offer the faucet wait the same time', () => {
+	it('is defined once, and both places that offer the faucet go through one hook', () => {
+		const read = (file: string) => readFileSync(resolve(process.cwd(), file), 'utf8');
+		const hook = read('src/hooks/useFaucetRequest.ts');
+		expect(hook).toMatch(/maxAttempts:\s*FAUCET_WAIT_ATTEMPTS/);
+		expect(hook).toMatch(/duration:\s*FAUCET_WAIT_MS/);
+		expect(hook).toMatch(/faucetOutcome\(/);
+		expect(hook).toMatch(/faucetNotice\(/);
+
 		const callers = ['src/features/usage/ManagePlanModal.tsx', 'src/hooks/useChatMutations.tsx'];
 		callers.forEach(file => {
-			const source = readFileSync(resolve(process.cwd(), file), 'utf8');
-			expect(source, file).not.toMatch(/const\s+FAUCET_WAIT_(ATTEMPTS|MS)\b/);
-			expect(source, file).toMatch(/maxAttempts:\s*FAUCET_WAIT_ATTEMPTS/);
-			expect(source, file).toMatch(/duration:\s*FAUCET_WAIT_MS/);
+			const source = read(file);
+			expect(source, file).toMatch(/import useFaucetRequest from '@\/hooks\/useFaucetRequest';/);
+			expect(source, file).toMatch(/useFaucetRequest\(\)/);
+			expect(source, file).not.toMatch(/awaitFaucetReceipt|requestTestTokens|FAUCET_WAIT_/);
 		});
 	});
 });
