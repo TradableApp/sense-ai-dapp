@@ -54,7 +54,9 @@ function valueReceived(log: ReceiptLog, expected: FaucetExpectation): bigint {
 		});
 		return sameAddress(event.args.to, expected.recipient) ? event.args.value : 0n;
 	} catch {
-		// Not a Transfer: the token emitted something else in the same transaction.
+		// Not a readable Transfer: another event the token emitted in the same transaction, or a
+		// log with the wrong number of topics or malformed data. None of it brought the user
+		// tokens.
 		return 0n;
 	}
 }

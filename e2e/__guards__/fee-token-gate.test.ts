@@ -70,7 +70,7 @@ function disabledOf(source: string, tag: string, marker: string): string {
 	const start = source.lastIndexOf(`<${tag}`, at);
 	if (start === -1) throw new Error(`no <${tag}> before ${marker}`);
 	const opening = openingTagAt(source, start);
-	// The tag ends at start + opening.length - 1, so a marker starting there or later is outside.
+	// The tag's last character is at start + opening.length - 1; a marker after it is outside.
 	if (start + opening.length <= at) throw new Error(`${marker} is not inside a <${tag}> tag`);
 	const attribute = opening.search(/\sdisabled=\{/);
 	if (attribute === -1) throw new Error(`the <${tag}> with ${marker} has no disabled`);

@@ -93,6 +93,8 @@ export function switchedOffReason(
 	symbol: string,
 	place: BannerPlace = 'page',
 ): string {
+	// The banner copy is empty only for `ok` and `unknown`, which switch nothing off and so
+	// never reach here. If this fallback is ever shown, a new state lacks its banner words.
 	const title = feeTokenBlockCopy(state, symbol)?.title ?? 'This action is switched off';
 	return `${title}. ${WHERE_THE_BANNER_IS[place]}`;
 }
