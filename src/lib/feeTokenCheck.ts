@@ -5,7 +5,9 @@
  * initialised. Nothing ties the two together, so a build pointed at the wrong pair would ask
  * users to approve a token the escrow never takes. A token with restricted transfers adds a
  * second way to fail: unless its owner has listed the escrow and the treasury, payments are
- * refused. This reads both and says which it is.
+ * refused. Before any of that it checks that a contract exists at both addresses and that
+ * the escrow serves the agent this build sends prompts to, and after the symbol whether
+ * the token's owner has paused it. It says which thing is wrong, the first in that order.
  *
  * It guards against a mistake in setting up a build or a deployment. It is not a defence
  * against a hostile build: the addresses it checks come from the same build as the check.
