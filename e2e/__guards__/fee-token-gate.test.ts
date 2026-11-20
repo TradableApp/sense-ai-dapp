@@ -113,6 +113,55 @@ describe('where the fee token check is asked', () => {
 		expect(revoke).not.toContain('isPlanSwitchedOff');
 	});
 
+	it.each([
+		[
+			'src/components/ai/message-actions.tsx',
+			"const regenerateSwitchedOff = useSwitchedOffReason('prompt');",
+		],
+		[
+			'src/components/ai/message-actions.tsx',
+			"const branchSwitchedOff = useSwitchedOffReason('branch');",
+		],
+		[
+			'src/components/ai/user-message-actions.tsx',
+			"const editSwitchedOff = useSwitchedOffReason('prompt');",
+		],
+		[
+			'src/components/ai/edit-prompt-input.tsx',
+			"const saveSwitchedOff = useSwitchedOffReason('prompt');",
+		],
+		[
+			'src/features/history/RenameConversationModal.tsx',
+			"const renameSwitchedOff = useSwitchedOffReason('metadata');",
+		],
+	])('%s asks whether its action is switched off: %s', (file, statement) => {
+		expect(hasStatement(code(file), statement)).toBe(true);
+	});
+
+	it('the history list disables rename and delete while renames and deletes are switched off', () => {
+		const history = code('src/features/history/History.tsx');
+		expect(history).toContain('<ConversationActionsMenu');
+		expect(history).not.toContain('<DropdownMenuItem');
+
+		const menu = code('src/features/history/ConversationActionsMenu.tsx');
+		expect(hasStatement(menu, "const switchedOff = useSwitchedOffReason('metadata');")).toBe(true);
+		// The switched-off reason comes first, so nothing else can hide it.
+		expect(menu).toMatch(/^\t*const renameReason =\s*switchedOff \?\?/m);
+		expect(menu).toMatch(/^\t*const deleteReason =\s*switchedOff \?\?/m);
+		expect(hasStatement(menu, 'disabled={!!renameReason}')).toBe(true);
+		expect(hasStatement(menu, 'disabled={!!deleteReason}')).toBe(true);
+	});
+
+	it('the cancel and refund buttons are never disabled by the check', () => {
+		const chat = code('src/features/chat/Chat.tsx');
+		const cancel = chat.match(/<PromptInputCancel[^>]*?disabled=\{([^}]+)\}/)?.[1];
+		const refund = chat.match(/processRefundMutation\.mutate[\s\S]*?disabled=\{([^}]+)\}/)?.[1];
+		[cancel, refund].forEach(expression => {
+			expect(expression).toBeDefined();
+			expect(expression).not.toMatch(/SwitchedOff|feeTokenCheck|blocks\(/);
+		});
+	});
+
 	it('the banner is mounted once for every page, outside any condition', () => {
 		const layout = code('src/layouts/MainLayout.tsx');
 		expect(layout).toMatch(/\n\t+<FeeTokenMismatchBanner /);
