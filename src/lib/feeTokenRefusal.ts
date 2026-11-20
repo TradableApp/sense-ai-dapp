@@ -10,7 +10,7 @@ export const REFUND_ACTION = 'process refund';
 
 type Notice = { title: string; description: string };
 
-type RefundOutlook = 'works' | 'refused' | 'uncertain';
+type RefundOutlook = 'works' | 'refused' | 'uncertain' | 'paused' | 'support';
 
 /**
  * Whether a refund would get through. A refund goes from the escrow back to the user, and
@@ -27,9 +27,12 @@ export const REFUND_OUTLOOK: Record<FeeTokenCheckState, RefundOutlook> = {
 	'symbol-mismatch': 'uncertain',
 	'escrow-not-exempt': 'refused',
 	'treasury-not-exempt': 'works',
-	'contract-not-found': 'uncertain',
-	'escrow-serves-other-agent': 'uncertain',
-	'token-paused': 'uncertain',
+	// Nothing on this device can say when a refund would work: no contract answers at an
+	// address the app pays through, or the escrow serves another agent. No time is promised.
+	'contract-not-found': 'support',
+	'escrow-serves-other-agent': 'support',
+	// A paused token refuses every movement, the refund included, until it is resumed.
+	'token-paused': 'paused',
 };
 
 const STILL_HELD =
@@ -39,6 +42,8 @@ const CANCEL_REFUSED: Record<RefundOutlook, string> = {
 	works: `${STILL_HELD} You can claim a refund one hour after the prompt was sent.`,
 	refused: `${STILL_HELD} A refund would be refused too until this is fixed, so please contact support.`,
 	uncertain: `${STILL_HELD} You can ask for a refund one hour after the prompt was sent; if that is refused too, please contact support.`,
+	paused: `${STILL_HELD} The token is paused, so a refund would be refused too until it is resumed; your payment stays with the SenseAI payment contract until then.`,
+	support: `${STILL_HELD} Please contact support so it can be returned.`,
 };
 
 /**
