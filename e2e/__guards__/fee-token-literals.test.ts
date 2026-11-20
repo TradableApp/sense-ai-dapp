@@ -57,17 +57,28 @@ function scannedFiles(): string[] {
 
 const VITE_ENV = path.join('src', 'vite-env.d.ts');
 
+/** The first and last line of the doc comment that ends on `end`, or null if none does. */
+function docCommentEndingAt(lines: string[], end: number): [number, number] | null {
+	if (end < 0 || !/\*\/\s*$/.test(lines[end])) return null;
+	for (let i = end; i >= 0; i -= 1) {
+		if (/^\s*\/\*\*/.test(lines[i])) return [i, end];
+		// Another comment's end before reaching an opening means this is not one block.
+		if (i < end && /\*\//.test(lines[i])) return null;
+	}
+	return null;
+}
+
 /**
- * Whether line `index` of `file` may name a token: only the one-line doc comment that sits
- * on the `VITE_FEE_TOKEN` declaration in `vite-env.d.ts`, which documents the setting's two
- * values. Anything else there that names a token fails like any other file.
+ * Whether line `index` of `file` may name a token: only the doc comment (one line or
+ * several) that ends on the line just above the `VITE_FEE_TOKEN` declaration in
+ * `vite-env.d.ts`, which documents the setting's two values. Anything else there that
+ * names a token fails like any other file.
  */
 function isExemptLine(file: string, lines: string[], index: number): boolean {
-	return (
-		file === VITE_ENV &&
-		/^\s*\/\*\*.*\*\/\s*$/.test(lines[index]) &&
-		/^\s*readonly VITE_FEE_TOKEN\b/.test(lines[index + 1] ?? '')
-	);
+	if (file !== VITE_ENV) return false;
+	const declaration = lines.findIndex(line => /^\s*readonly VITE_FEE_TOKEN\b/.test(line));
+	const block = docCommentEndingAt(lines, declaration - 1);
+	return block !== null && index >= block[0] && index <= block[1];
 }
 
 // A token's name in any letter case, wherever it is not part of a longer word: on its own,
