@@ -59,8 +59,8 @@ test.describe('Localnet faucet (T-FAUCET)', () => {
 			timeout: 30_000,
 		});
 		const receivedText =
-			(await freshPage.getByText(/ABLE tokens have been added/i).textContent()) ?? '';
-		const reported = BigInt(receivedText.match(/(\d+)\s+ABLE/i)?.[1] ?? '0');
+			(await freshPage.getByText(/\d+\s+\S+ added to your wallet/i).textContent()) ?? '';
+		const reported = BigInt(receivedText.match(/(\d+)\s+\S+ added/i)?.[1] ?? '0');
 		expect(reported).toBeGreaterThan(0n);
 
 		// On-chain truth: the balance rose by exactly what the UI reported.
