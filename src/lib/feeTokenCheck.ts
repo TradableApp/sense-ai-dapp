@@ -19,6 +19,9 @@ export type FeeTokenVerdict =
 	| 'escrow-not-exempt'
 	| 'treasury-not-exempt';
 
+/** The escrow's getter for the agent contract it serves. */
+export const ESCROW_AGENT_GETTER = 'evmAIAgent';
+
 /** `unknown`: the check has not answered, or could not. Nothing is stopped for it. */
 export type FeeTokenCheckState = FeeTokenVerdict | 'unknown';
 
