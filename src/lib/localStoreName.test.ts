@@ -78,19 +78,25 @@ describe('assertLocalStoreConfig', () => {
 		expect(() => assertLocalStoreConfig(mode, good)).not.toThrow();
 	});
 
-	it.each(['testnet', 'mainnet'])('stops a %s build with no agent address', mode => {
-		expect(() => assertLocalStoreConfig(mode, { VITE_CHAIN_ID: '84532' })).toThrow(
-			LocalStoreConfigError,
-		);
-	});
+	it.each(['testnet', 'mainnet', 'production', 'development'])(
+		'stops a %s build with no agent address',
+		mode => {
+			expect(() => assertLocalStoreConfig(mode, { VITE_CHAIN_ID: '84532' })).toThrow(
+				LocalStoreConfigError,
+			);
+		},
+	);
 
-	it.each(['testnet', 'mainnet'])('stops a %s build with no chain id', mode => {
-		expect(() => assertLocalStoreConfig(mode, { VITE_AGENT_CONTRACT_ADDRESS: AGENT_A })).toThrow(
-			LocalStoreConfigError,
-		);
-	});
+	it.each(['testnet', 'mainnet', 'production', 'development'])(
+		'stops a %s build with no chain id',
+		mode => {
+			expect(() => assertLocalStoreConfig(mode, { VITE_AGENT_CONTRACT_ADDRESS: AGENT_A })).toThrow(
+				LocalStoreConfigError,
+			);
+		},
+	);
 
-	it.each(['localnet', 'test', 'development'])('leaves a %s run alone', mode => {
+	it.each(['localnet', 'test'])('leaves a %s run alone', mode => {
 		expect(() => assertLocalStoreConfig(mode, {})).not.toThrow();
 	});
 });

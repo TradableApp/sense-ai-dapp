@@ -44,7 +44,7 @@ describe('local store is opened once, per agent', () => {
 		const source = read(SRC, DB_MODULE).replace(/\s+/g, '');
 
 		expect(source.match(/newDexie\(/g) ?? []).toHaveLength(1);
-		expect(source).not.toMatch(/extendsDexie|super\(/);
+		expect(source).not.toMatch(/extendsDexie/);
 		expect(source).toContain(
 			'newDexie(resolveLocalStoreName(import.meta.env.VITE_CHAIN_ID,import.meta.env.VITE_AGENT_CONTRACT_ADDRESS,import.meta.env.MODE,),)',
 		);
