@@ -1,12 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, Loader2, Trash2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { toast } from 'sonner';
-import { getContract, prepareContractCall } from 'thirdweb';
-import { useActiveWallet, useSendAndConfirmTransaction } from 'thirdweb/react';
+import { useActiveWallet } from 'thirdweb/react';
 import { parseUnits } from 'viem';
 import { z } from 'zod';
 
@@ -33,17 +30,15 @@ import {
 } from '@/components/ui/dialog';
 import Input from '@/components/ui/input';
 import Label from '@/components/ui/label';
-import { CONTRACTS, LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
+import { LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
 import { defaultPlanLimit, FEE_TOKEN } from '@/config/feeToken';
-import { client } from '@/config/thirdweb';
 import useFaucetRequest from '@/hooks/useFaucetRequest';
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
-import useTokenBalance, { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
-import { FeeTokenBlockedError } from '@/lib/feeTokenCheck';
-import { wait } from '@/lib/utils';
+import useTokenBalance from '@/hooks/useTokenBalance';
 
 import shouldResetPlanForm from './planFormReset';
 import PlanValueEstimate from './PlanValueEstimate';
+import usePlanMutations from './usePlanMutations';
 
 const managePlanSchema = z.object({
 	limit: z
@@ -83,9 +78,6 @@ export default function ManagePlanModal({
 	// The faucet amount is live (adjustable via Firestore general/sense_ai).
 	const { requestTokens, faucetAmount } = useFaucetRequest();
 
-	// Use the confirmation-aware hook
-	const { mutateAsync: sendAndConfirm } = useSendAndConfirmTransaction();
-	const queryClient = useQueryClient();
 	const [statusText, setStatusText] = useState('');
 	const [isRequestingTokens, setIsRequestingTokens] = useState(false);
 
@@ -140,187 +132,9 @@ export default function ManagePlanModal({
 	const feeTokenCheck = useFeeTokenCheck();
 	const isPlanSwitchedOff = feeTokenCheck.blocks('plan');
 
-	const setPlanMutation = useMutation<
-		void,
-		Error,
-		{ limitInWei: bigint; expiresAtTimestamp: bigint }
-	>({
-		mutationFn: async ({
-			limitInWei,
-			expiresAtTimestamp,
-		}: {
-			limitInWei: bigint;
-			expiresAtTimestamp: bigint;
-		}): Promise<void> => {
-			// The form is disabled too; this is the refusal that holds whoever calls it.
-			if (isPlanSwitchedOff)
-				throw new FeeTokenBlockedError(feeTokenCheck.verdict, FEE_TOKEN.symbol);
-			if (!activeWallet || !chainId) {
-				throw new Error('Wallet not connected');
-			}
-
-			const contractConfig = CONTRACTS[chainId];
-
-			if (!contractConfig) {
-				throw new Error('Contracts not configured for this chain');
-			}
-
-			// Get the full chain object from the wallet
-			const connectedChain = activeWallet.getChain();
-
-			if (!connectedChain) {
-				throw new Error('Could not determine connected chain.');
-			}
-
-			setStatusText('1/2: Approving...');
-			const approvalToastId = toast.info(
-				'Step 1/2: Please approve the token spending limit in your wallet.',
-			);
-
-			try {
-				const tokenContract = getContract({
-					client,
-					chain: connectedChain,
-					address: contractConfig.token.address,
-					abi: contractConfig.token.abi as Parameters<typeof getContract>[0]['abi'],
-				});
-
-				const approveTx = prepareContractCall({
-					contract: tokenContract,
-					method: 'approve',
-					params: [contractConfig.escrow.address, limitInWei],
-				} as unknown as Parameters<typeof prepareContractCall>[0]);
-
-				await sendAndConfirm(approveTx);
-				toast.dismiss(approvalToastId);
-
-				// We wait 2 seconds to ensure the RPC has indexed the updated nonce
-				// from the first transaction before sending the second one.
-				setStatusText('Waiting for network...');
-				await wait(2000);
-
-				setStatusText('2/2: Setting Limit...');
-				const limitToastId = toast.info(
-					'Step 2/2: Please confirm setting the new spending limit in your wallet.',
-				);
-
-				const escrowContract = getContract({
-					client,
-					chain: connectedChain,
-					address: contractConfig.escrow.address,
-					abi: contractConfig.escrow.abi as Parameters<typeof getContract>[0]['abi'],
-				});
-
-				const setSubTx = prepareContractCall({
-					contract: escrowContract,
-					method: 'setSpendingLimit',
-					params: [limitInWei, expiresAtTimestamp],
-				} as unknown as Parameters<typeof prepareContractCall>[0]);
-
-				await sendAndConfirm(setSubTx);
-				toast.dismiss(limitToastId);
-			} catch (error) {
-				toast.dismiss(); // Clear loading toasts on error
-				throw error;
-			}
-		},
-		onSuccess: async () => {
-			toast.success('Spending Limit Set!', {
-				description: 'Your new plan is now active.',
-			});
-			// Wait 2 seconds to allow the RPC node to index the new state.
-			// Without this, invalidateQueries fetches stale data instantly.
-			await wait(2000);
-
-			await Promise.all([
-				queryClient.invalidateQueries({ queryKey: ['usagePlan'], refetchType: 'all' }),
-				queryClient.invalidateQueries({
-					// Real thirdweb wallet-balance key (not the dead ['tokenBalance'] literal — CU-86d3dvy2y).
-					queryKey: getTokenBalanceQueryKey(
-						chainId ?? 0,
-						activeWallet?.getAccount()?.address,
-						CONTRACTS[chainId ?? 0]?.token?.address,
-					),
-					refetchType: 'all',
-				}),
-			]);
-			onOpenChange(false);
-		},
-		onError: error => {
-			console.error('setPlanMutation Error:', error);
-
-			toast.error('Transaction Failed', {
-				description: error.message || 'An unexpected error occurred. Please try again.',
-			});
-		},
-	});
-
-	const revokeMutation = useMutation<void, Error, void>({
-		mutationFn: async () => {
-			if (!activeWallet || !chainId) {
-				throw new Error('Wallet not connected');
-			}
-
-			const contractConfig = CONTRACTS[chainId];
-
-			if (!contractConfig) {
-				throw new Error('Contracts not configured for this chain');
-			}
-
-			// Get the full chain object from the wallet
-			const connectedChain = activeWallet.getChain();
-
-			if (!connectedChain) {
-				throw new Error('Could not determine connected chain.');
-			}
-
-			const revokeToastId = toast.info(
-				'Please confirm the transaction in your wallet to revoke access.',
-			);
-
-			const escrowContract = getContract({
-				client,
-				chain: connectedChain,
-				address: contractConfig.escrow.address,
-				abi: contractConfig.escrow.abi as Parameters<typeof getContract>[0]['abi'],
-			});
-			const revokeTx = prepareContractCall({
-				contract: escrowContract,
-				method: 'cancelSpendingLimit',
-			} as unknown as Parameters<typeof prepareContractCall>[0]);
-			await sendAndConfirm(revokeTx);
-			toast.dismiss(revokeToastId);
-		},
-		onSuccess: async () => {
-			toast.success('Access Revoked', {
-				description: 'The AI agent can no longer spend your tokens.',
-			});
-
-			// Wait 2 seconds to allow the RPC node to index the new state.
-			// Without this, invalidateQueries fetches stale data instantly.
-			await wait(2000);
-
-			await Promise.all([
-				queryClient.invalidateQueries({ queryKey: ['usagePlan'], refetchType: 'all' }),
-				queryClient.invalidateQueries({
-					// Real thirdweb wallet-balance key (not the dead ['tokenBalance'] literal — CU-86d3dvy2y).
-					queryKey: getTokenBalanceQueryKey(
-						chainId ?? 0,
-						activeWallet?.getAccount()?.address,
-						CONTRACTS[chainId ?? 0]?.token?.address,
-					),
-					refetchType: 'all',
-				}),
-			]);
-			onOpenChange(false);
-		},
-		onError: error => {
-			console.error('revokeMutation Error:', error);
-
-			toast.error('Revoke Failed', {
-				description: error.message || 'Could not revoke access. Please try again.',
-			});
-		},
+	const { setPlanMutation, revokeMutation } = usePlanMutations({
+		onStatus: setStatusText,
+		onDone: () => onOpenChange(false),
 	});
 
 	const onSubmit = (data: FormValues) => {
