@@ -16,6 +16,7 @@ import {
 	ThumbsUp,
 } from 'lucide-react';
 
+import SENDING_REASON from '@/components/ai/sendingReason';
 import SwitchedOffButton from '@/components/ai/switched-off-button';
 import { Button } from '@/components/ui/button';
 import {
@@ -52,6 +53,8 @@ interface MessageActionsProps {
 	onNavigate?: (_direction: string) => void;
 	onBranch?: () => void;
 	initialFeedback?: string | null;
+	/** True while a prompt is being sent: regenerate and branch are then off, and say why. */
+	isSending?: boolean;
 }
 
 function ActionButton({ label, icon, onClick }: ActionButtonProps) {
@@ -133,13 +136,16 @@ export default function MessageActions({
 	onNavigate,
 	onBranch,
 	initialFeedback,
+	isSending = false,
 }: MessageActionsProps) {
 	const { ownerAddress } = useSession();
 	const [isCopied, setIsCopied] = useState(false);
 	const [feedback, setFeedback] = useState<string | null>(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
-	const regenerateSwitchedOff = useSwitchedOffReason('prompt');
-	const branchSwitchedOff = useSwitchedOffReason('branch');
+	// Each also waits while a prompt is being sent, so a second choice sends nothing.
+	const sendingReason = isSending ? SENDING_REASON : null;
+	const regenerateSwitchedOff = useSwitchedOffReason('prompt') ?? sendingReason;
+	const branchSwitchedOff = useSwitchedOffReason('branch') ?? sendingReason;
 
 	useEffect(() => {
 		setFeedback(initialFeedback || null);
@@ -314,9 +320,9 @@ export default function MessageActions({
 			</DropdownAction>
 
 			{/*
-				The branch's switched-off reason disables this whole trigger, so the menu cannot be
-				opened at all while branching is off. That is right only because the menu holds the
-				branch alone today. Anything added to it needs its own switched-off handling on its
+				The branch's switched-off reason, or a prompt being sent, disables this whole trigger,
+				so the menu cannot be opened at all while branching is off. That is right only because
+				the menu holds the branch alone today. Anything added to it needs its own switched-off handling on its
 				own item, and the trigger must then stop sharing this flag.
 			*/}
 			<DropdownAction

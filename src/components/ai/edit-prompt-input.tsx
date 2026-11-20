@@ -12,6 +12,7 @@ import {
 	PromptInputTextarea,
 	PromptInputToolbar,
 } from '@/components/ai/prompt-input';
+import SENDING_REASON from '@/components/ai/sendingReason';
 import { Button } from '@/components/ui/button';
 import useSwitchedOffReason from '@/hooks/useSwitchedOffReason';
 
@@ -23,12 +24,15 @@ interface EditPromptInputProps {
 	originalContent: string;
 	onSave: (_data: { content: string }) => void;
 	onCancel: () => void;
+	/** True while a prompt is being sent: Save and Enter then send nothing. */
+	isSending?: boolean;
 }
 
 export default function EditPromptInput({
 	originalContent,
 	onSave,
 	onCancel,
+	isSending = false,
 }: EditPromptInputProps) {
 	const {
 		register,
@@ -39,10 +43,11 @@ export default function EditPromptInput({
 		defaultValues: { content: originalContent },
 	});
 	// Saving an edit sends the prompt again, so it is off while prompts are.
-	const saveSwitchedOff = useSwitchedOffReason('prompt');
+	// Nor is it sent twice: it waits while a prompt is being sent.
+	const saveOff = useSwitchedOffReason('prompt') ?? (isSending ? SENDING_REASON : null);
 	const reasonId = useId();
 	const save = handleSubmit(data => {
-		if (!saveSwitchedOff) onSave(data);
+		if (!saveOff) onSave(data);
 	});
 
 	return (
@@ -68,8 +73,8 @@ export default function EditPromptInput({
 							Cancel
 						</Button>
 						<PromptInputSubmit
-							disabled={!isValid || isSubmitting || !!saveSwitchedOff}
-							aria-describedby={saveSwitchedOff ? reasonId : undefined}
+							disabled={!isValid || isSubmitting || !!saveOff}
+							aria-describedby={saveOff ? reasonId : undefined}
 							status="editting"
 							variant="default"
 							size="default"
@@ -77,9 +82,9 @@ export default function EditPromptInput({
 					</div>
 				</PromptInputToolbar>
 			</PromptInput>
-			{saveSwitchedOff && (
+			{saveOff && (
 				<p id={reasonId} className="px-1 pt-1 text-xs text-muted-foreground">
-					{saveSwitchedOff}
+					{saveOff}
 				</p>
 			)}
 		</div>
