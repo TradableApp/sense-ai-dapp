@@ -446,7 +446,7 @@ describe('buildErrorHandler — an action the fee token check switched off', () 
 		const profile = FEE_TOKEN_PROFILES.SENSE;
 		const handler = buildErrorHandler(false, false, 100, vi.fn(), profile);
 
-		handler(new FeeTokenBlockedError('treasury-not-exempt'), 'branch conversation');
+		handler(new FeeTokenBlockedError('treasury-not-exempt', profile.symbol), 'branch conversation');
 
 		const copy = feeTokenBlockCopy('treasury-not-exempt', profile.symbol);
 		expect(toast.error).toHaveBeenCalledTimes(1);

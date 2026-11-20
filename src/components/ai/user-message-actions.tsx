@@ -10,8 +10,10 @@ import {
 	RotateCcw,
 } from 'lucide-react';
 
+import SwitchedOffButton from '@/components/ai/switched-off-button';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import useSwitchedOffReason from '@/hooks/useSwitchedOffReason';
 import { cn, copyMarkdownToClipboard } from '@/lib/utils';
 
 interface UserMessageActionsProps {
@@ -28,6 +30,8 @@ export default function UserMessageActions({
 	onNavigate,
 }: UserMessageActionsProps) {
 	const [isCopied, setIsCopied] = useState(false);
+	// Editing a prompt sends it again, so it is off while prompts are.
+	const editSwitchedOff = useSwitchedOffReason('prompt');
 
 	const handleCopy = async () => {
 		if (!message?.content) return;
@@ -96,24 +100,34 @@ export default function UserMessageActions({
 				</Tooltip>
 			</TooltipProvider>
 
-			<TooltipProvider>
-				<Tooltip delayDuration={100}>
-					<TooltipTrigger asChild>
-						<Button
-							variant="ghost"
-							size="icon"
-							className="size-7 text-muted-foreground"
-							aria-label="Edit message"
-							onClick={() => onEdit?.()}
-						>
-							<PencilIcon className="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>
-						<p>Edit message</p>
-					</TooltipContent>
-				</Tooltip>
-			</TooltipProvider>
+			{editSwitchedOff ? (
+				<SwitchedOffButton
+					label="Edit message"
+					reason={editSwitchedOff}
+					className="size-7 text-muted-foreground"
+				>
+					<PencilIcon className="size-4" />
+				</SwitchedOffButton>
+			) : (
+				<TooltipProvider>
+					<Tooltip delayDuration={100}>
+						<TooltipTrigger asChild>
+							<Button
+								variant="ghost"
+								size="icon"
+								className="size-7 text-muted-foreground"
+								aria-label="Edit message"
+								onClick={() => onEdit?.()}
+							>
+								<PencilIcon className="size-4" />
+							</Button>
+						</TooltipTrigger>
+						<TooltipContent>
+							<p>Edit message</p>
+						</TooltipContent>
+					</Tooltip>
+				</TooltipProvider>
+			)}
 
 			{showPagination && (
 				<div className="flex items-center gap-1 text-xs text-muted-foreground">

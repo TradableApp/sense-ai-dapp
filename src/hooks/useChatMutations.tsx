@@ -357,7 +357,8 @@ export default function useChatMutations() {
 	// Every paying mutation asks this first, so a new caller cannot send what the check has
 	// switched off. Cancel and refund never ask: getting money back stays possible.
 	const refuseIfSwitchedOff = (action: PaidAction) => {
-		if (feeTokenCheck.blocks(action)) throw new FeeTokenBlockedError(feeTokenCheck.verdict);
+		if (feeTokenCheck.blocks(action))
+			throw new FeeTokenBlockedError(feeTokenCheck.verdict, FEE_TOKEN.symbol);
 	};
 
 	// We invalidate 'usagePlan' (Allowance, Pending Count) and the wallet balance immediately after a

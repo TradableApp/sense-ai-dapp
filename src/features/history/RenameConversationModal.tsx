@@ -15,6 +15,7 @@ import {
 	DialogTitle,
 } from '@/components/ui/dialog';
 import Input from '@/components/ui/input';
+import useSwitchedOffReason from '@/hooks/useSwitchedOffReason';
 
 const renameSchema = z.object({
 	// Any changes to schema must be updated in tokenized-ai-agent/oracle/src/payloadValidator.js
@@ -55,6 +56,8 @@ export default function RenameConversationModal({
 		mode: 'onChange',
 		defaultValues: { title: '' },
 	});
+	// A rename pays a fee; while that is switched off the dialog says so and sends nothing.
+	const renameSwitchedOff = useSwitchedOffReason('metadata');
 
 	useEffect(() => {
 		if (conversationToRename && open) {
@@ -64,6 +67,7 @@ export default function RenameConversationModal({
 	}, [conversationToRename, open, reset, setFocus]);
 
 	const onSubmit = (data: RenameFormValues) => {
+		if (renameSwitchedOff) return;
 		onRenameSubmit(data.title);
 	};
 
@@ -79,6 +83,9 @@ export default function RenameConversationModal({
 					<Input placeholder="Conversation title" disabled={isProcessing} {...register('title')} />
 
 					{errors.title && <p className="text-sm text-destructive">{errors.title.message}</p>}
+					{renameSwitchedOff && (
+						<p className="text-sm text-muted-foreground">{renameSwitchedOff}</p>
+					)}
 					{error && <p className="text-sm text-destructive">{error.message}</p>}
 
 					<DialogFooter className="flex-col gap-2 pt-4 sm:flex-row sm:justify-end sm:gap-2">
@@ -90,7 +97,7 @@ export default function RenameConversationModal({
 						>
 							Cancel
 						</Button>
-						<Button type="submit" disabled={isProcessing || !isValid}>
+						<Button type="submit" disabled={isProcessing || !isValid || !!renameSwitchedOff}>
 							{isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
 							{isProcessing ? 'Renaming...' : 'Rename'}
 						</Button>

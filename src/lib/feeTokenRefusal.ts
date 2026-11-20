@@ -2,7 +2,7 @@
  * What to tell the user when the fee token refuses a transfer, and why a control is
  * switched off. Worded from the fee token check's answer, never from a token's name.
  */
-import type { FeeTokenCheckState } from '@/lib/feeTokenCheck';
+import { feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
 
 /** The action names the error handler is given for getting money back. */
 export const CANCEL_ACTION = 'cancel prompt';
@@ -57,4 +57,13 @@ export function refusedTransferMessage(
 		description:
 			'SenseAI could not take this payment, so no tokens were taken. Please try again later or contact support.',
 	};
+}
+
+/**
+ * Why a control is switched off, for its tooltip and its accessible description: the
+ * banner's title, and where to read the rest. The banner is on every page.
+ */
+export function switchedOffReason(state: FeeTokenCheckState, symbol: string): string {
+	const title = feeTokenBlockCopy(state, symbol)?.title ?? 'This action is switched off';
+	return `${title}. The notice at the top of the page says why.`;
 }

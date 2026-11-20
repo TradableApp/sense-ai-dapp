@@ -153,7 +153,8 @@ export default function ManagePlanModal({
 			expiresAtTimestamp: bigint;
 		}): Promise<void> => {
 			// The form is disabled too; this is the refusal that holds whoever calls it.
-			if (isPlanSwitchedOff) throw new FeeTokenBlockedError(feeTokenCheck.verdict);
+			if (isPlanSwitchedOff)
+				throw new FeeTokenBlockedError(feeTokenCheck.verdict, FEE_TOKEN.symbol);
 			if (!activeWallet || !chainId) {
 				throw new Error('Wallet not connected');
 			}

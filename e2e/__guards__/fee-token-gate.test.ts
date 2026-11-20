@@ -18,11 +18,13 @@ const code = (file: string) => stripComments(read(file));
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * Where `statement` stands as a whole line of code, or -1. The whole line, so a condition
+ * Where `statement` stands as whole lines of code, or -1. Whole lines, so a condition
  * added before or after it (`if (false) …`, `… && false`) is not the statement any more.
+ * A space in `statement` matches any run of whitespace, so the formatter may wrap it.
  */
 function statementAt(source: string, statement: string): number {
-	const line = new RegExp(`^[ \\t]*${escape(statement)}[ \\t]*$`, 'm');
+	const words = escape(statement).replace(/ /g, '\\s+');
+	const line = new RegExp(`^[ \\t]*${words}[ \\t]*$`, 'm');
 	return line.exec(stripComments(source))?.index ?? -1;
 }
 
@@ -49,7 +51,7 @@ describe('where the fee token check is asked', () => {
 
 	it('the shared refusal throws whenever the check blocks the action', () => {
 		const refusal =
-			'if (feeTokenCheck.blocks(action)) throw new FeeTokenBlockedError(feeTokenCheck.verdict);';
+			'if (feeTokenCheck.blocks(action)) throw new FeeTokenBlockedError(feeTokenCheck.verdict, FEE_TOKEN.symbol);';
 
 		expect(hasStatement(mutations, refusal)).toBe(true);
 	});
@@ -101,7 +103,7 @@ describe('where the fee token check is asked', () => {
 		const plan = dialog.slice(dialog.indexOf('const setPlanMutation = useMutation'));
 		const refusal = statementAt(
 			plan,
-			'if (isPlanSwitchedOff) throw new FeeTokenBlockedError(feeTokenCheck.verdict);',
+			'if (isPlanSwitchedOff) throw new FeeTokenBlockedError(feeTokenCheck.verdict, FEE_TOKEN.symbol);',
 		);
 		expect(refusal, 'setPlanMutation does not refuse').toBeGreaterThan(-1);
 		expect(refusal).toBeLessThan(plan.indexOf('prepareContractCall('));
@@ -195,6 +197,23 @@ describe('the gate guard itself', () => {
 		['a fallback', "const isPlanSwitchedOff = feeTokenCheck.blocks('plan') || null;"],
 	])('refuses a flag with %s', (_, line) => {
 		expect(hasStatement(`\t${line}\n`, flag)).toBe(false);
+	});
+
+	it('accepts a statement the formatter wrapped over two lines', () => {
+		const thrown = 'if (blocked) throw new FeeTokenBlockedError(verdict, symbol);';
+
+		expect(
+			hasStatement(
+				'\t\tif (blocked)\n\t\t\tthrow new FeeTokenBlockedError(verdict, symbol);',
+				thrown,
+			),
+		).toBe(true);
+		expect(
+			hasStatement(
+				'\t\tif (blocked)\n\t\t\tthrow new FeeTokenBlockedError(verdict, symbol) && 0;',
+				thrown,
+			),
+		).toBe(false);
 	});
 
 	it('accepts the flag as written', () => {
