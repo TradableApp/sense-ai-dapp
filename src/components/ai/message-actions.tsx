@@ -313,7 +313,12 @@ export default function MessageActions({
 				</DropdownMenuItem>
 			</DropdownAction>
 
-			{/* It holds only the branch, so it is off while branching is. */}
+			{/*
+				The branch's switched-off reason disables this whole trigger, so the menu cannot be
+				opened at all while branching is off. That is right only because the menu holds the
+				branch alone today. Anything added to it needs its own switched-off handling on its
+				own item, and the trigger must then stop sharing this flag.
+			*/}
 			<DropdownAction
 				label="More actions"
 				icon={MoreHorizontal}
