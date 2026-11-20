@@ -308,6 +308,21 @@ describe('useFeeTokenCheck', () => {
 		expect(Sentry.captureException).toHaveBeenCalledTimes(1);
 	});
 
+	it('reports a kind of failure once per page load, even when its first line changes each time', async () => {
+		chainAnswers({
+			treasury: new Error('RPC request failed with status 500 - Internal: request id 7f1'),
+		});
+		const { queryClient } = harness();
+		await waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(1));
+		chainAnswers({
+			treasury: new Error('RPC request failed with status 500 - Internal: request id 9c4'),
+		});
+
+		await refetch(queryClient);
+
+		expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+	});
+
 	it('reports a failure again after a new page load, even with the same words', async () => {
 		chainAnswers({ treasury: new Error('same words') });
 		harness();
