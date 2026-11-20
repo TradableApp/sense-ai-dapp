@@ -3,16 +3,20 @@
 // The build's own checks, run through the real Vite configuration. The text guards beside
 // this one read `vite.config.ts` for the calls; this runs it, so a call that is still written
 // but no longer reached (moved under a condition, given other arguments) fails here.
-import type { ConfigEnv, UserConfig } from 'vite';
+import type { ConfigEnv, UserConfigFnObject } from 'vite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import viteConfig from '../../vite.config';
 
-// A mode with no settings file: every value below comes from this test alone.
+// A mode with no settings file of its own. The files Vite reads in every mode are still read,
+// but a value in the process environment wins over a file, an empty one included, so the
+// three settings stubbed below are the ones the configuration sees on any machine.
 const MODE = 'build-check-fixture';
 const AGENT = '0x00000000000000000000000000000000000000A1';
 
-const configure = viteConfig as (_env: ConfigEnv) => UserConfig | Promise<UserConfig>;
+// No cast: a configuration that became an object, or asynchronous, stops type-checking here
+// instead of turning every `not.toThrow` below into a test of nothing.
+const configure: UserConfigFnObject = viteConfig;
 const build = (overrides: Partial<ConfigEnv> = {}) =>
 	configure({ mode: MODE, command: 'build', isPreview: false, ...overrides });
 
@@ -59,6 +63,24 @@ describe('build configuration checks', () => {
 		vi.stubEnv('VITE_AGENT_CONTRACT_ADDRESS', '0x1234');
 
 		expect(() => build({ mode: 'localnet' })).toThrow(/agent contract address/);
+	});
+
+	it.each(['localnet', 'test'])(
+		'lets a %s run through with no agent address and no fee token',
+		mode => {
+			vi.stubEnv('VITE_CHAIN_ID', '31337');
+			vi.stubEnv('VITE_AGENT_CONTRACT_ADDRESS', '');
+			vi.stubEnv('VITE_FEE_TOKEN', '');
+
+			expect(() => build({ mode })).not.toThrow();
+			expect(() => build({ mode, command: 'serve' })).not.toThrow();
+		},
+	);
+
+	it('checks when Vite does not say whether this is a preview', () => {
+		vi.stubEnv('VITE_AGENT_CONTRACT_ADDRESS', '');
+
+		expect(() => configure({ mode: MODE, command: 'build' })).toThrow(/agent contract address/);
 	});
 
 	it('does not check a preview, which only serves a bundle that already passed', () => {

@@ -42,6 +42,10 @@ describe('local store is opened once, per agent', () => {
 		"const { Dexie } = await import('dexie');",
 		"const { Dexie } = await import('dexie/dist/dexie');",
 		"const Dexie = require('dexie');",
+		"import 'dexie';",
+		"import 'dexie/dist/dexie';",
+		'const { Dexie } = await import(`dexie`);',
+		"export { Dexie } from 'dexie';",
 	])('counts %s as loading the library', line => {
 		expect(DEXIE_VALUE_IMPORT.test(line)).toBe(true);
 	});
@@ -52,6 +56,8 @@ describe('local store is opened once, per agent', () => {
 		"import { db } from '@/lib/db';",
 		"import { something } from 'dexie-like-name';",
 		"import { something } from 'not-dexie';",
+		"import 'dexie-like-name';",
+		"import '@/lib/db';",
 	])('does not count %s', line => {
 		expect(DEXIE_VALUE_IMPORT.test(line)).toBe(false);
 	});

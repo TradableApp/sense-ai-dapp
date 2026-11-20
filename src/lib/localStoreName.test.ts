@@ -30,7 +30,7 @@ describe('localStoreName', () => {
 		expect(localStoreName(84532, AGENT_A)).toBe(localStoreName('84532', AGENT_A));
 	});
 
-	it.each([undefined, '', 'undefined', '0x1234', 'not-an-address'])(
+	it.each([undefined, '', 'undefined', '0x1234', 'not-an-address', `0x${'a'.repeat(41)}`])(
 		'refuses the agent address %j rather than naming a store all agents would share',
 		agent => {
 			expect(() => localStoreName('84532', agent)).toThrow(LocalStoreConfigError);
@@ -125,23 +125,35 @@ describe('assertLocalStoreConfig', () => {
 		);
 	});
 
-	it.each([
-		['localnet', {}],
-		['localnet', { VITE_CHAIN_ID: '31337', VITE_AGENT_CONTRACT_ADDRESS: '0x1234' }],
-		['localnet', { VITE_AGENT_CONTRACT_ADDRESS: AGENT_A }],
-		['testnet', { VITE_CHAIN_ID: '84532' }],
-		['testnet', good],
-	] as const)('agrees with what the browser does for a %s build with %o', (mode, env) => {
-		const browser = () =>
+	// One table for both sides: what the browser does with these settings, and what the build
+	// check does with them, each against an outcome written here.
+	it.each<[string, Record<string, string | undefined>, string | null]>([
+		['localnet', {}, 'SenseAI:localnet:unconfigured'],
+		['localnet', { VITE_CHAIN_ID: '31337' }, 'SenseAI:localnet:unconfigured'],
+		['localnet', { VITE_AGENT_CONTRACT_ADDRESS: '' }, 'SenseAI:localnet:unconfigured'],
+		['localnet', { VITE_CHAIN_ID: '31337', VITE_AGENT_CONTRACT_ADDRESS: '0x1234' }, null],
+		['localnet', { VITE_AGENT_CONTRACT_ADDRESS: AGENT_A }, null],
+		['localnet', good, `SenseAI:84532:${AGENT_A.toLowerCase()}`],
+		['testnet', { VITE_CHAIN_ID: '84532' }, null],
+		['testnet', { VITE_CHAIN_ID: '84532', VITE_AGENT_CONTRACT_ADDRESS: '' }, null],
+		['testnet', good, `SenseAI:84532:${AGENT_A.toLowerCase()}`],
+	])('gives a %s build with %o the outcome the browser gives it', (mode, env, storeName) => {
+		const inBrowser = () =>
 			resolveLocalStoreName(env.VITE_CHAIN_ID, env.VITE_AGENT_CONTRACT_ADDRESS, mode);
-		let browserFails = false;
-		try {
-			browser();
-		} catch {
-			browserFails = true;
-		}
+		const atBuild = () => assertLocalStoreConfig(mode, env);
 
-		if (browserFails) expect(() => assertLocalStoreConfig(mode, env)).toThrow();
-		else expect(() => assertLocalStoreConfig(mode, env)).not.toThrow();
+		if (storeName === null) {
+			expect(inBrowser).toThrow(LocalStoreConfigError);
+			expect(atBuild).toThrow(LocalStoreConfigError);
+		} else {
+			expect(inBrowser()).toBe(storeName);
+			expect(atBuild).not.toThrow();
+		}
+	});
+
+	it('names the two settings and the mode when it stops a build', () => {
+		expect(() => assertLocalStoreConfig('testnet', { VITE_CHAIN_ID: '84532' })).toThrow(
+			/VITE_CHAIN_ID.*VITE_AGENT_CONTRACT_ADDRESS.*testnet/,
+		);
 	});
 });
