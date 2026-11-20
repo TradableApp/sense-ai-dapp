@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/react';
-import { useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import type { Chain } from 'thirdweb';
 import { useActiveWallet } from 'thirdweb/react';
 // eslint-disable-next-line camelcase
 import { eth_getTransactionReceipt, getRpcClient } from 'thirdweb/rpc';
@@ -11,10 +12,10 @@ import { client } from '@/config/thirdweb';
 import useFaucetConfig from '@/hooks/useFaucetConfig';
 import { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
 import {
+	type FaucetExpectation,
 	faucetNotice,
 	faucetOutcome,
 	type FaucetOutcome,
-	type FaucetReceipt,
 } from '@/lib/faucetOutcome';
 import requestTestTokens, {
 	awaitFaucetReceipt,
@@ -32,15 +33,26 @@ import { wait } from '@/lib/utils';
  */
 export const FAUCET_OFFER_TOAST_ID = 'faucet-offer';
 
-type Wallet = NonNullable<ReturnType<typeof useActiveWallet>>;
-
 // A successful receipt that brought the user nothing means the faucet is sending another
 // token, or none: a setup fault, not the user's. Reported once per page load.
 let hasReportedNoTransfer = false;
+// A build with no fee token for the wallet's chain cannot read what the faucet sent: a
+// setup fault of the build. Reported once per page load too.
+let hasReportedNoToken = false;
 
 /** Starts reporting afresh, as a page load does. For tests, which share this module. */
 export function forgetFaucetReports(): void {
 	hasReportedNoTransfer = false;
+	hasReportedNoToken = false;
+}
+
+function reportNoToken(chainId: number): void {
+	if (hasReportedNoToken) return;
+	hasReportedNoToken = true;
+	Sentry.captureException(new Error('Faucet: no fee token is configured for this chain.'), {
+		tags: { check: 'faucet', chainId: String(chainId), feeToken: FEE_TOKEN.symbol },
+		fingerprint: ['faucet-no-token'],
+	});
 }
 
 function reportNoTransfer(chainId: number, txHash: string): void {
@@ -79,21 +91,38 @@ function announceSent(txHash: string, isLocalnet: boolean): string | number {
 }
 
 /** Waits for the faucet transaction and reads what it brought the user. */
-async function waitForFaucet(wallet: Wallet, txHash: string, recipient: string) {
-	const chain = wallet.getChain();
-	if (!chain) throw new Error('Chain not found');
+async function waitForFaucet(chain: Chain, txHash: string, expected: FaucetExpectation) {
 	const rpcRequest = getRpcClient({ client, chain });
 	const receipt = await awaitFaucetReceipt(
 		() => eth_getTransactionReceipt(rpcRequest, { hash: txHash as `0x${string}` }),
 		{ wait: () => wait(FAUCET_POLL_MS), maxAttempts: FAUCET_WAIT_ATTEMPTS },
 	);
-	const outcome = faucetOutcome(receipt as FaucetReceipt | 'timeout', {
-		token: CONTRACTS[chain.id]?.token?.address ?? '',
-		recipient,
-		decimals: FEE_TOKEN.decimals,
-	});
+	const outcome = faucetOutcome(receipt, expected);
 	if (outcome.kind === 'no-transfer') reportNoTransfer(chain.id, txHash);
 	return outcome;
+}
+
+/** Waits for the transfer, says what came of it, and refreshes the balance. */
+async function settle(
+	queryClient: QueryClient,
+	chain: Chain,
+	txHash: string,
+	expected: FaucetExpectation,
+): Promise<void> {
+	const sentToastId = announceSent(txHash, chain.id === LOCAL_CHAIN_ID);
+	try {
+		const outcome = await waitForFaucet(chain, txHash, expected);
+		toast.dismiss(sentToastId);
+		showNotice(outcome);
+		if (outcome.kind === 'reverted') return;
+		const queryKey = getTokenBalanceQueryKey(chain.id, expected.recipient, expected.token);
+		// Forces a refetch even where the balance is not on screen or still counts as fresh.
+		await queryClient.invalidateQueries({ queryKey, refetchType: 'all' });
+	} catch (error) {
+		// The wait never started, so nothing above took the "Tokens Sent" notice down.
+		toast.dismiss(sentToastId);
+		console.error('Error waiting for faucet receipt:', error);
+	}
 }
 
 /**
@@ -110,36 +139,30 @@ export default function useFaucetRequest(): {
 	const queryClient = useQueryClient();
 	const { data: faucetConfig } = useFaucetConfig();
 	const faucetAmount = faucetConfig?.amount ?? DEFAULT_FAUCET_AMOUNT;
-	const chainId = activeWallet?.getChain()?.id;
-	const isLocalnet = chainId === LOCAL_CHAIN_ID;
 
 	const requestTokens = async () => {
-		const loadingToastId = toast.loading(
-			isLocalnet ? 'Requesting Localnet Tokens...' : 'Requesting Testnet Tokens...',
-		);
-		const address = activeWallet?.getAccount()?.address ?? '';
-		const { success, txHash } = await requestTestTokens(address, faucetAmount);
-		toast.dismiss(loadingToastId);
-		if (!success || !txHash || !activeWallet) return;
-
-		const sentToastId = announceSent(txHash, isLocalnet);
-		try {
-			const outcome = await waitForFaucet(activeWallet, txHash, address);
-			toast.dismiss(sentToastId);
-			showNotice(outcome);
-			if (outcome.kind === 'reverted') return;
-			const queryKey = getTokenBalanceQueryKey(
-				chainId ?? 0,
-				address,
-				CONTRACTS[chainId ?? 0]?.token?.address,
-			);
-			// Forces a refetch even where the balance is not on screen or still counts as fresh.
-			await queryClient.invalidateQueries({ queryKey, refetchType: 'all' });
-		} catch (error) {
-			// The wait never started, so nothing above took the "Tokens Sent" notice down.
-			toast.dismiss(sentToastId);
-			console.error('Error waiting for faucet receipt:', error);
+		// The chain is read once, here: the wallet may have moved since the render.
+		const chain = activeWallet?.getChain();
+		if (!activeWallet || !chain) return;
+		const token = CONTRACTS[chain.id]?.token?.address;
+		if (!token) {
+			reportNoToken(chain.id);
+			toast.error('Faucet Not Available', {
+				description:
+					'This app is not set up for test tokens on this network. Please contact support.',
+			});
+			return;
 		}
+		const loadingToastId = toast.loading(
+			chain.id === LOCAL_CHAIN_ID
+				? 'Requesting Localnet Tokens...'
+				: 'Requesting Testnet Tokens...',
+		);
+		const recipient = activeWallet.getAccount()?.address ?? '';
+		const { success, txHash } = await requestTestTokens(recipient, faucetAmount);
+		toast.dismiss(loadingToastId);
+		if (!success || !txHash) return;
+		await settle(queryClient, chain, txHash, { token, recipient, decimals: FEE_TOKEN.decimals });
 	};
 
 	// The offer stays up until closed; it is taken down before its own request starts.
