@@ -25,7 +25,11 @@ import requestTestTokens, {
 } from '@/lib/faucetService';
 import { wait } from '@/lib/utils';
 
-/** The id of the toast that offers the faucet (an insufficient balance); kept as a stub. */
+/**
+ * The id of the toast that offers the faucet (an insufficient balance). A request from it
+ * closes that toast by this id and nothing else: closing every toast would also withdraw
+ * the update prompt, which reads a dismissal it did not cause as the user declining.
+ */
 export const FAUCET_OFFER_TOAST_ID = 'faucet-offer';
 
 type Wallet = NonNullable<ReturnType<typeof useActiveWallet>>;
@@ -110,8 +114,6 @@ export default function useFaucetRequest(): {
 	const isLocalnet = chainId === LOCAL_CHAIN_ID;
 
 	const requestTokens = async () => {
-		// The faucet button can sit in a toast that stays up; take it down first.
-		toast.dismiss();
 		const loadingToastId = toast.loading(
 			isLocalnet ? 'Requesting Localnet Tokens...' : 'Requesting Testnet Tokens...',
 		);
@@ -140,5 +142,11 @@ export default function useFaucetRequest(): {
 		}
 	};
 
-	return { requestTokens, requestTokensFromOffer: requestTokens, faucetAmount };
+	// The offer stays up until closed; it is taken down before its own request starts.
+	const requestTokensFromOffer = () => {
+		toast.dismiss(FAUCET_OFFER_TOAST_ID);
+		return requestTokens();
+	};
+
+	return { requestTokens, requestTokensFromOffer, faucetAmount };
 }

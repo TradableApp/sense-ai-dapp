@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { CONTRACTS, LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
 import { FEE_TOKEN, type FeeTokenProfile, TRANSFER_RESTRICTION_ABI } from '@/config/feeToken';
 import { client } from '@/config/thirdweb';
-import useFaucetRequest from '@/hooks/useFaucetRequest';
+import useFaucetRequest, { FAUCET_OFFER_TOAST_ID } from '@/hooks/useFaucetRequest';
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
@@ -182,8 +182,8 @@ export function buildErrorHandler(
 						)}
 					</div>
 				),
-				// Persist when a faucet is available (testnet/localnet) so the button
-				// stays visible; otherwise use the sonner toast default 4s.
+				// Kept up while it offers the faucet, whose request closes it by this id.
+				id: FAUCET_OFFER_TOAST_ID,
 				duration: isTestnet || isLocalnet ? Infinity : 4000,
 			});
 			return;
@@ -351,7 +351,7 @@ export default function useChatMutations() {
 	const chainId = activeWallet?.getChain()?.id;
 	const isTestnet = chainId === TESTNET_CHAIN_ID;
 	const isLocalnet = chainId === LOCAL_CHAIN_ID;
-	const { requestTokens: handleFaucetRequest, faucetAmount } = useFaucetRequest();
+	const { requestTokensFromOffer: handleFaucetRequest, faucetAmount } = useFaucetRequest();
 	const queryClient = useQueryClient();
 	const feeTokenCheck = useFeeTokenCheck();
 	// Every paying mutation asks this first, so a new caller cannot send what the check has

@@ -25,7 +25,8 @@ vi.mock('sonner', () => ({
 	toast: {
 		error: vi.fn(),
 		success: vi.fn(),
-		info: vi.fn(),
+		// Each toast that is taken down later needs an id, as sonner gives one.
+		info: vi.fn(() => 'sent'),
 		warning: vi.fn(),
 		loading: vi.fn(() => 'loading'),
 		dismiss: vi.fn(),

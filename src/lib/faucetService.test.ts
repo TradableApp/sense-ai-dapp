@@ -255,7 +255,9 @@ describe('how long the faucet is waited for', () => {
 		const callers = ['src/features/usage/ManagePlanModal.tsx', 'src/hooks/useChatMutations.tsx'];
 		callers.forEach(file => {
 			const source = read(file);
-			expect(source, file).toMatch(/import useFaucetRequest from '@\/hooks\/useFaucetRequest';/);
+			expect(source, file).toMatch(
+				/import useFaucetRequest(, \{[^}]*\})? from '@\/hooks\/useFaucetRequest';/,
+			);
 			expect(source, file).toMatch(/useFaucetRequest\(\)/);
 			expect(source, file).not.toMatch(/awaitFaucetReceipt|requestTestTokens|FAUCET_WAIT_/);
 		});
