@@ -389,6 +389,7 @@ export default function useChatMutations() {
 	 * Upon success, it parses the transaction receipt to find and return the real, on-chain IDs.
 	 */
 	const initiatePromptMutation = useMutation({
+		mutationKey: ['paid-send', 'prompt'],
 		mutationFn: async ({
 			conversationId,
 			promptText,
@@ -481,6 +482,7 @@ export default function useChatMutations() {
 	 * It calls the `initiateRegeneration` function on the smart contract.
 	 */
 	const regenerateMutation = useMutation({
+		mutationKey: ['paid-send', 'regenerate'],
 		mutationFn: async ({
 			conversationId,
 			promptMessageId,
@@ -568,6 +570,7 @@ export default function useChatMutations() {
 	 * It calls the `initiateBranch` function on the smart contract.
 	 */
 	const branchConversationMutation = useMutation({
+		mutationKey: ['paid-send', 'branch'],
 		mutationFn: async ({
 			originalConversationId,
 			branchPointMessageId,

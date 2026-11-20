@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -184,4 +186,73 @@ describe('the edit control on a prompt', () => {
 		expect(document.activeElement).toBe(button('Edit message'));
 		expect(shownOnFocus).toContain(feeTokenBlockCopy('symbol-mismatch', 'PTS')?.title);
 	});
+});
+
+/** Stands in for the chat: choosing regenerate or branch starts a send, and the answer is told. */
+function AnswerWhoseActionsStartASend({
+	onRegenerate,
+	onBranch,
+}: {
+	onRegenerate: (_mode?: string) => void;
+	onBranch: () => void;
+}) {
+	const [isSending, setIsSending] = useState(false);
+	return (
+		<MessageActions
+			message={answer}
+			isSending={isSending}
+			onRegenerate={mode => {
+				onRegenerate(mode);
+				setIsSending(true);
+			}}
+			onBranch={() => {
+				onBranch();
+				setIsSending(true);
+			}}
+		/>
+	);
+}
+
+/** Opens a menu as a pointer does and chooses an item, if the menu opened. */
+function choose(trigger: string, item: string) {
+	act(() => {
+		fireEvent.pointerDown(button(trigger), { button: 0, ctrlKey: false, pointerType: 'mouse' });
+	});
+	const entry = screen.queryByRole('menuitem', { name: item });
+	if (entry) {
+		act(() => {
+			fireEvent.click(entry);
+		});
+	}
+}
+
+const SENDING_CONTROLS = [
+	{ trigger: 'Try again', item: 'Try again', calls: 'onRegenerate' },
+	{ trigger: 'More actions', item: 'Branch in new chat', calls: 'onBranch' },
+] as const;
+
+describe('the controls on an answer while a prompt is being sent', () => {
+	it.each(SENDING_CONTROLS)('$item chosen twice starts one send', ({ trigger, item, calls }) => {
+		checkReturns('ok');
+		const handlers = { onRegenerate: vi.fn(), onBranch: vi.fn() };
+		render(<AnswerWhoseActionsStartASend {...handlers} />);
+
+		choose(trigger, item);
+		choose(trigger, item);
+
+		expect(handlers[calls]).toHaveBeenCalledTimes(1);
+	});
+
+	it.each(SENDING_CONTROLS)(
+		'$trigger is switched off and says a prompt is being sent',
+		({ trigger, item }) => {
+			checkReturns('ok');
+			render(<AnswerWhoseActionsStartASend onRegenerate={vi.fn()} onBranch={vi.fn()} />);
+
+			choose(trigger, item);
+
+			expect(isSwitchedOff(button(trigger))).toBe(true);
+			expect(description(button(trigger))).toMatch(/being sent/i);
+		},
+	);
 });
