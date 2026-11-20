@@ -11,7 +11,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ESCROW_FEE_TOKEN_GETTER } from '@/config/feeTokenConfig';
 import { PAID_ACTIONS } from '@/lib/feeTokenCheck';
 
-import useFeeTokenCheck, { FEE_TOKEN_RECHECK_MS, forgetReportedFailures } from './useFeeTokenCheck';
+import useFeeTokenCheck, {
+	FEE_TOKEN_RECHECK_MS,
+	forgetReportedFailures,
+	useIsAwaitingFirstAnswer,
+} from './useFeeTokenCheck';
 
 const CHAIN_ID = 84532;
 const TOKEN = '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512';
@@ -388,6 +392,86 @@ describe('useFeeTokenCheck', () => {
 		const { result, queryClient } = harness();
 
 		await expectNothingRead(queryClient, result);
+	});
+});
+
+// Setting a plan approves the token, so it waits for the check's first answer. Once any
+// answer has come, a later failed read keeps it (the query keeps its last answer) and the
+// plan is not held again. A chain the check cannot read never answers, and is not held.
+describe('waiting for the first answer', () => {
+	function awaitingHarness() {
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		const wrapper = ({ children }: { children: ReactNode }) => (
+			<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		);
+		return {
+			queryClient,
+			...renderHook(() => ({ check: useFeeTokenCheck(), awaiting: useIsAwaitingFirstAnswer() }), {
+				wrapper,
+			}),
+		};
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		forgetReportedFailures();
+		onChain(CHAIN_ID);
+	});
+	afterEach(cleanup);
+
+	it('is waiting until the first answer arrives, and not after', async () => {
+		chainAnswers();
+		const { result } = awaitingHarness();
+
+		expect(result.current.awaiting).toBe(true);
+		await waitFor(() => expect(result.current.check.verdict).toBe('ok'));
+		expect(result.current.awaiting).toBe(false);
+	});
+
+	it('is still waiting when the first read fails', async () => {
+		chainAnswers({ treasury: new Error('RPC request failed with status 429') });
+		const { result } = awaitingHarness();
+
+		await waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(1));
+		expect(result.current.check.verdict).toBe('unknown');
+		expect(result.current.awaiting).toBe(true);
+	});
+
+	it('does not wait again when a read fails after an answer has come', async () => {
+		chainAnswers();
+		const { result, queryClient } = awaitingHarness();
+		await waitFor(() => expect(result.current.awaiting).toBe(false));
+
+		chainAnswers({ treasury: new Error('later read: connection lost') });
+		await refetch(queryClient);
+		await waitFor(() =>
+			expect(
+				queryClient.getQueryCache().findAll({ queryKey: ['feeTokenCheck'] })[0].state.error,
+			).toBeTruthy(),
+		);
+
+		expect(result.current.awaiting).toBe(false);
+	});
+
+	it('does not wait on a chain the build has no agent for: nothing will ever answer', async () => {
+		onChain(CHAIN_WITHOUT_AGENT);
+		chainAnswers();
+		const { result } = awaitingHarness();
+
+		await act(async () => {
+			await new Promise(resolve => {
+				setTimeout(resolve, 20);
+			});
+		});
+		expect(readContract).not.toHaveBeenCalled();
+		expect(result.current.awaiting).toBe(false);
+	});
+
+	it('does not wait with no wallet connected', () => {
+		vi.mocked(useActiveWalletChain).mockReturnValue(undefined);
+		const { result } = awaitingHarness();
+
+		expect(result.current.awaiting).toBe(false);
 	});
 });
 

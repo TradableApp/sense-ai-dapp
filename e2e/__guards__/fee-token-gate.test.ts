@@ -154,7 +154,6 @@ describe('where the fee token check is asked', () => {
 		);
 		const submit = dialog.match(/type="submit"\s+disabled=\{([^}]+)\}/)?.[1] ?? '';
 		expect(isOperandOf(submit, 'isPlanSwitchedOff')).toBe(true);
-		expect(hasStatement(dialog, 'if (isPlanSwitchedOff) return;')).toBe(true);
 		// The dialog builds no call of its own: it sends through the plan hook, whose refusal
 		// usePlanMutations.test.tsx drives through the real mutation under every verdict. This
 		// only pins where that refusal stands, so a reader finds it where the test proves it.
@@ -173,6 +172,21 @@ describe('where the fee token check is asked', () => {
 		expect(refusal, 'setting a plan does not refuse').toBeGreaterThan(-1);
 		expect(refusal).toBeLessThan(setPlan.indexOf('approveAndSetLimit('));
 		expect(plans.slice(revokeAt)).not.toContain('feeTokenCheck');
+		// Before the check's first answer the approval is held too, in the mutation and in the
+		// dialog; revoking is never held.
+		const hold = statementAt(
+			setPlan,
+			'if (isAwaitingFirstAnswer) throw new Error(AWAITING_CHECK_REASON);',
+		);
+		expect(hold, 'setting a plan does not wait for the first answer').toBeGreaterThan(-1);
+		expect(hold).toBeLessThan(setPlan.indexOf('approveAndSetLimit('));
+		expect(plans.slice(revokeAt)).not.toContain('isAwaitingFirstAnswer');
+		expect(hasStatement(dialog, 'const isAwaitingFirstAnswer = useIsAwaitingFirstAnswer();')).toBe(
+			true,
+		);
+		expect(hasStatement(dialog, 'if (isPlanSwitchedOff || isAwaitingFirstAnswer) return;')).toBe(
+			true,
+		);
 		expect(dialog).toContain('<FeeTokenMismatchBanner');
 		const revoke = dialog.match(
 			/<AlertDialogAction onClick=\{handleRevoke\} disabled=\{([^}]+)\}/,

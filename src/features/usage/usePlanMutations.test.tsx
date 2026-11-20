@@ -7,8 +7,9 @@ import { prepareContractCall } from 'thirdweb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FEE_TOKEN } from '@/config/feeToken';
-import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
+import useFeeTokenCheck, { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
 import { blocksAction, feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
+import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
 import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
 
 import usePlanMutations from './usePlanMutations';
@@ -41,7 +42,10 @@ vi.mock('@/config/contracts', () => ({
 		},
 	},
 }));
-vi.mock('@/hooks/useFeeTokenCheck', () => ({ default: vi.fn() }));
+vi.mock('@/hooks/useFeeTokenCheck', () => ({
+	default: vi.fn(),
+	useIsAwaitingFirstAnswer: vi.fn(() => false),
+}));
 // The real waits are two seconds each; nothing here depends on them.
 vi.mock('@/lib/utils', async original => ({
 	...(await original<typeof import('@/lib/utils')>()),
@@ -92,6 +96,7 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	vi.spyOn(console, 'error').mockImplementation(() => undefined);
 	sendAndConfirm.mockResolvedValue({ status: 'success' });
+	vi.mocked(useIsAwaitingFirstAnswer).mockReturnValue(false);
 });
 
 afterEach(() => {
@@ -151,6 +156,31 @@ describe('revoking a plan is never switched off', () => {
 		expect(prepareContractCall).toHaveBeenCalledWith(
 			expect.objectContaining({ method: 'cancelSpendingLimit' }),
 		);
+		expect(sendAndConfirm).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('setting a plan before the check has answered once', () => {
+	it('approves nothing and sends nothing, and says why', async () => {
+		withVerdict('unknown');
+		vi.mocked(useIsAwaitingFirstAnswer).mockReturnValue(true);
+
+		const { onDone } = await attempt(setPlan);
+
+		expect(prepareContractCall).not.toHaveBeenCalled();
+		expect(sendAndConfirm).not.toHaveBeenCalled();
+		expect(onDone).not.toHaveBeenCalled();
+		expect(toast.error).toHaveBeenCalledWith('Transaction Failed', {
+			description: AWAITING_CHECK_REASON,
+		});
+	});
+
+	it('still lets a plan be revoked', async () => {
+		withVerdict('unknown');
+		vi.mocked(useIsAwaitingFirstAnswer).mockReturnValue(true);
+
+		await attempt(revoke);
+
 		expect(sendAndConfirm).toHaveBeenCalledTimes(1);
 	});
 });
