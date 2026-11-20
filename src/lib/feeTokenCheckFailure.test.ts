@@ -88,6 +88,49 @@ describe('describeFailure', () => {
 		expect(line).toBe('returned no data ("0x"), code 0x1234567');
 	});
 
+	it.each([
+		['a websocket URL', 'socket closed: wss://node.example/v2/KEY123', 'socket closed: <url>'],
+		['a URL with no scheme', 'refused by node.example.com/v2/KEY123 now', 'refused by <url> now'],
+		['upper-case 0X hex', `from 0X${ADDRESS.slice(2)}`, 'from <hex>'],
+		['bare long hex', 'request 9f3c2a7b1d4e8f60aa12 failed', 'request <hex> failed'],
+	])('replaces %s', (_label, message, expected) => {
+		const { line } = describeFailure(new Error(message));
+
+		expect(line).toBe(expected);
+	});
+
+	it('leaves plain words and a short code alone', () => {
+		const { line } = describeFailure(new Error('header not found: decade 0xabc'));
+
+		expect(line).toBe('header not found: decade 0xabc');
+	});
+
+	it('never throws, even for an error whose message cannot be read', () => {
+		const hostile = Object.defineProperty(new Error('x'), 'message', {
+			get() {
+				throw new Error('getter');
+			},
+		});
+
+		const failure = describeFailure(hostile);
+
+		expect(failure).toEqual({ kind: 'other', line: '' });
+	});
+
+	it('never throws for a proxy that refuses every question', () => {
+		const refuse = () => {
+			throw new Error('trap');
+		};
+		const hostile = new Proxy(
+			{},
+			{ get: refuse, has: refuse, getPrototypeOf: refuse, ownKeys: refuse },
+		);
+
+		const failure = describeFailure(hostile);
+
+		expect(failure).toEqual({ kind: 'other', line: '' });
+	});
+
 	it('caps the line at 120 characters', () => {
 		const error = new Error('x'.repeat(500));
 
