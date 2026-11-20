@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { getDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { decodeFunctionData, erc20Abi, parseUnits } from 'viem';
@@ -5,6 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import requestTestTokens, {
 	awaitFaucetReceipt,
+	FAUCET_POLL_MS,
+	FAUCET_WAIT_ATTEMPTS,
+	FAUCET_WAIT_MS,
 	faucetReceiptOutcome,
 	getFaucetConfig,
 } from './faucetService';
@@ -248,5 +254,22 @@ describe('awaitFaucetReceipt', () => {
 
 		expect(warn).not.toHaveBeenCalled();
 		warn.mockRestore();
+	});
+});
+
+describe('how long the faucet is waited for', () => {
+	it('is the number of looks times the time between them', () => {
+		expect(FAUCET_WAIT_MS).toBe(FAUCET_WAIT_ATTEMPTS * FAUCET_POLL_MS);
+		expect(FAUCET_WAIT_ATTEMPTS).toBeGreaterThan(0);
+	});
+
+	it('is defined once, so the two places that offer the faucet wait the same time', () => {
+		const callers = ['src/features/usage/ManagePlanModal.tsx', 'src/hooks/useChatMutations.tsx'];
+		callers.forEach(file => {
+			const source = readFileSync(resolve(process.cwd(), file), 'utf8');
+			expect(source, file).not.toMatch(/const\s+FAUCET_WAIT_(ATTEMPTS|MS)\b/);
+			expect(source, file).toMatch(/maxAttempts:\s*FAUCET_WAIT_ATTEMPTS/);
+			expect(source, file).toMatch(/duration:\s*FAUCET_WAIT_MS/);
+		});
 	});
 });
