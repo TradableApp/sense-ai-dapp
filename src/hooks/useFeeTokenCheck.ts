@@ -15,6 +15,7 @@ import {
 	type PaidAction,
 	readFeeTokenVerdict,
 } from '@/lib/feeTokenCheck';
+import { describeFailure, failureReport } from '@/lib/feeTokenCheckFailure';
 
 type AbiItem = { name?: string; type?: string };
 
@@ -40,8 +41,9 @@ function contractReader(
  */
 export const FEE_TOKEN_RECHECK_MS = 5 * 60 * 1000;
 
-// A failure is repeated on every retry and every later read. Each distinct one is reported
-// once per page load, so an unreachable node cannot fill the error tracker.
+// A failure is repeated on every retry and every later read. Each distinct one (its kind and
+// scrubbed first line) is reported once per page load, so an unreachable node cannot fill
+// the error tracker.
 const reported = new Set<string>();
 
 /** Starts reporting afresh, as a page load does. For tests, which share this module. */
@@ -50,13 +52,19 @@ export function forgetReportedFailures(): void {
 }
 
 function reportOnce(error: unknown, chainId: number): void {
-	const message = error instanceof Error ? error.message : String(error);
-	const key = `${chainId}:${message}`;
+	// Never the original error: see feeTokenCheckFailure.ts for what it can carry.
+	const failure = describeFailure(error);
+	const key = `${chainId}:${failure.kind}:${failure.line}`;
 	if (reported.has(key)) return;
 	reported.add(key);
-	Sentry.captureException(error, {
-		tags: { check: 'fee-token', chainId: String(chainId), feeToken: FEE_TOKEN.symbol },
-		fingerprint: ['fee-token-check'],
+	Sentry.captureException(failureReport(failure), {
+		tags: {
+			check: 'fee-token',
+			failure: failure.kind,
+			chainId: String(chainId),
+			feeToken: FEE_TOKEN.symbol,
+		},
+		fingerprint: ['fee-token-check', failure.kind],
 	});
 }
 
