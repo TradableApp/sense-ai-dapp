@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
@@ -77,7 +77,7 @@ describe('ConversationActionsMenu while renames and deletes are switched off', (
 });
 
 describe('ConversationActionsMenu, switched off, by keyboard', () => {
-	it('can still reach rename and delete with the arrow keys', () => {
+	it('can still reach rename and delete with the arrow keys', async () => {
 		checkReturns('escrow-not-exempt');
 		openMenu();
 		const menu = screen.getByRole('menu');
@@ -87,10 +87,12 @@ describe('ConversationActionsMenu, switched off, by keyboard', () => {
 		});
 		const first = document.activeElement;
 		act(() => {
-			fireEvent.keyDown(document.activeElement ?? menu, { key: 'ArrowDown' });
+			fireEvent.keyDown(item('Rename'), { key: 'ArrowDown' });
 		});
 
-		expect([first, document.activeElement]).toEqual([item('Rename'), item('Delete')]);
+		// Radix moves the focus between items on the next tick.
+		await waitFor(() => expect(document.activeElement).toBe(item('Delete')));
+		expect(first).toBe(item('Rename'));
 	});
 
 	it('does nothing on Enter or Space, and the menu stays open', () => {

@@ -27,8 +27,11 @@ function deleteBlocker(hasActivePlan: boolean, hasPendingPrompts: boolean): stri
 }
 
 /**
- * The rename and delete menu on a conversation in the history list. Each item is disabled
- * while it cannot be done, and says why in its tooltip and its accessible description.
+ * The rename and delete menu on a conversation in the history list. An item that cannot
+ * be done is marked disabled with `aria-disabled` (and styled through `data-disabled`) but
+ * not given Radix's `disabled`, which would take it out of the arrow-key order: it stays
+ * reachable, says why in its tooltip and description, and its click does nothing. The
+ * click handler calls preventDefault, which also stops Radix selecting it and closing.
  */
 export default function ConversationActionsMenu({
 	isSessionReady,
@@ -65,9 +68,10 @@ export default function ConversationActionsMenu({
 						<TooltipTrigger asChild>
 							<div className="w-full">
 								<DropdownMenuItem
-									disabled={!!renameReason}
+									aria-disabled={!!renameReason}
+									data-disabled={renameReason ? '' : undefined}
 									aria-describedby={renameReason ? renameReasonId : undefined}
-									onClick={e => !renameReason && onRename(e)}
+									onClick={e => (renameReason ? e.preventDefault() : onRename(e))}
 								>
 									<FilePenLine className="mr-2 size-4" />
 									Rename
@@ -85,9 +89,10 @@ export default function ConversationActionsMenu({
 							<div className="w-full">
 								<DropdownMenuItem
 									className="text-destructive"
-									disabled={!!deleteReason}
+									aria-disabled={!!deleteReason}
+									data-disabled={deleteReason ? '' : undefined}
 									aria-describedby={deleteReason ? deleteReasonId : undefined}
-									onClick={e => !deleteReason && onDelete(e)}
+									onClick={e => (deleteReason ? e.preventDefault() : onDelete(e))}
 								>
 									<Trash2 className="mr-2 size-4" />
 									Delete

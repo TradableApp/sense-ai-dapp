@@ -2,6 +2,7 @@ import { type ReactNode, useId } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 interface SwitchedOffButtonProps {
 	label: string;
@@ -12,8 +13,9 @@ interface SwitchedOffButtonProps {
 }
 
 /**
- * An icon button for an action that is switched off: disabled, with the reason in its
- * tooltip and as its accessible description, so a click never sends what would be refused.
+ * An icon button for an action that is switched off. It is marked disabled with
+ * `aria-disabled` rather than the native attribute, so it stays in the Tab order and its
+ * reason shows on focus as on hover; a click, Enter or Space does nothing.
  */
 export default function SwitchedOffButton({
 	label,
@@ -27,19 +29,17 @@ export default function SwitchedOffButton({
 			<TooltipProvider>
 				<Tooltip delayDuration={100}>
 					<TooltipTrigger asChild>
-						{/* A disabled button gets no pointer events: the wrapper takes the hover. */}
-						<span className="inline-flex shrink-0">
-							<Button
-								aria-label={label}
-								aria-describedby={reasonId}
-								variant="ghost"
-								size="icon"
-								className={className}
-								disabled
-							>
-								{children}
-							</Button>
-						</span>
+						<Button
+							aria-label={label}
+							aria-describedby={reasonId}
+							aria-disabled="true"
+							variant="ghost"
+							size="icon"
+							className={cn('cursor-not-allowed opacity-50', className)}
+							onClick={event => event.preventDefault()}
+						>
+							{children}
+						</Button>
 					</TooltipTrigger>
 					<TooltipContent>
 						<p>{reason}</p>

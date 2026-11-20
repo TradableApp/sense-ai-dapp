@@ -156,13 +156,14 @@ describe('the edit control on a prompt', () => {
 		const onEdit = vi.fn();
 		render(<UserMessageActions message={prompt} onEdit={onEdit} />);
 
-		activate(button('Edit message'));
 		act(() => {
 			button('Edit message').focus();
 		});
+		const shownOnFocus = tooltipText();
+		activate(button('Edit message'));
 
 		expect(onEdit).not.toHaveBeenCalled();
 		expect(document.activeElement).toBe(button('Edit message'));
-		expect(tooltipText()).toContain(feeTokenBlockCopy('symbol-mismatch', 'PTS')?.title);
+		expect(shownOnFocus).toContain(feeTokenBlockCopy('symbol-mismatch', 'PTS')?.title);
 	});
 });
