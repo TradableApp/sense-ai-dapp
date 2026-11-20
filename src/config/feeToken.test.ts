@@ -45,6 +45,11 @@ describe('fee token profiles', () => {
 		expect(ABLE.defaultPlanLimit).toEqual({ kind: 'fixed', amount: 1000 });
 	});
 
+	// Both tokens have an owner who can stop every transfer, so the check asks each of them.
+	it.each(Object.values(FEE_TOKEN_PROFILES))('$symbol says it can be paused', profile => {
+		expect(profile.pausable).toBe(true);
+	});
+
 	it('no profile names the other token', () => {
 		expect(`${SENSE.symbol} ${SENSE.name}`).not.toMatch(/able/i);
 		expect(`${ABLE.symbol} ${ABLE.name}`).not.toMatch(/sense/i);
