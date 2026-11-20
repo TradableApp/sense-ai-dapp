@@ -3,9 +3,9 @@ import Dexie from 'dexie';
 import { resolveLocalStoreName } from './localStoreName';
 import type { SenseAIDb } from './types';
 
-// One database per agent contract (see localStoreName; vite.config.ts checks the
-// same values before a build in any mode but localnet). A database written under the
-// earlier fixed name is left as it is: it cannot say which agent its rows belong to, and
+// One database per agent contract (see localStoreName; vite.config.ts applies the same rule
+// to the same values before a build or dev server in every mode). A database written under
+// the earlier fixed name is left as it is: it cannot say which agent its rows belong to, and
 // everything in it is a copy of what the subgraph and storage serve, so it is fetched again.
 const db = new Dexie(
 	resolveLocalStoreName(
