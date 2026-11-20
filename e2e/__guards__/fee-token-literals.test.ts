@@ -255,6 +255,12 @@ describe('the fee token is named only in its profile', () => {
 			'.able-badge { color: red; }',
 			'--sense-accent: #fff;',
 			'content: "SENSE";',
+			// a lower-case property key or member access
+			'const prices = { able: 0.015 };',
+			"const prices = { 'sense': 0 };",
+			'\tsense: SENSE_PROFILE,',
+			'const profile = profiles.sense;',
+			'return FEE_TOKEN_PROFILES.able',
 		];
 		const allowed = [
 			'available',
@@ -275,6 +281,13 @@ describe('the fee token is named only in its profile', () => {
 			'Senses and sensed',
 			'sense-ai-dapp',
 			'general/sense_ai',
+			'enable',
+			'tablet',
+			'sensitive',
+			'it makes sense: wait',
+			'const disabled = { enabled: true };',
+			'isSensible.value',
+			'senseai.tradable.app',
 		];
 
 		samples.forEach(sample => expect(TOKEN_NAME.test(sample), sample).toBe(true));

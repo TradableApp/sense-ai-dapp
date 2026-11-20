@@ -29,6 +29,13 @@ const SENDERS = [
 	path.join('lib', 'faucetService.ts'),
 ].sort();
 
+const WALLET_PANEL_FILES = [
+	path.join('features', 'auth', 'Auth.tsx'),
+	path.join('features', 'auth', 'SignatureScreen.tsx'),
+	path.join('layouts', 'MainLayout.tsx'),
+	path.join('layouts', 'components', 'nav', 'NavUser.tsx'),
+].sort();
+
 // thirdweb's senders (the function and the React hook, single or batched, with or without
 // waiting for the receipt), its ready-made transaction button, the wallet-call API, and
 // the raw JSON-RPC methods.
@@ -70,7 +77,33 @@ describe('transactions are sent only where the fee token check is asked', () => 
 			'<TransactionButton transaction={() => tx}>Pay</TransactionButton>',
 			"method: 'eth_sendTransaction',",
 			"method: 'eth_sendRawTransaction',",
+			"method: 'wallet_sendCalls',",
+			'const { mutateAsync } = useSendAndConfirmCalls();',
+			'await walletClient.writeContract({ address, abi, functionName });',
+			'await client.sendRawTransaction({ serializedTransaction });',
+			'<PayEmbed client={client} />',
+			'<BuyWidget client={client} />',
+			'<CheckoutWidget client={client} />',
+			'<TransactionWidget client={client} />',
+			'<SwapWidget client={client} />',
+			'<BridgeWidget client={client} />',
 		].forEach(sample => expect(SENDS.test(sample), sample).toBe(true));
+	});
+
+	// The connected-wallet panel can send and buy the user's own tokens, which pays the app
+	// nothing; its buttons share one configuration (the wallet-panel-shared guard), which
+	// hides send and buy for a token that cannot be sent or bought. It may appear only here.
+	it('mounts the wallet panel only in the files that share its configuration', () => {
+		const panel = code
+			.filter(({ source }) => /\bConnectButton\b/.test(source))
+			.map(({ file }) => file)
+			.sort();
+
+		expect(panel).toEqual(WALLET_PANEL_FILES);
+		panel.forEach(file => {
+			const { source } = code.find(entry => entry.file === file) ?? { source: '' };
+			expect(source, file).toMatch(/\bWALLET_DETAILS_MODAL\b/);
+		});
 	});
 
 	it('does not count building or reading a call as sending it', () => {
@@ -79,6 +112,8 @@ describe('transactions are sent only where the fee token check is asked', () => 
 			'readContract({ contract, method })',
 			'eth_getTransactionReceipt(rpc, { hash })',
 			'const sentTransactions = 0;',
+			'readContract({ contract, method: "writeContractCount" })',
+			'<ConnectButton client={client} />',
 		].forEach(sample => expect(SENDS.test(sample), sample).toBe(false));
 	});
 });
