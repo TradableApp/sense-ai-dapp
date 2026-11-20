@@ -66,6 +66,7 @@ import { cancelWindow } from './cancelWindow';
 import isQueryAhead from './messageReconcile';
 import { composerStateFor } from './promptParent';
 import useHeldBranchRefresh from './useHeldBranchRefresh';
+import useOneSendAtATime from './useOneSendAtATime';
 
 interface MarkdownParagraphProps {
 	children: ReactNode;
@@ -125,7 +126,8 @@ export default function Chat() {
 		branchConversationMutation,
 		cancelPromptMutation,
 		processRefundMutation,
-	} = useChatMutations();
+		isSending,
+	} = useOneSendAtATime(useChatMutations());
 
 	const [animatedContents, setAnimatedContents] = useState<Record<string, string>>({});
 	const activeTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -793,11 +795,7 @@ export default function Chat() {
 		);
 	};
 
-	const isProcessing =
-		isSubmitting ||
-		initiatePromptMutation.isPending ||
-		regenerateMutation.isPending ||
-		branchConversationMutation.isPending;
+	const isProcessing = isSubmitting || isSending;
 
 	const hasValidationError = !!errors.prompt;
 	const isDisabled =
@@ -878,6 +876,7 @@ export default function Chat() {
 									<EditPromptInput
 										originalContent={message.content ?? ''}
 										onSave={handleSaveEdit}
+										isSending={isProcessing}
 										onCancel={() => setEditingMessageId(null)}
 									/>
 								</div>
@@ -947,6 +946,7 @@ export default function Chat() {
 												onRegenerate={mode => handleRegenerate(message, mode)}
 												onNavigate={handleNavigate}
 												onBranch={() => handleBranch(message as unknown as ActiveMessage)}
+												isSending={isProcessing}
 												initialFeedback={
 													feedbackData[msgIdStr] ? String(feedbackData[msgIdStr]) : null
 												}

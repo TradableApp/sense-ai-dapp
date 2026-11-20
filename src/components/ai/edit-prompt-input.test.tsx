@@ -1,4 +1,6 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
+
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
@@ -57,5 +59,74 @@ describe('saving an edited prompt', () => {
 		});
 
 		expect(onSave).toHaveBeenCalledTimes(1);
+	});
+});
+
+/** Stands in for the chat: a save starts a send, and the editor is told it is sending. */
+function EditorWhoseSaveStartsASend({ onSave }: { onSave: (_data: { content: string }) => void }) {
+	const [isSending, setIsSending] = useState(false);
+	return (
+		<EditPromptInput
+			originalContent="A prompt"
+			isSending={isSending}
+			onSave={data => {
+				onSave(data);
+				setIsSending(true);
+			}}
+			onCancel={vi.fn()}
+		/>
+	);
+}
+
+function renderSendingEditor() {
+	checkReturns('ok');
+	const onSave = vi.fn();
+	render(<EditorWhoseSaveStartsASend onSave={onSave} />);
+	return {
+		onSave,
+		save: () => screen.getByRole('button', { name: 'Update' }) as HTMLButtonElement,
+	};
+}
+
+describe('saving an edited prompt while it is being sent', () => {
+	it('sends once when Save is pressed twice', async () => {
+		const { onSave, save } = renderSendingEditor();
+		// Save is enabled once the form has checked the text it starts with.
+		await waitFor(() => expect(save().disabled).toBe(false));
+
+		await act(async () => {
+			fireEvent.click(save());
+		});
+		const afterFirstPress = onSave.mock.calls.length;
+		await act(async () => {
+			fireEvent.click(save());
+		});
+
+		expect(afterFirstPress).toBe(1);
+		expect(onSave).toHaveBeenCalledTimes(1);
+	});
+
+	it('sends once when Enter is pressed twice', async () => {
+		const { onSave } = renderSendingEditor();
+
+		await act(async () => {
+			fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+		});
+		await act(async () => {
+			fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+		});
+
+		expect(onSave).toHaveBeenCalledTimes(1);
+	});
+
+	it('disables Save and says that a prompt is being sent', async () => {
+		const { save } = renderSendingEditor();
+
+		await act(async () => {
+			fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+		});
+
+		expect(save().disabled).toBe(true);
+		expect(description(save())).toMatch(/being sent/i);
 	});
 });
