@@ -37,13 +37,16 @@ const WALLET_PANEL_FILES = [
 ].sort();
 
 // thirdweb's senders (the function and the React hook, single or batched, with or without
-// waiting for the receipt), its ready-made transaction button, the wallet-call API, and
-// the raw JSON-RPC methods.
+// waiting for the receipt), the wallet-call API, viem's writers, thirdweb's ready-made pay
+// and transaction widgets (none is used), and the raw JSON-RPC methods.
 const SENDS = new RegExp(
 	[
 		'\\b(?:use)?[Ss]end(?:AndConfirm)?(?:Batch)?Transaction\\b',
-		'\\b(?:use)?[Ss]endCalls\\b',
-		'\\bTransactionButton\\b',
+		// `wallet_sendCalls`: an underscore is a word character, so no word boundary before it.
+		'(?:\\b|_)(?:use)?[Ss]end(?:AndConfirm)?Calls\\b',
+		'\\bwriteContract\\b',
+		'\\bsendRawTransaction\\b',
+		'\\b(?:TransactionButton|TransactionWidget|PayEmbed|BuyWidget|CheckoutWidget|SwapWidget|BridgeWidget)\\b',
 		'\\beth_send(?:Raw)?Transaction\\b',
 	].join('|'),
 );

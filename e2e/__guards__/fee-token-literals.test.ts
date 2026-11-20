@@ -106,6 +106,11 @@ const TOKEN_NAME = new RegExp(
 		// lower-case and joined by a dash or underscore, as in a stylesheet (`.able-badge`,
 		// `--sense-accent`), but not the product's own `sense-ai` or `sense_ai`
 		'(?:^|[^A-Za-z])(?:able|sense)[-_](?!ai\\b)',
+		// lower-case as an object key (`{ able: 0.015 }`, a key on its own line) or a member
+		// access (`profiles.sense`); a key needs a brace, a comma or the start of the line
+		// before it, so "makes sense: wait" in a sentence is not one
+		`(?:[{,]\\s*|^\\s*)['"]?(?:able|sense)['"]?\\s*:`,
+		'\\.(?:able|sense)(?![\\w-])',
 	].join('|'),
 );
 
