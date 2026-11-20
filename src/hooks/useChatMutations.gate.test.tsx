@@ -208,7 +208,8 @@ afterEach(() => {
 // so a verdict added later is a stop until someone decides otherwise.
 const LETS_THROUGH: Record<PaidAction, readonly FeeTokenCheckState[]> = {
 	prompt: ['ok', 'unknown', 'treasury-not-exempt'],
-	// Required by the type, but no case here asks for it: the plan's gate is pinned by the static gate guard.
+	// Required by the type, but no case here asks for it: the plan is set through its own hook,
+	// whose gate usePlanMutations.test.tsx drives the same way.
 	plan: ['ok', 'unknown', 'treasury-not-exempt'],
 	branch: ['ok', 'unknown'],
 	metadata: ['ok', 'unknown'],
