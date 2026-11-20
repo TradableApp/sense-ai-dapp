@@ -72,14 +72,23 @@ export default function useFeeTokenCheck(): FeeTokenCheck {
 	const contracts = chain ? CONTRACTS[chain.id] : undefined;
 	const escrowAddress: string | undefined = contracts?.escrow?.address;
 	const tokenAddress: string | undefined = contracts?.token?.address;
+	const agentAddress: string | undefined = contracts?.agent?.address;
 	const escrowAbi = contracts?.escrow?.abi as readonly AbiItem[] | undefined;
 	const tokenAbi = contracts?.token?.abi as readonly AbiItem[] | undefined;
-	const isConfigured = !!chain && !!escrowAddress && !!tokenAddress && !!escrowAbi && !!tokenAbi;
+	const isConfigured =
+		!!chain && !!escrowAddress && !!tokenAddress && !!agentAddress && !!escrowAbi && !!tokenAbi;
 
 	const { data } = useQuery({
-		queryKey: ['feeTokenCheck', chain?.id, escrowAddress, tokenAddress, FEE_TOKEN.symbol],
+		queryKey: [
+			'feeTokenCheck',
+			chain?.id,
+			escrowAddress,
+			tokenAddress,
+			agentAddress,
+			FEE_TOKEN.symbol,
+		],
 		queryFn: async (): Promise<FeeTokenVerdict> => {
-			if (!chain || !escrowAddress || !tokenAddress || !escrowAbi || !tokenAbi) {
+			if (!chain || !escrowAddress || !tokenAddress || !agentAddress || !escrowAbi || !tokenAbi) {
 				throw new Error('Fee token check: no contracts for this chain.');
 			}
 			const reader: FeeTokenReader = {
@@ -90,6 +99,7 @@ export default function useFeeTokenCheck(): FeeTokenCheck {
 				return await readFeeTokenVerdict({
 					reader,
 					configuredToken: tokenAddress,
+					configuredAgent: agentAddress,
 					escrowAddress,
 					profile: FEE_TOKEN,
 				});

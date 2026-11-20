@@ -17,7 +17,8 @@ export type FeeTokenVerdict =
 	| 'escrow-uses-other-token'
 	| 'symbol-mismatch'
 	| 'escrow-not-exempt'
-	| 'treasury-not-exempt';
+	| 'treasury-not-exempt'
+	| 'escrow-serves-other-agent';
 
 /** The escrow's getter for the agent contract it serves. */
 export const ESCROW_AGENT_GETTER = 'evmAIAgent';
@@ -82,7 +83,9 @@ export function blocksAction(state: FeeTokenCheckState, action: PaidAction): boo
 
 /** The contract reads the check needs. Kept this narrow so a test can stand in for the chain. */
 export interface FeeTokenReader {
-	escrow: (_method: typeof ESCROW_FEE_TOKEN_GETTER | 'treasury') => Promise<unknown>;
+	escrow: (
+		_method: typeof ESCROW_FEE_TOKEN_GETTER | typeof ESCROW_AGENT_GETTER | 'treasury',
+	) => Promise<unknown>;
 	token: (_method: 'symbol' | 'isTransferExempt', _params?: readonly [string]) => Promise<unknown>;
 }
 
@@ -106,39 +109,49 @@ function asBoolean(value: unknown, what: string): boolean {
 	return value;
 }
 
+interface VerdictInput {
+	reader: FeeTokenReader;
+	configuredToken: string;
+	/** The agent contract this build sends prompts to. */
+	configuredAgent: string;
+	escrowAddress: string;
+	profile: { symbol: string; transferable: boolean };
+}
+
 /**
- * Reads the chain and returns the verdict. A read that fails, or returns something that is
- * not what the contract declares, throws: no answer is not the same as a wrong token, and
- * the caller must not switch payments off for it.
- *
- * The reads are made in the order the verdicts are decided, the treasury only when a
- * restricted token needs it. A build for a restricted token
- * pointed at an ordinary one cannot be asked about listings at all (that read reverts), and
- * its symbol is the answer; asked together, the revert would hide it.
+ * The escrow's side: the token it takes, then the agent it serves. Null when both are the
+ * ones the build names. A wrong token is named first, and nothing is asked after it.
  */
-export async function readFeeTokenVerdict({
+async function readEscrowSide({
+	reader,
+	configuredToken,
+	configuredAgent,
+}: VerdictInput): Promise<FeeTokenVerdict | null> {
+	const escrowToken = asAddress(await reader.escrow(ESCROW_FEE_TOKEN_GETTER), 'the escrow token');
+	if (!sameAddress(escrowToken, configuredToken)) return 'escrow-uses-other-token';
+	// A payment to an escrow wired to another agent is taken, and the answer is never seen.
+	const agent = asAddress(await reader.escrow(ESCROW_AGENT_GETTER), 'the agent');
+	if (!sameAddress(agent, configuredAgent)) return 'escrow-serves-other-agent';
+	return null;
+}
+
+/**
+ * The token's side: its symbol, then, for a restricted token, whether the escrow and the
+ * treasury the escrow holds are listed. A build for a restricted token pointed at an
+ * ordinary one cannot be asked about listings at all (that read reverts), and its symbol
+ * is the answer; asked together, the revert would hide it.
+ */
+async function readTokenSide({
 	reader,
 	configuredToken,
 	escrowAddress,
 	profile,
-}: {
-	reader: FeeTokenReader;
-	configuredToken: string;
-	escrowAddress: string;
-	profile: { symbol: string; transferable: boolean };
-}): Promise<FeeTokenVerdict> {
-	// One read at a time, each decided before the next is made: a later read that fails must
-	// not take away an answer an earlier one already gave.
-	const escrowToken = asAddress(await reader.escrow(ESCROW_FEE_TOKEN_GETTER), 'the escrow token');
-	// Everything below describes the configured token and the escrow's treasury. If the escrow
-	// uses another token, none of it matters: the wrong token is the answer.
-	if (!sameAddress(escrowToken, configuredToken)) return 'escrow-uses-other-token';
-
+}: VerdictInput): Promise<FeeTokenVerdict> {
 	const rawSymbol = await reader.token('symbol');
 	if (typeof rawSymbol !== 'string') throw unreadable('the symbol is not text');
 	const pair: PairReadings = {
 		configuredToken,
-		escrowToken,
+		escrowToken: configuredToken,
 		onChainSymbol: rawSymbol,
 		expectedSymbol: profile.symbol,
 	};
@@ -157,6 +170,19 @@ export async function readFeeTokenVerdict({
 		escrowExempt: asBoolean(rawEscrowExempt, 'the escrow exemption'),
 		treasuryExempt: asBoolean(rawTreasuryExempt, 'the treasury exemption'),
 	});
+}
+
+/**
+ * Reads the chain and returns the verdict. A read that fails, or returns something that is
+ * not what the contract declares, throws: no answer is not the same as a wrong token, and
+ * the caller must not switch payments off for it.
+ *
+ * The reads are made in the order the verdicts are decided, one at a time, each decided
+ * before the next is made: a later read that fails must not take away an answer an
+ * earlier one already gave.
+ */
+export async function readFeeTokenVerdict(input: VerdictInput): Promise<FeeTokenVerdict> {
+	return (await readEscrowSide(input)) ?? readTokenSide(input);
 }
 
 const EVERYTHING = 'Prompts, branches, renames, deletes and plan changes are switched off';
