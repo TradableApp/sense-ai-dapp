@@ -271,6 +271,15 @@ describe('how the guard reads the button that sends a refund', () => {
 		expect(() => disabledOf(source, 'Button', marker)).toThrow(/not inside/);
 	});
 
+	it.each([
+		['a > in a quoted attribute', 'label="a > b"'],
+		['a brace in a quoted attribute', "title='{'"],
+	])('reads past %s', (_, attribute) => {
+		const source = `<Button ${attribute} onClick={() => ${marker}{ id: 1 })} disabled={processRefundMutation.isPending}>`;
+
+		expect(disabledOf(source, 'Button', marker)).toBe('processRefundMutation.isPending');
+	});
+
 	it('fails when the button cannot be found', () => {
 		expect(() => disabledOf('<Button disabled={x}>Refund</Button>', 'Button', marker)).toThrow();
 		expect(() => disabledOf(`<Link onClick={() => ${marker})} />`, 'Button', marker)).toThrow();
