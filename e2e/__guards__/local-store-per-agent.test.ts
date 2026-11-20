@@ -58,6 +58,8 @@ describe('local store is opened once, per agent', () => {
 	it.each([
 		"import type { Table } from 'dexie';",
 		"import type { Table } from 'dexie/dist/dexie';",
+		"export type { Table } from 'dexie';",
+		"export type { Table } from 'dexie/dist/dexie';",
 		"import { db } from '@/lib/db';",
 		"import { something } from 'dexie-like-name';",
 		"import { something } from 'not-dexie';",
