@@ -165,15 +165,26 @@ describe('buildErrorHandler — Token errors', () => {
 	});
 
 	// A paused token refuses every movement, so what it means depends on what was being done.
-	// A payment took nothing. A cancellation leaves the fee held until the token is resumed. A
-	// refund cannot be paid until then. No refund time is promised: nobody here knows when.
+	// A payment took nothing. A cancellation leaves the fee held; once the token is resumed the
+	// oracle may still answer (and take) it, or it can be cancelled, or refunded an hour after
+	// it was sent, the escrow's fixed wait. Nobody here knows when the token will be resumed,
+	// so no resume time is promised.
+	const promisesResumeTime = /resum\w*\s+(?:in|within|by|soon|shortly|after\s+\d)/i;
 	const pausedCases = [
 		['send message', 'Payments Paused', /no tokens were taken/i],
 		['regenerate response', 'Payments Paused', /no tokens were taken/i],
 		['branch conversation', 'Payments Paused', /no tokens were taken/i],
 		['update conversation', 'Payments Paused', /no tokens were taken/i],
-		['cancel prompt', 'Could Not Cancel', /still held.*until the token is resumed/i],
-		['process refund', 'Refund Not Sent', /still held.*once the token is resumed/i],
+		[
+			'cancel prompt',
+			'Could Not Cancel',
+			/still held.*nothing can move until it is resumed.*may still be answered.*cancel.*claim a refund one hour after the prompt was sent/i,
+		],
+		[
+			'process refund',
+			'Refund Not Sent',
+			/still held.*once the token is resumed.*unless the prompt has been answered/i,
+		],
 	] as const;
 
 	it.each(pausedCases)('a paused token during "%s" says %s', (action, title, description) => {
@@ -187,7 +198,7 @@ describe('buildErrorHandler — Token errors', () => {
 		expect(toast.error).toHaveBeenCalledTimes(1);
 		expect(shown).toBe(title);
 		expect(text).toMatch(description);
-		expect(text).not.toMatch(/hour/i);
+		expect(text).not.toMatch(promisesResumeTime);
 		expect(`${shown} ${text}`).not.toMatch(/\b(SENSE|ABLE)\b/);
 	});
 
@@ -247,9 +258,11 @@ describe('buildErrorHandler — Token errors', () => {
 				expect(description).toMatch(/contact support/i);
 			}
 			if (outlook === 'paused') {
-				expect(description).not.toMatch(anyRefundTime);
 				expect(description).toMatch(/paused/i);
-				expect(description).toMatch(/refund would be refused too until .* resume/i);
+				expect(description).toMatch(/nothing can move until it is resumed/i);
+				expect(description).toMatch(/may still be answered/i);
+				expect(description).toMatch(promisesRefund);
+				expect(description).not.toMatch(promisesResumeTime);
 			}
 			if (outlook === 'support') {
 				expect(description).not.toMatch(anyRefundTime);
@@ -322,8 +335,8 @@ describe('buildErrorHandler — every explained error is recognised by its selec
 	// A paused token has one message per action, whichever token the build is for.
 	const pausedRows = [
 		['send message', 'Payments Paused', /no tokens were taken/i],
-		['cancel prompt', 'Could Not Cancel', /until the token is resumed/i],
-		['process refund', 'Refund Not Sent', /once the token is resumed/i],
+		['cancel prompt', 'Could Not Cancel', /claim a refund one hour after the prompt was sent/i],
+		['process refund', 'Refund Not Sent', /unless the prompt has been answered/i],
 	] as const;
 	it.each(
 		[FEE_TOKEN_PROFILES.ABLE, FEE_TOKEN_PROFILES.SENSE].flatMap(profile =>

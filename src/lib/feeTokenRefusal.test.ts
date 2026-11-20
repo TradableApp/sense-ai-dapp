@@ -38,6 +38,9 @@ describe('REFUND_OUTLOOK', () => {
 	);
 });
 
+// When a paused token will be resumed is its owner's choice, so no time may be given for it.
+const PROMISES_RESUME_TIME = /resum\w*\s+(?:in|within|by|soon|shortly|after\s+\d)/i;
+
 describe('refusedTransferMessage for a paused token', () => {
 	it('says a refused payment took nothing', () => {
 		expect(refusedTransferMessage('send message', 'unknown', 'paused')).toEqual({
@@ -52,8 +55,12 @@ describe('refusedTransferMessage for a paused token', () => {
 
 		expect(title).toBe('Could Not Cancel');
 		expect(description).toMatch(/still held/i);
-		expect(description).toMatch(/until the token is resumed/i);
-		expect(description).not.toMatch(/hour/i);
+		expect(description).toMatch(/nothing can move until it is resumed/i);
+		// After the resume the oracle's answer may finalise the payment first.
+		expect(description).toMatch(/may still be answered/i);
+		// The escrow's refund wait is fixed; the resume time is not known.
+		expect(description).toMatch(/claim a refund one hour after the prompt was sent/i);
+		expect(description).not.toMatch(PROMISES_RESUME_TIME);
 	});
 
 	it('says a refused refund waits for the token to be resumed', () => {
@@ -62,6 +69,8 @@ describe('refusedTransferMessage for a paused token', () => {
 		expect(title).toBe('Refund Not Sent');
 		expect(description).toMatch(/still held/i);
 		expect(description).toMatch(/once the token is resumed/i);
-		expect(description).not.toMatch(/hour/i);
+		// The refund needs the escrow still pending, and the oracle may answer first.
+		expect(description).toMatch(/unless the prompt has been answered/i);
+		expect(description).not.toMatch(PROMISES_RESUME_TIME);
 	});
 });
