@@ -23,7 +23,11 @@ const wrapped = [
 	...lock.matchAll(/startedAlone\(\s*(\w+),\s*isSendUnderWay,\s*untilFinished,?\s*\)/g),
 ].map(match => match[1]);
 
-/** The self-closing `<Tag … />` element that starts at the first `<Tag`, or ''. */
+/**
+ * The self-closing `<Tag … />` element that starts at the first `<Tag`, or ''. It ends at the
+ * first `/>`, so a prop holding a self-closing element ahead of the flag cuts it short and the
+ * guard fails with the flag in place: move the flag above that prop.
+ */
 function element(source: string, tag: string): string {
 	const start = source.search(new RegExp(`<${tag}\\b`));
 	if (start === -1) return '';
