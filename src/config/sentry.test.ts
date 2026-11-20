@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { initSentry, scrubBreadcrumb } from './sentry';
+import { scrubErrorEvent, scrubTransactionEvent } from './sentryEvent';
 
 vi.mock('@sentry/react', () => ({
 	init: vi.fn(),
@@ -94,6 +95,19 @@ describe('initSentry', () => {
 
 		expect(Sentry.init).toHaveBeenCalledWith(
 			expect.objectContaining({ beforeBreadcrumb: scrubBreadcrumb }),
+		);
+	});
+
+	it('scrubs every error and transaction event before it is sent', () => {
+		vi.stubEnv('VITE_SENTRY_DSN', 'https://public@sentry.example/1');
+
+		initSentry();
+
+		expect(Sentry.init).toHaveBeenCalledWith(
+			expect.objectContaining({
+				beforeSend: scrubErrorEvent,
+				beforeSendTransaction: scrubTransactionEvent,
+			}),
 		);
 	});
 });
