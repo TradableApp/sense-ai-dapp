@@ -124,6 +124,24 @@ describe('the controls on an answer', () => {
 	});
 });
 
+describe('the "More actions" menu', () => {
+	it('holds only the branch, because switching branching off disables the whole trigger', () => {
+		checkReturns('ok');
+		render(<MessageActions message={answer} />);
+
+		act(() => {
+			fireEvent.pointerDown(button('More actions'), {
+				button: 0,
+				ctrlKey: false,
+				pointerType: 'mouse',
+			});
+		});
+
+		const items = screen.getAllByRole('menuitem').map(item => item.textContent?.trim());
+		expect(items).toEqual(['Branch in new chat']);
+	});
+});
+
 describe('the edit control on a prompt', () => {
 	it.each(FEE_TOKEN_STATES.filter(state => blocksAction(state, 'prompt')))(
 		'is disabled under %s and says why',
