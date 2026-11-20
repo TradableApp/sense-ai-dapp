@@ -1,8 +1,8 @@
 // @vitest-environment node
 //
-// Static guard over src/ (pure Node; see the adr-0002 guard for why the environment is
+// Static guard over src/, index.html, vite.config.ts and public/ (pure Node; see the adr-0002 guard for why the environment is
 // pinned per file).
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -19,12 +19,15 @@ import { E2E_DIR, sourceFiles } from './source-scan';
  * name written into a component would survive that switch unnoticed. Comments count: a
  * comment that names one token goes stale the day the other is selected.
  *
- * The contract ABIs are exempt (they are named after their contracts), and so is the one
- * line in `vite-env.d.ts` that documents the setting's two values.
+ * The page (`index.html`), the build config and the text files under `public/` are read
+ * too: what they hold is served as it is. The contract ABIs are exempt (they are named
+ * after their contracts), and so is the one comment in `vite-env.d.ts` that documents the
+ * setting's two values, on its declaration.
  */
 
 const ROOT = path.resolve(E2E_DIR, '..');
 const SRC = path.join(ROOT, 'src');
+const PUBLIC = path.join(ROOT, 'public');
 const ALLOWED = [
 	path.join('config', 'feeToken.ts'),
 	path.join('config', 'feeTokenConfig.ts'),
@@ -35,16 +38,36 @@ const isChecked = (file: string) =>
 	!/\.test\.(ts|tsx|js|jsx)$/.test(file) &&
 	!ALLOWED.some(allowed => file === allowed || file.startsWith(allowed));
 
+// Served as they are, so a name in them reaches the user unchanged. Images and fonts are
+// binary and cannot be read for a name.
+const BINARY = /\.(png|jpe?g|gif|webp|avif|ico|bmp|woff2?|ttf|otf|eot)$/i;
+
 /** Every file scanned, by its path from the repository root. */
 function scannedFiles(): string[] {
-	return sourceFiles(SRC, isChecked).map(file => path.join('src', file));
+	return [
+		...sourceFiles(SRC, isChecked).map(file => path.join('src', file)),
+		'index.html',
+		'vite.config.ts',
+		...sourceFiles(
+			PUBLIC,
+			file => !BINARY.test(file) && statSync(path.join(PUBLIC, file)).isFile(),
+		).map(file => path.join('public', file)),
+	];
 }
 
 const VITE_ENV = path.join('src', 'vite-env.d.ts');
 
-/** Whether line `index` of `file` may name a token. */
-function isExemptLine(file: string, _lines: string[], _index: number): boolean {
-	return file === VITE_ENV;
+/**
+ * Whether line `index` of `file` may name a token: only the one-line doc comment that sits
+ * on the `VITE_FEE_TOKEN` declaration in `vite-env.d.ts`, which documents the setting's two
+ * values. Anything else there that names a token fails like any other file.
+ */
+function isExemptLine(file: string, lines: string[], index: number): boolean {
+	return (
+		file === VITE_ENV &&
+		/^\s*\/\*\*.*\*\/\s*$/.test(lines[index]) &&
+		/^\s*readonly VITE_FEE_TOKEN\b/.test(lines[index + 1] ?? '')
+	);
 }
 
 // A token's name in any letter case, wherever it is not part of a longer word: on its own,
