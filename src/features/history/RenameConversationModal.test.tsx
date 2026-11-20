@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
@@ -101,5 +101,39 @@ describe('RenameConversationModal', () => {
 		});
 
 		expect(onRenameSubmit).not.toHaveBeenCalled();
+	});
+
+	// The dialog's backdrop hides the notice at the top of the page, so the dialog carries it.
+	it('shows the banner title and description inside the dialog while renames are switched off', () => {
+		checkReturns('treasury-not-exempt');
+
+		renderDialog();
+
+		const copy = feeTokenBlockCopy('treasury-not-exempt', 'PTS');
+		const dialog = screen.getByRole('dialog');
+		expect(within(dialog).queryByRole('alert')).not.toBeNull();
+		expect(dialog.textContent).toContain(copy?.title);
+		expect(dialog.textContent).toContain(copy?.description);
+	});
+
+	it('points at the notice the user can see, not at the page behind the dialog', async () => {
+		checkReturns('escrow-not-exempt');
+		renderDialog();
+
+		await typeValidTitle();
+
+		const ids = (renameButton().getAttribute('aria-describedby') ?? '').split(' ');
+		const described = ids.map(id => document.getElementById(id)?.textContent ?? '').join(' ');
+		expect(described).not.toMatch(/top of the page/i);
+		expect(described).toContain(feeTokenBlockCopy('escrow-not-exempt', 'PTS')?.title);
+	});
+
+	it.each(['ok', 'unknown'] as const)('shows no banner under %s', verdict => {
+		checkReturns(verdict);
+
+		renderDialog();
+
+		expect(within(screen.getByRole('dialog')).queryByRole('alert')).toBeNull();
+		expect(screen.getByRole('dialog').textContent).not.toMatch(/switched off/i);
 	});
 });

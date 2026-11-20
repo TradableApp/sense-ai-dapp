@@ -174,6 +174,17 @@ describe('where the fee token check is asked', () => {
 		});
 	});
 
+	// A modal dialog's backdrop hides the page banner, so each dialog for a paying action
+	// mounts its own, outside any condition (the banner renders nothing while all is well).
+	it.each([
+		'src/features/usage/ManagePlanModal.tsx',
+		'src/features/history/RenameConversationModal.tsx',
+	])('%s carries the banner itself', file => {
+		const dialog = code(file);
+		expect(dialog).toMatch(/\n\t+<FeeTokenMismatchBanner /);
+		expect(dialog).not.toMatch(/&&\s*<FeeTokenMismatchBanner/);
+	});
+
 	it('the banner is mounted once for every page, outside any condition', () => {
 		const layout = code('src/layouts/MainLayout.tsx');
 		expect(layout).toMatch(/\n\t+<FeeTokenMismatchBanner /);
