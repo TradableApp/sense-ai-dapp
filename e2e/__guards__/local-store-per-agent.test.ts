@@ -32,6 +32,29 @@ const DEXIE_VALUE_IMPORT =
 	/^(?!\s*import\s+type\b).*\bfrom\s+['"]dexie['"]|\b(require|import)\s*\(\s*['"]dexie['"]/;
 
 describe('local store is opened once, per agent', () => {
+	it.each([
+		"import Dexie from 'dexie';",
+		"import { Dexie, type Table } from 'dexie';",
+		'import Dexie from "dexie";',
+		"import Dexie from 'dexie/dist/modern/dexie.mjs';",
+		"import { liveQuery } from 'dexie/dist/dexie';",
+		"const { Dexie } = await import('dexie');",
+		"const { Dexie } = await import('dexie/dist/dexie');",
+		"const Dexie = require('dexie');",
+	])('counts %s as loading the library', line => {
+		expect(DEXIE_VALUE_IMPORT.test(line)).toBe(true);
+	});
+
+	it.each([
+		"import type { Table } from 'dexie';",
+		"import type { Table } from 'dexie/dist/dexie';",
+		"import { db } from '@/lib/db';",
+		"import { something } from 'dexie-like-name';",
+		"import { something } from 'not-dexie';",
+	])('does not count %s', line => {
+		expect(DEXIE_VALUE_IMPORT.test(line)).toBe(false);
+	});
+
 	it('loads the database library only in src/lib/db.ts', () => {
 		// Stricter than looking for `new Dexie(`: a subclass calling `super('name')` or an
 		// aliased import would open a second database without those words.
