@@ -525,9 +525,16 @@ describe('buildErrorHandler — Generic fallbacks', () => {
 		expect(options.duration).toBe(Infinity);
 	});
 
-	it('neither network → no faucet button (default 4s toast)', () => {
+	it('keeps the toast up while it points to the community, which has links to follow', () => {
+		const handler = buildErrorHandler(false, false, 100, vi.fn(), FEE_TOKEN_PROFILES.SENSE);
+		handler({ message: 'ERC20InsufficientBalance' }, 'send message');
+		const [, options] = vi.mocked(toast.error).mock.calls[0];
+		expect((options as { duration?: number }).duration).toBe(Infinity);
+	});
+
+	it('neither network, nothing to click → default 4s toast', () => {
 		(toast.error as any).mockClear();
-		const handler = buildErrorHandler(false, false, 100, vi.fn());
+		const handler = buildErrorHandler(false, false, 100, vi.fn(), FEE_TOKEN_PROFILES.ABLE);
 		handler({ message: 'ERC20InsufficientBalance' }, 'send message');
 		const [, options] = (toast.error as any).mock.calls[0];
 		expect(options.duration).toBe(4000);

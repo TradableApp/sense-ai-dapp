@@ -109,3 +109,43 @@ describe('the plan dialog before the fee token check has answered once', () => {
 		expect(state.mutate).toHaveBeenCalledTimes(1);
 	});
 });
+
+describe('an empty wallet of a token that cannot be got in the app', () => {
+	const links = () => screen.queryAllByRole('link');
+
+	it('is pointed to SenseAI on X and the Telegram group', async () => {
+		withBalance('0');
+		await renderDialog();
+
+		expect(document.body.textContent).toContain(
+			`You have no ${FEE_TOKEN_PROFILES.SENSE.symbol} yet.`,
+		);
+		expect(links().map(link => link.getAttribute('href'))).toEqual([
+			'https://x.com/SenseAI_agent',
+			'https://t.me/tradable_community',
+		]);
+	});
+
+	it('is not pointed anywhere when the wallet holds some', async () => {
+		withBalance('3');
+		await renderDialog();
+
+		expect(links()).toEqual([]);
+	});
+
+	it('is not pointed anywhere where the faucet is offered', async () => {
+		state.chainId = 84532;
+		withBalance('0');
+		await renderDialog();
+
+		expect(links()).toEqual([]);
+	});
+
+	it('is not pointed anywhere for a token that can be bought', async () => {
+		state.profile = FEE_TOKEN_PROFILES.ABLE;
+		withBalance('0');
+		await renderDialog();
+
+		expect(links()).toEqual([]);
+	});
+});
