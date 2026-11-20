@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useId } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
@@ -58,6 +58,7 @@ export default function RenameConversationModal({
 	});
 	// A rename pays a fee; while that is switched off the dialog says so and sends nothing.
 	const renameSwitchedOff = useSwitchedOffReason('metadata');
+	const reasonId = useId();
 
 	useEffect(() => {
 		if (conversationToRename && open) {
@@ -84,7 +85,9 @@ export default function RenameConversationModal({
 
 					{errors.title && <p className="text-sm text-destructive">{errors.title.message}</p>}
 					{renameSwitchedOff && (
-						<p className="text-sm text-muted-foreground">{renameSwitchedOff}</p>
+						<p id={reasonId} className="text-sm text-muted-foreground">
+							{renameSwitchedOff}
+						</p>
 					)}
 					{error && <p className="text-sm text-destructive">{error.message}</p>}
 
@@ -97,7 +100,11 @@ export default function RenameConversationModal({
 						>
 							Cancel
 						</Button>
-						<Button type="submit" disabled={isProcessing || !isValid || !!renameSwitchedOff}>
+						<Button
+							type="submit"
+							disabled={isProcessing || !isValid || !!renameSwitchedOff}
+							aria-describedby={renameSwitchedOff ? reasonId : undefined}
+						>
 							{isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
 							{isProcessing ? 'Renaming...' : 'Rename'}
 						</Button>
