@@ -3,10 +3,18 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { prepareContractCall, sendAndConfirmTransaction } from 'thirdweb';
+import {
+	type AbiEvent,
+	type AbiParameter,
+	encodeAbiParameters,
+	encodeEventTopics,
+	getAbiItem,
+} from 'viem';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import useChatMutations from '@/hooks/useChatMutations';
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
+import agentAbi from '@/lib/abi/EVMAIAgent.json';
 import { encryptData } from '@/lib/crypto';
 import { blocksAction } from '@/lib/feeTokenCheck';
 
@@ -63,58 +71,106 @@ vi.mock('@/lib/crypto', () => ({ encryptData: vi.fn(async () => 'iv.cipher') }))
 vi.mock('@/lib/ecies', () => ({ default: vi.fn(async () => new Uint8Array([1, 2, 3, 4])) }));
 
 const sessionKey = {} as CryptoKey;
+const AGENT_ADDRESS = '0x00000000000000000000000000000000000000a9';
 
 type Sends = ReturnType<typeof useOneSendAtATime>;
+/** What the chat passes to `mutate` besides the variables. */
+type CallerCallbacks = { onSuccess?: () => void; onError?: () => void; onSettled?: () => void };
 
-/** The three things the chat starts that send a paid prompt, started as the chat starts them. */
-const SENDS: { name: string; start: (_m: Sends) => void }[] = [
+/**
+ * The three things the chat starts that send a paid prompt, started as the chat starts them,
+ * and the event that a confirmed one's receipt carries.
+ */
+const SENDS: { name: string; event: string; start: (_m: Sends, _o?: CallerCallbacks) => void }[] = [
 	{
 		name: 'saving an edited prompt',
-		start: m =>
-			m.initiatePromptMutation.mutate({
-				conversationId: '1',
-				promptText: 'hello again',
-				sessionKey,
-				parentId: 2,
-				parentCID: 'cid-2',
-			}),
+		event: 'PromptSubmitted',
+		start: (m, o) =>
+			m.initiatePromptMutation.mutate(
+				{
+					conversationId: '1',
+					promptText: 'hello again',
+					sessionKey,
+					parentId: 2,
+					parentCID: 'cid-2',
+				},
+				o,
+			),
 	},
 	{
 		name: 'regenerating an answer',
-		start: m =>
-			m.regenerateMutation.mutate({
-				conversationId: '1',
-				promptMessageId: '2',
-				originalAnswerMessageId: '3',
-				instructions: 'better',
-				sessionKey,
-				promptMessageCID: 'cid-2',
-				originalAnswerMessageCID: 'cid-3',
-			}),
+		event: 'RegenerationRequested',
+		start: (m, o) =>
+			m.regenerateMutation.mutate(
+				{
+					conversationId: '1',
+					promptMessageId: '2',
+					originalAnswerMessageId: '3',
+					instructions: 'better',
+					sessionKey,
+					promptMessageCID: 'cid-2',
+					originalAnswerMessageCID: 'cid-3',
+				},
+				o,
+			),
 	},
 	{
 		name: 'branching a conversation',
-		start: m =>
-			m.branchConversationMutation.mutate({
-				originalConversationId: '1',
-				branchPointMessageId: '3',
-				originalTitle: 'Title',
-				sessionKey,
-			}),
+		event: 'BranchRequested',
+		start: (m, o) =>
+			m.branchConversationMutation.mutate(
+				{
+					originalConversationId: '1',
+					branchPointMessageId: '3',
+					originalTitle: 'Title',
+					sessionKey,
+				},
+				o,
+			),
 	},
 ];
 
-/** Holds every transaction at "sent, not yet confirmed" until `confirm` is called. */
-let confirm: () => void = () => undefined;
+const SAMPLE_VALUES: Record<string, unknown> = {
+	address: '0x00000000000000000000000000000000000000aa',
+	uint256: 7n,
+	bytes: '0x',
+	string: '',
+};
 
-function renderSends() {
-	const queryClient = new QueryClient({
+/** A receipt carrying the agent's `eventName`, as a confirmed send's receipt does. */
+function receiptWith(eventName: string) {
+	const event = getAbiItem({ abi: agentAbi.abi, name: eventName }) as AbiEvent;
+	const indexed = event.inputs.filter(input => input.indexed);
+	const plain = event.inputs.filter(input => !input.indexed) as AbiParameter[];
+	const topics = encodeEventTopics({
+		abi: [event],
+		eventName,
+		args: Object.fromEntries(indexed.map(input => [input.name, SAMPLE_VALUES[input.type]])),
+	} as never);
+	const data = encodeAbiParameters(
+		plain,
+		plain.map(input => SAMPLE_VALUES[input.type]),
+	);
+	return { logs: [{ address: AGENT_ADDRESS, topics, data }] };
+}
+
+/**
+ * Holds every transaction at "sent, not yet confirmed" until `confirm` is called. Confirmed
+ * with no receipt given, it carries no event and the send then fails.
+ */
+let confirm: (_receipt?: object) => void = () => undefined;
+
+function newClient() {
+	return new QueryClient({
 		defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
 	});
+}
+
+function renderSends(queryClient = newClient()) {
 	const wrapper = ({ children }: { children: ReactNode }) => (
 		<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 	);
-	return renderHook(() => useOneSendAtATime(useChatMutations()), { wrapper }).result;
+	return renderHook(() => useOneSendAtATime(useChatMutations()), { wrapper });
 }
 
 /** Lets a send that was started get as far as it would: encrypted, prepared and sent. */
@@ -133,6 +189,14 @@ const counts = () => ({
 	sent: vi.mocked(sendAndConfirmTransaction).mock.calls.length,
 });
 
+/** Starts `start` and waits until its transaction is waiting for the wallet. */
+async function startAndWait(sends: { current: Sends }, start: (_m: Sends) => void, sent = 1) {
+	await act(async () => {
+		start(sends.current);
+	});
+	await waitFor(() => expect(sendAndConfirmTransaction).toHaveBeenCalledTimes(sent));
+}
+
 beforeEach(() => {
 	vi.clearAllMocks();
 	vi.stubEnv('VITE_ORACLE_PUBLIC_KEY', '0x04abcd');
@@ -142,12 +206,10 @@ beforeEach(() => {
 		verdict: 'ok',
 		blocks: action => blocksAction('ok', action),
 	});
-	// Sent and waiting for its receipt. Confirmed with no event, the send then fails, which is
-	// enough to end it.
 	vi.mocked(sendAndConfirmTransaction).mockImplementation(
 		() =>
 			new Promise(resolve => {
-				confirm = () => resolve({ logs: [] } as never);
+				confirm = (receipt = { logs: [] }) => resolve(receipt as never);
 			}) as never,
 	);
 });
@@ -164,11 +226,8 @@ describe('a second send started while the first is pending', () => {
 	it.each(pairs.map(({ first, second }) => [second.name, first.name, first, second] as const))(
 		'%s while %s is pending prepares no second transaction',
 		async (_second, _first, first, second) => {
-			const sends = renderSends();
-			await act(async () => {
-				first.start(sends.current);
-			});
-			await waitFor(() => expect(sendAndConfirmTransaction).toHaveBeenCalledTimes(1));
+			const sends = renderSends().result;
+			await startAndWait(sends, first.start);
 			const afterFirst = counts();
 
 			await act(async () => {
@@ -181,7 +240,7 @@ describe('a second send started while the first is pending', () => {
 	);
 
 	it.each(SENDS)('$name pressed twice in the same moment sends once', async ({ start }) => {
-		const sends = renderSends();
+		const sends = renderSends().result;
 
 		await act(async () => {
 			start(sends.current);
@@ -195,30 +254,110 @@ describe('a second send started while the first is pending', () => {
 
 describe('a send started after the first has ended', () => {
 	it.each(SENDS)('$name is sent', async ({ start }) => {
-		const sends = renderSends();
-		await act(async () => {
-			start(sends.current);
-		});
-		await waitFor(() => expect(sendAndConfirmTransaction).toHaveBeenCalledTimes(1));
+		const sends = renderSends().result;
+		await startAndWait(sends, start);
 		await act(async () => {
 			confirm();
 		});
-		await waitFor(() => {
-			const { initiatePromptMutation, regenerateMutation, branchConversationMutation } =
-				sends.current;
-			expect(
-				[initiatePromptMutation, regenerateMutation, branchConversationMutation].map(
-					m => m.isPending,
-				),
-			).toEqual([false, false, false]);
+		await waitFor(() => expect(sends.current.isSending).toBe(false));
+
+		await startAndWait(sends, start, 2);
+	});
+});
+
+describe('isSending', () => {
+	it.each(SENDS)('is false before, true while and false after $name', async ({ start }) => {
+		const sends = renderSends().result;
+		const before = sends.current.isSending;
+
+		await startAndWait(sends, start);
+		await waitFor(() => expect(sends.current.isSending).toBe(true));
+		await act(async () => {
+			confirm();
 		});
-		await settleStarts();
+		await waitFor(() => expect(sends.current.isSending).toBe(false));
+
+		expect(before).toBe(false);
+	});
+});
+
+describe('a send still waiting when the chat is left and opened again', () => {
+	it.each(pairs.map(({ first, second }) => [second.name, first.name, first, second] as const))(
+		'%s is refused while %s is still waiting, and shows as sending',
+		async (_second, _first, first, second) => {
+			const queryClient = newClient();
+			const left = renderSends(queryClient);
+			await startAndWait(left.result, first.start);
+			left.unmount();
+
+			const reopened = renderSends(queryClient).result;
+			await act(async () => {
+				second.start(reopened.current);
+			});
+			await settleStarts();
+
+			expect(sendAndConfirmTransaction).toHaveBeenCalledTimes(1);
+			expect(reopened.current.isSending).toBe(true);
+		},
+	);
+
+	it.each(SENDS)('$name goes through once the first has ended', async ({ start }) => {
+		const queryClient = newClient();
+		const left = renderSends(queryClient);
+		await startAndWait(left.result, start);
+		left.unmount();
+		const reopened = renderSends(queryClient).result;
 
 		await act(async () => {
-			start(sends.current);
+			confirm();
 		});
-		await settleStarts();
+		await waitFor(() => expect(reopened.current.isSending).toBe(false));
 
-		expect(sendAndConfirmTransaction).toHaveBeenCalledTimes(2);
+		await startAndWait(reopened, start, 2);
+	});
+});
+
+describe("the caller's own callbacks", () => {
+	/** Starts `start` with callbacks that record their names, and ends it with `receipt`. */
+	async function callbacksWhenEnded(start: (typeof SENDS)[number]['start'], receipt?: object) {
+		const called: string[] = [];
+		const sends = renderSends().result;
+		await startAndWait(sends, m =>
+			start(m, {
+				onSuccess: () => called.push('onSuccess'),
+				onError: () => called.push('onError'),
+				onSettled: () => called.push('onSettled'),
+			}),
+		);
+		await act(async () => {
+			confirm(receipt);
+		});
+		await waitFor(() => expect(called).toContain('onSettled'));
+		await settleStarts();
+		return called;
+	}
+
+	it.each(SENDS)('$name confirmed: onSuccess, then onSettled, each once', async c => {
+		expect(await callbacksWhenEnded(c.start, receiptWith(c.event))).toEqual([
+			'onSuccess',
+			'onSettled',
+		]);
+	});
+
+	it.each(SENDS)('$name failed: onError, then onSettled, each once', async c => {
+		expect(await callbacksWhenEnded(c.start)).toEqual(['onError', 'onSettled']);
+	});
+});
+
+describe('mutateAsync', () => {
+	it('is not offered, so nothing can start a send around the refusal', () => {
+		const sends = renderSends().result;
+		const { initiatePromptMutation, regenerateMutation, branchConversationMutation } =
+			sends.current;
+
+		[initiatePromptMutation, regenerateMutation, branchConversationMutation].forEach(m => {
+			// @ts-expect-error mutateAsync is left out of the three sending mutations.
+			expect(m.mutateAsync).toBeUndefined();
+		});
 	});
 });
