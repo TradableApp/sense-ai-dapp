@@ -62,6 +62,7 @@ import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 import SenseTokenABI from '@/lib/abi/SenseToken.json';
 import { feeTokenBlockCopy, FeeTokenBlockedError } from '@/lib/feeTokenCheck';
+import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
 
 import { buildErrorHandler } from './useChatMutations';
 
@@ -165,6 +166,74 @@ describe('buildErrorHandler — Token errors', () => {
 		expect(toast.error).toHaveBeenCalledWith('Payment Failed', expect.any(Object));
 	});
 
+	// A refund goes from the escrow back to the user, and a restricted token lets a transfer
+	// through only when one end is listed. With the escrow not listed the refund is refused
+	// too, so a refused cancellation must not send the user off to wait an hour for it. With
+	// only the treasury not listed the refund works and may be promised. Any other state says
+	// nothing about the refund, so it is offered without a promise.
+	const promisesRefund = /can claim a refund one hour after/i;
+	const cancelCases = FEE_TOKEN_STATES.map(verdict => ({
+		verdict,
+		outlook:
+			verdict === 'treasury-not-exempt'
+				? 'works'
+				: verdict === 'escrow-not-exempt'
+				? 'refused'
+				: 'uncertain',
+	}));
+
+	it.each(cancelCases)(
+		'a refused cancellation under $verdict speaks of the refund as it is ($outlook)',
+		({ verdict, outlook }) => {
+			const handler = buildErrorHandler(
+				false,
+				false,
+				100,
+				vi.fn(),
+				FEE_TOKEN_PROFILES.SENSE,
+				verdict,
+			);
+
+			handler({ message: 'TransferNotAllowed' }, 'cancel prompt');
+
+			const [title, options] = vi.mocked(toast.error).mock.calls.at(-1) ?? [];
+			const { description } = options as { description: string };
+			expect(title).toBe('Could Not Cancel');
+			expect(description).toMatch(/still held/i);
+			if (outlook === 'works') expect(description).toMatch(promisesRefund);
+			if (outlook === 'refused') {
+				expect(description).not.toMatch(/refund one hour|in an hour|after an hour/i);
+				expect(description).toMatch(/refund would be refused too/i);
+				expect(description).toMatch(/contact support/i);
+			}
+			if (outlook === 'uncertain') {
+				expect(description).not.toMatch(promisesRefund);
+				expect(description).toMatch(/contact support/i);
+			}
+		},
+	);
+
+	it.each(FEE_TOKEN_STATES)(
+		'a refused payment under %s still says no tokens were taken',
+		verdict => {
+			const handler = buildErrorHandler(
+				false,
+				false,
+				100,
+				vi.fn(),
+				FEE_TOKEN_PROFILES.SENSE,
+				verdict,
+			);
+
+			handler({ message: 'TransferNotAllowed' }, 'send message');
+
+			expect(toast.error).toHaveBeenCalledWith(
+				'Payment Not Accepted',
+				expect.objectContaining({ description: expect.stringMatching(/no tokens were taken/i) }),
+			);
+		},
+	);
+
 	it('the refused-transfer message names no token', () => {
 		handlerFor(FEE_TOKEN_PROFILES.SENSE)({ message: 'TransferNotAllowed' }, 'send message');
 
@@ -204,6 +273,37 @@ describe('buildErrorHandler — every explained error is recognised by its selec
 		expect(toast.error).toHaveBeenCalledTimes(1);
 		expect(toast.error).toHaveBeenCalledWith(title, expect.any(Object));
 	});
+
+	// The refused transfer has one message per action and, for a cancellation, per what the
+	// check says about the refund.
+	it.each([
+		['send message', 'unknown', 'Payment Not Accepted', /no tokens were taken/i],
+		['cancel prompt', 'treasury-not-exempt', 'Could Not Cancel', /can claim a refund/i],
+		['cancel prompt', 'escrow-not-exempt', 'Could Not Cancel', /refund would be refused too/i],
+		['cancel prompt', 'unknown', 'Could Not Cancel', /if that is refused too/i],
+		['process refund', 'escrow-not-exempt', 'Refund Not Sent', /contact support/i],
+	] as const)(
+		'TransferNotAllowed during "%s" under %s shows "%s"',
+		(action, verdict, title, description) => {
+			const handler = buildErrorHandler(
+				false,
+				false,
+				100,
+				vi.fn(),
+				FEE_TOKEN_PROFILES.ABLE,
+				verdict,
+			);
+			const selector = realSelector(SenseTokenABI.abi, 'TransferNotAllowed');
+
+			handler({ message: undecoded(selector) }, action);
+
+			expect(toast.error).toHaveBeenCalledTimes(1);
+			expect(toast.error).toHaveBeenCalledWith(
+				title,
+				expect.objectContaining({ description: expect.stringMatching(description) }),
+			);
+		},
+	);
 });
 
 describe('buildErrorHandler — Escrow errors', () => {

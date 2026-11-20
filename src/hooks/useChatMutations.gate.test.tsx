@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { toast } from 'sonner';
 import { prepareContractCall, sendAndConfirmTransaction } from 'thirdweb';
+import { keccak256, stringToBytes } from 'viem';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FEE_TOKEN } from '@/config/feeToken';
@@ -277,4 +278,38 @@ describe('getting money back is never switched off', () => {
 		expect(prepareContractCall).toHaveBeenCalledWith(expect.objectContaining({ method }));
 		expect(sendAndConfirmTransaction).toHaveBeenCalledTimes(1);
 	});
+});
+
+describe('a cancellation the token refuses', () => {
+	const selector = keccak256(stringToBytes('TransferNotAllowed(address,address)')).slice(0, 10);
+	const rejections = [
+		['by name', 'execution reverted: TransferNotAllowed'],
+		['by bare selector', `Encoded error signature "${selector}" not found on ABI.`],
+	] as const;
+	const refusals = rejections.flatMap(([how, message]) =>
+		(['escrow-not-exempt', 'treasury-not-exempt'] as const).map(verdict => ({
+			how,
+			message,
+			verdict,
+		})),
+	);
+
+	it.each(refusals)(
+		'reaches the cancellation wording for $verdict when refused $how',
+		async ({ message, verdict }) => {
+			withVerdict(verdict);
+			vi.mocked(sendAndConfirmTransaction).mockRejectedValue(new Error(message));
+
+			await attempt(MONEY_BACK[0].run);
+
+			const [title, options] = vi.mocked(toast.error).mock.calls.at(-1) ?? [];
+			const { description } = options as { description: string };
+			expect(title).toBe('Could Not Cancel');
+			if (verdict === 'escrow-not-exempt') {
+				expect(description).toMatch(/refund would be refused too/i);
+			} else {
+				expect(description).toMatch(/can claim a refund one hour after/i);
+			}
+		},
+	);
 });
