@@ -31,7 +31,10 @@ describe('where the fee token check is asked', () => {
 		const body = mutationBody(mutations, name);
 		const refusal = body.indexOf(`refuseIfSwitchedOff('${action}')`);
 		expect(refusal, `${name} does not ask`).toBeGreaterThan(-1);
-		expect(refusal).toBeLessThan(body.indexOf('prepareContractCall('));
+		// The call is built with prepareContractCall; the refusal has to come before it.
+		const built = body.indexOf('prepareContractCall(');
+		expect(built, `${name} no longer builds its call with prepareContractCall`).toBeGreaterThan(-1);
+		expect(refusal).toBeLessThan(built);
 	});
 
 	it.each(['cancelPromptMutation', 'processRefundMutation'])(

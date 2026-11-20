@@ -107,7 +107,9 @@ function reader(over: {
 			calls.push(`escrow.${method}`);
 			return method === ESCROW_FEE_TOKEN_GETTER
 				? over.escrowToken ?? TOKEN
-				: over.treasury ?? TREASURY;
+				: 'treasury' in over
+				? over.treasury
+				: TREASURY;
 		}),
 		token: vi.fn(async (method, params) => {
 			calls.push(`token.${method}${params ? `(${params[0]})` : ''}`);
@@ -150,6 +152,12 @@ describe('readFeeTokenVerdict', () => {
 		const r = reader({ escrowToken: OTHER_TOKEN });
 		await expect(check(r)).resolves.toBe('escrow-uses-other-token');
 		expect(r.calls.some(call => call.startsWith('token.'))).toBe(false);
+	});
+
+	it('says the escrow uses another token even when its treasury cannot be read as an address', async () => {
+		await expect(check(reader({ escrowToken: OTHER_TOKEN, treasury: null }))).resolves.toBe(
+			'escrow-uses-other-token',
+		);
 	});
 
 	it('passes each verdict through', async () => {
