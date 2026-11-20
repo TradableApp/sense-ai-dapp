@@ -425,6 +425,23 @@ describe('the five-minute recheck', () => {
 		expect(result.current.blocks('prompt')).toBe(true);
 	});
 
+	it('does not ask again before the five minutes are up', async () => {
+		// Arrange
+		chainAnswers();
+		const { result } = harness();
+		await vi.waitFor(() => expect(result.current.verdict).toBe('ok'));
+		const readsAfterTheFirstAnswer = vi.mocked(readContract).mock.calls.length;
+
+		// Act
+		await act(() => {
+			vi.advanceTimersByTime(FEE_TOKEN_RECHECK_MS - 1000);
+		});
+		await act(() => Promise.resolve());
+
+		// Assert
+		expect(vi.mocked(readContract).mock.calls.length).toBe(readsAfterTheFirstAnswer);
+	});
+
 	it('lifts a block once the escrow is listed again, with nothing else happening', async () => {
 		chainAnswers({ [`exempt:${ESCROW}`]: false });
 		const { result } = harness();

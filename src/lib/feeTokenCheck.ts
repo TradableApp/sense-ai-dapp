@@ -189,18 +189,14 @@ async function readTokenSide({
 	if (await hasNoCode(reader, configuredToken, 'the token')) return 'contract-not-found';
 	const rawSymbol = await reader.token('symbol');
 	if (typeof rawSymbol !== 'string') throw unreadable('the symbol is not text');
-	const pair: PairReadings = {
-		configuredToken,
-		escrowToken: configuredToken,
-		onChainSymbol: rawSymbol,
-		expectedSymbol: profile.symbol,
-	};
 	if (!sameSymbol(rawSymbol, profile.symbol)) return 'symbol-mismatch';
 	// A paused token refuses every movement, whoever is listed: the pause is the answer.
 	if (profile.pausable && asBoolean(await reader.token('paused'), 'the pause flag')) {
 		return 'token-paused';
 	}
-	if (profile.transferable) return assessFeeToken({ ...pair, restricted: false });
+	// The token, its symbol and its pause are decided: a token anyone may move has nothing left
+	// to ask.
+	if (profile.transferable) return 'ok';
 
 	const treasury = asAddress(await reader.escrow('treasury'), 'the treasury');
 	const [rawEscrowExempt, rawTreasuryExempt] = await Promise.all([
@@ -208,7 +204,10 @@ async function readTokenSide({
 		reader.token('isTransferExempt', [treasury]),
 	]);
 	return assessFeeToken({
-		...pair,
+		configuredToken,
+		escrowToken: configuredToken,
+		onChainSymbol: rawSymbol,
+		expectedSymbol: profile.symbol,
 		restricted: true,
 		escrowExempt: asBoolean(rawEscrowExempt, 'the escrow exemption'),
 		treasuryExempt: asBoolean(rawTreasuryExempt, 'the treasury exemption'),
