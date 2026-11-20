@@ -96,7 +96,7 @@ export default function useLiveResponse() {
 	pendingAnswerRef.current = hasPendingAnswer(activeConversationMessages);
 
 	const contractConfig = chainId ? CONTRACTS[chainId] : undefined;
-	// The ABLE token address for this chain — the third component of the thirdweb wallet-balance key.
+	// The fee token address for this chain — the third component of the thirdweb wallet-balance key.
 	const tokenAddress = contractConfig?.token?.address;
 	const targetChain = chainId === deploymentChain.id ? deploymentChain : chain;
 

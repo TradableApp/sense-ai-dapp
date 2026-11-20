@@ -1,4 +1,5 @@
 import { toast } from 'sonner';
+import { toFunctionSelector } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 
 // Mock all React / app-level imports so useChatMutations.jsx can be imported in Node.
@@ -47,8 +48,6 @@ vi.mock('@/lib/crypto', () => ({ encryptData: vi.fn() }));
 vi.mock('@/lib/ecies', () => ({
 	default: vi.fn(async () => new Uint8Array([1, 2, 3, 4])),
 }));
-
-import { toFunctionSelector } from 'viem';
 
 import { FEE_TOKEN_PROFILES, type FeeTokenProfile } from '@/config/feeToken';
 
@@ -100,8 +99,9 @@ describe('buildErrorHandler — Token errors', () => {
 		handlerFor(FEE_TOKEN_PROFILES.SENSE)({ message: 'TransferNotAllowed' }, 'send message');
 
 		const [title, options] = vi.mocked(toast.error).mock.calls.at(-1) ?? [];
+		// Whole words, so the product's own name is not mistaken for the token's.
 		expect(`${title} ${(options as { description?: string })?.description}`).not.toMatch(
-			/SENSE|ABLE/i,
+			/\b(SENSE|ABLE)\b/,
 		);
 	});
 });

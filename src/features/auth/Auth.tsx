@@ -9,6 +9,7 @@ import XLogo from '@/components/icons/XLogo';
 import RainbowLabel from '@/components/magicui/rainbow-label';
 import { SUPPORTED_TOKENS } from '@/config/contracts';
 import { client, deploymentChain, wallets } from '@/config/thirdweb';
+import { DISPLAY_BALANCE_TOKEN, WALLET_DETAILS_MODAL } from '@/config/walletPanel';
 import { useAppDispatch } from '@/store/hooks';
 import { openModal } from '@/store/uiSlice';
 
@@ -74,15 +75,9 @@ export default function Auth() {
 						}}
 						detailsButton={{
 							className: '!w-full',
-							displayBalanceToken: {
-								[import.meta.env.VITE_CHAIN_ID]: import.meta.env.VITE_TOKEN_CONTRACT_ADDRESS,
-								// You can add more chains and tokens here if needed
-								// [otherChain.id]: "0x...",
-							},
+							displayBalanceToken: DISPLAY_BALANCE_TOKEN,
 						}}
-						detailsModal={{
-							showTestnetFaucet: true,
-						}}
+						detailsModal={WALLET_DETAILS_MODAL}
 						theme="dark"
 					/>
 				</div>

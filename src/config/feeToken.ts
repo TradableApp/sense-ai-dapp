@@ -62,6 +62,12 @@ export const FEE_TOKEN_PROFILES = {
 } as const satisfies Record<string, FeeTokenProfile>;
 
 /**
+ * The ABI that declares the refusal a token with restricted transfers raises. Kept apart
+ * from the selected profile so the refusal is recognised whichever token a build is for.
+ */
+export const TRANSFER_RESTRICTION_ABI: Abi = SenseTokenABI.abi as Abi;
+
+/**
  * The profile a build setting names. Anything but a known name is SENSE: a build that
  * forgot the setting then shows no price and no send button, which is wrong for nobody.
  */

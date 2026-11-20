@@ -26,6 +26,7 @@ import {
 import Input from '@/components/ui/input';
 import Label from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { FEE_TOKEN } from '@/config/feeToken';
 
 interface ManageLimitDialogPlan {
 	allowance: number;
@@ -118,8 +119,8 @@ export default function ManageLimitDialog({ plan }: ManageLimitDialogProps) {
 												<AlertDialogTitle>Are you sure?</AlertDialogTitle>
 												<AlertDialogDescription>
 													This will set your spending limit to 0, completely revoking the AI
-													agent&apos;s access to your ABLE tokens. You will need to set a new limit
-													to continue using the service.
+													agent&apos;s access to your {FEE_TOKEN.symbol}. You will need to set a new
+													limit to continue using the service.
 												</AlertDialogDescription>
 											</AlertDialogHeader>
 											<AlertDialogFooter>

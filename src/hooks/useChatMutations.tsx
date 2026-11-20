@@ -18,14 +18,14 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { CONTRACTS, LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
+import { FEE_TOKEN, type FeeTokenProfile, TRANSFER_RESTRICTION_ABI } from '@/config/feeToken';
 import { client } from '@/config/thirdweb';
 import useFaucetConfig from '@/hooks/useFaucetConfig';
-import AbleTokenABI from '@/lib/abi/AbleToken.json';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 import { encryptData } from '@/lib/crypto';
 import eciesEncrypt from '@/lib/ecies';
-import requestTestTokens, { FAUCET_AMOUNT_ABLE } from '@/lib/faucetService';
+import requestTestTokens, { DEFAULT_FAUCET_AMOUNT } from '@/lib/faucetService';
 import { wait } from '@/lib/utils';
 
 import { getTokenBalanceQueryKey } from './useTokenBalance';
@@ -135,6 +135,7 @@ export function buildInitiatePromptPayload({
  * @param {boolean} isLocalnet
  * @param {number} faucetAmount
  * @param {Function} handleFaucetRequest
+ * @param {FeeTokenProfile} feeToken - the token that pays the fees; names the token in messages
  * @returns {(error: unknown, action: string) => void}
  */
 export function buildErrorHandler(
@@ -142,6 +143,7 @@ export function buildErrorHandler(
 	isLocalnet: boolean,
 	faucetAmount: number,
 	handleFaucetRequest: () => Promise<void>,
+	feeToken: FeeTokenProfile = FEE_TOKEN,
 ): (_error: unknown, _action: string) => void {
 	return function genericOnError(error: unknown, action: string): void {
 		console.error(`Failed to ${action}:`, error);
@@ -162,11 +164,11 @@ export function buildErrorHandler(
 		};
 
 		// --- Token Errors ---
-		if (isError(AbleTokenABI.abi, 'ERC20InsufficientBalance')) {
-			toast.error('Insufficient ABLE Balance', {
+		if (isError(feeToken.abi, 'ERC20InsufficientBalance')) {
+			toast.error(`Insufficient ${feeToken.symbol} Balance`, {
 				description: (
 					<div className="flex flex-col gap-3 mt-1">
-						<p>You need more ABLE tokens to pay for this action.</p>
+						<p>You need more {feeToken.symbol} to pay for this action.</p>
 						{(isTestnet || isLocalnet) && (
 							<Button
 								size="sm"
@@ -174,7 +176,7 @@ export function buildErrorHandler(
 								className="w-full border-primary/20 bg-primary/10 hover:bg-primary/20 text-primary"
 								onClick={handleFaucetRequest as React.MouseEventHandler<HTMLButtonElement>}
 							>
-								{`Get ${faucetAmount} ${isLocalnet ? 'Localnet' : 'Testnet'} ABLE`}
+								{`Get ${faucetAmount} ${isLocalnet ? 'Localnet' : 'Testnet'} ${feeToken.symbol}`}
 							</Button>
 						)}
 					</div>
@@ -186,10 +188,22 @@ export function buildErrorHandler(
 			return;
 		}
 
-		if (isError(AbleTokenABI.abi, 'ERC20InsufficientAllowance')) {
+		if (isError(feeToken.abi, 'ERC20InsufficientAllowance')) {
 			toast.error('Spending Limit Reached', {
 				description:
 					'The contract is not authorized to spend your tokens. Please increase your limit.',
+			});
+			return;
+		}
+
+		// A token that moves only to or from listed addresses refuses a payment whose
+		// receiver is not listed. Nothing the user can do changes that, and nothing was
+		// taken. Looked for whichever token the build is for: only that kind of token can
+		// raise it, and a build pointed at the wrong token should still explain the failure.
+		if (isError(TRANSFER_RESTRICTION_ABI, 'TransferNotAllowed')) {
+			toast.error('Payment Not Accepted', {
+				description:
+					'SenseAI could not take this payment, so nothing was charged. Please try again later or contact support.',
 			});
 			return;
 		}
@@ -323,7 +337,7 @@ export default function useChatMutations() {
 	const isTestnet = chainId === TESTNET_CHAIN_ID;
 	const isLocalnet = chainId === LOCAL_CHAIN_ID;
 	const { data: faucetConfig } = useFaucetConfig();
-	const faucetAmount = faucetConfig?.amount ?? FAUCET_AMOUNT_ABLE;
+	const faucetAmount = faucetConfig?.amount ?? DEFAULT_FAUCET_AMOUNT;
 	const queryClient = useQueryClient();
 
 	const handleFaucetRequest = async () => {
@@ -376,7 +390,7 @@ export default function useChatMutations() {
 						if (receipt) {
 							toast.dismiss(sentToastId); // Dismiss the "Tokens Sent" info toast
 							toast.success('Tokens Received', {
-								description: `${dispensed} ABLE tokens have been added to your wallet.`,
+								description: `${dispensed} ${FEE_TOKEN.symbol} added to your wallet.`,
 							});
 
 							// Refresh balance

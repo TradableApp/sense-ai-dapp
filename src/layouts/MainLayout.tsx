@@ -21,6 +21,7 @@ import { Separator } from '@/components/ui/separator';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { SUPPORTED_TOKENS } from '@/config/contracts';
 import { client, deploymentChain, wallets } from '@/config/thirdweb';
+import { DISPLAY_BALANCE_TOKEN, WALLET_DETAILS_MODAL } from '@/config/walletPanel';
 import useConversations from '@/hooks/useConversations';
 import useLiveResponse from '@/hooks/useLiveResponse';
 import useMobile from '@/hooks/useMobile';
@@ -89,16 +90,9 @@ export default function MainLayout() {
 										}}
 										detailsButton={{
 											className: '!w-full',
-											displayBalanceToken: {
-												[import.meta.env.VITE_CHAIN_ID]: import.meta.env
-													.VITE_TOKEN_CONTRACT_ADDRESS,
-												// You can add more chains and tokens here if needed
-												// [otherChain.id]: "0x...",
-											},
+											displayBalanceToken: DISPLAY_BALANCE_TOKEN,
 										}}
-										detailsModal={{
-											showTestnetFaucet: true,
-										}}
+										detailsModal={WALLET_DETAILS_MODAL}
 										theme="dark"
 									/>
 								</div>

@@ -15,13 +15,13 @@ interface FaucetCallableResult {
 	amount?: number;
 }
 
-// Localnet "treasury": Hardhat account #0 holds the full ABLE supply and is
+// Localnet "treasury": Hardhat account #0 holds the full fee token supply and is
 // unlocked on the local node, so eth_sendTransaction needs no signature. This is
 // the localnet equivalent of the testnet faucet — on localnet we NEVER call the
 // Firebase cloud function (which dispenses Base Sepolia tokens).
 const HARDHAT_DEPLOYER = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
-/** Default ABLE per request when the Firestore config is unavailable. */
-export const FAUCET_AMOUNT_ABLE = 100;
+/** Default tokens per request when the Firestore config is unavailable. */
+export const DEFAULT_FAUCET_AMOUNT = 100;
 const DEFAULT_RATE_LIMIT_HOURS = 24;
 // Mirror the cloud function's circuit breaker so the displayed/transferred amount
 // matches what the server will actually dispense.
@@ -32,14 +32,18 @@ const MAX_FAUCET_AMOUNT = 10_000;
  * 0 / negative / NaN / non-numeric / out-of-range (the `??` operator only guards
  * null/undefined, so a fat-fingered 0 or "abc" would otherwise slip through).
  */
-const sanitizePositive = (raw: unknown, fallback: number, max = Number.POSITIVE_INFINITY): number => {
+const sanitizePositive = (
+	raw: unknown,
+	fallback: number,
+	max = Number.POSITIVE_INFINITY,
+): number => {
 	const n = Number(raw);
 	return Number.isFinite(n) && n > 0 && n <= max ? n : fallback;
 };
 
 /**
  * Like sanitizePositive but floored to a whole number — the faucet dispenses whole
- * ABLE, and keeping the amount integer keeps the UI/on-chain figures exact.
+ * tokens, and keeping the amount integer keeps the UI/on-chain figures exact.
  */
 const sanitizeWholeAmount = (raw: unknown, fallback: number, max: number): number => {
 	const n = Math.floor(Number(raw));
@@ -55,7 +59,7 @@ const isLocalnet = (): boolean => Number(import.meta.env.VITE_CHAIN_ID) === LOCA
  */
 export const getFaucetConfig = async (): Promise<FaucetConfig> => {
 	const defaults: FaucetConfig = {
-		amount: FAUCET_AMOUNT_ABLE,
+		amount: DEFAULT_FAUCET_AMOUNT,
 		rateLimitHours: DEFAULT_RATE_LIMIT_HOURS,
 	};
 	if (!db) return defaults;
@@ -63,7 +67,7 @@ export const getFaucetConfig = async (): Promise<FaucetConfig> => {
 		const snap = await getDoc(doc(db, 'general', 'sense_ai'));
 		const faucet = (snap.exists() ? snap.data()?.faucet : null) ?? {};
 		return {
-			amount: sanitizeWholeAmount(faucet.amount, FAUCET_AMOUNT_ABLE, MAX_FAUCET_AMOUNT),
+			amount: sanitizeWholeAmount(faucet.amount, DEFAULT_FAUCET_AMOUNT, MAX_FAUCET_AMOUNT),
 			rateLimitHours: sanitizePositive(faucet.rateLimitHours, DEFAULT_RATE_LIMIT_HOURS),
 		};
 	} catch (error) {
@@ -73,7 +77,7 @@ export const getFaucetConfig = async (): Promise<FaucetConfig> => {
 };
 
 /**
- * Fund the user by transferring ABLE from the unlocked Hardhat deployer directly
+ * Fund the user by transferring the fee token from the unlocked Hardhat deployer directly
  * over JSON-RPC. No cloud function, no signature — returns the same
  * { success, txHash, amount } shape as the testnet faucet so the caller's
  * receipt-polling and display work unchanged.

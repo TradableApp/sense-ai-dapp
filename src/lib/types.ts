@@ -79,7 +79,7 @@ export interface FaucetResponse {
 	success: boolean;
 	txHash?: string;
 	message?: string;
-	/** Amount of ABLE actually dispensed (from the cloud function on testnet, or
+	/** Amount of the fee token actually dispensed (from the cloud function on testnet, or
 	 *  the live config on localnet). Lets the UI show the real value. */
 	amount?: number;
 }

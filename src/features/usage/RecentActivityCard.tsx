@@ -10,6 +10,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FEE_TOKEN } from '@/config/feeToken';
 import useRecentActivity from '@/hooks/useRecentActivity';
 
 export default function RecentActivityCard() {
@@ -54,7 +55,7 @@ export default function RecentActivityCard() {
 										>
 											{Number(item.formattedAmount) === 0
 												? ''
-												: `${Number(item.formattedAmount).toFixed(1)} ABLE`}
+												: `${Number(item.formattedAmount).toFixed(1)} ${FEE_TOKEN.symbol}`}
 										</div>
 									</div>
 									{index < activities.length - 1 && <Separator className="mt-4" />}

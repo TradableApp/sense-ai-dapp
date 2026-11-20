@@ -7,6 +7,7 @@ import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator';
 import { SUPPORTED_TOKENS } from '@/config/contracts';
 import { client, deploymentChain, wallets } from '@/config/thirdweb';
+import { DISPLAY_BALANCE_TOKEN, WALLET_DETAILS_MODAL } from '@/config/walletPanel';
 
 import { useSession } from './SessionProvider';
 
@@ -37,15 +38,9 @@ export default function SignatureScreen({ onRetry }: SignatureScreenProps) {
 						}}
 						detailsButton={{
 							className: '!w-full',
-							displayBalanceToken: {
-								[import.meta.env.VITE_CHAIN_ID]: import.meta.env.VITE_TOKEN_CONTRACT_ADDRESS,
-								// You can add more chains and tokens here if needed
-								// [otherChain.id]: "0x...",
-							},
+							displayBalanceToken: DISPLAY_BALANCE_TOKEN,
 						}}
-						detailsModal={{
-							showTestnetFaucet: true,
-						}}
+						detailsModal={WALLET_DETAILS_MODAL}
 						theme="dark"
 					/>
 				</CardHeader>

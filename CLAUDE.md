@@ -112,6 +112,8 @@ All write operations go through `src/hooks/useChatMutations.jsx`. Every mutation
 3. Calls a contract method on `EVMAIAgentEscrow` via Thirdweb (`sendAndConfirmTransaction`).
 4. Parses the transaction receipt logs to extract on-chain IDs returned by the contract.
 
+**Fee token (`src/config/feeToken.ts`)** — which token pays the fees is a build setting, `VITE_FEE_TOKEN` (`SENSE` or `ABLE`; unset or unknown means `SENSE`). It selects a profile: symbol, name, logo, ABI, whether a market value may be shown (`showsMarketValue`), whether the wallet panel offers send and buy (`transferable`, `purchasable`), and the default plan limit (`fixed`, or the wallet's balance). Components read `FEE_TOKEN` and never test for a particular token, so a build for the other token changes only the setting; `feeToken.test.ts` pins both profiles. No price is fetched or shown when `showsMarketValue` is false (`shouldFetchMarketPrice` in `useTokenPrice.ts`; `PlanValueEstimate.tsx` renders nothing and never mounts the price hook). The four connected-wallet buttons share `src/config/walletPanel.ts`. A token with restricted transfers refuses a payment whose receiver is not listed with `TransferNotAllowed`; `buildErrorHandler` explains it ("Payment Not Accepted") whichever token the build is for. The `e2e/__guards__/fee-token-literals` guard forbids a token's name anywhere in `src/` outside the profile module and the ABIs, comments included.
+
 Contracts are configured in `src/config/contracts.js` keyed by `chainId`, populated from Vite env vars (`VITE_CHAIN_ID`, `VITE_TOKEN_CONTRACT_ADDRESS`, `VITE_AGENT_CONTRACT_ADDRESS`, `VITE_ESCROW_CONTRACT_ADDRESS`). ABIs live in `src/lib/abi/`.
 
 ### Redux Store (`src/store/`)
@@ -158,11 +160,12 @@ Production builds strip `console.log/info/debug` but keep `console.error/warn` f
 
 This dApp is the user-facing layer of the SenseAI stack. It depends on three sibling repos:
 
-| Sibling              | Role                                                                                             |
-| -------------------- | ------------------------------------------------------------------------------------------------ |
-| `tokenized-ai-agent` | Provides `EVMAIAgent` and `EVMAIAgentEscrow` contracts that handle all writes                    |
-| `sense-ai-subgraph`  | Provides the GraphQL API for all read queries (conversations, messages, prompt status, activity) |
-| `able-contracts`     | Provides `AbleToken` — the ERC20 payment token users must approve before prompting               |
+| Sibling              | Role                                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------- |
+| `tokenized-ai-agent` | Provides `EVMAIAgent` and `EVMAIAgentEscrow` contracts that handle all writes                     |
+| `sense-ai-subgraph`  | Provides the GraphQL API for all read queries (conversations, messages, prompt status, activity)  |
+| `able-contracts`     | Provides `AbleToken` — the ERC20 payment token users must approve before prompting                |
+| `sense-contracts`    | Provides `SenseToken` — the other fee token; moves only to or from addresses its owner has listed |
 
 ### ABI Sync Process
 

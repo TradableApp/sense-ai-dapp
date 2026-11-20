@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { FEE_TOKEN_PROFILES } from '@/config/feeToken';
 
-const useTokenPrice = vi.fn();
-vi.mock('@/hooks/useTokenPrice', () => ({ default: () => useTokenPrice() }));
+const priceQuery = vi.fn();
+vi.mock('@/hooks/useTokenPrice', () => ({ default: () => priceQuery() }));
 
 import PlanValueEstimate from './PlanValueEstimate';
 
@@ -26,14 +26,14 @@ describe('PlanValueEstimate', () => {
 				<PlanValueEstimate limit={500} chainId={chainId} profile={SENSE} />,
 			);
 
-			expect(container).toBeEmptyDOMElement();
-			expect(useTokenPrice).not.toHaveBeenCalled();
+			expect(container.innerHTML).toBe('');
+			expect(priceQuery).not.toHaveBeenCalled();
 		},
 	);
 
 	it('shows the live value of the limit for a priced token on mainnet', () => {
 		// 1,000 tokens at $0.02 each = $20.00
-		useTokenPrice.mockReturnValue({ data: 0.02, isLoading: false, isError: false });
+		priceQuery.mockReturnValue({ data: 0.02, isLoading: false, isError: false });
 
 		const { container } = render(<PlanValueEstimate limit={1000} chainId={BASE} profile={ABLE} />);
 
@@ -42,7 +42,7 @@ describe('PlanValueEstimate', () => {
 
 	it('shows an estimate at the planned price on a test chain', () => {
 		// 1,000 tokens at the planned $0.015 each = $15.00
-		useTokenPrice.mockReturnValue({ data: undefined, isLoading: false, isError: false });
+		priceQuery.mockReturnValue({ data: undefined, isLoading: false, isError: false });
 
 		const { container } = render(
 			<PlanValueEstimate limit={1000} chainId={BASE_SEPOLIA} profile={ABLE} />,
@@ -52,7 +52,7 @@ describe('PlanValueEstimate', () => {
 	});
 
 	it('says so when the live price cannot be fetched', () => {
-		useTokenPrice.mockReturnValue({ data: undefined, isLoading: false, isError: true });
+		priceQuery.mockReturnValue({ data: undefined, isLoading: false, isError: true });
 
 		const { container } = render(<PlanValueEstimate limit={1000} chainId={BASE} profile={ABLE} />);
 
