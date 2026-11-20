@@ -110,20 +110,26 @@ async function settle(
 	expected: FaucetExpectation,
 ): Promise<void> {
 	const sentToastId = announceSent(txHash, chain.id === LOCAL_CHAIN_ID);
+	let outcome: FaucetOutcome;
 	try {
-		const outcome = await waitForFaucet(chain, txHash, expected);
-		toast.dismiss(sentToastId);
-		showNotice(outcome);
-		// Only tokens that arrived, or may still arrive, change the balance.
-		if (outcome.kind !== 'received' && outcome.kind !== 'timeout') return;
-		const queryKey = getTokenBalanceQueryKey(chain.id, expected.recipient, expected.token);
-		// Forces a refetch even where the balance is not on screen or still counts as fresh.
-		await queryClient.invalidateQueries({ queryKey, refetchType: 'all' });
+		outcome = await waitForFaucet(chain, txHash, expected);
 	} catch (error) {
-		// The wait never started, so nothing above took the "Tokens Sent" notice down.
-		toast.dismiss(sentToastId);
+		// Reading the receipt failed outright (no RPC client, or an error the wait does not
+		// retry): the transfer was sent, but whether it arrived is not known.
 		console.error('Error waiting for faucet receipt:', error);
+		toast.error('Transfer Not Confirmed', {
+			description: 'The transfer could not be confirmed. Check your balance in a moment.',
+		});
+		return;
+	} finally {
+		toast.dismiss(sentToastId);
 	}
+	showNotice(outcome);
+	// Only tokens that arrived, or may still arrive, change the balance.
+	if (outcome.kind !== 'received' && outcome.kind !== 'timeout') return;
+	const queryKey = getTokenBalanceQueryKey(chain.id, expected.recipient, expected.token);
+	// Forces a refetch even where the balance is not on screen or still counts as fresh.
+	await queryClient.invalidateQueries({ queryKey, refetchType: 'all' });
 }
 
 /**
