@@ -3,7 +3,7 @@ import { httpsCallable } from 'firebase/functions';
 import { decodeFunctionData, erc20Abi, parseUnits } from 'viem';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import requestTestTokens, { getFaucetConfig } from './faucetService';
+import requestTestTokens, { faucetReceiptOutcome, getFaucetConfig } from './faucetService';
 
 // Hardhat account #0 — the deployer/treasury that holds the full fee token supply and
 // is unlocked on the local node, so eth_sendTransaction needs no signature.
@@ -149,5 +149,28 @@ describe('requestTestTokens — testnet (Firebase callable, unchanged)', () => {
 		expect(httpsCallable).toHaveBeenCalledWith(expect.anything(), 'requestTestTokens');
 		expect(callable).toHaveBeenCalledWith({ walletAddress: USER });
 		expect(fetchMock).not.toHaveBeenCalled();
+	});
+});
+
+// A transfer the token refuses is still mined: the receipt exists and says it reverted.
+// Announcing "Tokens Received" for any receipt would tell the user they hold tokens they
+// do not, and the next prompt would fail on an empty balance.
+describe('faucetReceiptOutcome', () => {
+	it('is pending until a receipt exists', () => {
+		expect(faucetReceiptOutcome(null)).toBe('pending');
+		expect(faucetReceiptOutcome(undefined)).toBe('pending');
+	});
+
+	it('is received for a successful receipt', () => {
+		expect(faucetReceiptOutcome({ status: 'success' })).toBe('received');
+	});
+
+	it('is failed for a reverted receipt', () => {
+		expect(faucetReceiptOutcome({ status: 'reverted' })).toBe('failed');
+	});
+
+	it('is failed for a receipt whose status is missing or unknown', () => {
+		expect(faucetReceiptOutcome({})).toBe('failed');
+		expect(faucetReceiptOutcome({ status: '0x0' })).toBe('failed');
 	});
 });
