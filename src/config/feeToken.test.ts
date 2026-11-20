@@ -12,6 +12,7 @@ import {
 	FEE_TOKEN_PROFILES,
 	FeeTokenConfigError,
 	type FeeTokenProfile,
+	fullBalanceLabel,
 	offersFullBalance,
 	selectFeeToken,
 } from './feeToken';
@@ -211,5 +212,18 @@ describe('offersFullBalance', () => {
 		['a profile whose first offer is a fixed amount', ABLE, 30_000],
 	] as const)('is false for %s', (_label, profile, balance) => {
 		expect(offersFullBalance(profile, balance)).toBe(false);
+	});
+});
+
+// "your full balance" only when the offer is every bit of it; a balance with a fraction is
+// offered its whole tokens and says so.
+describe('fullBalanceLabel', () => {
+	it.each([
+		['a whole balance', SENSE, 30, 'your full balance'],
+		['a balance with a fraction', SENSE, 25.7, 'your balance in whole tokens'],
+		['less than one whole token', SENSE, 0.5, null],
+		['a fixed first offer', ABLE, 30, null],
+	] as const)('labels %s', (_label, profile, balance, expected) => {
+		expect(fullBalanceLabel(profile, balance)).toBe(expected);
 	});
 });

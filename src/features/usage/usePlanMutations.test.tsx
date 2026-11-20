@@ -126,7 +126,8 @@ describe('setting a plan the fee token check has switched off', () => {
 		await attempt(setPlan);
 
 		const copy = feeTokenBlockCopy(verdict, FEE_TOKEN.symbol);
-		expect(toast.error).toHaveBeenCalledWith('Transaction Failed', {
+		// Nothing was sent, so it is not called a failed transaction.
+		expect(toast.error).toHaveBeenCalledWith('Not sent', {
 			description: `${copy?.title}. ${copy?.description}`,
 		});
 	});
@@ -170,7 +171,7 @@ describe('setting a plan before the check has answered once', () => {
 		expect(prepareContractCall).not.toHaveBeenCalled();
 		expect(sendAndConfirm).not.toHaveBeenCalled();
 		expect(onDone).not.toHaveBeenCalled();
-		expect(toast.error).toHaveBeenCalledWith('Transaction Failed', {
+		expect(toast.error).toHaveBeenCalledWith('Not sent', {
 			description: AWAITING_CHECK_REASON,
 		});
 	});
@@ -182,5 +183,18 @@ describe('setting a plan before the check has answered once', () => {
 		await attempt(revoke);
 
 		expect(sendAndConfirm).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('a plan that was sent and failed', () => {
+	it('is still called a failed transaction', async () => {
+		withVerdict('ok');
+		sendAndConfirm.mockRejectedValue(new Error('user rejected'));
+
+		await attempt(setPlan);
+
+		expect(toast.error).toHaveBeenCalledWith('Transaction Failed', {
+			description: 'user rejected',
+		});
 	});
 });

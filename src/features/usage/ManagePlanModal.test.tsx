@@ -132,8 +132,20 @@ describe('an empty wallet of a token that cannot be got in the app', () => {
 		]);
 	});
 
-	it('is not pointed anywhere when the wallet holds some', async () => {
-		withBalance('3');
+	// Dust is not enough for the first offer, and the app still offers no way to get more.
+	it('is pointed to the same links with dust, without being told it has none', async () => {
+		withBalance('0.5');
+		await renderDialog();
+
+		expect(document.body.textContent).toContain(
+			`You do not have enough ${FEE_TOKEN_PROFILES.SENSE.symbol}.`,
+		);
+		expect(document.body.textContent).not.toContain('You have no');
+		expect(links()).toHaveLength(2);
+	});
+
+	it('is not pointed anywhere when the wallet holds enough for the offer', async () => {
+		withBalance('30');
 		await renderDialog();
 
 		expect(links()).toEqual([]);
@@ -165,6 +177,15 @@ describe('a first offer that is the whole balance', () => {
 
 		expect(limitField().value).toBe('500');
 		expect(label()).not.toBeNull();
+	});
+
+	it('says "your balance in whole tokens" when the balance has a fraction', async () => {
+		withBalance('25.7');
+		await renderDialog();
+
+		expect(limitField().value).toBe('25');
+		expect(label()).toBeNull();
+		expect(screen.queryByText('your balance in whole tokens')).not.toBeNull();
 	});
 
 	it('loses the label once another amount is typed', async () => {
