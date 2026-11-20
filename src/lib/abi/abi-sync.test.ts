@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest';
 
 import { abiFingerprint } from '#scripts/abi-fingerprint.mjs';
 
-
 const abiDir = path.resolve(import.meta.dirname);
 
 function loadAbi(filename: string) {
@@ -77,6 +76,49 @@ describe('AbleToken ABI — custom errors used by buildErrorHandler', () => {
 				(x as any).type === 'error' && (x as any).name === 'ERC20InsufficientAllowance',
 		);
 		expect(entry).toBeDefined();
+	});
+});
+
+/**
+ * SenseToken is the other fee token the dApp can be built for. It moves only to or from an
+ * address its owner has listed, so the dApp needs its own error to explain a refused payment,
+ * and its exemption getter to check the escrow and treasury are listed.
+ */
+describe('SenseToken ABI — what the dApp decodes and reads', () => {
+	const raw = loadAbi('SenseToken.json');
+	const abi = Array.isArray(raw) ? raw : raw.abi ?? [];
+	const find = (type: string, name: string) =>
+		abi.find((x: unknown) => (x as any).type === type && (x as any).name === name);
+
+	it('TransferNotAllowed carries the sender and the receiver', () => {
+		expect(find('error', 'TransferNotAllowed')?.inputs.map((i: any) => i.type)).toEqual([
+			'address',
+			'address',
+		]);
+	});
+
+	it.each(['ERC20InsufficientBalance', 'ERC20InsufficientAllowance', 'EnforcedPause'])(
+		'%s error exists',
+		name => {
+			expect(find('error', name)).toBeDefined();
+		},
+	);
+
+	it('isTransferExempt takes an address and returns bool', () => {
+		const fn = find('function', 'isTransferExempt');
+
+		expect(fn?.stateMutability).toBe('view');
+		expect(fn?.inputs.map((i: any) => i.type)).toEqual(['address']);
+		expect(fn?.outputs.map((o: any) => o.type)).toEqual(['bool']);
+	});
+
+	it.each(['symbol', 'balanceOf', 'allowance', 'approve'])('%s exists', name => {
+		expect(find('function', name)).toBeDefined();
+	});
+
+	// The supply is fixed: a holder cannot destroy tokens, so the dApp must not offer to.
+	it.each(['burn', 'burnFrom', 'mint'])('has no %s function', name => {
+		expect(find('function', name)).toBeUndefined();
 	});
 });
 
@@ -296,7 +338,12 @@ describe('EVMAIAgentEscrow ABI — refund-record retry and direct-payment event'
  */
 describe('SOURCE.json — upstream provenance for every committed ABI', () => {
 	const manifest = loadAbi('SOURCE.json');
-	const abiFiles = ['AbleToken.json', 'EVMAIAgent.json', 'EVMAIAgentEscrow.json'];
+	const abiFiles = [
+		'AbleToken.json',
+		'EVMAIAgent.json',
+		'EVMAIAgentEscrow.json',
+		'SenseToken.json',
+	];
 
 	it.each(abiFiles)('%s records a repo and a full commit SHA', file => {
 		const entry = manifest.sources?.[file];
