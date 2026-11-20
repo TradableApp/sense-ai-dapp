@@ -41,12 +41,16 @@ vi.mock('@/config/contracts', () => ({
 	TESTNET_CHAIN_ID: 84532,
 }));
 vi.mock('@/components/ui/button', () => ({ Button: () => null }));
-vi.mock('@/lib/faucetService', () => ({ default: vi.fn(), FAUCET_AMOUNT_ABLE: 100 }));
+vi.mock('@/lib/faucetService', () => ({ default: vi.fn(), DEFAULT_FAUCET_AMOUNT: 100 }));
 vi.mock('@/lib/utils', () => ({ wait: vi.fn() }));
 vi.mock('@/lib/crypto', () => ({ encryptData: vi.fn() }));
 vi.mock('@/lib/ecies', () => ({
 	default: vi.fn(async () => new Uint8Array([1, 2, 3, 4])),
 }));
+
+import { toFunctionSelector } from 'viem';
+
+import { FEE_TOKEN_PROFILES, type FeeTokenProfile } from '@/config/feeToken';
 
 import { buildErrorHandler } from './useChatMutations';
 
@@ -56,16 +60,49 @@ function makeHandler() {
 }
 
 describe('buildErrorHandler — Token errors', () => {
-	it('ERC20InsufficientBalance → toast.error "Insufficient ABLE Balance"', () => {
-		const handler = makeHandler();
-		handler({ message: 'ERC20InsufficientBalance' }, 'send message');
-		expect(toast.error).toHaveBeenCalledWith('Insufficient ABLE Balance', expect.any(Object));
+	const profiles = [FEE_TOKEN_PROFILES.SENSE, FEE_TOKEN_PROFILES.ABLE];
+	const handlerFor = (profile: FeeTokenProfile) =>
+		buildErrorHandler(false, false, 100, vi.fn(), profile);
+
+	it.each(profiles)('ERC20InsufficientBalance names the fee token ($symbol)', profile => {
+		handlerFor(profile)({ message: 'ERC20InsufficientBalance' }, 'send message');
+
+		expect(toast.error).toHaveBeenCalledWith(
+			`Insufficient ${profile.symbol} Balance`,
+			expect.any(Object),
+		);
 	});
 
 	it('ERC20InsufficientAllowance → toast.error "Spending Limit Reached"', () => {
 		const handler = makeHandler();
 		handler({ message: 'ERC20InsufficientAllowance' }, 'send message');
 		expect(toast.error).toHaveBeenCalledWith('Spending Limit Reached', expect.any(Object));
+	});
+
+	// A token that moves only to listed addresses refuses the payment when the escrow or the
+	// treasury is not listed. Decoded whichever token the build is for: with the other token
+	// the error can never arrive, and a build pointed at the wrong token still explains itself.
+	it.each(profiles)('a refused transfer is explained, by name ($symbol build)', profile => {
+		handlerFor(profile)({ message: 'execution reverted: TransferNotAllowed' }, 'send message');
+
+		expect(toast.error).toHaveBeenCalledWith('Payment Not Accepted', expect.any(Object));
+	});
+
+	it.each(profiles)('a refused transfer is explained, by selector ($symbol build)', profile => {
+		const selector = toFunctionSelector('TransferNotAllowed(address,address)');
+
+		handlerFor(profile)({ message: `reverted with custom error ${selector}0000` }, 'cancel prompt');
+
+		expect(toast.error).toHaveBeenCalledWith('Payment Not Accepted', expect.any(Object));
+	});
+
+	it('the refused-transfer message names no token', () => {
+		handlerFor(FEE_TOKEN_PROFILES.SENSE)({ message: 'TransferNotAllowed' }, 'send message');
+
+		const [title, options] = vi.mocked(toast.error).mock.calls.at(-1) ?? [];
+		expect(`${title} ${(options as { description?: string })?.description}`).not.toMatch(
+			/SENSE|ABLE/i,
+		);
 	});
 });
 
