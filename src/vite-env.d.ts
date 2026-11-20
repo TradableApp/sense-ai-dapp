@@ -22,7 +22,7 @@ interface ImportMetaEnv {
 	readonly VITE_CHAIN_SLUG: string;
 	readonly VITE_DATABASE_URL: string;
 	readonly VITE_ESCROW_CONTRACT_ADDRESS: string;
-	/** `SENSE` or `ABLE`: which token pays the fees. Unset or unknown means `SENSE`. */
+	/** `SENSE` or `ABLE`: which token pays the fees. Unset stops every build but localnet's (which uses `SENSE`); any other value stops every build. */
 	readonly VITE_FEE_TOKEN: string | undefined;
 	readonly VITE_MEASUREMENT_ID: string;
 	readonly VITE_MESSAGING_SENDER_ID: string;
