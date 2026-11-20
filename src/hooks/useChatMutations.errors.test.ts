@@ -164,6 +164,33 @@ describe('buildErrorHandler — Token errors', () => {
 		expect(toast.error).toHaveBeenCalledWith('Payments Paused', expect.any(Object));
 	});
 
+	// A paused token refuses every movement, so what it means depends on what was being done.
+	// A payment took nothing. A cancellation leaves the fee held until the token is resumed. A
+	// refund cannot be paid until then. No refund time is promised: nobody here knows when.
+	const pausedCases = [
+		['send message', 'Payments Paused', /no tokens were taken/i],
+		['regenerate response', 'Payments Paused', /no tokens were taken/i],
+		['branch conversation', 'Payments Paused', /no tokens were taken/i],
+		['update conversation', 'Payments Paused', /no tokens were taken/i],
+		['cancel prompt', 'Could Not Cancel', /still held.*until the token is resumed/i],
+		['process refund', 'Refund Not Sent', /still held.*once the token is resumed/i],
+	] as const;
+
+	it.each(pausedCases)('a paused token during "%s" says %s', (action, title, description) => {
+		handlerFor(FEE_TOKEN_PROFILES.SENSE)(
+			{ message: 'execution reverted: EnforcedPause()' },
+			action,
+		);
+
+		const [shown, options] = vi.mocked(toast.error).mock.calls.at(-1) ?? [];
+		const text = (options as { description: string }).description;
+		expect(toast.error).toHaveBeenCalledTimes(1);
+		expect(shown).toBe(title);
+		expect(text).toMatch(description);
+		expect(text).not.toMatch(/hour/i);
+		expect(`${shown} ${text}`).not.toMatch(/\b(SENSE|ABLE)\b/);
+	});
+
 	it('a token transfer that fails without a reason is explained', () => {
 		makeHandler()({ message: 'SafeERC20FailedOperation - 0x1234' }, 'send message');
 
@@ -290,6 +317,29 @@ describe('buildErrorHandler — every explained error is recognised by its selec
 
 		expect(toast.error).toHaveBeenCalledTimes(1);
 		expect(toast.error).toHaveBeenCalledWith(title, expect.any(Object));
+	});
+
+	// A paused token has one message per action, whichever token the build is for.
+	it.each([
+		['send message', 'Payments Paused', /no tokens were taken/i],
+		['cancel prompt', 'Could Not Cancel', /until the token is resumed/i],
+		['process refund', 'Refund Not Sent', /once the token is resumed/i],
+	] as const)('EnforcedPause during "%s" shows "%s"', (action, title, description) => {
+		for (const profile of [FEE_TOKEN_PROFILES.ABLE, FEE_TOKEN_PROFILES.SENSE]) {
+			vi.mocked(toast.error).mockClear();
+			const handler = buildErrorHandler(false, false, 100, vi.fn(), profile);
+
+			handler(
+				{ message: undecoded(realSelector(profile.abi as unknown[], 'EnforcedPause')) },
+				action,
+			);
+
+			expect(toast.error).toHaveBeenCalledTimes(1);
+			expect(toast.error).toHaveBeenCalledWith(
+				title,
+				expect.objectContaining({ description: expect.stringMatching(description) }),
+			);
+		}
 	});
 
 	// The refused transfer has one message per action and, for a cancellation, per what the
