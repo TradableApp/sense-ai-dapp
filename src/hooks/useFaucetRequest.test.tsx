@@ -263,3 +263,46 @@ describe('the chain a faucet request uses', () => {
 		expect(queryKey).toContain(84532);
 	});
 });
+
+describe('when a faucet request refreshes the balance', () => {
+	async function refreshesAfter(prepare: () => void): Promise<boolean> {
+		prepare();
+		const queryClient = new QueryClient();
+		const refreshed = vi.spyOn(queryClient, 'invalidateQueries');
+		const wrapper = ({ children }: { children: ReactNode }) => (
+			<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		);
+		const { result } = renderHook(() => useFaucetRequest(), { wrapper });
+		await act(async () => {
+			await result.current.requestTokens();
+		});
+		return refreshed.mock.calls.length > 0;
+	}
+
+	it('refreshes it when the tokens arrived', async () => {
+		const refreshed = await refreshesAfter(() =>
+			minedWith({ status: 'success', logs: [transferLog(TOKEN, USER, '5')] }),
+		);
+
+		expect(refreshed).toBe(true);
+	});
+
+	it('refreshes it while the transfer is still confirming', async () => {
+		const refreshed = await refreshesAfter(() =>
+			vi
+				.mocked(eth_getTransactionReceipt)
+				.mockRejectedValue(new Error('Transaction receipt not found.')),
+		);
+
+		expect(refreshed).toBe(true);
+	});
+
+	it.each([
+		['the receipt reverted', { status: 'reverted', logs: [] }],
+		['the receipt brought the user nothing', { status: 'success', logs: [] }],
+	])('leaves it alone when %s', async (_, receipt) => {
+		const refreshed = await refreshesAfter(() => minedWith(receipt));
+
+		expect(refreshed).toBe(false);
+	});
+});
