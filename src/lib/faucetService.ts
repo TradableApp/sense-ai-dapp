@@ -166,6 +166,7 @@ export async function awaitFaucetReceipt<Receipt extends object>(
 const requestTestTokens = async (
 	walletAddress: string,
 	configuredAmount?: number,
+	_loadingToastId?: string | number,
 ): Promise<FaucetResponse> => {
 	try {
 		// On localnet the "faucet" is a direct deployer transfer; on testnet it is

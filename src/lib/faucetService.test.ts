@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 import { getDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
+import { toast } from 'sonner';
 import { decodeFunctionData, erc20Abi, parseUnits } from 'viem';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -119,6 +120,22 @@ describe('requestTestTokens — localnet (deployer transfer, no cloud function)'
 
 		expect(result.success).toBe(false);
 		expect(httpsCallable).not.toHaveBeenCalled();
+	});
+
+	it('shows its failure notice in place of the loading notice whose id it is given', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				json: async () => ({ jsonrpc: '2.0', id: 1, error: { message: 'nonce too low' } }),
+			}),
+		);
+
+		await requestTestTokens(USER, 50, 'loading-notice');
+
+		expect(toast.error).toHaveBeenCalledWith(
+			'Faucet Failed',
+			expect.objectContaining({ id: 'loading-notice' }),
+		);
 	});
 
 	it('uses a caller-provided amount and skips the fresh config read', async () => {

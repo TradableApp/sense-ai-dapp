@@ -307,10 +307,12 @@ describe('when a faucet request refreshes the balance', () => {
 	});
 });
 
-describe('a faucet call that fails outright', () => {
-	it('takes the loading notice down, says so, announces nothing and refreshes nothing', async () => {
-		const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-		vi.mocked(requestTestTokens).mockRejectedValue(new Error('network down'));
+describe('the loading notice', () => {
+	// The service never throws: a failure comes back as { success: false } with its own notice
+	// already shown. Given the loading notice's id, that notice takes the loading one's place,
+	// so the two are never up together; dismissing the id afterwards would take the failure down.
+	it('is handed to the faucet so a failure notice takes its place, and is left to it', async () => {
+		vi.mocked(requestTestTokens).mockResolvedValue({ success: false });
 		const queryClient = new QueryClient();
 		const refreshed = vi.spyOn(queryClient, 'invalidateQueries');
 		const wrapper = ({ children }: { children: ReactNode }) => (
@@ -322,12 +324,23 @@ describe('a faucet call that fails outright', () => {
 			await expect(result.current.requestTokens()).resolves.toBeUndefined();
 		});
 
-		expect(toast.dismiss).toHaveBeenCalledWith('loading');
-		expect(toast.error).toHaveBeenCalledWith('Faucet Failed', expect.any(Object));
+		expect(requestTestTokens).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.any(Number),
+			'loading',
+		);
+		expect(toast.dismiss).not.toHaveBeenCalledWith('loading');
+		expect(toast.error).not.toHaveBeenCalled();
 		expect(toast.success).not.toHaveBeenCalled();
 		expect(refreshed).not.toHaveBeenCalled();
-		expect(logged).toHaveBeenCalled();
-		logged.mockRestore();
+	});
+
+	it('is taken down once the faucet has sent', async () => {
+		minedWith({ status: 'success', logs: [transferLog(TOKEN, USER, '250')] });
+
+		await requestTokens();
+
+		expect(toast.dismiss).toHaveBeenCalledWith('loading');
 	});
 });
 
