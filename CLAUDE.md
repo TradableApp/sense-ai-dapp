@@ -18,7 +18,7 @@ Frontend dApp for SenseAI — the AI Agent providing sentiment and fundamental o
 | `bun run deploy:mainnet`               | Guarded: needs `DEPLOY_MAINNET_CONFIRMED=1`; `build:mainnet` + deploy `--project prod`   |
 | `bun run lint` / `bun run lint:fix`    | ESLint                                                                                   |
 | `bun run format`                       | Prettier                                                                                 |
-| `bun run sync-contracts`               | Copy ABI files from `able-contracts` and `tokenized-ai-agent` repos                      |
+| `bun run sync-contracts`               | Copy ABI files from `able-contracts`, `sense-contracts` and `tokenized-ai-agent`         |
 | `bun run test`                         | Vitest unit tests + the `e2e/__guards__/` static guards                                  |
 | `bun run typecheck:e2e`                | Type-check the Playwright suite (separate tsconfig)                                      |
 | `bun run test:e2e`                     | Playwright — **see the warning below before running this directly**                      |
@@ -169,6 +169,7 @@ ABIs in `src/lib/abi/` are not hand-maintained — they are synced from compiled
 ```bash
 # 1. Compile contracts in their repos (required first)
 cd ../able-contracts && bun run compile
+cd ../sense-contracts && bun run compile
 cd ../tokenized-ai-agent && bun run compile
 
 # 2. Sync ABIs into this repo
