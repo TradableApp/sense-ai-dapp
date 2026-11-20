@@ -39,6 +39,8 @@ export function localStoreName(
 }
 
 const LOCALNET_MODE = 'localnet';
+/** The mode Vitest runs in. */
+const UNIT_TEST_MODE = 'test';
 const UNCONFIGURED_LOCALNET_STORE = `${STORE_PREFIX}:${LOCALNET_MODE}:unconfigured`;
 /** Build modes that are deployed, where a store shared between agents would reach users. */
 const DEPLOYED_MODES = ['testnet', 'mainnet'];
@@ -46,16 +48,18 @@ const DEPLOYED_MODES = ['testnet', 'mainnet'];
 /**
  * The name the app opens its store under.
  *
- * Strict everywhere except a localnet build with no agent address: the browser tests that
- * run against no contracts at all must still load the app, and such a build has no agent
- * whose conversations could be mixed up. Its store has a name no agent's store can have.
+ * Strict everywhere except a localnet build or a unit-test run with no agent address: the
+ * browser tests that run against no contracts at all must still load the app, a unit test
+ * that loads the store module unmocked should not fail on configuration, and neither has an
+ * agent whose conversations could be mixed up. Its store has a name no agent's store can have.
  */
 export function resolveLocalStoreName(
 	chainId: string | number | undefined,
 	agentAddress: string | undefined,
 	mode: string | undefined,
 ): string {
-	if (mode === LOCALNET_MODE && !agentAddress) return UNCONFIGURED_LOCALNET_STORE;
+	const mayRunWithoutAgent = mode === LOCALNET_MODE || mode === UNIT_TEST_MODE;
+	if (mayRunWithoutAgent && !agentAddress) return UNCONFIGURED_LOCALNET_STORE;
 	return localStoreName(chainId, agentAddress);
 }
 
