@@ -5,6 +5,10 @@ import senseLogo from '@/assets/logos/senseai-logo.svg';
 import AbleTokenABI from '@/lib/abi/AbleToken.json';
 import SenseTokenABI from '@/lib/abi/SenseToken.json';
 
+import { type FeeTokenName } from './feeTokenConfig';
+
+export { assertFeeTokenConfig, FeeTokenConfigError } from './feeTokenConfig';
+
 /**
  * How the plan dialog picks the limit it first offers.
  * - `fixed`: the same amount for everyone.
@@ -34,6 +38,13 @@ export interface FeeTokenProfile {
 	/** Whether it can be bought. When false the wallet panel offers no purchase. */
 	purchasable: boolean;
 	defaultPlanLimit: DefaultPlanLimit;
+	/** Decimal places of the token's base unit. Every amount is converted with this. */
+	decimals: number;
+	/**
+	 * The price used for the dollar estimate on chains where no market exists. Only a
+	 * token that shows a market value has one.
+	 */
+	plannedPriceUsd?: number;
 }
 
 export const FEE_TOKEN_PROFILES = {
@@ -45,9 +56,12 @@ export const FEE_TOKEN_PROFILES = {
 		showsMarketValue: false,
 		transferable: false,
 		purchasable: false,
-		// It can only be spent here, so the limit offered is all of it: no price is needed
-		// to size it, and a larger approval gives nobody a way to move it elsewhere.
+		// It has no price to size a limit by and no use but this one, so the limit offered is
+		// what the wallet holds. The approval is still an approval: whoever controls the
+		// escrow or its oracle could draw on it, up to that amount. That is accepted for a
+		// credit that cannot be sold, and is why the other profile keeps a fixed amount.
 		defaultPlanLimit: { kind: 'walletBalance', whenEmpty: 25 },
+		decimals: 18,
 	},
 	ABLE: {
 		symbol: 'ABLE',
@@ -58,8 +72,10 @@ export const FEE_TOKEN_PROFILES = {
 		transferable: true,
 		purchasable: true,
 		defaultPlanLimit: { kind: 'fixed', amount: 1000 },
+		decimals: 18,
+		plannedPriceUsd: 0.015,
 	},
-} as const satisfies Record<string, FeeTokenProfile>;
+} as const satisfies Record<FeeTokenName, FeeTokenProfile>;
 
 /**
  * The ABI that declares the refusal a token with restricted transfers raises. Kept apart
@@ -68,8 +84,12 @@ export const FEE_TOKEN_PROFILES = {
 export const TRANSFER_RESTRICTION_ABI: Abi = SenseTokenABI.abi as Abi;
 
 /**
- * The profile a build setting names. Anything but a known name is SENSE: a build that
- * forgot the setting then shows no price and no send button, which is wrong for nobody.
+ * The profile a build setting names; anything but a known name is SENSE.
+ *
+ * The fallback exists for a developer's machine and the unit tests only. It is not safe for
+ * a deployed build: SENSE settings on another token mean a wrong label, no value shown and
+ * a first offer to approve the wallet's whole balance. `assertFeeTokenConfig` stops such a
+ * build before it exists.
  */
 export function selectFeeToken(value: string | undefined): FeeTokenProfile {
 	const name = (value ?? '').trim().toUpperCase();

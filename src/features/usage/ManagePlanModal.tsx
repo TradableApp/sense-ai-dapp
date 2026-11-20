@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -40,11 +40,13 @@ import { client } from '@/config/thirdweb';
 import useFaucetConfig from '@/hooks/useFaucetConfig';
 import useTokenBalance, { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
 import requestTestTokens, {
+	awaitFaucetReceipt,
 	DEFAULT_FAUCET_AMOUNT,
-	faucetReceiptOutcome,
+	FAUCET_POLL_MS,
 } from '@/lib/faucetService';
 import { wait } from '@/lib/utils';
 
+import shouldResetPlanForm from './planFormReset';
 import PlanValueEstimate from './PlanValueEstimate';
 
 const managePlanSchema = z.object({
@@ -60,6 +62,8 @@ const managePlanSchema = z.object({
 type FormValues = z.infer<typeof managePlanSchema>;
 
 const DEFAULT_DAYS = 365;
+// About 40 seconds at the faucet's polling interval.
+const FAUCET_WAIT_ATTEMPTS = 20;
 
 interface ExistingPlan {
 	allowance: number;
@@ -116,19 +120,20 @@ export default function ManagePlanModal({
 		mode: 'onChange',
 		defaultValues: {
 			limit: initialLimit,
-			days: existingPlan ? 365 : DEFAULT_DAYS,
+			days: DEFAULT_DAYS,
 		},
 	});
 
-	// Runs when the dialog opens, and again if the suggestion changes while it is open (the
-	// balance arriving), but never over a value the user has typed.
+	// See shouldResetPlanForm: always on opening, and afterwards only while nothing is typed.
+	const wasOpen = useRef(false);
 	useEffect(() => {
-		if (open && !isDirty) {
+		if (shouldResetPlanForm({ open, wasOpen: wasOpen.current, isDirty })) {
 			reset({
 				limit: initialLimit,
-				days: existingPlan ? 365 : DEFAULT_DAYS,
+				days: DEFAULT_DAYS,
 			});
 		}
+		wasOpen.current = open;
 		// `isDirty` is read, not watched: becoming dirty must not trigger a reset.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [open, existingPlan, initialLimit, reset]);
@@ -321,7 +326,7 @@ export default function ManagePlanModal({
 	});
 
 	const onSubmit = (data: FormValues) => {
-		const limitInWei = parseUnits(data.limit.toString(), 18);
+		const limitInWei = parseUnits(data.limit.toString(), FEE_TOKEN.decimals);
 		const nowInSeconds = Math.floor(Date.now() / 1000);
 		const expiresAtTimestamp = BigInt(nowInSeconds + (data.days as number) * 24 * 60 * 60);
 		setPlanMutation.mutate({ limitInWei, expiresAtTimestamp });
@@ -341,7 +346,7 @@ export default function ManagePlanModal({
 		if (success && txHash) {
 			// 1. Show initial Toast. On testnet, offer an explorer link; localnet
 			// (Hardhat) has no block explorer, so omit the action there.
-			toast.info('Tokens Sent', {
+			const sentToastId = toast.info('Tokens Sent', {
 				description: 'Waiting for network confirmation...',
 				...(isLocalnet
 					? {}
@@ -362,49 +367,37 @@ export default function ManagePlanModal({
 				if (!chain) throw new Error('Chain not found');
 				const rpcRequest = getRpcClient({ client, chain });
 
-				let attempts = 0;
-				const maxAttempts = 20; // Try for ~40 seconds (2s interval)
-				while (attempts < maxAttempts) {
-					try {
-						// Check if receipt exists
-						// eslint-disable-next-line no-await-in-loop
-						const receipt = await eth_getTransactionReceipt(rpcRequest, {
-							hash: txHash as `0x${string}`,
+				const outcome = await awaitFaucetReceipt(
+					() => eth_getTransactionReceipt(rpcRequest, { hash: txHash as `0x${string}` }),
+					{ wait: () => wait(FAUCET_POLL_MS), maxAttempts: FAUCET_WAIT_ATTEMPTS },
+				);
+
+				toast.dismiss(sentToastId);
+				if (outcome === 'failed') {
+					toast.error('Tokens Not Received', {
+						description: 'The faucet could not send the tokens. Nothing was added to your wallet.',
+					});
+				} else {
+					if (outcome === 'received') {
+						toast.success('Tokens Received', {
+							description: `${dispensed} ${FEE_TOKEN.symbol} added to your wallet.`,
 						});
-
-						const outcome = faucetReceiptOutcome(receipt);
-						if (outcome === 'failed') {
-							toast.error('Tokens Not Received', {
-								description: 'The faucet transaction did not go through. Please try again.',
-							});
-							break;
-						}
-						if (outcome === 'received') {
-							toast.success('Tokens Received', {
-								description: `${dispensed} ${FEE_TOKEN.symbol} added to your wallet.`,
-							});
-
-							// Refresh balance
-							const queryKey = getTokenBalanceQueryKey(
-								chainId ?? 0,
-								address,
-								CONTRACTS[chainId ?? 0]?.token?.address,
-							);
-							// eslint-disable-next-line no-await-in-loop
-							await queryClient.invalidateQueries({
-								queryKey,
-								refetchType: 'all', // Forces refetch even if component is unmounted or data is "fresh"
-							});
-
-							break;
-						}
-					} catch (e) {
-						// Receipt not found yet, ignore
+					} else {
+						toast.info('Still Confirming', {
+							description:
+								'The transfer has not been confirmed yet. Your balance will update when it is.',
+						});
 					}
 
-					// eslint-disable-next-line no-await-in-loop
-					await wait(2000);
-					attempts += 1;
+					const queryKey = getTokenBalanceQueryKey(
+						chainId ?? 0,
+						address,
+						CONTRACTS[chainId ?? 0]?.token?.address,
+					);
+					await queryClient.invalidateQueries({
+						queryKey,
+						refetchType: 'all', // Forces refetch even if component is unmounted or data is "fresh"
+					});
 				}
 			} catch (error) {
 				console.error('Error waiting for faucet receipt:', error);

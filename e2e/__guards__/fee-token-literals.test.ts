@@ -10,7 +10,8 @@ import { describe, expect, it } from 'vitest';
 import { E2E_DIR, sourceFiles } from './source-scan';
 
 /**
- * The fee token is named in one place: `src/config/feeToken.ts`.
+ * The fee token is named in one place: `src/config/feeToken.ts`, with the list of names
+ * a build may choose in `feeTokenConfig.ts` beside it.
  *
  * Which token pays the fees is a build setting. Every label, logo, ABI and behaviour that
  * depends on it comes from the profile that setting selects, so a build for another token
@@ -25,6 +26,7 @@ import { E2E_DIR, sourceFiles } from './source-scan';
 const SRC = path.resolve(E2E_DIR, '..', 'src');
 const ALLOWED = [
 	path.join('config', 'feeToken.ts'),
+	path.join('config', 'feeTokenConfig.ts'),
 	path.join('lib', 'abi') + path.sep,
 	'vite-env.d.ts',
 ];
@@ -76,7 +78,7 @@ describe('the fee token is named only in its profile', () => {
 		const samples = [
 			'Insufficient ABLE Balance',
 			'{amount} SENSE',
-			'${amount} ABLEs'.replace('ABLEs', 'ABLE.'),
+			'costs 5 ABLE.',
 			"import AbleTokenABI from '@/lib/abi/AbleToken.json';",
 			"import SenseTokenABI from '@/lib/abi/SenseToken.json';",
 			"queryKey: ['tokenPrice', 'able', chainId]",

@@ -24,7 +24,7 @@ describe('walletDetailsModal', () => {
 			const modal = walletDetailsModal(p);
 
 			expect(modal.showTestnetFaucet).toBe(true);
-			expect(modal.hideReceiveFunds).toBeUndefined();
+			expect(modal).not.toHaveProperty('hideReceiveFunds');
 		},
 	);
 

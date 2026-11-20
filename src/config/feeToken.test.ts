@@ -10,6 +10,7 @@ import {
 	defaultPlanLimit,
 	FEE_TOKEN_PROFILES,
 	FeeTokenConfigError,
+	type FeeTokenProfile,
 	selectFeeToken,
 } from './feeToken';
 
@@ -96,7 +97,7 @@ describe('fee token profiles — what the contracts fix', () => {
 	});
 
 	it('only a priced token carries a planned price for test-chain estimates', () => {
-		expect(SENSE.plannedPriceUsd).toBeUndefined();
+		expect((SENSE as FeeTokenProfile).plannedPriceUsd).toBeUndefined();
 		expect(ABLE.plannedPriceUsd).toBe(0.015);
 	});
 

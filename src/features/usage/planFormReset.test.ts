@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { shouldResetPlanForm } from './planFormReset';
+import shouldResetPlanForm from './planFormReset';
 
 // The plan dialog stays mounted while it is closed, so its form keeps whatever was typed.
 describe('shouldResetPlanForm', () => {

@@ -19,8 +19,9 @@ import { messageNamesError } from '@/lib/contractErrorSelector';
 import { encryptData } from '@/lib/crypto';
 import eciesEncrypt from '@/lib/ecies';
 import requestTestTokens, {
+	awaitFaucetReceipt,
 	DEFAULT_FAUCET_AMOUNT,
-	faucetReceiptOutcome,
+	FAUCET_POLL_MS,
 } from '@/lib/faucetService';
 import { wait } from '@/lib/utils';
 
@@ -124,6 +125,9 @@ export function buildInitiatePromptPayload({
 		previousMessageCID: parentCID || null,
 	};
 }
+
+// About 60 seconds at the faucet's polling interval.
+const FAUCET_WAIT_ATTEMPTS = 30;
 
 const CANCEL_ACTION = 'cancel prompt';
 const REFUND_ACTION = 'process refund';
@@ -412,48 +416,34 @@ export default function useChatMutations() {
 				if (!chain) throw new Error('Chain not found');
 				const rpcRequest = getRpcClient({ client, chain });
 
-				let attempts = 0;
-				const maxAttempts = 30; // Try for ~60 seconds (2s interval)
-				while (attempts < maxAttempts) {
-					try {
-						// Check if receipt exists
-						// eslint-disable-next-line no-await-in-loop
-						const receipt = await eth_getTransactionReceipt(rpcRequest, {
-							hash: txHash as `0x${string}`,
+				const outcome = await awaitFaucetReceipt(
+					() => eth_getTransactionReceipt(rpcRequest, { hash: txHash as `0x${string}` }),
+					{ wait: () => wait(FAUCET_POLL_MS), maxAttempts: FAUCET_WAIT_ATTEMPTS },
+				);
+
+				toast.dismiss(sentToastId);
+				if (outcome === 'failed') {
+					toast.error('Tokens Not Received', {
+						description: 'The faucet could not send the tokens. Nothing was added to your wallet.',
+					});
+				} else {
+					if (outcome === 'received') {
+						toast.success('Tokens Received', {
+							description: `${dispensed} ${FEE_TOKEN.symbol} added to your wallet.`,
 						});
-
-						const outcome = faucetReceiptOutcome(receipt);
-						if (outcome === 'failed') {
-							toast.dismiss(sentToastId);
-							toast.error('Tokens Not Received', {
-								description: 'The faucet transaction did not go through. Please try again.',
-							});
-							break;
-						}
-						if (outcome === 'received') {
-							toast.dismiss(sentToastId); // Dismiss the "Tokens Sent" info toast
-							toast.success('Tokens Received', {
-								description: `${dispensed} ${FEE_TOKEN.symbol} added to your wallet.`,
-							});
-
-							// Refresh balance
-							const queryKey = getTokenBalanceQueryKey(
-								chainId ?? 0,
-								address,
-								CONTRACTS[chainId ?? 0]?.token?.address,
-							);
-							// eslint-disable-next-line no-await-in-loop
-							await queryClient.invalidateQueries({ queryKey });
-
-							break;
-						}
-					} catch (e) {
-						// Receipt not found yet, ignore
+					} else {
+						toast.info('Still Confirming', {
+							description:
+								'The transfer has not been confirmed yet. Your balance will update when it is.',
+						});
 					}
 
-					// eslint-disable-next-line no-await-in-loop
-					await wait(2000);
-					attempts += 1;
+					const queryKey = getTokenBalanceQueryKey(
+						chainId ?? 0,
+						address,
+						CONTRACTS[chainId ?? 0]?.token?.address,
+					);
+					await queryClient.invalidateQueries({ queryKey });
 				}
 			} catch (error) {
 				console.error('Error waiting for faucet receipt:', error);

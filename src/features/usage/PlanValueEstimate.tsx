@@ -14,9 +14,6 @@ import { LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
 import { FEE_TOKEN, type FeeTokenProfile } from '@/config/feeToken';
 import useTokenPrice from '@/hooks/useTokenPrice';
 
-/** The planned launch price, used for the estimate on chains where no market exists. */
-const PLANNED_PRICE_USD = 0.015;
-
 const formatUsd = (value: number) =>
 	value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -57,15 +54,19 @@ function MarketValue({ limit, chainId, profile }: Required<PlanValueEstimateProp
 	const isTestChain = isLocalnet || chainId === TESTNET_CHAIN_ID;
 
 	if (isTestChain) {
+		// A profile with no planned price has no estimate to show on a test chain.
+		if (profile.plannedPriceUsd === undefined) return null;
 		return (
 			<div className="flex items-center justify-end text-sm text-muted-foreground">
 				<PriceInfoDialog
 					title="Test Price"
 					description={`You are on a ${
 						isLocalnet ? 'local' : 'test'
-					} network. The USD value is an estimate based on the planned TGE price of $${PLANNED_PRICE_USD}.`}
+					} network. The USD value is an estimate based on the planned TGE price of $${
+						profile.plannedPriceUsd
+					}.`}
 				/>
-				<span>Est. Value: ≈ ${formatUsd((limit || 0) * PLANNED_PRICE_USD)} USD</span>
+				<span>Est. Value: ≈ ${formatUsd((limit || 0) * profile.plannedPriceUsd)} USD</span>
 			</div>
 		);
 	}

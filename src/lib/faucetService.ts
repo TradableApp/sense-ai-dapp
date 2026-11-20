@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { encodeFunctionData, erc20Abi, parseUnits } from 'viem';
 
 import { LOCAL_CHAIN_ID } from '@/config/contracts';
+import { FEE_TOKEN } from '@/config/feeToken';
 import { db, functions } from '@/config/firebase';
 
 import type { FaucetConfig, FaucetResponse } from './types';
@@ -92,7 +93,7 @@ const fundFromLocalnetTreasury = async (
 	const data = encodeFunctionData({
 		abi: erc20Abi,
 		functionName: 'transfer',
-		args: [walletAddress as `0x${string}`, parseUnits(String(amount), 18)],
+		args: [walletAddress as `0x${string}`, parseUnits(String(amount), FEE_TOKEN.decimals)],
 	});
 
 	const response = await fetch(rpcUrl, {
@@ -127,6 +128,43 @@ export function faucetReceiptOutcome(
 ): FaucetReceiptOutcome {
 	if (!receipt) return 'pending';
 	return receipt.status === 'success' ? 'received' : 'failed';
+}
+
+/** How long to wait between looks for a faucet transaction's receipt. */
+export const FAUCET_POLL_MS = 2000;
+
+export type FaucetWaitOutcome = 'received' | 'failed' | 'timeout';
+
+// What thirdweb throws while a transaction is not yet mined. Expected, so not reported.
+const RECEIPT_NOT_FOUND = 'receipt not found';
+
+/**
+ * Waits for a faucet transaction to be mined and says how it ended. Shared by every place
+ * that offers the faucet, so none of them can announce tokens on a receipt alone.
+ *
+ * `timeout` is its own outcome: the transfer may still arrive, so the caller says it is
+ * still confirming and refreshes the balance, where giving up in silence left the user
+ * with no answer. An error other than "not mined yet" is logged and the wait goes on.
+ */
+export async function awaitFaucetReceipt(
+	getReceipt: () => Promise<{ status?: unknown } | null | undefined>,
+	{ wait, maxAttempts }: { wait: () => Promise<unknown>; maxAttempts: number },
+): Promise<FaucetWaitOutcome> {
+	for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+		try {
+			// eslint-disable-next-line no-await-in-loop
+			const outcome = faucetReceiptOutcome(await getReceipt());
+			if (outcome !== 'pending') return outcome;
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			if (!message.toLowerCase().includes(RECEIPT_NOT_FOUND)) {
+				console.warn('[faucetService] Could not read the faucet receipt, retrying:', message);
+			}
+		}
+		// eslint-disable-next-line no-await-in-loop
+		await wait();
+	}
+	return 'timeout';
 }
 
 const requestTestTokens = async (

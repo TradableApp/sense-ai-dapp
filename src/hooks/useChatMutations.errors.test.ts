@@ -42,7 +42,12 @@ vi.mock('@/config/contracts', () => ({
 	TESTNET_CHAIN_ID: 84532,
 }));
 vi.mock('@/components/ui/button', () => ({ Button: () => null }));
-vi.mock('@/lib/faucetService', () => ({ default: vi.fn(), DEFAULT_FAUCET_AMOUNT: 100 }));
+vi.mock('@/lib/faucetService', () => ({
+	default: vi.fn(),
+	awaitFaucetReceipt: vi.fn(),
+	DEFAULT_FAUCET_AMOUNT: 100,
+	FAUCET_POLL_MS: 2000,
+}));
 vi.mock('@/lib/utils', () => ({ wait: vi.fn() }));
 vi.mock('@/lib/crypto', () => ({ encryptData: vi.fn() }));
 vi.mock('@/lib/ecies', () => ({
