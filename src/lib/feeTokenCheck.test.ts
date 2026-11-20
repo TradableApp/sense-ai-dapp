@@ -8,6 +8,7 @@ import {
 	feeTokenBlockCopy,
 	type FeeTokenReader,
 	type FeeTokenReadings,
+	ESCROW_AGENT_GETTER,
 	PAID_ACTIONS,
 	readFeeTokenVerdict,
 } from './feeTokenCheck';
@@ -16,6 +17,8 @@ const TOKEN = '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512';
 const OTHER_TOKEN = '0x5FbDB2315678afecb367f032d93F642f64180aa3';
 const ESCROW = '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0';
 const TREASURY = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
+const AGENT = '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9';
+const OTHER_AGENT = '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9';
 
 const restricted = { symbol: 'PTS', transferable: false };
 const open = { symbol: 'COIN', transferable: true };
@@ -95,6 +98,7 @@ describe('assessFeeToken', () => {
 
 function reader(over: {
 	escrowToken?: unknown;
+	agent?: unknown;
 	treasury?: unknown;
 	symbol?: unknown;
 	exempt?: Record<string, unknown>;
@@ -105,11 +109,9 @@ function reader(over: {
 		calls,
 		escrow: vi.fn(async method => {
 			calls.push(`escrow.${method}`);
-			return method === ESCROW_FEE_TOKEN_GETTER
-				? over.escrowToken ?? TOKEN
-				: 'treasury' in over
-				? over.treasury
-				: TREASURY;
+			if (method === ESCROW_FEE_TOKEN_GETTER) return over.escrowToken ?? TOKEN;
+			if (method === ESCROW_AGENT_GETTER) return 'agent' in over ? over.agent : AGENT;
+			return 'treasury' in over ? over.treasury : TREASURY;
 		}),
 		token: vi.fn(async (method, params) => {
 			calls.push(`token.${method}${params ? `(${params[0]})` : ''}`);
@@ -119,15 +121,22 @@ function reader(over: {
 }
 
 const check = (r: FeeTokenReader, profile = restricted) =>
-	readFeeTokenVerdict({ reader: r, configuredToken: TOKEN, escrowAddress: ESCROW, profile });
+	readFeeTokenVerdict({
+		reader: r,
+		configuredToken: TOKEN,
+		configuredAgent: AGENT,
+		escrowAddress: ESCROW,
+		profile,
+	});
 
 describe('readFeeTokenVerdict', () => {
-	it('reads the escrow token, the treasury, the symbol and both exemptions for a restricted token', async () => {
+	it('reads the escrow token, its agent, the treasury, the symbol and both exemptions for a restricted token', async () => {
 		const r = reader({});
 		await expect(check(r)).resolves.toBe('ok');
 		expect(r.calls.sort()).toEqual(
 			[
 				`escrow.${ESCROW_FEE_TOKEN_GETTER}`,
+				`escrow.${ESCROW_AGENT_GETTER}`,
 				'escrow.treasury',
 				'token.symbol',
 				`token.isTransferExempt(${ESCROW})`,
@@ -170,6 +179,39 @@ describe('readFeeTokenVerdict', () => {
 		await expect(check(r)).resolves.toBe('escrow-uses-other-token');
 	});
 
+	it('says the escrow serves another agent when its agent is not the one the build names', async () => {
+		const r = reader({ agent: OTHER_AGENT });
+
+		const verdict = await check(r);
+
+		expect(verdict).toBe('escrow-serves-other-agent');
+	});
+
+	it('does not read the token at all when the escrow serves another agent', async () => {
+		const r = reader({ agent: OTHER_AGENT });
+
+		await check(r);
+
+		expect(r.calls.some(call => call.startsWith('token.'))).toBe(false);
+	});
+
+	it('names a wrong token before a wrong agent, and does not ask about the agent', async () => {
+		const r = reader({ escrowToken: OTHER_TOKEN, agent: OTHER_AGENT });
+
+		const verdict = await check(r);
+
+		expect(verdict).toBe('escrow-uses-other-token');
+		expect(r.calls).not.toContain(`escrow.${ESCROW_AGENT_GETTER}`);
+	});
+
+	it('compares the agent address without regard to case', async () => {
+		const r = reader({ agent: AGENT.toLowerCase() });
+
+		const verdict = await check(r);
+
+		expect(verdict).toBe('ok');
+	});
+
 	it('passes each verdict through', async () => {
 		await expect(check(reader({ symbol: 'COIN' }))).resolves.toBe('symbol-mismatch');
 		await expect(check(reader({ exempt: { [ESCROW]: false, [TREASURY]: true } }))).resolves.toBe(
@@ -183,6 +225,7 @@ describe('readFeeTokenVerdict', () => {
 			{ escrowToken: 'not-an-address' },
 			/escrow token is not an address/,
 		],
+		['an agent that is not an address', { agent: 'agent' }, /agent is not an address/],
 		['a treasury that is not an address', { treasury: 42 }, /treasury is not an address/],
 		['a symbol that is not text', { symbol: 7 }, /symbol is not text/],
 		[
@@ -228,6 +271,7 @@ describe('blocksAction', () => {
 		'escrow-uses-other-token': ['prompt', 'plan', 'branch', 'metadata'],
 		'symbol-mismatch': ['prompt', 'plan', 'branch', 'metadata'],
 		'escrow-not-exempt': ['prompt', 'plan', 'branch', 'metadata'],
+		'escrow-serves-other-agent': ['prompt', 'plan', 'branch', 'metadata'],
 		// Prompts go from the user to the escrow and on to the treasury, and either end being
 		// listed is enough. Only a fee paid straight from the user to the treasury is refused.
 		'treasury-not-exempt': ['branch', 'metadata'],

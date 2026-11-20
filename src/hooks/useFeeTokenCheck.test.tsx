@@ -15,6 +15,10 @@ const CHAIN_ID = 84532;
 const TOKEN = '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512';
 const ESCROW = '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0';
 const TREASURY = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
+const AGENT = '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9';
+const OTHER_AGENT = '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9';
+/** A chain the build has a token and an escrow for, but no agent. */
+const CHAIN_WITHOUT_AGENT = 31337;
 
 vi.mock('@sentry/react', () => ({ captureException: vi.fn() }));
 vi.mock('@/config/thirdweb', () => ({ client: {} }));
@@ -28,18 +32,22 @@ vi.mock('@/config/feeToken', () => ({
 }));
 vi.mock('@/config/contracts', () => {
 	const fn = (name: string) => ({ type: 'function', name });
+	const token = {
+		address: '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
+		abi: [fn('symbol'), fn('isTransferExempt')],
+	};
+	const escrow = {
+		address: '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
+		abi: [fn('ableToken'), fn('evmAIAgent'), fn('treasury')],
+	};
 	return {
 		CONTRACTS: {
 			84532: {
-				token: {
-					address: '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
-					abi: [fn('symbol'), fn('isTransferExempt')],
-				},
-				escrow: {
-					address: '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
-					abi: [fn('ableToken'), fn('treasury')],
-				},
+				token,
+				escrow,
+				agent: { address: '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9', abi: [] },
 			},
+			31337: { token, escrow, agent: { address: undefined, abi: [] } },
 		},
 	};
 });
@@ -52,6 +60,7 @@ function chainAnswers(over: Record<string, unknown> = {}) {
 			call.method.name === 'isTransferExempt' ? `exempt:${call.params[0]}` : call.method.name;
 		const answers: Record<string, unknown> = {
 			[ESCROW_FEE_TOKEN_GETTER]: TOKEN,
+			evmAIAgent: AGENT,
 			treasury: TREASURY,
 			symbol: 'PTS',
 			[`exempt:${ESCROW}`]: true,
@@ -115,6 +124,26 @@ describe('useFeeTokenCheck', () => {
 		const { result } = harness();
 		await waitFor(() => expect(result.current.verdict).toBe('escrow-not-exempt'));
 		expect(result.current.blocks('prompt')).toBe(true);
+	});
+
+	it('stops every paying action when the escrow serves another agent', async () => {
+		chainAnswers({ evmAIAgent: OTHER_AGENT });
+
+		const { result } = harness();
+
+		await waitFor(() => expect(result.current.verdict).toBe('escrow-serves-other-agent'));
+		expect(result.current.blocks('prompt')).toBe(true);
+		expect(result.current.blocks('plan')).toBe(true);
+	});
+
+	it('reads nothing when the build has no agent for the chain', () => {
+		onChain(CHAIN_WITHOUT_AGENT);
+		chainAnswers();
+
+		const { result } = harness();
+
+		expect(result.current.verdict).toBe('unknown');
+		expect(readContract).not.toHaveBeenCalled();
 	});
 
 	it('stops only direct fees when the treasury is not listed', async () => {
