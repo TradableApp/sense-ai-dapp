@@ -6,6 +6,7 @@ import {
 	assessFeeToken,
 	blocksAction,
 	ESCROW_AGENT_GETTER,
+	FEE_TOKEN_VERDICTS,
 	feeTokenBlockCopy,
 	type FeeTokenReader,
 	type FeeTokenReadings,
@@ -487,6 +488,19 @@ describe('feeTokenBlockCopy', () => {
 		'contract-not-found',
 		'token-paused',
 	] as const;
+
+	it('has words for every verdict that stops something: a block is never silent', () => {
+		const stopping = FEE_TOKEN_VERDICTS.filter(verdict => verdict !== 'ok');
+
+		const silent = stopping.filter(verdict => feeTokenBlockCopy(verdict, 'PTS') === null);
+
+		expect(stopping.length).toBeGreaterThan(0);
+		expect(silent).toEqual([]);
+	});
+
+	it('the banner list covers every verdict', () => {
+		expect([...FEE_TOKEN_VERDICTS].sort()).toEqual(['ok', ...blocking].sort());
+	});
 
 	it('has nothing to say when the check passed or has no answer', () => {
 		expect(feeTokenBlockCopy('ok', 'PTS')).toBeNull();
