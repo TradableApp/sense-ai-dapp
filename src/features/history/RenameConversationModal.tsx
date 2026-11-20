@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
+import FeeTokenMismatchBanner from '@/components/FeeTokenMismatchBanner';
 import { Button } from '@/components/ui/button';
 import {
 	Dialog,
@@ -57,7 +58,8 @@ export default function RenameConversationModal({
 		defaultValues: { title: '' },
 	});
 	// A rename pays a fee; while that is switched off the dialog says so and sends nothing.
-	const renameSwitchedOff = useSwitchedOffReason('metadata');
+	// The backdrop hides the page's banner, so the dialog shows its own and points at it.
+	const renameSwitchedOff = useSwitchedOffReason('metadata', 'dialog');
 	const reasonId = useId();
 
 	useEffect(() => {
@@ -79,6 +81,7 @@ export default function RenameConversationModal({
 					<DialogTitle>Rename Conversation</DialogTitle>
 					<DialogDescription>Enter a new name for this conversation.</DialogDescription>
 				</DialogHeader>
+				<FeeTokenMismatchBanner />
 
 				<form onSubmit={handleSubmit(onSubmit)} className="space-y-2">
 					<Input placeholder="Conversation title" disabled={isProcessing} {...register('title')} />

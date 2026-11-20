@@ -71,10 +71,26 @@ export function refusedTransferMessage(
 }
 
 /**
- * Why a control is switched off, for its tooltip and its accessible description: the
- * banner's title, and where to read the rest. The banner is on every page.
+ * Where the banner is, seen from the control: at the top of the page for a control on the
+ * page, or above it for one in a dialog, whose backdrop hides the page's banner and which
+ * therefore shows its own.
  */
-export function switchedOffReason(state: FeeTokenCheckState, symbol: string): string {
+export type BannerPlace = 'page' | 'dialog';
+
+const WHERE_THE_BANNER_IS: Record<BannerPlace, string> = {
+	page: 'The notice at the top of the page says why.',
+	dialog: 'The notice above says why.',
+};
+
+/**
+ * Why a control is switched off, for its tooltip and its accessible description: the
+ * banner's title, and where to read the rest.
+ */
+export function switchedOffReason(
+	state: FeeTokenCheckState,
+	symbol: string,
+	place: BannerPlace = 'page',
+): string {
 	const title = feeTokenBlockCopy(state, symbol)?.title ?? 'This action is switched off';
-	return `${title}. The notice at the top of the page says why.`;
+	return `${title}. ${WHERE_THE_BANNER_IS[place]}`;
 }

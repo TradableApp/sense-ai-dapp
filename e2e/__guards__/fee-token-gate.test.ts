@@ -134,7 +134,7 @@ describe('where the fee token check is asked', () => {
 		],
 		[
 			'src/features/history/RenameConversationModal.tsx',
-			"const renameSwitchedOff = useSwitchedOffReason('metadata');",
+			"const renameSwitchedOff = useSwitchedOffReason('metadata', 'dialog');",
 		],
 	])('%s asks whether its action is switched off: %s', (file, statement) => {
 		expect(hasStatement(code(file), statement)).toBe(true);
