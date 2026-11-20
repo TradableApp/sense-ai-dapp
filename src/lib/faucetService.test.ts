@@ -216,6 +216,16 @@ describe('awaitFaucetReceipt', () => {
 		expect(getReceipt).toHaveBeenCalledTimes(4);
 	});
 
+	it('waits between looks only: four looks are three waits, so a timeout is reported at once', async () => {
+		const wait = vi.fn().mockResolvedValue(undefined);
+		const getReceipt = vi.fn().mockImplementation(notMinedYet);
+
+		await awaitFaucetReceipt(getReceipt, { wait, maxAttempts: 4 });
+
+		expect(getReceipt).toHaveBeenCalledTimes(4);
+		expect(wait).toHaveBeenCalledTimes(3);
+	});
+
 	it('keeps trying through an unexpected error, and says so', async () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 		const getReceipt = vi
