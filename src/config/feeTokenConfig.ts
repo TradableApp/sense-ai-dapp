@@ -1,5 +1,7 @@
-// Kept free of imports: `vite.config.ts` loads this file before any alias or asset loader
-// exists, so it cannot pull in the profiles' logos and ABIs.
+// Kept free of imports but one: `vite.config.ts` loads this file before any alias or asset
+// loader exists, so it cannot pull in the profiles' logos and ABIs. The shape description
+// has no imports of its own, and without the alias it can only be reached by this path.
+import describeShape from '../lib/settingShape';
 
 /** The tokens a build can be for. `feeToken.ts` holds one profile per name. */
 export const FEE_TOKEN_NAMES = ['SENSE', 'ABLE'] as const;
@@ -13,23 +15,29 @@ export class FeeTokenConfigError extends Error {
 	}
 }
 
-/** Modes that run on a developer's machine, where falling back to the default harms nobody. */
-const MODES_WITH_FALLBACK = ['localnet', 'test'];
+/**
+ * The modes allowed to fall back to the default: only Vitest's. A localnet build or dev
+ * server is set up by the e2e harness's sync, which always writes the setting, so one
+ * without it is a mistake in setting up and stops like every other build.
+ */
+const MODES_WITH_FALLBACK = ['test'];
 
 /**
  * Stops a build or dev server that does not name its fee token exactly. Called from
- * `vite.config.ts`. A missing name is allowed only where the fallback in `selectFeeToken`
- * is safe; a name that is present but unknown (a misspelling) is refused everywhere, since
+ * `vite.config.ts`. A missing name is allowed only in the unit-test mode, where the
+ * fallback in `selectFeeToken` is safe; a name that is present but unknown (a misspelling) is refused everywhere, since
  * it shows the fallback was not what was meant.
  */
 export function assertFeeTokenConfig(mode: string, env: Record<string, string | undefined>): void {
 	const value = env.VITE_FEE_TOKEN ?? '';
 	if ((FEE_TOKEN_NAMES as readonly string[]).includes(value)) return;
 	if (value === '' && MODES_WITH_FALLBACK.includes(mode)) return;
+	// Described by its shape, never printed: a key pasted into this setting would otherwise
+	// land in a terminal or a CI log.
 	throw new FeeTokenConfigError(
 		`VITE_FEE_TOKEN must be one of ${FEE_TOKEN_NAMES.join(
 			', ',
-		)} for a ${mode} build, got "${value}".`,
+		)} for a ${mode} build; got ${describeShape(value)}.`,
 	);
 }
 

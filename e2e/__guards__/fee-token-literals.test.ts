@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// Static guard over src/, index.html, vite.config.ts and public/ (pure Node; see the adr-0002 guard for why the environment is
+// Static guard over src/ (stylesheets included), index.html, vite.config.ts and public/ (pure Node; see the adr-0002 guard for why the environment is
 // pinned per file).
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -34,7 +34,7 @@ const ALLOWED = [
 	path.join('lib', 'abi') + path.sep,
 ];
 const isChecked = (file: string) =>
-	/\.(ts|tsx|js|jsx)$/.test(file) &&
+	/\.(ts|tsx|js|jsx|css)$/.test(file) &&
 	!/\.test\.(ts|tsx|js|jsx)$/.test(file) &&
 	!ALLOWED.some(allowed => file === allowed || file.startsWith(allowed));
 
@@ -97,6 +97,15 @@ const TOKEN_NAME = new RegExp(
 		'[\'"`](?:able|sense)[\'"`]',
 		'(?:^|[^A-Za-z])(?:able|sense)(?:Token|[-_]token)',
 		'[a-z](?:Able|Sense)(?:Token|Build|Profile|Abi)\\b',
+		// glued to letters: after a lower-case letter (`buyABLE`, `getSense`, but not the
+		// product name `useSenseAI`), or in capitals before a lower-case one (`SENSEpoints`,
+		// but not `DISABLEd`)
+		'[a-z](?:ABLE|SENSE)',
+		'[a-z](?:Able|Sense)(?![a-z]|AI)',
+		'(?<![A-Z])(?:ABLE|SENSE)[a-z]',
+		// lower-case and joined by a dash or underscore, as in a stylesheet (`.able-badge`,
+		// `--sense-accent`), but not the product's own `sense-ai` or `sense_ai`
+		'(?:^|[^A-Za-z])(?:able|sense)[-_](?!ai\\b)',
 	].join('|'),
 );
 
