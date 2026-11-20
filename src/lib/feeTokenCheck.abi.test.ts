@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { FEE_TOKEN_PROFILES } from '@/config/feeToken';
 import { ESCROW_FEE_TOKEN_GETTER } from '@/config/feeTokenConfig';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
+import { ESCROW_AGENT_GETTER } from '@/lib/feeTokenCheck';
 
 // The check finds its reads by name in ABIs synced from other repositories. If a sync
 // renamed one, every read would fail, the verdict would stay unknown and nothing would ever
@@ -28,6 +29,27 @@ describe('the reads the fee token check depends on', () => {
 			});
 		},
 	);
+
+	it("the escrow has evmAIAgent() returning the agent's address", () => {
+		expect(ESCROW_AGENT_GETTER).toBe('evmAIAgent');
+		expect(shape(fn(EVMAIAgentEscrowABI.abi, ESCROW_AGENT_GETTER))).toEqual({
+			inputs: [],
+			outputs: ['address'],
+			stateMutability: 'view',
+		});
+	});
+
+	it('every token that can be paused can say whether it is paused', () => {
+		const pausable = Object.values(FEE_TOKEN_PROFILES).filter(profile => profile.pausable);
+		expect(pausable.length).toBeGreaterThan(0);
+		pausable.forEach(profile => {
+			expect(shape(fn(profile.abi, 'paused'))).toEqual({
+				inputs: [],
+				outputs: ['bool'],
+				stateMutability: 'view',
+			});
+		});
+	});
 
 	it.each(Object.values(FEE_TOKEN_PROFILES))('$symbol has symbol() returning text', profile => {
 		expect(shape(fn(profile.abi, 'symbol'))).toEqual({

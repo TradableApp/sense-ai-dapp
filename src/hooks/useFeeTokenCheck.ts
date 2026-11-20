@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/react';
 import { useQuery } from '@tanstack/react-query';
 import { getContract, readContract } from 'thirdweb';
 import { useActiveWalletChain } from 'thirdweb/react';
+import { eth_getCode as getCodeAt, getRpcClient } from 'thirdweb/rpc';
 
 import { CONTRACTS } from '@/config/contracts';
 import { FEE_TOKEN } from '@/config/feeToken';
@@ -14,6 +15,7 @@ import {
 	type PaidAction,
 	readFeeTokenVerdict,
 } from '@/lib/feeTokenCheck';
+import { describeFailure, failureReport } from '@/lib/feeTokenCheckFailure';
 
 type AbiItem = { name?: string; type?: string };
 
@@ -33,8 +35,16 @@ function contractReader(
 	};
 }
 
-// A failure is repeated on every retry and every later read. Each distinct one is reported
-// once per page load, so an unreachable node cannot fill the error tracker.
+/**
+ * How often the answer is asked for again. An owner can list or unlist the escrow, or pause
+ * the token, at any time, so the answer is not kept for long.
+ */
+export const FEE_TOKEN_RECHECK_MS = 5 * 60 * 1000;
+
+// A failure is repeated on every retry and every later read. Each kind is reported once per
+// chain per page load, so an unreachable node cannot fill the error tracker. The line is
+// not part of the key: a provider that puts request ids in its errors would make every
+// retry a new report.
 const reported = new Set<string>();
 
 /** Starts reporting afresh, as a page load does. For tests, which share this module. */
@@ -43,13 +53,19 @@ export function forgetReportedFailures(): void {
 }
 
 function reportOnce(error: unknown, chainId: number): void {
-	const message = error instanceof Error ? error.message : String(error);
-	const key = `${chainId}:${message}`;
+	// Never the original error: see feeTokenCheckFailure.ts for what it can carry.
+	const failure = describeFailure(error);
+	const key = `${chainId}:${failure.kind}`;
 	if (reported.has(key)) return;
 	reported.add(key);
-	Sentry.captureException(error, {
-		tags: { check: 'fee-token', chainId: String(chainId), feeToken: FEE_TOKEN.symbol },
-		fingerprint: ['fee-token-check'],
+	Sentry.captureException(failureReport(failure), {
+		tags: {
+			check: 'fee-token',
+			failure: failure.kind,
+			chainId: String(chainId),
+			feeToken: FEE_TOKEN.symbol,
+		},
+		fingerprint: ['fee-token-check', failure.kind],
 	});
 }
 
@@ -72,24 +88,37 @@ export default function useFeeTokenCheck(): FeeTokenCheck {
 	const contracts = chain ? CONTRACTS[chain.id] : undefined;
 	const escrowAddress: string | undefined = contracts?.escrow?.address;
 	const tokenAddress: string | undefined = contracts?.token?.address;
+	const agentAddress: string | undefined = contracts?.agent?.address;
 	const escrowAbi = contracts?.escrow?.abi as readonly AbiItem[] | undefined;
 	const tokenAbi = contracts?.token?.abi as readonly AbiItem[] | undefined;
-	const isConfigured = !!chain && !!escrowAddress && !!tokenAddress && !!escrowAbi && !!tokenAbi;
+	const isConfigured =
+		!!chain && !!escrowAddress && !!tokenAddress && !!agentAddress && !!escrowAbi && !!tokenAbi;
 
 	const { data } = useQuery({
-		queryKey: ['feeTokenCheck', chain?.id, escrowAddress, tokenAddress, FEE_TOKEN.symbol],
+		queryKey: [
+			'feeTokenCheck',
+			chain?.id,
+			escrowAddress,
+			tokenAddress,
+			agentAddress,
+			FEE_TOKEN.symbol,
+		],
 		queryFn: async (): Promise<FeeTokenVerdict> => {
-			if (!chain || !escrowAddress || !tokenAddress || !escrowAbi || !tokenAbi) {
+			if (!chain || !escrowAddress || !tokenAddress || !agentAddress || !escrowAbi || !tokenAbi) {
 				throw new Error('Fee token check: no contracts for this chain.');
 			}
+			const rpcRequest = getRpcClient({ client, chain });
 			const reader: FeeTokenReader = {
 				escrow: contractReader(getContract({ client, chain, address: escrowAddress }), escrowAbi),
 				token: contractReader(getContract({ client, chain, address: tokenAddress }), tokenAbi),
+				// Asked of the node each time: thirdweb's bytecode helpers keep an answer.
+				code: address => getCodeAt(rpcRequest, { address: address as `0x${string}` }),
 			};
 			try {
 				return await readFeeTokenVerdict({
 					reader,
 					configuredToken: tokenAddress,
+					configuredAgent: agentAddress,
 					escrowAddress,
 					profile: FEE_TOKEN,
 				});
@@ -99,9 +128,9 @@ export default function useFeeTokenCheck(): FeeTokenCheck {
 			}
 		},
 		enabled: isConfigured,
-		// An owner can list or unlist the escrow at any time, so the answer is not kept for
-		// long: asked again every five minutes.
-		staleTime: 5 * 60 * 1000,
+		staleTime: FEE_TOKEN_RECHECK_MS,
+		// FEE_TOKEN_RECHECK_MS, written out: the polling-cadence guard reads only a literal
+		// here. The recheck tests advance the clock by the constant and fail if this is longer.
 		refetchInterval: 5 * 60 * 1000,
 	});
 

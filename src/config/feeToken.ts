@@ -37,6 +37,11 @@ export interface FeeTokenProfile {
 	transferable: boolean;
 	/** Whether it can be bought. When false the wallet panel offers no purchase. */
 	purchasable: boolean;
+	/**
+	 * Whether its owner can stop every transfer. When true the fee token check asks
+	 * `paused()` and switches payments off while it says yes.
+	 */
+	pausable: boolean;
 	defaultPlanLimit: DefaultPlanLimit;
 	/** Decimal places of the token's base unit. Every amount is converted with this. */
 	decimals: number;
@@ -56,6 +61,7 @@ export const FEE_TOKEN_PROFILES = {
 		showsMarketValue: false,
 		transferable: false,
 		purchasable: false,
+		pausable: true,
 		// It has no price to size a limit by and no use but this one, so the limit offered is
 		// what the wallet holds. The approval is still an approval: whoever controls the
 		// escrow or its oracle could draw on it, up to that amount. That is accepted for a
@@ -71,6 +77,7 @@ export const FEE_TOKEN_PROFILES = {
 		showsMarketValue: true,
 		transferable: true,
 		purchasable: true,
+		pausable: true,
 		defaultPlanLimit: { kind: 'fixed', amount: 1000 },
 		decimals: 18,
 		plannedPriceUsd: 0.015,

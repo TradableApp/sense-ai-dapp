@@ -36,6 +36,9 @@ describe('FeeTokenMismatchBanner', () => {
 		'symbol-mismatch',
 		'escrow-not-exempt',
 		'treasury-not-exempt',
+		'escrow-serves-other-agent',
+		'contract-not-found',
+		'token-paused',
 	] as const)('shows the title and the explanation for %s', verdict => {
 		checkReturns(verdict);
 		render(<FeeTokenMismatchBanner />);
