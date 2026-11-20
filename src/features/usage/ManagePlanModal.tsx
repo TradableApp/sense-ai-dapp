@@ -32,7 +32,7 @@ import {
 import Input from '@/components/ui/input';
 import Label from '@/components/ui/label';
 import { LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
-import { defaultPlanLimit, FEE_TOKEN } from '@/config/feeToken';
+import { defaultPlanLimit, FEE_TOKEN, offersFullBalance } from '@/config/feeToken';
 import useFaucetRequest from '@/hooks/useFaucetRequest';
 import useFeeTokenCheck, { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
 import useTokenBalance from '@/hooks/useTokenBalance';
@@ -135,6 +135,11 @@ export default function ManagePlanModal({
 	});
 
 	const currentLimit = watch('limit');
+	// Said beside the field while the offer stands, so a whole balance is never approved unseen.
+	const isFullBalanceOffer =
+		!existingPlan &&
+		offersFullBalance(FEE_TOKEN, balanceData ? formattedBalance : undefined) &&
+		currentLimit === suggestedLimit;
 	const isExceedingBalance =
 		!isLoadingBalance && balanceData !== undefined && currentLimit > formattedBalance;
 
@@ -146,6 +151,7 @@ export default function ManagePlanModal({
 	// Before the check's first answer the approval waits; the submit stays focusable and says why.
 	const isAwaitingFirstAnswer = useIsAwaitingFirstAnswer();
 	const holdReasonId = useId();
+	const fullBalanceId = useId();
 
 	const { setPlanMutation, revokeMutation } = usePlanMutations({
 		onStatus: setStatusText,
@@ -190,9 +196,17 @@ export default function ManagePlanModal({
 					{/* The page's own banner is behind this dialog. */}
 					<FeeTokenMismatchBanner />
 					<div className="space-y-2">
-						<Label htmlFor="limit">Spending Limit ({FEE_TOKEN.symbol})</Label>
+						<div className="flex items-baseline justify-between gap-2">
+							<Label htmlFor="limit">Spending Limit ({FEE_TOKEN.symbol})</Label>
+							{isFullBalanceOffer && (
+								<span id={fullBalanceId} className="text-xs text-muted-foreground">
+									your full balance
+								</span>
+							)}
+						</div>
 						<Input
 							id="limit"
+							aria-describedby={isFullBalanceOffer ? fullBalanceId : undefined}
 							type="number"
 							placeholder={String(suggestedLimit)}
 							{...register('limit', { valueAsNumber: true })}

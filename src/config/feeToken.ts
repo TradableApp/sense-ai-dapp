@@ -116,4 +116,18 @@ export function defaultPlanLimit(
 	return Number.isFinite(whole) && whole >= 1 ? whole : rule.whenEmpty;
 }
 
+/**
+ * Whether the plan dialog's first offer is the wallet's whole balance (every whole token
+ * it holds), so the dialog can say so. False for a fixed offer, and for a wallet offered
+ * the profile's fallback because it holds less than one whole token.
+ */
+export function offersFullBalance(
+	profile: FeeTokenProfile,
+	walletBalance: number | undefined,
+): boolean {
+	if (profile.defaultPlanLimit.kind !== 'walletBalance' || walletBalance === undefined)
+		return false;
+	return Math.floor(walletBalance) >= 1;
+}
+
 export const FEE_TOKEN: FeeTokenProfile = selectFeeToken(import.meta.env.VITE_FEE_TOKEN);
