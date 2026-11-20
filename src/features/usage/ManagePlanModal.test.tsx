@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
 	profile: undefined as FeeTokenProfile | undefined,
 	chainId: 8453,
 	mutate: vi.fn(),
+	askAgain: vi.fn(),
 }));
 
 vi.mock('@/config/feeToken', async original => {
@@ -38,6 +39,7 @@ vi.mock('@/hooks/useFaucetRequest', () => ({
 vi.mock('@/hooks/useFeeTokenCheck', () => ({
 	default: vi.fn(),
 	useIsAwaitingFirstAnswer: vi.fn(),
+	useAskFeeTokenAgain: () => state.askAgain,
 }));
 vi.mock('@/hooks/useTokenBalance', () => ({ default: vi.fn() }));
 vi.mock('./PlanValueEstimate', () => ({ default: () => null }));
@@ -68,6 +70,7 @@ beforeEach(() => {
 	state.profile = FEE_TOKEN_PROFILES.SENSE;
 	state.chainId = 8453;
 	state.mutate.mockReset();
+	state.askAgain.mockReset();
 	vi.mocked(useFeeTokenCheck).mockReturnValue({
 		verdict: 'unknown',
 		blocks: action => blocksAction('unknown', action),
@@ -96,6 +99,8 @@ describe('the plan dialog before the fee token check has answered once', () => {
 		});
 
 		expect(state.mutate).not.toHaveBeenCalled();
+		// The press asks the check again at once, so "try again in a moment" is true.
+		expect(state.askAgain).toHaveBeenCalledTimes(1);
 	});
 
 	it('sends the plan once the check has answered', async () => {

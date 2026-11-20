@@ -12,8 +12,10 @@ import { ESCROW_FEE_TOKEN_GETTER } from '@/config/feeTokenConfig';
 import { PAID_ACTIONS } from '@/lib/feeTokenCheck';
 
 import useFeeTokenCheck, {
+	AWAITING_RECHECK_MS,
 	FEE_TOKEN_RECHECK_MS,
 	forgetReportedFailures,
+	useAskFeeTokenAgain,
 	useIsAwaitingFirstAnswer,
 } from './useFeeTokenCheck';
 
@@ -472,6 +474,104 @@ describe('waiting for the first answer', () => {
 		const { result } = awaitingHarness();
 
 		expect(result.current.awaiting).toBe(false);
+	});
+});
+
+// After a failed first read the plan is held, and the five-minute recheck is too slow for a
+// notice that says "try again in a moment". While there is no answer the check is asked
+// again every few seconds while the page is visible, and a press on the held submit asks
+// at once. Once an answer has come, neither happens.
+describe('asking again while there is no first answer', () => {
+	function awaitingHarness() {
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		const wrapper = ({ children }: { children: ReactNode }) => (
+			<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		);
+		return renderHook(
+			() => ({
+				check: useFeeTokenCheck(),
+				awaiting: useIsAwaitingFirstAnswer(),
+				askAgain: useAskFeeTokenAgain(),
+			}),
+			{ wrapper },
+		);
+	}
+	const reads = () => vi.mocked(readContract).mock.calls.length;
+	const failing = () => chainAnswers({ treasury: new Error('RPC request failed with status 429') });
+	const settle = () => act(() => Promise.resolve());
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		forgetReportedFailures();
+		onChain(CHAIN_ID);
+		vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+	});
+	afterEach(() => {
+		cleanup();
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+	});
+
+	it('asks every few seconds, far sooner than the five-minute recheck', () => {
+		expect(AWAITING_RECHECK_MS).toBeLessThanOrEqual(10_000);
+	});
+
+	it('asks again after a failed first read, and lifts the hold when an answer comes', async () => {
+		failing();
+		const { result } = awaitingHarness();
+		await vi.waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(1));
+		const before = reads();
+		chainAnswers();
+
+		await act(() => {
+			vi.advanceTimersByTime(AWAITING_RECHECK_MS);
+		});
+
+		await vi.waitFor(() => expect(result.current.check.verdict).toBe('ok'));
+		expect(reads()).toBeGreaterThan(before);
+		expect(result.current.awaiting).toBe(false);
+	});
+
+	it('does not ask while the page is hidden', async () => {
+		failing();
+		awaitingHarness();
+		await vi.waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(1));
+		const before = reads();
+		vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+
+		await act(() => {
+			vi.advanceTimersByTime(AWAITING_RECHECK_MS * 3);
+		});
+		await settle();
+
+		expect(reads()).toBe(before);
+	});
+
+	it('does not ask every few seconds once an answer has come', async () => {
+		chainAnswers();
+		const { result } = awaitingHarness();
+		await vi.waitFor(() => expect(result.current.check.verdict).toBe('ok'));
+		const before = reads();
+
+		await act(() => {
+			vi.advanceTimersByTime(AWAITING_RECHECK_MS * 3);
+		});
+		await settle();
+
+		expect(reads()).toBe(before);
+	});
+
+	it('asks at once when asked, as a press on the held submit does', async () => {
+		failing();
+		const { result } = awaitingHarness();
+		await vi.waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(1));
+		chainAnswers();
+
+		await act(async () => {
+			result.current.askAgain();
+		});
+
+		await vi.waitFor(() => expect(result.current.awaiting).toBe(false));
 	});
 });
 
