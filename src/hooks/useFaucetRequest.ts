@@ -114,7 +114,8 @@ async function settle(
 		const outcome = await waitForFaucet(chain, txHash, expected);
 		toast.dismiss(sentToastId);
 		showNotice(outcome);
-		if (outcome.kind === 'reverted') return;
+		// Only tokens that arrived, or may still arrive, change the balance.
+		if (outcome.kind !== 'received' && outcome.kind !== 'timeout') return;
 		const queryKey = getTokenBalanceQueryKey(chain.id, expected.recipient, expected.token);
 		// Forces a refetch even where the balance is not on screen or still counts as fresh.
 		await queryClient.invalidateQueries({ queryKey, refetchType: 'all' });
