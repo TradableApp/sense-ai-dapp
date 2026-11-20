@@ -62,6 +62,7 @@ async function renderDialog() {
 }
 
 const submitButton = () => screen.getByRole('button', { name: 'Confirm' });
+const limitField = () => document.getElementById('limit') as HTMLInputElement;
 
 beforeEach(() => {
 	state.profile = FEE_TOKEN_PROFILES.SENSE;
@@ -147,5 +148,36 @@ describe('an empty wallet of a token that cannot be got in the app', () => {
 		await renderDialog();
 
 		expect(links()).toEqual([]);
+	});
+});
+
+describe('a first offer that is the whole balance', () => {
+	const label = () => screen.queryByText('your full balance');
+
+	it('is labelled beside the field', async () => {
+		withBalance('500');
+		await renderDialog();
+
+		expect(limitField().value).toBe('500');
+		expect(label()).not.toBeNull();
+	});
+
+	it('loses the label once another amount is typed', async () => {
+		withBalance('500');
+		await renderDialog();
+
+		await act(async () => {
+			fireEvent.change(limitField(), { target: { value: '20' } });
+		});
+
+		expect(label()).toBeNull();
+	});
+
+	it('is not labelled for a profile whose first offer is a fixed amount', async () => {
+		state.profile = FEE_TOKEN_PROFILES.ABLE;
+		withBalance('500');
+		await renderDialog();
+
+		expect(label()).toBeNull();
 	});
 });

@@ -9,6 +9,7 @@ import leaksPartOf from '@/test/leaksPartOf';
 import {
 	assertFeeTokenConfig,
 	defaultPlanLimit,
+	offersFullBalance,
 	FEE_TOKEN_PROFILES,
 	FeeTokenConfigError,
 	type FeeTokenProfile,
@@ -195,5 +196,20 @@ describe('assertFeeTokenConfig', () => {
 		expect(() => assertFeeTokenConfig(mode, { VITE_FEE_TOKEN: 'ABEL' })).toThrow(
 			FeeTokenConfigError,
 		);
+	});
+});
+
+// The plan dialog labels its first offer "your full balance" only when that is what it is.
+describe('offersFullBalance', () => {
+	it("is true where the first offer is the wallet's whole balance", () => {
+		expect(offersFullBalance(SENSE, 30.7)).toBe(true);
+	});
+
+	it.each([
+		['a wallet with less than one whole token, offered the fallback', SENSE, 0.5],
+		['a balance not known yet', SENSE, undefined],
+		['a profile whose first offer is a fixed amount', ABLE, 30_000],
+	] as const)('is false for %s', (_label, profile, balance) => {
+		expect(offersFullBalance(profile, balance)).toBe(false);
 	});
 });
