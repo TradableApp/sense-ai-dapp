@@ -22,8 +22,10 @@ export interface Failure {
 }
 
 const MAX_LINE = 120;
-const URL_PATTERN = /https?:\/\/\S+/gi;
-const LONG_HEX = /0x[0-9a-fA-F]{8,}/g;
+// Any scheme (http, https, ws, wss), or a host with a dot followed by a path.
+const URL_PATTERN = /[a-z][a-z0-9+.-]*:\/\/\S+|\b[\w-]+(?:\.[\w-]+)+\/\S*/gi;
+// 0x or 0X and eight or more hex digits, or sixteen or more hex digits on their own.
+const LONG_HEX = /0x[0-9a-f]{8,}|\b[0-9a-f]{16,}\b/gi;
 
 const NETWORK_ERROR_NAMES = ['AbortError', 'TimeoutError'];
 const NETWORK_MESSAGE =
@@ -66,10 +68,18 @@ function scrub(message: string): string {
 	return first.replace(URL_PATTERN, '<url>').replace(LONG_HEX, '<hex>').slice(0, MAX_LINE);
 }
 
-/** Sorts a failed read and keeps only what is safe to send. */
+/**
+ * Sorts a failed read and keeps only what is safe to send. It never throws: a throw here
+ * would replace the read's own rejection and send nothing, so anything that cannot be
+ * looked at is `other`, with no line.
+ */
 export function describeFailure(error: unknown): Failure {
-	const message = messageOf(error);
-	return { kind: kindOf(error, message), line: scrub(message) };
+	try {
+		const message = messageOf(error);
+		return { kind: kindOf(error, message), line: scrub(message) };
+	} catch {
+		return { kind: 'other', line: '' };
+	}
 }
 
 /** A new error for the tracker, carrying only the kind and the scrubbed line. */
