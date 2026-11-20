@@ -68,3 +68,58 @@ describe('text past the cap', () => {
 		expect(scrubSecrets(text)).toBe('refused by <url> now');
 	});
 });
+
+describe('what the scrub keeps and catches', () => {
+	// A token's error reaches the app from a public node as a bare selector, four bytes:
+	// keeping it is how a report says which error it was.
+	it('keeps a bare four-byte error selector', () => {
+		expect(scrubSecrets('Encoded error signature "0xfb8f41b2" not found on ABI.')).toBe(
+			'Encoded error signature "0xfb8f41b2" not found on ABI.',
+		);
+	});
+
+	it('replaces 0x and nine or more hex digits', () => {
+		expect(scrubSecrets('data 0xfb8f41b2a and 0x70997970C51812dc3A010C7d01b50e0d17dc79C8')).toBe(
+			'data <hex> and <hex>',
+		);
+	});
+
+	it('replaces long hex glued to a name by an underscore', () => {
+		const key = '4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318';
+
+		expect(scrubSecrets(`key_${key} rejected`)).toBe('key_<hex> rejected');
+	});
+
+	it.each([
+		['JSON-escaped slashes', '{"url":"https:\\/\\/node.example\\/v2\\/KEY123"}', '{"url":"<url>'],
+		['percent-encoded', 'from https%3A%2F%2Fnode.example%2Fv2%2FKEY123 now', 'from <url> now'],
+		[
+			'percent-encoded in lower case',
+			'from https%3a%2f%2fnode.example%2fv2%2fKEY123',
+			'from <url>',
+		],
+	])('replaces a URL written with %s', (_label, text, expected) => {
+		const scrubbed = scrubSecrets(text);
+
+		expect(scrubbed).not.toContain('KEY123');
+		expect(scrubbed).toBe(expected);
+	});
+
+	it('does not throw on a malformed percent sequence', () => {
+		expect(() => scrubSecrets('100%zz done %E0%A4%A')).not.toThrow();
+	});
+
+	it.each([
+		'at Chat.tsx:42:13',
+		'at useChatMutations (useChatMutations.ts:120:7)',
+		'compiled from Token.sol:88:4',
+	])('keeps a source file with its line and column in %j', text => {
+		expect(scrubSecrets(text)).toBe(text);
+	});
+
+	it('still replaces a host and port that is not a source file', () => {
+		expect(scrubSecrets('connect refused node.example.com:8545:1 now')).toBe(
+			'connect refused <url> now',
+		);
+	});
+});

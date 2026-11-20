@@ -77,7 +77,7 @@ describe('describeFailure', () => {
 		expect(line).toBe('RPC Error from <url> oops');
 	});
 
-	it('replaces 0x and eight or more hex digits, which can be a wallet address or call data', () => {
+	it('replaces 0x and nine or more hex digits, which can be a wallet address or call data', () => {
 		const error = new Error(`execution reverted for ${ADDRESS} with 0xdeadbeef01`);
 
 		const { line } = describeFailure(error);
