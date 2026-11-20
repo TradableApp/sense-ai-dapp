@@ -25,6 +25,8 @@ const MAX_LINE = 120;
 // Any scheme (http, https, ws, wss); a dotted host or localhost with a numeric port, with
 // or without a path; or a dotted host followed by a path. The host must be dotted (or
 // localhost) and the port a number, so "Error: 500" or "timeout: 30" is left alone.
+// The last form also takes a dotted name before a slash that is no host (a file path such
+// as "Token.sol/transfer"): losing that from a report is the price of never keeping a URL.
 // Everything up to the next space goes with the URL, punctuation included: a key can sit
 // in the path or the query, and a colon after it is not worth the risk of keeping a tail.
 const URL_PATTERN = new RegExp(

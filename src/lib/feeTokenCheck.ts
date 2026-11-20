@@ -203,6 +203,9 @@ async function readTokenSide({
 		reader.token('isTransferExempt', [escrowAddress]),
 		reader.token('isTransferExempt', [treasury]),
 	]);
+	// The escrow's token and the symbol were compared above, so the rule's first two checks
+	// cannot fail here. They are passed through all the same: the order of the checks stays
+	// written in one place, and a change above that drops one is still caught below.
 	return assessFeeToken({
 		configuredToken,
 		escrowToken: configuredToken,
