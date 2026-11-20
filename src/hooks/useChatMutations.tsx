@@ -4,28 +4,19 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { getContract, prepareContractCall, sendAndConfirmTransaction } from 'thirdweb';
 import { useActiveAccount, useActiveWallet } from 'thirdweb/react';
-// eslint-disable-next-line camelcase
-import { eth_getTransactionReceipt, getRpcClient } from 'thirdweb/rpc';
 import { type AbiEvent, decodeEventLog, getAbiItem, toEventSelector, toHex } from 'viem';
 
 import { Button } from '@/components/ui/button';
 import { CONTRACTS, LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
 import { FEE_TOKEN, type FeeTokenProfile, TRANSFER_RESTRICTION_ABI } from '@/config/feeToken';
 import { client } from '@/config/thirdweb';
-import useFaucetConfig from '@/hooks/useFaucetConfig';
+import useFaucetRequest from '@/hooks/useFaucetRequest';
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 import { messageNamesError } from '@/lib/contractErrorSelector';
 import { encryptData } from '@/lib/crypto';
 import eciesEncrypt from '@/lib/ecies';
-import requestTestTokens, {
-	awaitFaucetReceipt,
-	DEFAULT_FAUCET_AMOUNT,
-	FAUCET_POLL_MS,
-	FAUCET_WAIT_ATTEMPTS,
-	FAUCET_WAIT_MS,
-} from '@/lib/faucetService';
 import {
 	feeTokenBlockCopy,
 	FeeTokenBlockedError,
@@ -33,7 +24,6 @@ import {
 	type PaidAction,
 } from '@/lib/feeTokenCheck';
 import { CANCEL_ACTION, REFUND_ACTION, refusedTransferMessage } from '@/lib/feeTokenRefusal';
-import { wait } from '@/lib/utils';
 
 import { getTokenBalanceQueryKey } from './useTokenBalance';
 
@@ -361,88 +351,13 @@ export default function useChatMutations() {
 	const chainId = activeWallet?.getChain()?.id;
 	const isTestnet = chainId === TESTNET_CHAIN_ID;
 	const isLocalnet = chainId === LOCAL_CHAIN_ID;
-	const { data: faucetConfig } = useFaucetConfig();
-	const faucetAmount = faucetConfig?.amount ?? DEFAULT_FAUCET_AMOUNT;
+	const { requestTokens: handleFaucetRequest, faucetAmount } = useFaucetRequest();
 	const queryClient = useQueryClient();
 	const feeTokenCheck = useFeeTokenCheck();
 	// Every paying mutation asks this first, so a new caller cannot send what the check has
 	// switched off. Cancel and refund never ask: getting money back stays possible.
 	const refuseIfSwitchedOff = (action: PaidAction) => {
 		if (feeTokenCheck.blocks(action)) throw new FeeTokenBlockedError(feeTokenCheck.verdict);
-	};
-
-	const handleFaucetRequest = async () => {
-		toast.dismiss();
-
-		const loadingToastId = toast.loading(
-			isLocalnet ? 'Requesting Localnet Tokens...' : 'Requesting Testnet Tokens...',
-		);
-
-		const address = activeWallet?.getAccount()?.address ?? '';
-		const { success, txHash, amount } = await requestTestTokens(address, faucetAmount);
-		const dispensed = amount ?? faucetAmount;
-
-		toast.dismiss(loadingToastId);
-
-		if (success && txHash) {
-			// 1. Show initial Toast with Explorer Link
-			const sentToastId = toast.info('Tokens Sent', {
-				description: 'Waiting for network confirmation...',
-				// Localnet (Hardhat) has no block explorer; only offer the link on testnet.
-				...(isLocalnet
-					? {}
-					: {
-							action: {
-								label: 'View on Explorer',
-								onClick: () => window.open(`https://sepolia.basescan.org/tx/${txHash}`, '_blank'),
-							},
-					  }),
-				duration: FAUCET_WAIT_MS,
-			});
-
-			// 2. Poll for confirmation using Thirdweb RPC
-			try {
-				// Get the RPC client for the current chain
-				if (!activeWallet) throw new Error('Wallet not connected');
-				const chain = activeWallet.getChain();
-				if (!chain) throw new Error('Chain not found');
-				const rpcRequest = getRpcClient({ client, chain });
-
-				const outcome = await awaitFaucetReceipt(
-					() => eth_getTransactionReceipt(rpcRequest, { hash: txHash as `0x${string}` }),
-					{ wait: () => wait(FAUCET_POLL_MS), maxAttempts: FAUCET_WAIT_ATTEMPTS },
-				);
-
-				toast.dismiss(sentToastId);
-				if (outcome === 'failed') {
-					toast.error('Tokens Not Received', {
-						description: 'The faucet could not send the tokens. Nothing was added to your wallet.',
-					});
-				} else {
-					if (outcome === 'received') {
-						toast.success('Tokens Received', {
-							description: `${dispensed} ${FEE_TOKEN.symbol} added to your wallet.`,
-						});
-					} else {
-						toast.info('Still Confirming', {
-							description:
-								'The transfer has not been confirmed yet. Your balance will update when it is.',
-						});
-					}
-
-					const queryKey = getTokenBalanceQueryKey(
-						chainId ?? 0,
-						address,
-						CONTRACTS[chainId ?? 0]?.token?.address,
-					);
-					await queryClient.invalidateQueries({ queryKey });
-				}
-			} catch (error) {
-				// The wait never started, so nothing above took the "Tokens Sent" notice down.
-				toast.dismiss(sentToastId);
-				console.error('Error waiting for faucet receipt:', error);
-			}
-		}
 	};
 
 	// We invalidate 'usagePlan' (Allowance, Pending Count) and the wallet balance immediately after a

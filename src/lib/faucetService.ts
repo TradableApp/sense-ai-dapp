@@ -117,19 +117,6 @@ const fundFromLocalnetTreasury = async (
 	return { success: true, txHash: json.result, amount };
 };
 
-export type FaucetReceiptOutcome = 'pending' | 'received' | 'failed';
-
-/**
- * What a faucet transaction's receipt says. A transfer the token refuses is still mined,
- * so a receipt alone is not proof the tokens arrived: only a successful one is.
- */
-export function faucetReceiptOutcome(
-	receipt: { status?: unknown } | null | undefined,
-): FaucetReceiptOutcome {
-	if (!receipt) return 'pending';
-	return receipt.status === 'success' ? 'received' : 'failed';
-}
-
 /** How long to wait between looks for a faucet transaction's receipt. */
 export const FAUCET_POLL_MS = 2000;
 
@@ -139,8 +126,6 @@ export const FAUCET_WAIT_ATTEMPTS = 30;
 /** The longest the wait can last, which is also how long the "sent" notice stays up. */
 export const FAUCET_WAIT_MS = FAUCET_WAIT_ATTEMPTS * FAUCET_POLL_MS;
 
-export type FaucetWaitOutcome = 'received' | 'failed' | 'timeout';
-
 // What thirdweb throws while a transaction is not yet mined ("Transaction receipt not
 // found.", `eth_getTransactionReceipt` in thirdweb 5.118.0). Expected, so not reported. It
 // carries no error code, so the text is the only signal; if a later version words it
@@ -148,17 +133,17 @@ export type FaucetWaitOutcome = 'received' | 'failed' | 'timeout';
 const RECEIPT_NOT_FOUND = 'receipt not found';
 
 /**
- * Waits for a faucet transaction to be mined and says how it ended. Shared by every place
- * that offers the faucet, so none of them can announce tokens on a receipt alone.
+ * Waits for a faucet transaction to be mined and gives back its receipt, reverted or not,
+ * for `faucetOutcome` to read: a receipt alone is not proof that tokens arrived.
  *
- * `timeout` is its own outcome: the transfer may still arrive, so the caller says it is
+ * `timeout` is its own answer: the transfer may still arrive, so the caller says it is
  * still confirming and refreshes the balance, where giving up in silence left the user
  * with no answer. An error other than "not mined yet" is logged and the wait goes on.
  */
-export async function awaitFaucetReceipt(
-	getReceipt: () => Promise<{ status?: unknown } | null | undefined>,
+export async function awaitFaucetReceipt<Receipt extends object>(
+	getReceipt: () => Promise<Receipt | null | undefined>,
 	{ wait, maxAttempts }: { wait: () => Promise<unknown>; maxAttempts: number },
-): Promise<FaucetWaitOutcome> {
+): Promise<Receipt | 'timeout'> {
 	for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
 		if (attempt > 0) {
 			// eslint-disable-next-line no-await-in-loop
@@ -166,8 +151,8 @@ export async function awaitFaucetReceipt(
 		}
 		try {
 			// eslint-disable-next-line no-await-in-loop
-			const outcome = faucetReceiptOutcome(await getReceipt());
-			if (outcome !== 'pending') return outcome;
+			const receipt = await getReceipt();
+			if (receipt) return receipt;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			if (!message.toLowerCase().includes(RECEIPT_NOT_FOUND)) {
