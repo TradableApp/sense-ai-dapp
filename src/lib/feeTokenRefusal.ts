@@ -19,6 +19,8 @@ type RefundOutlook = 'works' | 'refused' | 'uncertain';
  * fails to compile here until someone decides how a refused cancellation speaks of it.
  */
 export const REFUND_OUTLOOK: Record<FeeTokenCheckState, RefundOutlook> = {
+	// A refusal under a passing check means the check is the older fact: something changed on
+	// chain since its last look, so the refund is not promised on its word.
 	ok: 'uncertain',
 	unknown: 'uncertain',
 	'escrow-uses-other-token': 'uncertain',
