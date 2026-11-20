@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/react';
 import { useQuery } from '@tanstack/react-query';
 import { getContract, readContract } from 'thirdweb';
 import { useActiveWalletChain } from 'thirdweb/react';
+import { eth_getCode as getCodeAt, getRpcClient } from 'thirdweb/rpc';
 
 import { CONTRACTS } from '@/config/contracts';
 import { FEE_TOKEN } from '@/config/feeToken';
@@ -91,9 +92,12 @@ export default function useFeeTokenCheck(): FeeTokenCheck {
 			if (!chain || !escrowAddress || !tokenAddress || !agentAddress || !escrowAbi || !tokenAbi) {
 				throw new Error('Fee token check: no contracts for this chain.');
 			}
+			const rpcRequest = getRpcClient({ client, chain });
 			const reader: FeeTokenReader = {
 				escrow: contractReader(getContract({ client, chain, address: escrowAddress }), escrowAbi),
 				token: contractReader(getContract({ client, chain, address: tokenAddress }), tokenAbi),
+				// Asked of the node each time: thirdweb's bytecode helpers keep an answer.
+				code: address => getCodeAt(rpcRequest, { address: address as `0x${string}` }),
 			};
 			try {
 				return await readFeeTokenVerdict({

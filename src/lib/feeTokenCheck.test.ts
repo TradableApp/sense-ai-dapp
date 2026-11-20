@@ -5,10 +5,10 @@ import { ESCROW_FEE_TOKEN_GETTER, FEE_TOKEN_NAMES } from '@/config/feeTokenConfi
 import {
 	assessFeeToken,
 	blocksAction,
+	ESCROW_AGENT_GETTER,
 	feeTokenBlockCopy,
 	type FeeTokenReader,
 	type FeeTokenReadings,
-	ESCROW_AGENT_GETTER,
 	PAID_ACTIONS,
 	readFeeTokenVerdict,
 } from './feeTokenCheck';

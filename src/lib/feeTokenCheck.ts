@@ -18,7 +18,8 @@ export type FeeTokenVerdict =
 	| 'symbol-mismatch'
 	| 'escrow-not-exempt'
 	| 'treasury-not-exempt'
-	| 'escrow-serves-other-agent';
+	| 'escrow-serves-other-agent'
+	| 'contract-not-found';
 
 /** The escrow's getter for the agent contract it serves. */
 export const ESCROW_AGENT_GETTER = 'evmAIAgent';
@@ -87,6 +88,8 @@ export interface FeeTokenReader {
 		_method: typeof ESCROW_FEE_TOKEN_GETTER | typeof ESCROW_AGENT_GETTER | 'treasury',
 	) => Promise<unknown>;
 	token: (_method: 'symbol' | 'isTransferExempt', _params?: readonly [string]) => Promise<unknown>;
+	/** The code the node holds at an address, read fresh each time. */
+	code: (_address: string) => Promise<unknown>;
 }
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
@@ -104,6 +107,22 @@ function asAddress(value: unknown, what: string): string {
 	return value;
 }
 
+const HEX = /^0x[0-9a-fA-F]*$/;
+const NO_CODE = /^0x0*$/;
+
+/**
+ * Whether nothing is deployed at an address. A call to such an address "succeeds" and
+ * returns nothing, so without this a wrong address reads as an unreachable node. Only an
+ * empty answer means no contract; anything that is not hex is no answer at all.
+ */
+async function hasNoCode(reader: FeeTokenReader, address: string, what: string): Promise<boolean> {
+	const code = await reader.code(address);
+	if (typeof code !== 'string' || !HEX.test(code)) {
+		throw unreadable(`the code at ${what} is not hex`);
+	}
+	return NO_CODE.test(code);
+}
+
 function asBoolean(value: unknown, what: string): boolean {
 	if (typeof value !== 'boolean') throw unreadable(`${what} is not yes or no`);
 	return value;
@@ -119,14 +138,16 @@ interface VerdictInput {
 }
 
 /**
- * The escrow's side: the token it takes, then the agent it serves. Null when both are the
+ * The escrow's side: that it exists, the token it takes, then the agent it serves. Null when both are the
  * ones the build names. A wrong token is named first, and nothing is asked after it.
  */
 async function readEscrowSide({
 	reader,
 	configuredToken,
 	configuredAgent,
+	escrowAddress,
 }: VerdictInput): Promise<FeeTokenVerdict | null> {
+	if (await hasNoCode(reader, escrowAddress, 'the escrow')) return 'contract-not-found';
 	const escrowToken = asAddress(await reader.escrow(ESCROW_FEE_TOKEN_GETTER), 'the escrow token');
 	if (!sameAddress(escrowToken, configuredToken)) return 'escrow-uses-other-token';
 	// A payment to an escrow wired to another agent is taken, and the answer is never seen.
@@ -136,7 +157,7 @@ async function readEscrowSide({
 }
 
 /**
- * The token's side: its symbol, then, for a restricted token, whether the escrow and the
+ * The token's side: that it exists, its symbol, then, for a restricted token, whether the escrow and the
  * treasury the escrow holds are listed. A build for a restricted token pointed at an
  * ordinary one cannot be asked about listings at all (that read reverts), and its symbol
  * is the answer; asked together, the revert would hide it.
@@ -147,6 +168,7 @@ async function readTokenSide({
 	escrowAddress,
 	profile,
 }: VerdictInput): Promise<FeeTokenVerdict> {
+	if (await hasNoCode(reader, configuredToken, 'the token')) return 'contract-not-found';
 	const rawSymbol = await reader.token('symbol');
 	if (typeof rawSymbol !== 'string') throw unreadable('the symbol is not text');
 	const pair: PairReadings = {

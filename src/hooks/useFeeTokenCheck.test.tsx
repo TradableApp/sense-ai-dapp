@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { readContract } from 'thirdweb';
 import { useActiveWalletChain } from 'thirdweb/react';
-import { eth_getCode, getRpcClient } from 'thirdweb/rpc';
+import { eth_getCode as getCodeAt, getRpcClient } from 'thirdweb/rpc';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ESCROW_FEE_TOKEN_GETTER } from '@/config/feeTokenConfig';
@@ -77,11 +77,11 @@ function chainAnswers(over: Record<string, unknown> = {}) {
 		if (answer instanceof Error) throw answer;
 		return answer;
 	}) as unknown as typeof readContract);
-	vi.mocked(eth_getCode).mockImplementation((async (_rpc: unknown, { address }: { address: string }) => {
+	vi.mocked(getCodeAt).mockImplementation((async (_rpc: unknown, { address }: { address: string }) => {
 		const answer = over[`code:${address}`] ?? DEPLOYED;
 		if (answer instanceof Error) throw answer;
 		return answer;
-	}) as unknown as typeof eth_getCode);
+	}) as unknown as typeof getCodeAt);
 }
 
 function harness() {
@@ -176,8 +176,8 @@ describe('useFeeTokenCheck', () => {
 		expect(getRpcClient).toHaveBeenCalledWith(
 			expect.objectContaining({ chain: expect.objectContaining({ id: CHAIN_ID }) }),
 		);
-		expect(eth_getCode).toHaveBeenCalledWith('rpc-request', { address: ESCROW });
-		expect(eth_getCode).toHaveBeenCalledWith('rpc-request', { address: TOKEN });
+		expect(getCodeAt).toHaveBeenCalledWith('rpc-request', { address: ESCROW });
+		expect(getCodeAt).toHaveBeenCalledWith('rpc-request', { address: TOKEN });
 	});
 
 	it('does not stop payments when the code read fails', async () => {
