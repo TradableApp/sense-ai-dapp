@@ -14,15 +14,18 @@
  */
 import { ESCROW_FEE_TOKEN_GETTER } from '@/config/feeTokenConfig';
 
-export type FeeTokenVerdict =
-	| 'ok'
-	| 'escrow-uses-other-token'
-	| 'symbol-mismatch'
-	| 'escrow-not-exempt'
-	| 'treasury-not-exempt'
-	| 'escrow-serves-other-agent'
-	| 'contract-not-found'
-	| 'token-paused';
+/** Every answer the check can give. Each one but `ok` has banner words. */
+export const FEE_TOKEN_VERDICTS = [
+	'ok',
+	'escrow-uses-other-token',
+	'symbol-mismatch',
+	'escrow-not-exempt',
+	'treasury-not-exempt',
+	'escrow-serves-other-agent',
+	'contract-not-found',
+	'token-paused',
+] as const;
+export type FeeTokenVerdict = (typeof FEE_TOKEN_VERDICTS)[number];
 
 /** The escrow's getter for the agent contract it serves. */
 export const ESCROW_AGENT_GETTER = 'evmAIAgent';
@@ -271,8 +274,11 @@ export function feeTokenBlockCopy(
 				title: 'Some actions are switched off',
 				description: `The fee for a branch, a rename or a delete cannot be received yet and would be refused, so those are switched off until this is fixed. Prompts still work. Cancelling a prompt may be refused; one that is not answered can be refunded after an hour. ${GET_HELP}`,
 			};
-		default:
-			return null;
+		default: {
+			// A verdict with no words here fails to compile: a block must never be silent.
+			const unhandled: never = state;
+			return unhandled;
+		}
 	}
 }
 
