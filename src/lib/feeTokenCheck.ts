@@ -241,6 +241,21 @@ export function feeTokenBlockCopy(
 				title: 'Payments are switched off',
 				description: `The SenseAI payment contract cannot receive ${symbol} yet, so a payment would be refused. ${EVERYTHING} until this is fixed. ${GET_HELP}`,
 			};
+		case 'contract-not-found':
+			return {
+				title: 'Payments are switched off',
+				description: `No contract was found at an address this version of the app uses for payments. ${EVERYTHING} while this message shows. ${GET_HELP}`,
+			};
+		case 'escrow-serves-other-agent':
+			return {
+				title: 'Payments are switched off',
+				description: `The SenseAI payment contract is set up for a different agent from the one this version of the app sends prompts to, so a prompt would be paid for and never answered. ${EVERYTHING} while this message shows. ${GET_HELP}`,
+			};
+		case 'token-paused':
+			return {
+				title: 'Payments are switched off',
+				description: `${symbol} is paused, so no ${symbol} can move. ${EVERYTHING} until it is resumed. Cancelling a prompt or claiming a refund will also be refused until ${symbol} can move again; a payment already made stays with the SenseAI payment contract. ${GET_HELP}`,
+			};
 		case 'treasury-not-exempt':
 			return {
 				title: 'Some actions are switched off',
