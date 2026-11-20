@@ -26,7 +26,13 @@ import requestTestTokens, {
 	FAUCET_WAIT_ATTEMPTS,
 	FAUCET_WAIT_MS,
 } from '@/lib/faucetService';
-import { feeTokenBlockCopy, FeeTokenBlockedError, type PaidAction } from '@/lib/feeTokenCheck';
+import {
+	feeTokenBlockCopy,
+	FeeTokenBlockedError,
+	type FeeTokenCheckState,
+	type PaidAction,
+} from '@/lib/feeTokenCheck';
+import { CANCEL_ACTION, REFUND_ACTION, refusedTransferMessage } from '@/lib/feeTokenRefusal';
 import { wait } from '@/lib/utils';
 
 import { getTokenBalanceQueryKey } from './useTokenBalance';
@@ -130,37 +136,6 @@ export function buildInitiatePromptPayload({
 	};
 }
 
-const CANCEL_ACTION = 'cancel prompt';
-const REFUND_ACTION = 'process refund';
-
-/**
- * What to say when the token refuses a transfer, which depends on what was being done.
- * A refused payment took nothing. A refused cancellation leaves the prompt's fee held and
- * will be refused again: the refund is the way out. A refused refund also took nothing,
- * but the user is owed tokens and needs a person.
- */
-function refusedTransferMessage(action: string): { title: string; description: string } {
-	if (action === CANCEL_ACTION) {
-		return {
-			title: 'Could Not Cancel',
-			description:
-				'The cancellation could not be completed, so your payment for this prompt is still held. You can claim a refund one hour after the prompt was sent.',
-		};
-	}
-	if (action === REFUND_ACTION) {
-		return {
-			title: 'Refund Not Sent',
-			description:
-				'The refund could not be sent and your payment is still held. Please contact support.',
-		};
-	}
-	return {
-		title: 'Payment Not Accepted',
-		description:
-			'SenseAI could not take this payment, so no tokens were taken. Please try again later or contact support.',
-	};
-}
-
 /**
  * Builds the centralized contract-error handler. Exported for testability.
  * @param {boolean} isTestnet
@@ -168,6 +143,7 @@ function refusedTransferMessage(action: string): { title: string; description: s
  * @param {number} faucetAmount
  * @param {Function} handleFaucetRequest
  * @param {FeeTokenProfile} feeToken - the token that pays the fees; names the token in messages
+ * @param {FeeTokenCheckState} verdict - what the fee token check found; words a refused cancellation
  * @returns {(error: unknown, action: string) => void}
  */
 export function buildErrorHandler(
@@ -176,6 +152,7 @@ export function buildErrorHandler(
 	faucetAmount: number,
 	handleFaucetRequest: () => Promise<void>,
 	feeToken: FeeTokenProfile = FEE_TOKEN,
+	verdict: FeeTokenCheckState = 'unknown',
 ): (_error: unknown, _action: string) => void {
 	return function genericOnError(error: unknown, action: string): void {
 		if (error instanceof FeeTokenBlockedError) {
@@ -235,7 +212,7 @@ export function buildErrorHandler(
 		// the build is for: only that kind of token can raise it, and a build pointed at the
 		// wrong token should still explain the failure.
 		if (isError(TRANSFER_RESTRICTION_ABI, 'TransferNotAllowed')) {
-			const { title, description } = refusedTransferMessage(action);
+			const { title, description } = refusedTransferMessage(action, verdict);
 			toast.error(title, { description });
 			return;
 		}
@@ -486,6 +463,8 @@ export default function useChatMutations() {
 		isLocalnet,
 		faucetAmount,
 		handleFaucetRequest,
+		FEE_TOKEN,
+		feeTokenCheck.verdict,
 	);
 
 	// --- MUTATIONS ---
