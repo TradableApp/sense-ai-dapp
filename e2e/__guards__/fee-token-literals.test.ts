@@ -158,15 +158,52 @@ describe('the fee token is named only in its profile', () => {
 		).toEqual([3]);
 	});
 
+	it('exempts a doc comment over several lines that ends just above the declaration', () => {
+		const wrapped = [
+			'\t/**',
+			'\t * `SENSE` or `ABLE`: which token pays the fees.',
+			"\t * Unset stops every build but localnet's.",
+			'\t */',
+			'\treadonly VITE_FEE_TOKEN: string | undefined;',
+		];
+
+		expect(offendingLines(VITE_ENV, wrapped.join('\n'))).toEqual([]);
+	});
+
+	it('does not exempt a doc comment separated from the declaration by another', () => {
+		const separated = [
+			'\t/**',
+			'\t * `SENSE` or `ABLE`: which token pays the fees.',
+			'\t */',
+			'\treadonly VITE_OTHER: string;',
+			'\treadonly VITE_FEE_TOKEN: string | undefined;',
+		];
+
+		expect(offendingLines(VITE_ENV, separated.join('\n'))).toEqual([2]);
+	});
+
+	it('does not exempt a doc comment over several lines above another declaration', () => {
+		const elsewhere = [
+			'\t/**',
+			'\t * The ABLE price feed,',
+			'\t * or the SENSE one.',
+			'\t */',
+			'\treadonly VITE_PRICE: string;',
+			'\treadonly VITE_FEE_TOKEN: string | undefined;',
+		];
+
+		expect(offendingLines(VITE_ENV, elsewhere.join('\n'))).toEqual([2, 3]);
+	});
+
 	it('the exempt comment in vite-env.d.ts says what the build does with the setting', () => {
 		const lines = readFileSync(path.join(ROOT, VITE_ENV), 'utf8').split('\n');
-		const documented = lines.filter((_, i) => isExemptLine(VITE_ENV, lines, i));
+		const documented = lines.filter((_, i) => isExemptLine(VITE_ENV, lines, i)).join(' ');
 
-		expect(documented).toHaveLength(1);
+		expect(documented).not.toBe('');
 		// Unset stops every build but localnet's, and a misspelt value stops every build.
-		expect(documented[0]).not.toMatch(/unknown means/i);
-		expect(documented[0]).toMatch(/localnet/i);
-		expect(documented[0]).toMatch(/stops/i);
+		expect(documented).not.toMatch(/unknown means/i);
+		expect(documented).toMatch(/localnet/i);
+		expect(documented).toMatch(/stops/i);
 	});
 
 	it('still recognises the names it forbids', () => {
