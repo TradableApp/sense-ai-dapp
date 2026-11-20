@@ -83,7 +83,9 @@ All feature pages are lazy-loaded. App waits for Firebase and Thirdweb to initia
 
 ### Data Layer
 
-All conversation and message data is encrypted client-side with the user's `sessionKey` using AES-GCM before being stored in **IndexedDB** (via Dexie, `src/lib/db.js`). The DB schema has three tables: `conversations`, `messageCache`, `searchIndex`.
+All conversation and message data is encrypted client-side with the user's `sessionKey` using AES-GCM before being stored in **IndexedDB** (via Dexie, `src/lib/db.js`). The DB schema has four tables: `conversations`, `messageCache`, `searchIndex` and `userMetadata` (the sync cursor).
+
+There is one database per agent contract, named `SenseAI:<chainId>:<agent address>` by `src/lib/localStoreName.ts`. Conversation ids are counted by the agent, so a newly deployed agent starts again at 1; in a shared database a returning wallet would see the two agents' conversations merged and the old sync cursor would hide the new history. A missing or malformed agent address throws instead of naming a shared store. The `e2e/__guards__/local-store-per-agent` guard allows `new Dexie(` only in `src/lib/db.ts` and only with that name. A database from before this naming (`SenseAI`) is neither read nor deleted; the wallet's history is synced again from the subgraph.
 
 **`src/lib/dataService.js`** — all IndexedDB read/write operations. Functions encrypt/decrypt on every access.
 
