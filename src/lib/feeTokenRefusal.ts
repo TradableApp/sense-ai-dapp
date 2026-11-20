@@ -15,7 +15,7 @@ type Notice = { title: string; description: string };
  * a restricted token lets a transfer through only when one end is listed: users are not,
  * so it depends on the escrow. A state not listed here says nothing about the refund.
  */
-const REFUND_OUTLOOK: Partial<Record<FeeTokenCheckState, 'works' | 'refused'>> = {
+export const REFUND_OUTLOOK: Partial<Record<FeeTokenCheckState, 'works' | 'refused'>> = {
 	'treasury-not-exempt': 'works',
 	'escrow-not-exempt': 'refused',
 };

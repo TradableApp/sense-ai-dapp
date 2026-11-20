@@ -117,6 +117,12 @@ describe('faucetNotice', () => {
 		expect(notice.description).toMatch(description);
 	});
 
+	it('refuses an outcome it does not know rather than calling it still confirming', () => {
+		const unknownOutcome = { kind: 'refunded' } as unknown as FaucetOutcome;
+
+		expect(() => faucetNotice(unknownOutcome, symbol)).toThrow(/refunded/);
+	});
+
 	it.each(outcomes)('shows no price for $kind', outcome => {
 		const { title, description } = faucetNotice(outcome, symbol);
 
