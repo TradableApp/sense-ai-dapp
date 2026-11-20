@@ -1,65 +1,52 @@
-import { useRef } from 'react';
-
-import type { UseMutationResult } from '@tanstack/react-query';
+import { useIsMutating, type UseMutationResult, useQueryClient } from '@tanstack/react-query';
 
 import type useChatMutations from '@/hooks/useChatMutations';
 
 type ChatMutations = ReturnType<typeof useChatMutations>;
 
-/** Says whether a send is under way, and starts and ends one. */
-interface SendLock {
-	tryStart: () => boolean;
-	end: () => void;
-}
+/**
+ * What the three mutations that send a paid prompt have at the start of their key (a
+ * prompt or an edit, regenerate, branch: see `useChatMutations`).
+ */
+export const PAID_SEND_KEY = ['paid-send'];
+const PAID_SENDS = { mutationKey: PAID_SEND_KEY };
 
-/** `mutation`, whose `mutate` does nothing while another send holds `lock`. */
+/** A sending mutation as the chat gets it: `mutate` refuses, and there is no `mutateAsync`. */
+type GuardedSend<TData, TError, TVariables, TContext> = Omit<
+	UseMutationResult<TData, TError, TVariables, TContext>,
+	'mutateAsync'
+>;
+
+/** `mutation`, whose `mutate` does nothing while `isSendUnderWay` says a send is. */
 function startedAlone<TData, TError, TVariables, TContext>(
 	mutation: UseMutationResult<TData, TError, TVariables, TContext>,
-	lock: SendLock,
-): UseMutationResult<TData, TError, TVariables, TContext> {
+	isSendUnderWay: () => boolean,
+): GuardedSend<TData, TError, TVariables, TContext> {
+	const { mutateAsync: _notOffered, ...rest } = mutation;
 	return {
-		...mutation,
+		...rest,
 		mutate: (variables, options) => {
-			if (!lock.tryStart()) return;
-			mutation.mutate(variables, {
-				...options,
-				onSettled: (...settled) => {
-					lock.end();
-					options?.onSettled?.(...settled);
-				},
-			});
+			if (!isSendUnderWay()) mutation.mutate(variables, options);
 		},
 	};
 }
 
 /**
- * The chat's mutations, with the three that send a paid prompt (a prompt or an edit,
- * regenerate, branch) refusing to start while any of them is being sent, and `isSending`
- * while one is. The controls are disabled from `isSending`; the refusal is for a second
- * press that comes before they are, since `isPending` reaches the screen a render later
- * than the press. Only `mutate` is guarded: the chat calls nothing else.
+ * The chat's mutations, with the three that send a paid prompt refusing to start while any
+ * of them is being sent, and `isSending` while one is. Both read the query client's mutation
+ * cache, so a send outlives the chat being left and opened again, and a mutation is pending
+ * there from the moment it starts, so a second press in the same moment is refused too.
  */
 export default function useOneSendAtATime(mutations: ChatMutations) {
-	const isStarted = useRef(false);
-	const lock: SendLock = {
-		tryStart: () => {
-			if (isStarted.current) return false;
-			isStarted.current = true;
-			return true;
-		},
-		end: () => {
-			isStarted.current = false;
-		},
-	};
+	const queryClient = useQueryClient();
+	const isSending = useIsMutating(PAID_SENDS) > 0;
+	const isSendUnderWay = () => queryClient.isMutating(PAID_SENDS) > 0;
 	const { initiatePromptMutation, regenerateMutation, branchConversationMutation } = mutations;
 	return {
 		...mutations,
-		initiatePromptMutation: startedAlone(initiatePromptMutation, lock),
-		regenerateMutation: startedAlone(regenerateMutation, lock),
-		branchConversationMutation: startedAlone(branchConversationMutation, lock),
-		isSending:
-			initiatePromptMutation.isPending ||
-			regenerateMutation.isPending ||
-			branchConversationMutation.isPending,
+		initiatePromptMutation: startedAlone(initiatePromptMutation, isSendUnderWay),
+		regenerateMutation: startedAlone(regenerateMutation, isSendUnderWay),
+		branchConversationMutation: startedAlone(branchConversationMutation, isSendUnderWay),
+		isSending,
 	};
 }
