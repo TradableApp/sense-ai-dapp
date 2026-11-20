@@ -37,6 +37,20 @@ function isOperandOf(expression: string, name: string): boolean {
 		.some(operand => operand.trim() === name);
 }
 
+/**
+ * The `disabled` expression of the `<tag …>` element whose opening tag holds `marker` (the
+ * handler that sends). Throws when that element or its `disabled` cannot be found.
+ */
+function disabledOf(source: string, tag: string, marker: string): string {
+	const found = source.slice(source.indexOf(marker)).match(/disabled=\{([^}]+)\}/)?.[1];
+	if (found === undefined) throw new Error(`no disabled for ${marker}`);
+	return found;
+}
+
+/** Whether an expression depends on the fee token check. */
+const isGatedByCheck = (expression: string) =>
+	/SwitchedOff|feeTokenCheck|blocks\(/.test(expression);
+
 /** The body of the `useMutation` assigned to `name`, up to the next mutation or the return. */
 function mutationBody(source: string, name: string): string {
 	const start = source.indexOf(`const ${name} = useMutation(`);
@@ -166,12 +180,9 @@ describe('where the fee token check is asked', () => {
 
 	it('the cancel and refund buttons are never disabled by the check', () => {
 		const chat = code('src/features/chat/Chat.tsx');
-		const cancel = chat.match(/<PromptInputCancel[^>]*?disabled=\{([^}]+)\}/)?.[1];
-		const refund = chat.match(/processRefundMutation\.mutate[\s\S]*?disabled=\{([^}]+)\}/)?.[1];
-		[cancel, refund].forEach(expression => {
-			expect(expression).toBeDefined();
-			expect(expression).not.toMatch(/SwitchedOff|feeTokenCheck|blocks\(/);
-		});
+		const cancel = disabledOf(chat, 'PromptInputCancel', 'onClick={handleCancelPrompt}');
+		const refund = disabledOf(chat, 'Button', 'processRefundMutation.mutate(');
+		[cancel, refund].forEach(expression => expect(isGatedByCheck(expression)).toBe(false));
 	});
 
 	// A modal dialog's backdrop hides the page banner, so each dialog for a paying action
@@ -189,6 +200,41 @@ describe('where the fee token check is asked', () => {
 		const layout = code('src/layouts/MainLayout.tsx');
 		expect(layout).toMatch(/\n\t+<FeeTokenMismatchBanner /);
 		expect(layout).not.toMatch(/&&\s*<FeeTokenMismatchBanner/);
+	});
+});
+
+describe('how the guard reads the button that sends a refund', () => {
+	const refundButton = (disabled: string) =>
+		`<Button\n\tonClick={() =>\n\t\tlastMessage?.id && processRefundMutation.mutate({ id: 1 })\n\t}\n\t${disabled}\n>\n\tRequest refund\n</Button>`;
+	const marker = 'processRefundMutation.mutate(';
+
+	it('reads the disabled of the button that sends, not of an element before it', () => {
+		const source = `<Input disabled={isWrong} />\n${refundButton(
+			'disabled={processRefundMutation.isPending}',
+		)}`;
+
+		expect(disabledOf(source, 'Button', marker)).toBe('processRefundMutation.isPending');
+	});
+
+	it('does not read the disabled of an element after the button that sends', () => {
+		const source = `${refundButton(
+			'variant="outline"',
+		)}\n<Button disabled={isRefundSwitchedOff}>Other</Button>`;
+
+		expect(() => disabledOf(source, 'Button', marker)).toThrow();
+	});
+
+	it('fails on a switched-off flag in the refund button', () => {
+		const source = refundButton(
+			'disabled={processRefundMutation.isPending || isRefundSwitchedOff}',
+		);
+
+		expect(isGatedByCheck(disabledOf(source, 'Button', marker))).toBe(true);
+	});
+
+	it('fails when the button cannot be found', () => {
+		expect(() => disabledOf('<Button disabled={x}>Refund</Button>', 'Button', marker)).toThrow();
+		expect(() => disabledOf(`<Link onClick={() => ${marker})} />`, 'Button', marker)).toThrow();
 	});
 });
 
