@@ -107,6 +107,8 @@ function reader(over: {
 	paused?: unknown;
 	exempt?: Record<string, unknown>;
 	codeAt?: Record<string, unknown>;
+	/** Successive answers to the code read at an address; an Error is thrown. */
+	codeSequence?: Record<string, readonly unknown[]>;
 }): FeeTokenReader & { calls: string[] } {
 	const calls: string[] = [];
 	const exempt = over.exempt ?? { [ESCROW]: true, [TREASURY]: true };
@@ -114,8 +116,12 @@ function reader(over: {
 	return {
 		calls,
 		code: vi.fn(async address => {
+			const asked = calls.filter(call => call === `code(${address})`).length;
 			calls.push(`code(${address})`);
-			return codeAt[address];
+			const sequence = over.codeSequence?.[address];
+			const answer = sequence ? sequence[asked] : codeAt[address];
+			if (answer instanceof Error) throw answer;
+			return answer;
 		}),
 		escrow: vi.fn(async method => {
 			calls.push(`escrow.${method}`);
@@ -248,7 +254,7 @@ describe('readFeeTokenVerdict', () => {
 		const verdict = await check(r);
 
 		expect(verdict).toBe('contract-not-found');
-		expect(r.calls).toEqual([`code(${ESCROW})`]);
+		expect(r.calls).toEqual([`code(${ESCROW})`, `code(${ESCROW})`]);
 	});
 
 	it('says no contract is found when the token address has no code, and does not ask the token', async () => {
@@ -264,6 +270,50 @@ describe('readFeeTokenVerdict', () => {
 		const r = reader({ codeAt: { [ESCROW]: empty } });
 
 		return expect(check(r)).resolves.toBe('contract-not-found');
+	});
+
+	it('reads the code at each address once when the first answer has code', async () => {
+		const r = reader({});
+
+		await check(r);
+
+		expect(r.calls.filter(call => call === `code(${ESCROW})`)).toHaveLength(1);
+		expect(r.calls.filter(call => call === `code(${TOKEN})`)).toHaveLength(1);
+	});
+
+	it.each([
+		['the escrow', ESCROW],
+		['the token', TOKEN],
+	])(
+		'carries on when an empty answer at %s is followed by code: one empty answer is not a block',
+		async (_label, address) => {
+			const r = reader({ codeSequence: { [address]: ['0x', DEPLOYED] } });
+
+			const verdict = await check(r);
+
+			expect(verdict).toBe('ok');
+			expect(r.calls.filter(call => call === `code(${address})`)).toHaveLength(2);
+		},
+	);
+
+	it('says no contract is found only after two empty answers in a row', async () => {
+		const r = reader({ codeSequence: { [TOKEN]: ['0x', '0x'] } });
+
+		const verdict = await check(r);
+
+		expect(verdict).toBe('contract-not-found');
+		expect(r.calls.filter(call => call === `code(${TOKEN})`)).toHaveLength(2);
+	});
+
+	it.each([
+		['fails', new Error('fetch failed'), /fetch failed/],
+		['is not hex', 'deployed', /code at the escrow is not hex/],
+	])('has no answer when the second code read %s', async (_label, second, message) => {
+		const r = reader({ codeSequence: { [ESCROW]: ['0x', second] } });
+
+		const outcome = check(r);
+
+		await expect(outcome).rejects.toThrow(message);
 	});
 
 	it('names a wrong agent before a token address with no code', async () => {
