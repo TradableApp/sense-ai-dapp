@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ESCROW_FEE_TOKEN_GETTER } from '@/config/feeTokenConfig';
 
-import useFeeTokenCheck, { forgetReportedFailures } from './useFeeTokenCheck';
+import useFeeTokenCheck, { FEE_TOKEN_RECHECK_MS, forgetReportedFailures } from './useFeeTokenCheck';
 
 const CHAIN_ID = 84532;
 const TOKEN = '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512';
@@ -292,5 +292,52 @@ describe('useFeeTokenCheck', () => {
 		const { result } = harness();
 		expect(result.current.verdict).toBe('unknown');
 		expect(readContract).not.toHaveBeenCalled();
+	});
+});
+
+describe('the five-minute recheck', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		forgetReportedFailures();
+		onChain(CHAIN_ID);
+		// Only the recheck's interval is faked; vi.waitFor keeps its own real timers.
+		vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+	});
+	afterEach(() => {
+		cleanup();
+		vi.useRealTimers();
+	});
+
+	const fiveMinutesPass = () =>
+		act(() => {
+			vi.advanceTimersByTime(FEE_TOKEN_RECHECK_MS);
+		});
+
+	it('asks again every five minutes', () => {
+		expect(FEE_TOKEN_RECHECK_MS).toBe(5 * 60 * 1000);
+	});
+
+	it('notices an escrow unlisted after the page loaded, with nothing else happening', async () => {
+		chainAnswers();
+		const { result } = harness();
+		await vi.waitFor(() => expect(result.current.verdict).toBe('ok'));
+		chainAnswers({ [`exempt:${ESCROW}`]: false });
+
+		await fiveMinutesPass();
+
+		await vi.waitFor(() => expect(result.current.verdict).toBe('escrow-not-exempt'));
+		expect(result.current.blocks('prompt')).toBe(true);
+	});
+
+	it('lifts a block once the escrow is listed again, with nothing else happening', async () => {
+		chainAnswers({ [`exempt:${ESCROW}`]: false });
+		const { result } = harness();
+		await vi.waitFor(() => expect(result.current.verdict).toBe('escrow-not-exempt'));
+		chainAnswers();
+
+		await fiveMinutesPass();
+
+		await vi.waitFor(() => expect(result.current.verdict).toBe('ok'));
+		expect(result.current.blocks('prompt')).toBe(false);
 	});
 });

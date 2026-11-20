@@ -34,6 +34,12 @@ function contractReader(
 	};
 }
 
+/**
+ * How often the answer is asked for again. An owner can list or unlist the escrow, or pause
+ * the token, at any time, so the answer is not kept for long.
+ */
+export const FEE_TOKEN_RECHECK_MS = 5 * 60 * 1000;
+
 // A failure is repeated on every retry and every later read. Each distinct one is reported
 // once per page load, so an unreachable node cannot fill the error tracker.
 const reported = new Set<string>();
@@ -113,10 +119,8 @@ export default function useFeeTokenCheck(): FeeTokenCheck {
 			}
 		},
 		enabled: isConfigured,
-		// An owner can list or unlist the escrow at any time, so the answer is not kept for
-		// long: asked again every five minutes.
-		staleTime: 5 * 60 * 1000,
-		refetchInterval: 5 * 60 * 1000,
+		staleTime: FEE_TOKEN_RECHECK_MS,
+		refetchInterval: FEE_TOKEN_RECHECK_MS,
 	});
 
 	const verdict: FeeTokenCheckState = data ?? 'unknown';
