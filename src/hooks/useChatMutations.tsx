@@ -6,15 +6,7 @@ import { getContract, prepareContractCall, sendAndConfirmTransaction } from 'thi
 import { useActiveAccount, useActiveWallet } from 'thirdweb/react';
 // eslint-disable-next-line camelcase
 import { eth_getTransactionReceipt, getRpcClient } from 'thirdweb/rpc';
-import {
-	type AbiEvent,
-	type AbiFunction,
-	decodeEventLog,
-	getAbiItem,
-	toEventSelector,
-	toFunctionSelector,
-	toHex,
-} from 'viem';
+import { type AbiEvent, decodeEventLog, getAbiItem, toEventSelector, toHex } from 'viem';
 
 import { Button } from '@/components/ui/button';
 import { CONTRACTS, LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
@@ -23,6 +15,7 @@ import { client } from '@/config/thirdweb';
 import useFaucetConfig from '@/hooks/useFaucetConfig';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
+import { messageNamesError } from '@/lib/contractErrorSelector';
 import { encryptData } from '@/lib/crypto';
 import eciesEncrypt from '@/lib/ecies';
 import requestTestTokens, {
@@ -132,6 +125,37 @@ export function buildInitiatePromptPayload({
 	};
 }
 
+const CANCEL_ACTION = 'cancel prompt';
+const REFUND_ACTION = 'process refund';
+
+/**
+ * What to say when the token refuses a transfer, which depends on what was being done.
+ * A refused payment took nothing. A refused cancellation leaves the prompt's fee held and
+ * will be refused again: the refund is the way out. A refused refund also took nothing,
+ * but the user is owed tokens and needs a person.
+ */
+function refusedTransferMessage(action: string): { title: string; description: string } {
+	if (action === CANCEL_ACTION) {
+		return {
+			title: 'Could Not Cancel',
+			description:
+				'The cancellation could not be completed, so your payment for this prompt is still held. You can claim a refund one hour after the prompt was sent.',
+		};
+	}
+	if (action === REFUND_ACTION) {
+		return {
+			title: 'Refund Not Sent',
+			description:
+				'The refund could not be sent and your payment is still held. Please contact support.',
+		};
+	}
+	return {
+		title: 'Payment Not Accepted',
+		description:
+			'SenseAI could not take this payment, so no tokens were taken. Please try again later or contact support.',
+	};
+}
+
 /**
  * Builds the centralized contract-error handler. Exported for testability.
  * @param {boolean} isTestnet
@@ -157,14 +181,8 @@ export function buildErrorHandler(
 				? String((error as { message: unknown }).message)
 				: String(error)) || '';
 
-		const isError = (abi: Parameters<typeof getAbiItem>[0]['abi'], name: string) => {
-			const item = getAbiItem({ abi, name });
-			if (!item) return false;
-			return (
-				errorMessage.includes(toFunctionSelector(item as AbiFunction)) ||
-				errorMessage.includes(name)
-			);
-		};
+		const isError = (abi: readonly unknown[], name: string) =>
+			messageNamesError(errorMessage, abi, name);
 
 		// --- Token Errors ---
 		if (isError(feeToken.abi, 'ERC20InsufficientBalance')) {
@@ -199,14 +217,28 @@ export function buildErrorHandler(
 			return;
 		}
 
-		// A token that moves only to or from listed addresses refuses a payment whose
-		// receiver is not listed. Nothing the user can do changes that, and nothing was
-		// taken. Looked for whichever token the build is for: only that kind of token can
-		// raise it, and a build pointed at the wrong token should still explain the failure.
+		// A token that moves only to or from listed addresses refuses a transfer whose other
+		// party is not listed. Nothing the user can do changes that. Looked for whichever token
+		// the build is for: only that kind of token can raise it, and a build pointed at the
+		// wrong token should still explain the failure.
 		if (isError(TRANSFER_RESTRICTION_ABI, 'TransferNotAllowed')) {
-			toast.error('Payment Not Accepted', {
+			const { title, description } = refusedTransferMessage(action);
+			toast.error(title, { description });
+			return;
+		}
+
+		if (isError(feeToken.abi, 'EnforcedPause')) {
+			toast.error('Payments Paused', {
 				description:
-					'SenseAI could not take this payment, so nothing was charged. Please try again later or contact support.',
+					'Payments are paused for now, so no tokens were taken. Please try again later.',
+			});
+			return;
+		}
+
+		if (isError(EVMAIAgentEscrowABI.abi, 'SafeERC20FailedOperation')) {
+			toast.error('Payment Failed', {
+				description:
+					'The token transfer did not go through, so no tokens were taken. Please try again.',
 			});
 			return;
 		}
@@ -797,7 +829,7 @@ export default function useChatMutations() {
 			// Immediate RPC update
 			genericOnSuccess();
 		},
-		onError: error => genericOnError(error, 'cancel prompt'),
+		onError: error => genericOnError(error, CANCEL_ACTION),
 	});
 
 	/**
@@ -838,7 +870,7 @@ export default function useChatMutations() {
 			// Immediate RPC update
 			genericOnSuccess();
 		},
-		onError: error => genericOnError(error, 'process refund'),
+		onError: error => genericOnError(error, REFUND_ACTION),
 	});
 
 	return {
