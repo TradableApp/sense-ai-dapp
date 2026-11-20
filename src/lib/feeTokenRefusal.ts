@@ -38,11 +38,19 @@ export const REFUND_OUTLOOK: Record<FeeTokenCheckState, RefundOutlook> = {
 const STILL_HELD =
 	'The cancellation could not be completed, so your payment for this prompt is still held.';
 
+/**
+ * A cancellation a paused token refused. Every clause follows the escrow: the payment stays
+ * pending; after the token is resumed the oracle's retry may answer the prompt and take the
+ * payment first, and otherwise it can be cancelled, or refunded once the escrow's fixed hour
+ * has passed. When the token will be resumed is not known, so no time is given for that.
+ */
+const PAUSED_CANCEL = `${STILL_HELD} The token is paused, and nothing can move until it is resumed. After that, the prompt may still be answered; if not, you can cancel it again, or you can claim a refund one hour after the prompt was sent.`;
+
 const CANCEL_REFUSED: Record<RefundOutlook, string> = {
 	works: `${STILL_HELD} You can claim a refund one hour after the prompt was sent.`,
 	refused: `${STILL_HELD} A refund would be refused too until this is fixed, so please contact support.`,
 	uncertain: `${STILL_HELD} You can ask for a refund one hour after the prompt was sent; if that is refused too, please contact support.`,
-	paused: `${STILL_HELD} The token is paused, so a refund would be refused too until it is resumed; your payment stays with the SenseAI payment contract until then.`,
+	paused: PAUSED_CANCEL,
 	support: `${STILL_HELD} Please contact support so it can be returned.`,
 };
 
@@ -55,20 +63,22 @@ export type RefusalCause = 'restricted' | 'paused';
 /**
  * What to say when a paused token refuses a transfer. The pause is the newer fact than any
  * verdict of the check, since the token reported it just now, so the verdict plays no part.
- * Nobody here knows when the token will be resumed, so no time is promised.
+ * Nobody here knows when the token will be resumed, so no time is promised for that. A
+ * refund needs the escrow still pending, so after the resume it works only if the oracle has
+ * not answered the prompt first.
  */
 function pausedTransferMessage(action: string): Notice {
 	if (action === CANCEL_ACTION) {
 		return {
 			title: 'Could Not Cancel',
-			description: `${STILL_HELD} The token is paused, so it stays with the SenseAI payment contract until the token is resumed; you can then cancel again or ask for a refund.`,
+			description: PAUSED_CANCEL,
 		};
 	}
 	if (action === REFUND_ACTION) {
 		return {
 			title: 'Refund Not Sent',
 			description:
-				'The token is paused, so the refund could not be sent and your payment is still held. Please try again once the token is resumed.',
+				'The token is paused, so the refund could not be sent and your payment is still held. Once the token is resumed you can try again, unless the prompt has been answered by then.',
 		};
 	}
 	return {
