@@ -6,6 +6,7 @@
  * changes from batch to batch, so the same failure would also be reported again each time.
  * The report carries a kind and the first line of the message, scrubbed.
  */
+import scrubSecrets from '@/lib/scrubSecrets';
 
 export type FailureKind =
 	| 'invalid-reading'
@@ -17,28 +18,11 @@ export type FailureKind =
 
 export interface Failure {
 	kind: FailureKind;
-	/** The first line of the message, with URLs and long hex replaced. */
+	/** The first line of the message, with URLs and long hex replaced (`scrubSecrets`). */
 	line: string;
 }
 
 const MAX_LINE = 120;
-// Any scheme (http, https, ws, wss); a dotted host or localhost with a numeric port, with
-// or without a path; or a dotted host followed by a path. The host must be dotted (or
-// localhost) and the port a number, so "Error: 500" or "timeout: 30" is left alone.
-// The last form also takes a dotted name before a slash that is no host (a file path such
-// as "Token.sol/transfer"): losing that from a report is the price of never keeping a URL.
-// Everything up to the next space goes with the URL, punctuation included: a key can sit
-// in the path or the query, and a colon after it is not worth the risk of keeping a tail.
-const URL_PATTERN = new RegExp(
-	[
-		'[a-z][a-z0-9+.-]*:\\/\\/\\S+',
-		'\\b(?:localhost|[\\w-]+(?:\\.[\\w-]+)+):\\d{1,5}(?!\\d)\\S*',
-		'\\b[\\w-]+(?:\\.[\\w-]+)+\\/\\S*',
-	].join('|'),
-	'gi',
-);
-// 0x or 0X and eight or more hex digits, or sixteen or more hex digits on their own.
-const LONG_HEX = /0x[0-9a-f]{8,}|\b[0-9a-f]{16,}\b/gi;
 
 const NETWORK_ERROR_NAMES = ['AbortError', 'TimeoutError'];
 const NETWORK_MESSAGE =
@@ -78,7 +62,7 @@ function kindOf(error: unknown, message: string): FailureKind {
 
 function scrub(message: string): string {
 	const [first = ''] = message.split('\n');
-	return first.replace(URL_PATTERN, '<url>').replace(LONG_HEX, '<hex>').slice(0, MAX_LINE);
+	return scrubSecrets(first).slice(0, MAX_LINE);
 }
 
 /**
