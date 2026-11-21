@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONTRACTS } from '@/config/contracts';
 import { FEE_TOKEN } from '@/config/feeToken';
 import useFeeTokenCheck, { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
+import { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
 import { blocksAction, feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
 import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
 import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
@@ -74,18 +75,19 @@ function renderPlanMutations() {
 	const { result } = renderHook(() => usePlanMutations({ onStatus: vi.fn(), onDone }), {
 		wrapper,
 	});
-	return { result, onDone };
+	return { result, onDone, queryClient };
 }
 
 type Mutations = ReturnType<typeof usePlanMutations>;
 
 /** Starts an action and waits for it to settle, whichever way it ends. */
 async function attempt(run: (_m: Mutations) => Promise<unknown>) {
-	const { result, onDone } = renderPlanMutations();
+	const { result, onDone, queryClient } = renderPlanMutations();
+	const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
 	await act(async () => {
 		await run(result.current).catch(() => undefined);
 	});
-	return { onDone };
+	return { onDone, invalidate };
 }
 
 const setPlan = (m: Mutations) => m.setPlanMutation.mutateAsync(PLAN);
@@ -223,6 +225,62 @@ describe('a plan that was sent and failed', () => {
 
 		expect(toast.dismiss).toHaveBeenCalledWith('limit-notice');
 		expect(vi.mocked(toast.dismiss).mock.calls.every(call => call.length === 1)).toBe(true);
+	});
+});
+
+describe('a plan whose approval went through and whose limit then failed', () => {
+	const approvedThenFailed = () => {
+		withVerdict('ok');
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockRejectedValueOnce(new Error('user rejected'));
+	};
+
+	// The approval is on chain: "the transaction failed" alone would hide it.
+	it('says the approval stands, what the failure was and how to stop spending', async () => {
+		approvedThenFailed();
+
+		await attempt(setPlan);
+
+		expect(toast.error).toHaveBeenCalledTimes(1);
+		const [title, options] = vi.mocked(toast.error).mock.calls[0];
+		const description = String((options as { description?: string }).description);
+		expect(title).toBe('Limit Not Set');
+		expect(description).toMatch(/approval went through/);
+		expect(description).toMatch(/user rejected/);
+		expect(description).toMatch(/approval stands/);
+		expect(description).toMatch(/Revoke/);
+		expect(description).not.toContain(FEE_TOKEN.symbol);
+	});
+
+	it('asks the plan and the balance again', async () => {
+		approvedThenFailed();
+
+		const { invalidate, onDone } = await attempt(setPlan);
+
+		expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['usagePlan'] }));
+		expect(invalidate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				queryKey: getTokenBalanceQueryKey(
+					31337,
+					'0x00000000000000000000000000000000000000aa',
+					CONTRACTS[31337].token.address,
+				),
+			}),
+		);
+		expect(onDone).not.toHaveBeenCalled();
+	});
+
+	it('a plan whose approval itself failed is a failed transaction and asks nothing again', async () => {
+		withVerdict('ok');
+		sendAndConfirm.mockRejectedValueOnce(new Error('user rejected'));
+
+		const { invalidate } = await attempt(setPlan);
+
+		expect(toast.error).toHaveBeenCalledWith('Transaction Failed', {
+			description: 'user rejected',
+		});
+		expect(invalidate).not.toHaveBeenCalled();
 	});
 });
 
