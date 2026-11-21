@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONTRACTS } from '@/config/contracts';
 import { FEE_TOKEN } from '@/config/feeToken';
 import useFeeTokenCheck, { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
+import { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
 import { blocksAction, feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
 import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
 import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
@@ -20,7 +21,7 @@ const sendAndConfirm = vi.hoisted(() => vi.fn());
 const getChain = vi.hoisted(() => vi.fn(() => ({ id: 31337 })));
 
 vi.mock('sonner', () => ({
-	toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), dismiss: vi.fn() },
+	toast: { error: vi.fn(), warning: vi.fn(), success: vi.fn(), info: vi.fn(), dismiss: vi.fn() },
 }));
 vi.mock('thirdweb', () => ({
 	getContract: vi.fn((options: { address: string }) => ({ address: options.address })),
@@ -74,18 +75,19 @@ function renderPlanMutations() {
 	const { result } = renderHook(() => usePlanMutations({ onStatus: vi.fn(), onDone }), {
 		wrapper,
 	});
-	return { result, onDone };
+	return { result, onDone, queryClient };
 }
 
 type Mutations = ReturnType<typeof usePlanMutations>;
 
 /** Starts an action and waits for it to settle, whichever way it ends. */
 async function attempt(run: (_m: Mutations) => Promise<unknown>) {
-	const { result, onDone } = renderPlanMutations();
+	const { result, onDone, queryClient } = renderPlanMutations();
+	const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
 	await act(async () => {
 		await run(result.current).catch(() => undefined);
 	});
-	return { onDone };
+	return { onDone, invalidate };
 }
 
 const setPlan = (m: Mutations) => m.setPlanMutation.mutateAsync(PLAN);
@@ -223,6 +225,158 @@ describe('a plan that was sent and failed', () => {
 
 		expect(toast.dismiss).toHaveBeenCalledWith('limit-notice');
 		expect(vi.mocked(toast.dismiss).mock.calls.every(call => call.length === 1)).toBe(true);
+	});
+});
+
+describe('a plan whose approval went through and whose limit then failed', () => {
+	const approvedThenFailed = () => {
+		withVerdict('ok');
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockRejectedValueOnce(new Error('user rejected'));
+	};
+
+	// The approval is on chain: "the transaction failed" alone would hide it.
+	it('says the approval stands, what the failure was and how to stop spending', async () => {
+		approvedThenFailed();
+
+		await attempt(setPlan);
+
+		expect(toast.error).toHaveBeenCalledTimes(1);
+		const [title, options] = vi.mocked(toast.error).mock.calls[0];
+		const description = String((options as { description?: string }).description);
+		expect(title).toBe('Limit Not Set');
+		expect(description).toMatch(/approval went through and stands/);
+		expect(description).toMatch(/Revoke/);
+		expect(description).not.toContain(FEE_TOKEN.symbol);
+		// The guidance first, the reason last.
+		expect(description.indexOf('user rejected')).toBeGreaterThan(description.indexOf('Revoke'));
+		expect(description).toMatch(/user rejected\.?$/);
+	});
+
+	// An earlier plan is not touched by a failed limit, and Revoke is refused while a prompt is
+	// pending: the words must hold in both cases.
+	it('says an earlier plan still applies and that Revoke waits for pending prompts', async () => {
+		approvedThenFailed();
+
+		await attempt(setPlan);
+
+		const description = String(
+			(vi.mocked(toast.error).mock.calls[0][1] as { description?: string }).description,
+		);
+		expect(description).toMatch(/earlier plan still applies/);
+		expect(description).toMatch(/no prompt is pending/);
+	});
+
+	// thirdweb's text runs to several lines with the RPC URL and the call data.
+	it('gives the first line of the reason only, scrubbed and short', async () => {
+		withVerdict('ok');
+		const long = 'x'.repeat(300);
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockRejectedValueOnce(
+				new Error(
+					`HTTP request failed at https://rpc.example/v2/KEY123abc ${long}\nRequest body: {"data":"0xdeadbeefdeadbeefdeadbeef"}`,
+				),
+			);
+
+		await attempt(setPlan);
+
+		const description = String(
+			(vi.mocked(toast.error).mock.calls[0][1] as { description?: string }).description,
+		);
+		expect(description).not.toContain('KEY123abc');
+		expect(description).not.toContain('Request body');
+		expect(description).not.toContain('\n');
+		expect(description).toContain('<url>');
+		expect(description).not.toContain('x'.repeat(121));
+	});
+
+	it('a limit whose receipt says reverted is a limit not set, and asks again', async () => {
+		withVerdict('ok');
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockResolvedValueOnce({ status: 'reverted' });
+
+		const { invalidate, onDone } = await attempt(setPlan);
+
+		expect(toast.error).toHaveBeenCalledWith('Limit Not Set', expect.anything());
+		expect(toast.success).not.toHaveBeenCalled();
+		expect(onDone).not.toHaveBeenCalled();
+		expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['usagePlan'] }));
+	});
+
+	// thirdweb rejects with this when no receipt has come after 100 blocks: the limit may
+	// still be set, so it is not called a failure.
+	it('a limit whose receipt has not come says it is not confirmed yet, and asks again', async () => {
+		withVerdict('ok');
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockRejectedValueOnce(
+				new Error(`Transaction receipt for 0x${'ab'.repeat(32)} not found after 100 blocks`),
+			);
+
+		const { invalidate } = await attempt(setPlan);
+
+		expect(toast.error).not.toHaveBeenCalled();
+		expect(toast.warning).toHaveBeenCalledTimes(1);
+		const [title, options] = vi.mocked(toast.warning).mock.calls[0];
+		const description = String((options as { description?: string }).description);
+		expect(title).toBe('Limit Not Confirmed');
+		expect(description).toMatch(/approval went through and stands/);
+		expect(description).toMatch(/not confirmed yet/);
+		expect(description).toMatch(/may still be set/);
+		expect(description).not.toMatch(/failed/);
+		expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['usagePlan'] }));
+	});
+
+	it('asks the plan and the balance again', async () => {
+		approvedThenFailed();
+
+		const { invalidate, onDone } = await attempt(setPlan);
+
+		expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['usagePlan'] }));
+		expect(invalidate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				queryKey: getTokenBalanceQueryKey(
+					31337,
+					'0x00000000000000000000000000000000000000aa',
+					CONTRACTS[31337].token.address,
+				),
+			}),
+		);
+		expect(onDone).not.toHaveBeenCalled();
+	});
+
+	it('an approval whose receipt says reverted approved nothing and sets no limit', async () => {
+		withVerdict('ok');
+		sendAndConfirm.mockResolvedValueOnce({ status: 'reverted' });
+
+		const { onDone } = await attempt(setPlan);
+
+		expect(sendAndConfirm).toHaveBeenCalledTimes(1);
+		expect(prepareContractCall).not.toHaveBeenCalledWith(
+			expect.objectContaining({ method: 'setSpendingLimit' }),
+		);
+		const [title, options] = vi.mocked(toast.error).mock.calls[0];
+		const description = String((options as { description?: string }).description);
+		expect(title).toBe('Transaction Failed');
+		expect(description).toMatch(/reverted/);
+		expect(description).toMatch(/nothing was approved/);
+		expect(toast.success).not.toHaveBeenCalled();
+		expect(onDone).not.toHaveBeenCalled();
+	});
+
+	it('a plan whose approval itself failed is a failed transaction and asks nothing again', async () => {
+		withVerdict('ok');
+		sendAndConfirm.mockRejectedValueOnce(new Error('user rejected'));
+
+		const { invalidate } = await attempt(setPlan);
+
+		expect(toast.error).toHaveBeenCalledWith('Transaction Failed', {
+			description: 'user rejected',
+		});
+		expect(invalidate).not.toHaveBeenCalled();
 	});
 });
 

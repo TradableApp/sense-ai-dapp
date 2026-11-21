@@ -445,6 +445,8 @@ export default function Chat() {
 					);
 					setEditingMessageId(null);
 				},
+				// Sent and paid for, not saved here: the edit is closed so it is not sent again.
+				onSaveFailed: () => setEditingMessageId(null),
 				// onError: () => {},
 			},
 		);
@@ -790,6 +792,8 @@ export default function Chat() {
 					openCancelWindow();
 					reset();
 				},
+				// Sent and paid for, not saved here: the composer is cleared so it is not sent again.
+				onSaveFailed: () => reset(),
 				// onError: () => {},
 			},
 		);
