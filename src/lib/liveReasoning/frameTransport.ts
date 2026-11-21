@@ -84,7 +84,10 @@ interface SseParser {
 }
 
 /** Server-sent events, field by field (the WHATWG rules the stream uses: id, event, data, retry). */
-function createSseParser(onEvent: (_e: StreamEvent) => void, onRetry: (_ms: number) => void): SseParser {
+function createSseParser(
+	onEvent: (_e: StreamEvent) => void,
+	onRetry: (_ms: number) => void,
+): SseParser {
 	let buffer = '';
 	let id: string | null = null;
 	let name = '';

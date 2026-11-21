@@ -177,7 +177,6 @@ describe('useLiveReasoning', () => {
 		const { result, rerender } = mount([user('41'), placeholder('42')]);
 		await waitFor(() => expect(streams.started).toHaveLength(1));
 		const stream = streamFor('42');
-		await Promise.all([]);
 		await push(stream, frame(0, RESET));
 		await push(stream, frame(1, STEP));
 		await push(stream, frame(2, ANSWER));

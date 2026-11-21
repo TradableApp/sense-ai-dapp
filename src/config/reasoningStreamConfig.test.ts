@@ -33,7 +33,9 @@ describe('the reasoning stream setting', () => {
 			url: 'http://127.0.0.1:8787',
 			mode: 'sse',
 		});
-		expect(() => assertReasoningStreamConfig('localnet', env('http://localhost:8787'))).not.toThrow();
+		expect(() =>
+			assertReasoningStreamConfig('localnet', env('http://localhost:8787')),
+		).not.toThrow();
 		expect(() => assertReasoningStreamConfig('testnet', env('http://127.0.0.1:8787'))).toThrow(
 			ReasoningStreamConfigError,
 		);
