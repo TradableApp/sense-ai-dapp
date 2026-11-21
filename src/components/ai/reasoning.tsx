@@ -290,7 +290,6 @@ export const ReasoningContent = memo(
 						return (
 							// Steps carry no id of their own and titles can repeat; the position is stable
 							// because steps are only ever appended.
-							// eslint-disable-next-line react/no-array-index-key
 							<div key={index} data-testid="reasoning-step">
 								<h4 className="font-semibold text-foreground mb-1">{step.title}</h4>
 								<p className="text-muted-foreground">
