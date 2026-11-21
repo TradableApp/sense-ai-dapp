@@ -29,10 +29,31 @@ vi.mock('@/config/contracts', () => ({
 
 const SECRET = 'https://rpc.example/key-123';
 
-async function loadHook() {
+async function loadModule() {
 	vi.resetModules();
 	vi.stubEnv('VITE_THE_GRAPH_API_URL', 'https://graph.example');
-	return (await import('./useStuckRequests')).default;
+	return import('./useStuckRequests');
+}
+
+async function loadHook() {
+	return (await loadModule()).default;
+}
+
+/** The escrow's `escrows(id)` answer: user, amount, time made, then the status. */
+const escrowEntry = (status: number) => [
+	'0x00000000000000000000000000000000000000aa',
+	5n,
+	100n,
+	status,
+];
+const PENDING = 0;
+const REFUNDED = 2;
+
+/** The query's poll interval as it stands now. */
+function pollInterval(queryClient: QueryClient) {
+	const query = queryClient.getQueryCache().find({ queryKey: ['stuckRequests'] });
+	const interval = query?.options.refetchInterval;
+	return typeof interval === 'function' ? interval(query as never) : interval;
 }
 
 function render(useStuckRequests: () => unknown, queryClient: QueryClient) {
@@ -62,6 +83,24 @@ describe('a stuck request whose escrow cannot be read', () => {
 
 		await waitFor(() => expect(result.current.isError).toBe(true));
 		expect(result.current.data).toBeUndefined();
+	});
+
+	// One failed read is not the answer: the query reads again, and the payment is found.
+	it('is read again by the query, and then listed', async () => {
+		vi.mocked(readContract)
+			.mockRejectedValueOnce(new TypeError('fetch failed'))
+			.mockResolvedValue(escrowEntry(PENDING) as never);
+		const useStuckRequests = await loadHook();
+		const queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: 1, retryDelay: 0 } },
+		});
+
+		const { result } = render(useStuckRequests, queryClient);
+
+		await waitFor(() =>
+			expect(result.current.data).toEqual([expect.objectContaining({ id: '7' })]),
+		);
+		expect(readContract).toHaveBeenCalledTimes(2);
 	});
 
 	it('is reported by its name once per page load, without its message', async () => {
@@ -98,5 +137,71 @@ describe('the subgraph query for pending payments', () => {
 			expect.any(String),
 			expect.objectContaining({ first: 100, skip: 0 }),
 		);
+	});
+});
+
+describe("the escrow's word on a pending payment", () => {
+	// The status is the fourth field: reading any other would take the user, the amount or the
+	// time made for the status.
+	it('lists one the escrow still holds', async () => {
+		vi.mocked(readContract).mockResolvedValue(escrowEntry(PENDING) as never);
+		const useStuckRequests = await loadHook();
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+		const { result } = render(useStuckRequests, queryClient);
+
+		await waitFor(() =>
+			expect(result.current.data).toEqual([expect.objectContaining({ id: '7' })]),
+		);
+	});
+
+	it('leaves out one the escrow has settled', async () => {
+		vi.mocked(readContract).mockResolvedValue([0, 0, 0, REFUNDED] as never);
+		const useStuckRequests = await loadHook();
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+		const { result } = render(useStuckRequests, queryClient);
+
+		await waitFor(() => expect(result.current.data).toEqual([]));
+	});
+});
+
+describe('how often the stuck requests are read again', () => {
+	const fullPage = Array.from({ length: 100 }, (_, i) => ({
+		id: String(i + 1),
+		amount: '1',
+		createdAt: '100',
+	}));
+
+	it('is the usual minute when the last answer took one page', async () => {
+		vi.mocked(readContract).mockResolvedValue(escrowEntry(PENDING) as never);
+		const { default: useStuckRequests, STUCK_POLL_MS } = await loadModule();
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+		const { result } = render(useStuckRequests, queryClient);
+		await waitFor(() => expect(result.current.data).toBeDefined());
+
+		expect(STUCK_POLL_MS).toBe(60_000);
+		expect(pollInterval(queryClient)).toBe(STUCK_POLL_MS);
+	});
+
+	// Each page is a query against the shared quota, and each candidate an escrow read.
+	it('is slower when the last answer took more than one page', async () => {
+		request
+			.mockResolvedValueOnce({ payments: fullPage })
+			.mockResolvedValueOnce({ payments: [{ id: '101', amount: '1', createdAt: '100' }] });
+		vi.mocked(readContract).mockResolvedValue(escrowEntry(PENDING) as never);
+		const {
+			default: useStuckRequests,
+			STUCK_POLL_MS,
+			STUCK_POLL_MANY_PAGES_MS,
+		} = await loadModule();
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+		const { result } = render(useStuckRequests, queryClient);
+		await waitFor(() => expect(result.current.data).toHaveLength(101));
+
+		expect(STUCK_POLL_MANY_PAGES_MS).toBeGreaterThan(STUCK_POLL_MS);
+		expect(pollInterval(queryClient)).toBe(STUCK_POLL_MANY_PAGES_MS);
 	});
 });

@@ -13,6 +13,7 @@ import {
 	holdUnsavedSend,
 	NEW_CONVERSATION_KEY,
 	notePendingCount,
+	READINGS_TO_END_HOLD,
 	type UnsavedSend,
 	unsavedSendFor,
 	useUnsavedSends,
@@ -125,8 +126,12 @@ describe('what a confirmed send that was not saved holds', () => {
 	});
 
 	it('nothing, when the receipt gave no ids', () => {
-		expect(unsavedSendFor('prompt', { conversationId: '5' }, undefined, OWNER, CONFIRMED_AT)).toBeNull();
-		expect(unsavedSendFor('branch', { originalConversationId: '5' }, {}, OWNER, CONFIRMED_AT)).toBeNull();
+		expect(
+			unsavedSendFor('prompt', { conversationId: '5' }, undefined, OWNER, CONFIRMED_AT),
+		).toBeNull();
+		expect(
+			unsavedSendFor('branch', { originalConversationId: '5' }, {}, OWNER, CONFIRMED_AT),
+		).toBeNull();
 	});
 });
 
@@ -193,30 +198,55 @@ describe('the held sends, per query client', () => {
 		expect(sends.current).toHaveLength(0);
 	});
 
-	it("end on a reading of the wallet's pending count below the highest seen since they began", () => {
+	it("end on two readings in a row of the wallet's pending count below the highest seen since they began", () => {
 		const queryClient = new QueryClient();
 		const sends = held(queryClient);
 		act(() => holdUnsavedSend(queryClient, promptIn('5'), BEGAN_AT));
 
 		act(() => notePendingCount(queryClient, OTHER, 0n, AFTER));
+		act(() => notePendingCount(queryClient, OTHER, 0n, AFTER + 1));
 		act(() => notePendingCount(queryClient, OWNER, 2n, AFTER));
 		act(() => notePendingCount(queryClient, OWNER, 2n, AFTER + 1));
+		act(() => notePendingCount(queryClient, OWNER, 1n, AFTER + 2));
 		expect(sends.current).toHaveLength(1);
 
-		act(() => notePendingCount(queryClient, OWNER, 1n, AFTER + 2));
+		act(() => notePendingCount(queryClient, OWNER, 1n, AFTER + 3));
 		expect(sends.current).toHaveLength(0);
 	});
 
 	// The answer may land before the hold exists (a save given up on after 30 s): the count
 	// is then already back where it was, and no fall will ever be seen.
-	it('end on a reading of zero asked for after they began', () => {
+	it('end on two readings of zero in a row asked for after they began', () => {
 		const queryClient = new QueryClient();
 		const sends = held(queryClient);
 		act(() => holdUnsavedSend(queryClient, promptIn('5'), BEGAN_AT));
 
 		act(() => notePendingCount(queryClient, OWNER, 0n, AFTER));
+		expect(sends.current).toHaveLength(1);
 
+		act(() => notePendingCount(queryClient, OWNER, 0n, AFTER + 1));
 		expect(sends.current).toHaveLength(0);
+	});
+
+	// One node behind the others can answer a zero for a request sent after the hold began;
+	// a second reading in a row is what says the count really fell.
+	it('are not ended by one zero between two readings that are not', () => {
+		const queryClient = new QueryClient();
+		const sends = held(queryClient);
+		act(() => holdUnsavedSend(queryClient, promptIn('5'), BEGAN_AT));
+
+		act(() => notePendingCount(queryClient, OWNER, 1n, AFTER));
+		act(() => notePendingCount(queryClient, OWNER, 0n, AFTER + 1));
+		act(() => notePendingCount(queryClient, OWNER, 1n, AFTER + 2));
+		act(() => notePendingCount(queryClient, OWNER, 0n, AFTER + 3));
+		expect(sends.current).toHaveLength(1);
+
+		act(() => notePendingCount(queryClient, OWNER, 0n, AFTER + 4));
+		expect(sends.current).toHaveLength(0);
+	});
+
+	it('take two readings in a row to end', () => {
+		expect(READINGS_TO_END_HOLD).toBe(2);
 	});
 
 	// A request sent before the send was counted, or answered by a lagging node, can carry a
@@ -232,8 +262,9 @@ describe('the held sends, per query client', () => {
 
 		// Nor does an older reading set the count a later one is compared with.
 		act(() => notePendingCount(queryClient, OWNER, 2n, AFTER));
-		expect(sends.current).toHaveLength(1);
 		act(() => notePendingCount(queryClient, OWNER, 1n, AFTER + 1));
+		expect(sends.current).toHaveLength(1);
+		act(() => notePendingCount(queryClient, OWNER, 1n, AFTER + 2));
 		expect(sends.current).toHaveLength(0);
 	});
 
@@ -251,6 +282,7 @@ describe('the held sends, per query client', () => {
 		act(() => holdUnsavedSend(queryClient, branch, BEGAN_AT));
 
 		act(() => notePendingCount(queryClient, OWNER, 0n, AFTER));
+		act(() => notePendingCount(queryClient, OWNER, 0n, AFTER + 1));
 
 		expect(sends.current.map(send => send.kind)).toEqual(['branch']);
 	});
@@ -336,7 +368,10 @@ describe('a held send across a reload', () => {
 		vi.spyOn(Date, 'now').mockReturnValue(CONFIRMED_AT + 60_000);
 
 		expect(later(new QueryClient()).current).toEqual([
-			expect.objectContaining({ kind: 'prompt', shownAs: { conversationKey: '5', messageId: '11' } }),
+			expect.objectContaining({
+				kind: 'prompt',
+				shownAs: { conversationKey: '5', messageId: '11' },
+			}),
 		]);
 		expect(held(new QueryClient(), OTHER).current).toEqual([]);
 	});
@@ -371,6 +406,11 @@ describe('a held send across a reload', () => {
 		['an id that is not a number', JSON.stringify([{ ...promptIn('5'), composerKeys: ['<b>'] }])],
 		['a time in the future', JSON.stringify([{ ...promptIn('5'), confirmedAt: CONFIRMED_AT * 9 }])],
 		['no time', JSON.stringify([{ ...promptIn('5'), confirmedAt: undefined }])],
+		[
+			'a pending-fall flag that is not true or false',
+			JSON.stringify([{ ...promptIn('5'), endsOnPendingFall: 'true' }]),
+		],
+		['no pending-fall flag', JSON.stringify([{ ...promptIn('5'), endsOnPendingFall: undefined }])],
 	])('ignores a saved value with %s', (_name, raw) => {
 		expect(parseSavedSends(raw, OWNER, CONFIRMED_AT + 1)).toEqual([]);
 	});
@@ -401,6 +441,219 @@ describe('a held send across a reload', () => {
 	});
 });
 
+const regenerateIn = (conversationId: string) =>
+	unsavedSendFor(
+		'regenerate',
+		{ conversationId, promptMessageId: '6', originalAnswerMessageId: '7' },
+		{ newAnswerMessageId: '13' },
+		OWNER,
+		CONFIRMED_AT,
+	) as UnsavedSend;
+
+const savedNow = () => JSON.parse(localStorage.getItem(savedSendsKey(OWNER) as string) ?? '[]');
+const SAVED_FIELDS = [
+	'answer',
+	'composerKeys',
+	'confirmedAt',
+	'endsOnPendingFall',
+	'kind',
+	'listedAs',
+	'owner',
+	'shownAs',
+];
+
+describe('what is saved of a held send', () => {
+	// Saved holds are read at the clock's time: a minute after these sends were confirmed.
+	beforeEach(() => vi.spyOn(Date, 'now').mockReturnValue(CONFIRMED_AT + 60_000));
+	afterEach(() => {
+		localStorage.clear();
+		vi.restoreAllMocks();
+	});
+
+	// Every write saves every held send again, so the prompt kept in memory must stay out of
+	// the later writes too, not only the first.
+	it('is the same picked fields on a later write, with no prompt text', () => {
+		const queryClient = new QueryClient();
+		act(() => holdUnsavedSend(queryClient, promptIn('5'), BEGAN_AT));
+		act(() =>
+			attachShownPrompt(queryClient, OWNER, '11', [
+				{ id: '11', role: 'user', content: 'the paid prompt text' },
+			]),
+		);
+
+		act(() => holdUnsavedSend(queryClient, regenerateIn('6'), BEGAN_AT));
+
+		const saved = savedNow();
+		expect(saved).toHaveLength(2);
+		saved.forEach((each: object) => expect(Object.keys(each).sort()).toEqual(SAVED_FIELDS));
+		expect(JSON.stringify(saved)).not.toContain('the paid prompt text');
+	});
+
+	it('picks the fields of the nested places too', () => {
+		const queryClient = new QueryClient();
+		const send = {
+			...promptIn('5'),
+			answer: { conversationKey: '5', answerId: '4', content: 'the paid prompt text' },
+			shownAs: { conversationKey: '5', messageId: '11', content: 'the paid prompt text' },
+		};
+
+		act(() => holdUnsavedSend(queryClient, send, BEGAN_AT));
+
+		const [saved] = savedNow();
+		expect(saved.answer).toEqual({ conversationKey: '5', answerId: '4' });
+		expect(saved.shownAs).toEqual({ conversationKey: '5', messageId: '11' });
+	});
+});
+
+describe('where held sends are saved', () => {
+	const AGENT_A = `0x${'a'.repeat(40)}`;
+	const AGENT_B = `0x${'c'.repeat(40)}`;
+
+	afterEach(() => vi.unstubAllEnvs());
+
+	// Conversation ids are counted per agent: a hold saved for one agent or chain would hold
+	// a conversation of the same id under another.
+	it('is apart for each chain and agent', () => {
+		vi.stubEnv('VITE_CHAIN_ID', '84532');
+		vi.stubEnv('VITE_AGENT_CONTRACT_ADDRESS', AGENT_A);
+		const first = savedSendsKey(OWNER);
+		vi.stubEnv('VITE_AGENT_CONTRACT_ADDRESS', AGENT_B);
+		const otherAgent = savedSendsKey(OWNER);
+		vi.stubEnv('VITE_CHAIN_ID', '8453');
+		const otherChain = savedSendsKey(OWNER);
+
+		expect(first).toContain(`SenseAI:84532:${AGENT_A}`);
+		expect(new Set([first, otherAgent, otherChain]).size).toBe(3);
+	});
+});
+
+describe('a new page', () => {
+	// Saved holds are read at the clock's time: a minute after these sends were confirmed.
+	beforeEach(() => vi.spyOn(Date, 'now').mockReturnValue(CONFIRMED_AT + 60_000));
+	afterEach(() => {
+		localStorage.clear();
+		vi.restoreAllMocks();
+	});
+
+	// The failure handler can hold a send before any chat has rendered on the new page.
+	it('keeps the saved holds when it holds a new send before anything has read them', () => {
+		act(() => holdUnsavedSend(new QueryClient(), promptIn('5'), BEGAN_AT));
+		const page = new QueryClient();
+
+		act(() => holdUnsavedSend(page, regenerateIn('6'), BEGAN_AT));
+
+		expect(
+			savedNow()
+				.map((each: UnsavedSend) => each.kind)
+				.sort(),
+		).toEqual(['prompt', 'regenerate']);
+		expect(
+			held(page)
+				.current.map(send => send.kind)
+				.sort(),
+		).toEqual(['prompt', 'regenerate']);
+	});
+});
+
+describe('two open tabs', () => {
+	// Saved holds are read at the clock's time: a minute after these sends were confirmed.
+	beforeEach(() => vi.spyOn(Date, 'now').mockReturnValue(CONFIRMED_AT + 60_000));
+	afterEach(() => {
+		localStorage.clear();
+		vi.restoreAllMocks();
+	});
+
+	/** What another tab's write looks like to this one. */
+	const storageChanged = () =>
+		act(() => {
+			window.dispatchEvent(
+				new StorageEvent('storage', {
+					key: savedSendsKey(OWNER),
+					newValue: localStorage.getItem(savedSendsKey(OWNER) as string),
+				}),
+			);
+		});
+
+	it("keep each other's saved holds when each writes", () => {
+		const tabA = new QueryClient();
+		const tabB = new QueryClient();
+		held(tabA);
+		held(tabB);
+
+		act(() => holdUnsavedSend(tabA, promptIn('5'), BEGAN_AT));
+		act(() => holdUnsavedSend(tabB, regenerateIn('6'), BEGAN_AT));
+
+		expect(
+			savedNow()
+				.map((each: UnsavedSend) => each.kind)
+				.sort(),
+		).toEqual(['prompt', 'regenerate']);
+	});
+
+	it('save a send held in both tabs once', () => {
+		const tabA = new QueryClient();
+		act(() => holdUnsavedSend(tabA, promptIn('5'), BEGAN_AT));
+		const tabB = new QueryClient();
+		held(tabB);
+
+		act(() => holdUnsavedSend(tabB, regenerateIn('6'), BEGAN_AT));
+		act(() => holdUnsavedSend(tabA, regenerateIn('7'), BEGAN_AT));
+
+		expect(savedNow().filter((each: UnsavedSend) => each.kind === 'prompt')).toHaveLength(1);
+	});
+
+	it('hold in one a send held in the other', () => {
+		const tabA = new QueryClient();
+		const tabB = new QueryClient();
+		const inB = held(tabB);
+
+		act(() => holdUnsavedSend(tabA, promptIn('5'), BEGAN_AT));
+		storageChanged();
+
+		expect(inB.current.map(send => send.kind)).toEqual(['prompt']);
+	});
+
+	it('end in one a hold ended in the other', () => {
+		const tabA = new QueryClient();
+		act(() => holdUnsavedSend(tabA, promptIn('5'), BEGAN_AT));
+		const tabB = new QueryClient();
+		const inB = held(tabB);
+		expect(inB.current).toHaveLength(1);
+
+		act(() =>
+			endShownSends(tabA, OWNER, {
+				conversationKey: '5',
+				storedMessageIds: ['11'],
+				listedConversationIds: [],
+			}),
+		);
+		storageChanged();
+
+		expect(inB.current).toEqual([]);
+	});
+
+	// Even when the other tab's change was not taken in (an event missed), its next write must
+	// not save again a hold the first tab ended.
+	it('do not bring back a hold the other ended when one writes', () => {
+		const tabA = new QueryClient();
+		act(() => holdUnsavedSend(tabA, promptIn('5'), BEGAN_AT));
+		const tabB = new QueryClient();
+		const inB = held(tabB);
+		act(() =>
+			endShownSends(tabA, OWNER, {
+				conversationKey: '5',
+				storedMessageIds: ['11'],
+				listedConversationIds: [],
+			}),
+		);
+
+		act(() => holdUnsavedSend(tabB, regenerateIn('6'), BEGAN_AT));
+
+		expect(savedNow().map((each: UnsavedSend) => each.kind)).toEqual(['regenerate']);
+		expect(inB.current.map(send => send.kind)).toEqual(['regenerate']);
+	});
+});
+
 describe('the prompt shown from its receipt', () => {
 	it('is kept with its hold in memory, and goes when the hold ends', () => {
 		const queryClient = new QueryClient();
@@ -415,6 +668,7 @@ describe('the prompt shown from its receipt', () => {
 		expect(sends.current[0].shownPrompt).toEqual(shown);
 
 		act(() => notePendingCount(queryClient, OWNER, 0n, AFTER));
+		act(() => notePendingCount(queryClient, OWNER, 0n, AFTER + 1));
 		expect(sends.current).toEqual([]);
 	});
 });

@@ -21,9 +21,10 @@ describe('the pending payments a wallet has', () => {
 			skip < 2 * STUCK_PAGE_SIZE ? page(skip, STUCK_PAGE_SIZE) : page(skip, 30),
 		);
 
-		const payments = await fetchPendingPayments(requestPage);
+		const { payments, pagesRead } = await fetchPendingPayments(requestPage);
 
 		expect(payments).toHaveLength(2 * STUCK_PAGE_SIZE + 30);
+		expect(pagesRead).toBe(3);
 		expect(requestPage.mock.calls.map(([skip]) => skip)).toEqual([
 			0,
 			STUCK_PAGE_SIZE,
@@ -44,8 +45,25 @@ describe('the pending payments a wallet has', () => {
 	it('are not read again once a page is short', async () => {
 		const requestPage = vi.fn(async () => page(0, 3));
 
-		expect(await fetchPendingPayments(requestPage)).toHaveLength(3);
+		const { payments, pagesRead } = await fetchPendingPayments(requestPage);
+
+		expect(payments).toHaveLength(3);
+		expect(pagesRead).toBe(1);
 		expect(requestPage).toHaveBeenCalledTimes(1);
+	});
+
+	// A payment settled between two page reads shifts the next page back by one, so the same
+	// payment can be served on both: it is one payment, and one refund.
+	it('list a payment served on two pages once', async () => {
+		const requestPage = vi.fn(async (skip: number) =>
+			skip === 0 ? page(0, STUCK_PAGE_SIZE) : page(STUCK_PAGE_SIZE - 1, 10),
+		);
+
+		const { payments } = await fetchPendingPayments(requestPage);
+
+		const ids = payments.map(each => each.id);
+		expect(ids).toHaveLength(STUCK_PAGE_SIZE + 9);
+		expect(new Set(ids).size).toBe(ids.length);
 	});
 });
 

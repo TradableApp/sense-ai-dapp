@@ -388,3 +388,69 @@ describe('a confirmed prompt that started a conversation, saved late', () => {
 		expect(composer().value).toBe('Another question');
 	});
 });
+
+describe('a confirmed prompt in the open conversation, saved', () => {
+	beforeEach(() => {
+		vi.mocked(addMessageToConversation).mockResolvedValue({
+			finalUserMessage: { id: '11' },
+			finalAiMessage: { id: '12' },
+		} as never);
+		chatState.value = OPEN_CONVERSATION;
+	});
+
+	it('clears the composer when nothing was typed since', async () => {
+		renderChat();
+		const { onSuccess } = await sendPrompt('A follow-up');
+
+		await act(async () => {
+			await onSuccess({ ...IDS, conversationId: '5' });
+		});
+
+		expect(composer().value).toBe('');
+	});
+
+	// The composer is free once a send is given up on: a save that finishes after that must
+	// not clear what the user has typed since.
+	it('late, leaves a draft typed since', async () => {
+		renderChat();
+		const { onSuccess } = await sendPrompt('A follow-up');
+		await act(async () => {
+			fireEvent.change(composer(), { target: { value: 'Another question' } });
+		});
+
+		await act(async () => {
+			await onSuccess({ ...IDS, conversationId: '5' });
+		});
+
+		expect(composer().value).toBe('Another question');
+	});
+});
+
+describe('a confirmed prompt that started a conversation, saved late after the composer was emptied', () => {
+	beforeEach(() => {
+		vi.mocked(createNewConversation).mockResolvedValue({
+			newConversation: { id: '9' },
+			finalUserMessage: { id: '11' },
+			finalAiMessage: { id: '12' },
+		} as never);
+	});
+
+	// An empty composer is not a draft: there is nothing of the user's to keep, so the new
+	// conversation is opened as if nothing had been touched.
+	it.each([
+		['emptied', ''],
+		['left with spaces only', '   '],
+	])('opens the new conversation when the composer was %s', async (_name, value) => {
+		renderChat();
+		const { onSuccess } = await sendPrompt('A new question');
+		await act(async () => {
+			fireEvent.change(composer(), { target: { value } });
+		});
+
+		await act(async () => {
+			await onSuccess(IDS);
+		});
+
+		expect(actionsOfType(setActiveConversationId.type)).toEqual([setActiveConversationId('9')]);
+	});
+});
