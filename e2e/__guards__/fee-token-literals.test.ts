@@ -1,13 +1,14 @@
 // @vitest-environment node
 //
-// Static guard over src/ (stylesheets included), index.html, vite.config.ts and public/ (pure Node; see the adr-0002 guard for why the environment is
-// pinned per file).
+// Static guard over src/ (stylesheets included), index.html, vite.config.ts, public/ and the
+// e2e suite's own code (pure Node; see the adr-0002 guard for why the environment is pinned
+// per file).
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { E2E_DIR, sourceFiles } from './source-scan';
+import { E2E_DIR, offendersIn, sourceFiles } from './source-scan';
 
 /**
  * The fee token is named in one place: `src/config/feeToken.ts`, with the list of names
@@ -297,5 +298,81 @@ describe('the fee token is named only in its profile', () => {
 
 		samples.forEach(sample => expect(TOKEN_NAME.test(sample), sample).toBe(true));
 		allowed.forEach(sample => expect(TOKEN_NAME.test(sample), sample).toBe(false));
+	});
+});
+
+/**
+ * The e2e suite runs against whichever token the build was made for, so it reads the same
+ * profile the app reads (`e2e/helpers/feeToken.ts`) rather than naming a token. A helper
+ * called after one token, a symbol written into a locator or a test title that names one
+ * would pass for that token and fail, or prove nothing, for the other.
+ *
+ * Code only: comments are stripped first. The guards and the unit tests under `e2e/` are not
+ * scanned; their samples have to name the tokens they check for.
+ */
+const E2E_TOKEN_NAME = new RegExp(
+	[
+		TOKEN_NAME.source,
+		// a lower-case regular expression literal (`/able/i`), which a locator can carry
+		'\\/(?:able|sense)\\/[a-z]*',
+	].join('|'),
+);
+
+const isE2eSource = (file: string) =>
+	/\.(ts|tsx|js|mjs)$/.test(file) &&
+	!/\.test\.(ts|tsx|js|mjs)$/.test(file) &&
+	!file.startsWith(`__guards__${path.sep}`);
+
+/** Every e2e source file scanned, by its path from the repository root. */
+function scannedE2eFiles(): string[] {
+	return sourceFiles(E2E_DIR, isE2eSource).map(file => path.join('e2e', file));
+}
+
+describe('the e2e suite reads the fee token from its profile', () => {
+	it('names no token in a helper, a page object, a fixture or a spec', () => {
+		const offenders = scannedE2eFiles().flatMap(file =>
+			offendersIn(file, readFileSync(path.join(ROOT, file), 'utf8'), E2E_TOKEN_NAME),
+		);
+
+		expect(offenders).toEqual([]);
+	});
+
+	it('scans the helpers, page objects, fixtures, specs and testnet scripts', () => {
+		const scanned = scannedE2eFiles();
+
+		expect(scanned).toContain(path.join('e2e', 'helpers', 'hardhat.ts'));
+		expect(scanned).toContain(path.join('e2e', 'helpers', 'contracts.ts'));
+		expect(scanned).toContain(path.join('e2e', 'pages', 'DashboardPage.ts'));
+		expect(scanned).toContain(path.join('e2e', 'fixtures', 'index.ts'));
+		expect(scanned).toContain(path.join('e2e', 'specs', 'plan.spec.ts'));
+		expect(scanned).toContain(path.join('e2e', 'testnet', 'fund.ts'));
+		expect(scanned.some(file => file.includes('__guards__'))).toBe(false);
+		expect(scanned.some(file => /\.test\.ts$/.test(file))).toBe(false);
+	});
+
+	it('recognises a token name in e2e code and leaves comments and ordinary words alone', () => {
+		const flagged = [
+			'export async function fundABLE(',
+			'const balance = await getABLEBalance(TOKEN_ADDRESS, owner);',
+			'export const ABLE = (whole: number | bigint): bigint => {',
+			'export function parseAble(text: string): number {',
+			"test('T-PLAN-11: Cannot set plan with 0 ABLE', async () => {});",
+			'return this.page.getByText(/insufficient ABLE balance/i).first();',
+			'.or(this.page.getByText(/able/i).filter({ hasText: /\\d/ }).first());',
+			'const fee = 3n * SENSE;',
+		];
+		const left = [
+			'// funds the wallet with ABLE from the treasury',
+			'/** Reads the SENSE balance. */',
+			'export async function fundFeeToken(',
+			'await expect(button).toBeEnabled();',
+			"test('T-XFER-01: a holder cannot send to another holder', async () => {});",
+			"await page.goto('https://senseai.tradable.app');",
+		];
+
+		flagged.forEach(line =>
+			expect(offendersIn('sample.ts', line, E2E_TOKEN_NAME), line).toEqual(['sample.ts:1']),
+		);
+		left.forEach(line => expect(offendersIn('sample.ts', line, E2E_TOKEN_NAME), line).toEqual([]));
 	});
 });
