@@ -36,7 +36,10 @@ export interface StreamResponse {
 	body: ReadableStream<Uint8Array> | null;
 }
 
-export type StreamFetch = (_url: string, _init: RequestInit) => Promise<StreamResponse>;
+/** The options a fetch takes, named without the DOM lib's global type. */
+export type StreamRequestInit = NonNullable<Parameters<typeof fetch>[1]>;
+
+export type StreamFetch = (_url: string, _init: StreamRequestInit) => Promise<StreamResponse>;
 
 export interface FrameStreamOptions {
 	url: string;

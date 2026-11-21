@@ -6,6 +6,7 @@ import {
 	startFrameStream,
 	type StreamEvent,
 	type StreamFetch,
+	type StreamRequestInit,
 	type StreamResponse,
 } from './frameTransport';
 
@@ -58,7 +59,7 @@ interface Harness {
 
 function start(responses: Array<StreamResponse | Error>): Harness {
 	const queue = [...responses];
-	const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+	const fetchImpl = vi.fn(async (_url: string, init: StreamRequestInit) => {
 		const next = queue.shift() ?? ok([], { hold: true });
 		if (next instanceof Error) throw next;
 		// The request is aborted through its signal, as a real fetch is.
@@ -85,7 +86,7 @@ function start(responses: Array<StreamResponse | Error>): Harness {
 }
 
 const headersOf = (h: Harness, call: number) =>
-	new Headers(h.fetchImpl.mock.calls[call][1].headers as HeadersInit);
+	new Headers(h.fetchImpl.mock.calls[call][1].headers as ConstructorParameters<typeof Headers>[0]);
 
 beforeEach(() => {
 	vi.useFakeTimers();
@@ -218,7 +219,7 @@ describe('the frame transport', () => {
 	it('aborts the open request when stopped and asks no more', async () => {
 		const h = start([ok([], { hold: true })]);
 		await vi.advanceTimersByTimeAsync(0);
-		const { signal } = h.fetchImpl.mock.calls[0][1] as RequestInit;
+		const { signal } = h.fetchImpl.mock.calls[0][1] as StreamRequestInit;
 
 		h.handle.stop();
 		await vi.advanceTimersByTimeAsync(60_000);

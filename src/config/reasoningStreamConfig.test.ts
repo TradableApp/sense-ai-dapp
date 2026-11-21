@@ -51,7 +51,7 @@ describe('the reasoning stream setting', () => {
 		'https://user:pw@stream.example',
 		'ftp://stream.example',
 		'stream.example',
-		'0x' + 'ab'.repeat(32),
+		`0x${'ab'.repeat(32)}`,
 	])('stops a build whose URL is %s', value => {
 		expect(() => assertReasoningStreamConfig('testnet', env(value))).toThrow(
 			/VITE_REASONING_STREAM_URL/,

@@ -138,7 +138,10 @@ beforeEach(() => {
 	live.views = new Map();
 	live.provisional = new Set();
 	endpoint.value = null;
-	chatState.value = { activeConversationId: '5', activeConversationMessages: [PROMPT, PLACEHOLDER] };
+	chatState.value = {
+		activeConversationId: '5',
+		activeConversationMessages: [PROMPT, PLACEHOLDER],
+	};
 });
 
 afterEach(() => {
@@ -160,7 +163,10 @@ describe('the live overlay in the chat', () => {
 	it('shows the provisional answer marked as not yet confirmed, and keeps the composer waiting', () => {
 		live.views.set(
 			'42',
-			liveView({ answer: { text: 'Prices rose today.', answerMessageCID: 'bafy1' }, outcome: 'answered' }),
+			liveView({
+				answer: { text: 'Prices rose today.', answerMessageCID: 'bafy1' },
+				outcome: 'answered',
+			}),
 		);
 		live.provisional.add('42');
 
@@ -205,16 +211,21 @@ describe('the live overlay in the chat', () => {
 		expect(document.body.textContent).toContain('▍');
 	});
 
-	it("shows the live answer of a prompt sent from another device, after that prompt", () => {
+	it('shows the live answer of a prompt sent from another device, after that prompt', () => {
 		chatState.value = {
 			activeConversationId: '5',
 			activeConversationMessages: [{ ...PROMPT, status: 'pending', answerMessageId: '42' }],
 		};
-		live.views.set('42', liveView({ answer: { text: 'From the other device.', answerMessageCID: 'b' } }));
+		live.views.set(
+			'42',
+			liveView({ answer: { text: 'From the other device.', answerMessageCID: 'b' } }),
+		);
 
 		renderChat();
 
-		expect(within(screen.getByTestId('live-reasoning')).getByText('Reading market context')).toBeTruthy();
+		expect(
+			within(screen.getByTestId('live-reasoning')).getByText('Reading market context'),
+		).toBeTruthy();
 		expect(screen.getByText('From the other device.')).toBeTruthy();
 	});
 
@@ -235,7 +246,10 @@ describe('the live overlay in the chat', () => {
 	it('with the stream unreachable behaves as today: no error shown', async () => {
 		live.useReal = true;
 		endpoint.value = { url: 'https://stream.example', mode: 'sse' };
-		vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('Failed to fetch'))));
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => Promise.reject(new TypeError('Failed to fetch'))),
+		);
 
 		renderChat();
 		await act(async () => {

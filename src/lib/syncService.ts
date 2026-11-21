@@ -260,6 +260,34 @@ interface ConversationUpdate {
 }
 
 /**
+ * The user message for a prompt known from the subgraph's prompt requests: one sent from
+ * another device, or one that was cancelled or refunded. It carries its answer id (the request's
+ * id) so a pending prompt's answer can be followed live on this device before it is stored.
+ */
+export function messageFromPromptRequest(
+	req: Pick<
+		ConversationUpdate['promptRequests'][number],
+		'id' | 'promptMessageId' | 'createdAt' | 'isCancelled' | 'isRefunded'
+	>,
+	payload: { promptText?: string; previousMessageId?: string | null },
+	conversationId: string,
+) {
+	let status = 'pending';
+	if (req.isCancelled) status = 'cancelled';
+	if (req.isRefunded) status = 'refunded';
+	return {
+		id: req.promptMessageId.toString(), // The prompt's id, not the answer's
+		conversationId,
+		parentId: payload.previousMessageId || null,
+		role: 'user',
+		content: payload.promptText,
+		createdAt: req.createdAt,
+		status, // Lets the UI style it differently
+		answerMessageId: String(req.id),
+	};
+}
+
+/**
  * @notice Fetches a list of updated conversation entities from The Graph's API.
  * @dev This is the entry point for the sync process. It queries for all conversations
  *      owned by the user that have been updated since the last sync.
@@ -452,21 +480,7 @@ export default async function syncWithRemote(
 							hexToBytes(req.encryptedPayload as `0x${string}`),
 						);
 						const payload = await decryptData(sessionKey, encryptedString);
-
-						// payload is { promptText: "...", ... }
-						let status = 'pending';
-						if (req.isCancelled) status = 'cancelled';
-						if (req.isRefunded) status = 'refunded';
-
-						return {
-							id: req.promptMessageId.toString(), // Use the prompt ID, not answer ID
-							conversationId: conv.id,
-							parentId: payload.previousMessageId || null,
-							role: 'user',
-							content: payload.promptText,
-							createdAt: req.createdAt,
-							status, // This flag allows the UI to style them differently
-						};
+						return messageFromPromptRequest(req, payload, conv.id);
 					} catch (err) {
 						console.warn(
 							`[syncService] Failed to decrypt prompt request ${req.promptMessageId}:`,

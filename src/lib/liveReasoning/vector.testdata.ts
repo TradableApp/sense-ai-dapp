@@ -14,8 +14,7 @@ export const VECTOR = {
 	proofHex: 'ce6b23e0e92c2bc0f637d24cb3ffe3daa442b20486a2675389147d0e5e9451be',
 } as const;
 
-const hexBytes = (hex: string): Uint8Array =>
-	new Uint8Array((hex.match(/../g) ?? []).map(pair => parseInt(pair, 16)));
+const hexBytes = (hex: string) => Uint8Array.from(hex.match(/../g) ?? [], pair => parseInt(pair, 16));
 
 /** The vector's key as the session key is held in the dApp: AES-GCM, extractable. */
 export const importVectorKey = (): Promise<CryptoKey> =>

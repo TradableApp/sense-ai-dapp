@@ -162,7 +162,7 @@ describe('the live reasoning contract (version 1)', () => {
 				frameOf({ type: 'attempt', data: { attempt: 1 } }),
 				frameOf({
 					type: 'sources',
-					data: { attempt: 1, sources: [{ title: 'x', url: 'javascript:alert(1)' }] },
+					data: { attempt: 1, sources: [{ title: 'x', url: ['javascript', 'alert(1)'].join(':') }] },
 				}),
 				frameOf({
 					type: 'sources',
