@@ -24,6 +24,30 @@ const graphQLClient = new GraphQLClient(THE_GRAPH_API_URL);
 // The escrow's `escrows(id)` tuple: the status is its fourth field.
 const ESCROW_STATUS_FIELD = 3;
 
+/**
+ * How often the stuck requests are read again. Background polling of the subgraph spends a
+ * shared quota (Studio: 3,000 queries a day), and status changes are already surfaced by the
+ * block-driven live poller, so once a minute is enough to catch the one-hour refund timer.
+ * (Literals: the graph-poll-cadence guard reads the values from source.)
+ */
+export const STUCK_POLL_MS = 60_000;
+
+/**
+ * How often when the last answer took more than one page: each page is a query against the
+ * shared quota and each pending payment an escrow read, so a wallet with that many is read
+ * less often.
+ */
+export const STUCK_POLL_MANY_PAGES_MS = 300_000;
+
+/** What the query keeps: the stuck payments, and how many pages the answer took. */
+interface StuckAnswer {
+	stuck: StuckPayment[];
+	pagesRead: number;
+}
+
+const tookManyPages = (query: { state: { data?: StuckAnswer } }) =>
+	(query.state.data?.pagesRead ?? 0) > 1;
+
 let hasReportedFailure = false;
 
 /**
@@ -76,7 +100,9 @@ function statusReader(chain: Chain, escrow: { address: string; abi: unknown }) {
  * The wallet's prompts whose payment the escrow still holds, and whether each can be refunded.
  * A failed read (the subgraph or the escrow) fails the query, so it is retried and its last
  * answer kept, and is reported once per page load: answering "nothing stuck" would hide a
- * payment the user can get back.
+ * payment the user can get back. `isError` is for the place the list is shown, to say it
+ * could not be checked just now. Read again every `STUCK_POLL_MS`, or `STUCK_POLL_MANY_PAGES_MS`
+ * when the last answer took more than one page.
  */
 export default function useStuckRequests() {
 	const activeWallet = useActiveWallet();
@@ -86,24 +112,26 @@ export default function useStuckRequests() {
 
 	return useQuery({
 		queryKey: ['stuckRequests', chainId, ownerAddress],
-		queryFn: async (): Promise<StuckPayment[]> => {
+		queryFn: async (): Promise<StuckAnswer> => {
 			const escrow = chainId ? CONTRACTS[chainId]?.escrow : undefined;
-			if (!THE_GRAPH_API_URL || !ownerAddress || !chain || !escrow) return [];
+			if (!THE_GRAPH_API_URL || !ownerAddress || !chain || !escrow) {
+				return { stuck: [], pagesRead: 0 };
+			}
 			try {
-				const candidates = await fetchPendingPayments(pageRequester(ownerAddress.toLowerCase()));
-				if (candidates.length === 0) return [];
+				const { payments, pagesRead } = await fetchPendingPayments(
+					pageRequester(ownerAddress.toLowerCase()),
+				);
+				if (payments.length === 0) return { stuck: [], pagesRead };
 				// The subgraph can list a payment the escrow has settled: the escrow has the last word.
-				return await verifyStuck(candidates, statusReader(chain, escrow), Date.now());
+				const stuck = await verifyStuck(payments, statusReader(chain, escrow), Date.now());
+				return { stuck, pagesRead };
 			} catch (error) {
 				reportFailure(error);
 				throw error;
 			}
 		},
+		select: answer => answer.stuck,
 		enabled: !!ownerAddress && !!THE_GRAPH_API_URL,
-		// Background poll of the subgraph. The quota is shared (Studio: 3,000 queries a day) and a
-		// 15 s cadence was 240 queries an hour per open tab; status changes are already surfaced by
-		// the block-driven live poller, so once a minute is enough to catch the 1 h refund timer.
-		// (A literal: the graph-poll-cadence guard reads the value from source.)
-		refetchInterval: 60_000,
+		refetchInterval: query => (tookManyPages(query) ? STUCK_POLL_MANY_PAGES_MS : STUCK_POLL_MS),
 	});
 }

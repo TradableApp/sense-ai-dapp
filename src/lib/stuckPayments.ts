@@ -32,19 +32,33 @@ export const STUCK_MAX_PAGES = 5_000 / STUCK_PAGE_SIZE + 1;
 /** The escrow's status for a payment it still holds (`EscrowStatus.PENDING`). */
 const ESCROW_PENDING = 0;
 
-/** Every pending payment, page by page until a short page or the last page served. */
+/** The pending payments read, and how many pages it took. */
+export interface PendingPayments {
+	payments: PendingPayment[];
+	pagesRead: number;
+}
+
+/**
+ * Every pending payment, page by page until a short page or the last page served. A payment
+ * settled between two page reads shifts the next page back, so the same one can be served on
+ * two pages: each is listed once, as it was first served.
+ */
 export async function fetchPendingPayments(
 	requestPage: (_skip: number) => Promise<readonly PendingPayment[]>,
-): Promise<PendingPayment[]> {
-	const pages: PendingPayment[][] = [];
+): Promise<PendingPayments> {
+	const byId = new Map<string, PendingPayment>();
+	let pagesRead = 0;
 	for (let index = 0; index < STUCK_MAX_PAGES; index += 1) {
 		// One page at a time: whether there is a next one depends on this one.
 		// eslint-disable-next-line no-await-in-loop
 		const page = await requestPage(index * STUCK_PAGE_SIZE);
-		pages.push([...page]);
+		pagesRead += 1;
+		page.forEach(payment => {
+			if (!byId.has(payment.id)) byId.set(payment.id, payment);
+		});
 		if (page.length < STUCK_PAGE_SIZE) break;
 	}
-	return pages.flat();
+	return { payments: [...byId.values()], pagesRead };
 }
 
 /** The candidates the escrow still holds; rejects if any read fails. */

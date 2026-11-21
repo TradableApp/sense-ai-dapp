@@ -51,9 +51,12 @@ const REFUNDED = 2;
 
 /** The query's poll interval as it stands now. */
 function pollInterval(queryClient: QueryClient) {
-	const query = queryClient.getQueryCache().find({ queryKey: ['stuckRequests'] });
-	const interval = query?.options.refetchInterval;
-	return typeof interval === 'function' ? interval(query as never) : interval;
+	const query = queryClient.getQueryCache().find({ queryKey: ['stuckRequests'], exact: false });
+	// The hook's own options are merged into the query's.
+	const { refetchInterval: interval } = (query?.options ?? {}) as {
+		refetchInterval?: number | ((_query: unknown) => number);
+	};
+	return typeof interval === 'function' ? interval(query) : interval;
 }
 
 function render(useStuckRequests: () => unknown, queryClient: QueryClient) {

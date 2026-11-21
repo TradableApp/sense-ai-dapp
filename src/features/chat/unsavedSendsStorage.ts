@@ -108,32 +108,49 @@ export function parseSavedSends(
 	}
 }
 
-/** What is saved of a hold: ids, kind, keys and time, nothing kept beside it in memory. */
+/**
+ * What is saved of a hold: ids, kind, keys and time, each field picked by name down to the
+ * nested places, so nothing kept beside them in memory (the prompt shown) is ever written.
+ */
 function savedFields(send: UnsavedSend) {
 	const { owner, kind, composerKeys, answer, shownAs, listedAs, endsOnPendingFall, confirmedAt } =
 		send;
-	return { owner, kind, composerKeys, answer, shownAs, listedAs, endsOnPendingFall, confirmedAt };
+	return {
+		owner,
+		kind,
+		composerKeys: [...composerKeys],
+		answer: answer && { conversationKey: answer.conversationKey, answerId: answer.answerId },
+		shownAs: shownAs && { conversationKey: shownAs.conversationKey, messageId: shownAs.messageId },
+		listedAs,
+		endsOnPendingFall,
+		confirmedAt,
+	};
 }
 
-/** `owner`'s saved holds, or none when storage cannot be read. */
-export function readSavedSends(owner: string, now: number): readonly UnsavedSend[] {
+/**
+ * `owner`'s saved holds, or null when nothing can be read: storage that throws, or a build
+ * that names no store. Null is not "none saved": it must not end a hold another tab saved.
+ */
+export function readSavedSends(owner: string, now: number): readonly UnsavedSend[] | null {
 	const key = savedSendsKey(owner);
-	if (!key) return [];
+	if (!key) return null;
 	try {
 		return parseSavedSends(localStorage.getItem(key), owner, now);
 	} catch {
-		return [];
+		return null;
 	}
 }
 
-/** Saves `owner`'s holds, or removes the entry when there are none. */
-export function writeSavedSends(owner: string, sends: readonly UnsavedSend[]): void {
+/** Saves `owner`'s holds, or removes the entry when there are none; whether storage took it. */
+export function writeSavedSends(owner: string, sends: readonly UnsavedSend[]): boolean {
 	const key = savedSendsKey(owner);
-	if (!key) return;
+	if (!key) return false;
 	try {
 		if (sends.length === 0) localStorage.removeItem(key);
 		else localStorage.setItem(key, JSON.stringify(sends.map(savedFields)));
+		return true;
 	} catch {
 		// The holds stay in memory for this page: a reload then shows what the chain has.
+		return false;
 	}
 }

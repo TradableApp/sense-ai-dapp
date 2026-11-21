@@ -766,7 +766,11 @@ export default function Chat() {
 
 		// A save can finish after the send was given up on and the composer freed: what the user
 		// typed since is theirs, so it is neither cleared nor left for the old send's conversation.
-		const hasNewDraft = () => getValues('prompt') !== data.prompt;
+		// Only text counts: an emptied composer holds nothing of the user's to keep.
+		const hasNewDraft = () => {
+			const draft = getValues('prompt');
+			return typeof draft === 'string' && draft.trim() !== '' && draft !== data.prompt;
+		};
 
 		initiatePromptMutation.mutate(
 			{
