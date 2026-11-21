@@ -179,6 +179,19 @@ describe('where the payment gate is asked', () => {
 		GATE_WORDS.forEach(word =>
 			expect(plans.slice(revokeAt).toLowerCase()).not.toContain(word.toLowerCase()),
 		);
+		// Removing the approval again, from the notice a half-finished revoke shows, is taking
+		// back a permission too: it stands after the revoke, so the check above covers it, and
+		// the helpers both send through never mention the gate either.
+		const clearAt = plans.indexOf('function useClearApprovalMutation(');
+		expect(clearAt, 'useClearApprovalMutation not found after the revoke').toBeGreaterThan(
+			revokeAt,
+		);
+		['async function clearApproval(', 'async function readEscrowAllowance('].forEach(helper => {
+			const at = plans.indexOf(helper);
+			expect(at, `${helper} not found`).toBeGreaterThan(-1);
+			const body = plans.slice(at, plans.indexOf('\n}\n', at)).toLowerCase();
+			GATE_WORDS.forEach(word => expect(body, helper).not.toContain(word.toLowerCase()));
+		});
 		// Prompts can close while the approval is confirmed: the gate's current state is asked
 		// again, and the limit is not built if it refuses now.
 		const recheck = statementAt(

@@ -28,6 +28,8 @@ vi.mock('sonner', () => ({
 vi.mock('thirdweb', () => ({
 	getContract: vi.fn((options: { address: string }) => ({ address: options.address })),
 	prepareContractCall: vi.fn((options: { method: string }) => ({ method: options.method })),
+	// The approval left for the escrow after a revoke; none, so a revoke is one transaction.
+	readContract: vi.fn(async () => 0n),
 }));
 vi.mock('thirdweb/react', () => {
 	const account = { address: '0x00000000000000000000000000000000000000aa' };
