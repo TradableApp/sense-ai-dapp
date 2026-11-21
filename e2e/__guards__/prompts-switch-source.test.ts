@@ -36,10 +36,13 @@ describe('where the prompts switch is read', () => {
 		expect(source).not.toMatch(/\b(getDoc|getDocs|setDoc|updateDoc|addDoc|deleteDoc|writeBatch)\b/);
 	});
 
-	it('the store is read only through the hook', () => {
-		const readers = appFiles.filter(f => /\bsubscribePromptsSwitch\b/.test(code(f)));
-		expect(readers.sort()).toEqual([SOURCE, path.join('hooks', 'usePromptsSwitch.ts')].sort());
-	});
+	it.each(['subscribePromptsSwitch', 'readPromptsSwitch'])(
+		'the store is read only through the hook: %s',
+		name => {
+			const readers = appFiles.filter(f => new RegExp(`\\b${name}\\b`).test(code(f)));
+			expect(readers.sort()).toEqual([SOURCE, path.join('hooks', 'usePromptsSwitch.ts')].sort());
+		},
+	);
 });
 
 describe('what the banner can show', () => {

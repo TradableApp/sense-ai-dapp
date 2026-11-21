@@ -3,9 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FEE_TOKEN_PROFILES, type FeeTokenProfile } from '@/config/feeToken';
 import useFeeTokenCheck, { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
+import usePromptsSwitch from '@/hooks/usePromptsSwitch';
 import useTokenBalance from '@/hooks/useTokenBalance';
 import { blocksAction } from '@/lib/feeTokenCheck';
 import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
+import { switchCopy } from '@/lib/promptsSwitch';
 
 import ManagePlanModal from './ManagePlanModal';
 
@@ -36,8 +38,7 @@ vi.mock('@/config/contracts', () => ({ LOCAL_CHAIN_ID: 31337, TESTNET_CHAIN_ID: 
 vi.mock('@/hooks/useFaucetRequest', () => ({
 	default: () => ({ requestTokens: vi.fn(), faucetAmount: 100 }),
 }));
-// The prompts switch stays open here; its own tests close it.
-vi.mock('@/hooks/usePromptsSwitch', () => ({ default: () => ({ status: 'open' }) }));
+vi.mock('@/hooks/usePromptsSwitch', () => ({ default: vi.fn() }));
 vi.mock('@/hooks/useFeeTokenCheck', () => ({
 	default: vi.fn(),
 	useIsAwaitingFirstAnswer: vi.fn(),
@@ -78,6 +79,7 @@ beforeEach(() => {
 		blocks: action => blocksAction('unknown', action),
 	});
 	vi.mocked(useIsAwaitingFirstAnswer).mockReturnValue(false);
+	vi.mocked(usePromptsSwitch).mockReturnValue({ status: 'open' });
 	withBalance('500');
 });
 
@@ -115,6 +117,27 @@ describe('the plan dialog before the fee token check has answered once', () => {
 		});
 
 		expect(state.mutate).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('the plan dialog while prompts are closed by the switch', () => {
+	it('disables the submit, shows the switch words, and sends nothing', async () => {
+		vi.mocked(usePromptsSwitch).mockReturnValue({ status: 'closed', wording: 'maintenance' });
+		await renderDialog();
+
+		expect((submitButton() as HTMLButtonElement).disabled).toBe(true);
+		expect(screen.getByRole('alert').textContent).toContain(switchCopy('maintenance').title);
+		await act(async () => {
+			fireEvent.click(submitButton());
+		});
+		expect(state.mutate).not.toHaveBeenCalled();
+	});
+
+	it('enables the submit again once the switch is open', async () => {
+		await renderDialog();
+
+		expect((submitButton() as HTMLButtonElement).disabled).toBe(false);
+		expect(screen.queryByRole('alert')).toBeNull();
 	});
 });
 

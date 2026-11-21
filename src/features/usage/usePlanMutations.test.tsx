@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONTRACTS } from '@/config/contracts';
 import { FEE_TOKEN } from '@/config/feeToken';
 import useFeeTokenCheck, { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
-import usePromptsSwitch from '@/hooks/usePromptsSwitch';
+import usePromptsSwitch, { readPromptsSwitchNow } from '@/hooks/usePromptsSwitch';
 import { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
 import { blocksAction, feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
 import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
@@ -51,7 +51,7 @@ vi.mock('@/hooks/useFeeTokenCheck', () => ({
 	default: vi.fn(),
 	useIsAwaitingFirstAnswer: vi.fn(() => false),
 }));
-vi.mock('@/hooks/usePromptsSwitch', () => ({ default: vi.fn() }));
+vi.mock('@/hooks/usePromptsSwitch', () => ({ default: vi.fn(), readPromptsSwitchNow: vi.fn() }));
 // The real waits are two seconds each; nothing here depends on them.
 vi.mock('@/lib/utils', async original => ({
 	...(await original<typeof import('@/lib/utils')>()),
@@ -105,6 +105,7 @@ beforeEach(() => {
 	sendAndConfirm.mockResolvedValue({ status: 'success' });
 	vi.mocked(useIsAwaitingFirstAnswer).mockReturnValue(false);
 	vi.mocked(usePromptsSwitch).mockReturnValue({ status: 'open' });
+	vi.mocked(readPromptsSwitchNow).mockReturnValue({ status: 'open' });
 });
 
 afterEach(() => {
@@ -210,6 +211,30 @@ describe('setting a plan while prompts are closed by the switch', () => {
 			expect.objectContaining({ method: 'cancelSpendingLimit' }),
 		);
 		expect(sendAndConfirm).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('a switch that closes between the approval and the limit', () => {
+	it('sends no limit and says the approval stands and how to revoke it', async () => {
+		withVerdict('ok');
+		// The approval goes through; by the time it is confirmed, prompts are closed.
+		sendAndConfirm.mockImplementationOnce(async () => {
+			vi.mocked(readPromptsSwitchNow).mockReturnValue({ status: 'closed', wording: 'incident' });
+			return { status: 'success' };
+		});
+
+		const { onDone } = await attempt(setPlan);
+
+		expect(sendAndConfirm).toHaveBeenCalledTimes(1);
+		expect(prepareContractCall).not.toHaveBeenCalledWith(
+			expect.objectContaining({ method: 'setSpendingLimit' }),
+		);
+		expect(onDone).not.toHaveBeenCalled();
+		const [title, options] = vi.mocked(toast.error).mock.calls[0];
+		const description = String((options as { description?: string }).description);
+		expect(title).toBe('Limit Not Set');
+		expect(description).toMatch(/approval went through and stands/);
+		expect(description).toMatch(/Revoke/);
 	});
 });
 

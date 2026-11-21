@@ -179,6 +179,26 @@ describe('where the payment gate is asked', () => {
 		GATE_WORDS.forEach(word =>
 			expect(plans.slice(revokeAt).toLowerCase()).not.toContain(word.toLowerCase()),
 		);
+		// Prompts can close while the approval is confirmed: the gate's current state is asked
+		// again, and the limit is not built if it refuses now.
+		const recheck = statementAt(
+			setPlan,
+			"if (paymentGate.blocksNow('plan')) throw new PaymentSwitchedOffError(paymentGate.stateNow(), 'plan', FEE_TOKEN.symbol);",
+		);
+		expect(recheck, 'the limit does not ask the gate again').toBeGreaterThan(-1);
+		expect(
+			hasStatement(
+				setPlan,
+				'await approveAndSetLimit(send, chain, contracts, plan, onStatus, refuseIfClosedNow);',
+			),
+		).toBe(true);
+		const approveAt = plans.indexOf('async function approveAndSetLimit(');
+		expect(approveAt, 'approveAndSetLimit not found').toBeGreaterThan(-1);
+		const approve = plans.slice(approveAt, plans.indexOf('\n}\n', approveAt));
+		const asked = statementAt(approve, 'beforeLimit();');
+		expect(asked, 'the second transaction does not ask first').toBeGreaterThan(-1);
+		expect(asked).toBeLessThan(approve.indexOf("'setSpendingLimit'"));
+		expect(asked).toBeGreaterThan(approve.indexOf("'approve'"));
 		// Before the check's first answer the approval is held too, in the mutation and in the
 		// dialog; revoking is never held.
 		const hold = statementAt(setPlan, 'if (isAwaitingFirstAnswer) throw new PlanHeldError();');
@@ -292,6 +312,7 @@ describe('one place decides', () => {
 	it.each([
 		['the fee token check', /(?<!function )\buseFeeTokenCheck\(\)/],
 		['the prompts switch', /(?<!function )\busePromptsSwitch\(\)/],
+		['the current state of the prompts switch', /(?<!function )\breadPromptsSwitchNow\(/],
 	])('only the payment gate reads %s', (_, pattern) => {
 		expect(filesCalling(pattern)).toEqual([path.join('hooks', 'usePaymentGate.ts')]);
 	});

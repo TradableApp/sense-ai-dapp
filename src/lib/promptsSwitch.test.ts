@@ -149,6 +149,29 @@ describe('switchCopy', () => {
 		},
 	);
 
+	// The words also reach toasts and dialogs, where nothing is above or below them.
+	it('says nothing about where another notice is', () => {
+		SWITCH_WORDINGS.forEach(w => {
+			[switchCopy(w), switchCopy(w, { otherProblem: true })].forEach(({ description }) =>
+				expect(description).not.toMatch(/\b(below|above)\b/i),
+			);
+		});
+		expect(switchCopy('incident', { otherProblem: true }).description).toMatch(
+			/other notice on this page says what else is wrong/,
+		);
+	});
+
+	// A tab whose listener keeps failing never hears the reopening.
+	it.each(['maintenance', 'incident', 'generic'] as const)(
+		'%s does not promise the notice goes away by itself, and says to reload if it stays',
+		w => {
+			const { description } = switchCopy(w);
+			expect(description).not.toMatch(/by itself/i);
+			expect(description).toMatch(/removed when prompts reopen/);
+			expect(description).toMatch(/reload the page/i);
+		},
+	);
+
 	it('names no token', () => {
 		const all = SWITCH_WORDINGS.flatMap(w => [
 			JSON.stringify(switchCopy(w)),
