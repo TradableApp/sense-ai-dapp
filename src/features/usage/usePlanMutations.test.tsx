@@ -9,9 +9,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONTRACTS } from '@/config/contracts';
 import { FEE_TOKEN } from '@/config/feeToken';
 import useFeeTokenCheck, { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
+import usePromptsSwitch from '@/hooks/usePromptsSwitch';
 import { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
 import { blocksAction, feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
 import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
+import { SWITCH_WORDINGS, switchCopy } from '@/lib/promptsSwitch';
 import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
 
 import usePlanMutations from './usePlanMutations';
@@ -49,6 +51,7 @@ vi.mock('@/hooks/useFeeTokenCheck', () => ({
 	default: vi.fn(),
 	useIsAwaitingFirstAnswer: vi.fn(() => false),
 }));
+vi.mock('@/hooks/usePromptsSwitch', () => ({ default: vi.fn() }));
 // The real waits are two seconds each; nothing here depends on them.
 vi.mock('@/lib/utils', async original => ({
 	...(await original<typeof import('@/lib/utils')>()),
@@ -101,6 +104,7 @@ beforeEach(() => {
 	vi.spyOn(console, 'error').mockImplementation(() => undefined);
 	sendAndConfirm.mockResolvedValue({ status: 'success' });
 	vi.mocked(useIsAwaitingFirstAnswer).mockReturnValue(false);
+	vi.mocked(usePromptsSwitch).mockReturnValue({ status: 'open' });
 });
 
 afterEach(() => {
@@ -155,6 +159,50 @@ describe('setting a plan the check lets through', () => {
 describe('revoking a plan is never switched off', () => {
 	it.each(FEE_TOKEN_STATES)('is sent under %s', async verdict => {
 		withVerdict(verdict);
+
+		await attempt(revoke);
+
+		expect(prepareContractCall).toHaveBeenCalledWith(
+			expect.objectContaining({ method: 'cancelSpendingLimit' }),
+		);
+		expect(sendAndConfirm).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('setting a plan while prompts are closed by the switch', () => {
+	const closedCases = FEE_TOKEN_STATES.flatMap(verdict =>
+		SWITCH_WORDINGS.map(wording => ({ verdict, wording })),
+	);
+
+	it.each(closedCases)(
+		'under $verdict, closed for $wording, nothing is approved, prepared or sent',
+		async ({ verdict, wording }) => {
+			withVerdict(verdict);
+			vi.mocked(usePromptsSwitch).mockReturnValue({ status: 'closed', wording });
+
+			const { onDone } = await attempt(setPlan);
+
+			expect(prepareContractCall).not.toHaveBeenCalled();
+			expect(sendAndConfirm).not.toHaveBeenCalled();
+			expect(onDone).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(SWITCH_WORDINGS)('closed for %s, the user sees the switch words', async wording => {
+		withVerdict('ok');
+		vi.mocked(usePromptsSwitch).mockReturnValue({ status: 'closed', wording });
+
+		await attempt(setPlan);
+
+		const copy = switchCopy(wording);
+		expect(toast.error).toHaveBeenCalledWith('Not sent', {
+			description: `${copy.title}. ${copy.description}`,
+		});
+	});
+
+	it.each(SWITCH_WORDINGS)('closed for %s, a plan can still be revoked', async wording => {
+		withVerdict('ok');
+		vi.mocked(usePromptsSwitch).mockReturnValue({ status: 'closed', wording });
 
 		await attempt(revoke);
 
