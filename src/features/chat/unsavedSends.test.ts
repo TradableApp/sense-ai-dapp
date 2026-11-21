@@ -86,6 +86,24 @@ describe('what a confirmed send that was not saved holds', () => {
 		});
 	});
 
+	it('the same hold when an id arrives as a bigint', () => {
+		const asStrings = unsavedSendFor(
+			'prompt',
+			{ conversationId: '5' },
+			{ promptMessageId: '7', answerMessageId: '8' },
+			OWNER,
+		);
+		const asBigints = unsavedSendFor(
+			'prompt',
+			{ conversationId: 5n },
+			{ promptMessageId: 7n, answerMessageId: 8n },
+			OWNER,
+		);
+
+		expect(asStrings).not.toBeNull();
+		expect(asBigints).toEqual(asStrings);
+	});
+
 	it('nothing, when the receipt gave no ids', () => {
 		expect(unsavedSendFor('prompt', { conversationId: '5' }, undefined, OWNER)).toBeNull();
 		expect(unsavedSendFor('branch', { originalConversationId: '5' }, {}, OWNER)).toBeNull();
