@@ -39,6 +39,57 @@ function element(source: string, tag: string): string {
 const hasLine = (text: string, attribute: string) =>
 	new RegExp(`^[ \\t]*${attribute.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[ \\t]*$`, 'm').test(text);
 
+/** The text of the call that starts at `start` (an opening parenthesis), brackets balanced. */
+function callAt(source: string, start: number): string {
+	let depth = 0;
+	for (let i = start; i < source.length; i += 1) {
+		if ('([{'.includes(source[i])) depth += 1;
+		if (')]}'.includes(source[i])) depth -= 1;
+		if (depth === 0) return source.slice(start, i + 1);
+	}
+	return source.slice(start);
+}
+
+/** Every `<name>.mutate(…)` call in the chat for the wrapped mutations, with its name. */
+const sendCalls = () =>
+	wrapped.flatMap(name =>
+		[...chat.matchAll(new RegExp(`\\b${name}\\.mutate\\(`, 'g'))].map(match => ({
+			name,
+			call: callAt(chat, (match.index ?? 0) + match[0].length - 1),
+		})),
+	);
+
+/**
+ * The handler `property` in `call`: from its name to the end of the arrow function's body
+ * (the balanced block, or the rest of the line for an expression body), or ''.
+ */
+function handler(call: string, property: string): string {
+	const start = call.search(new RegExp(`\\b${property}:`));
+	if (start === -1) return '';
+	const arrow = call.indexOf('=>', start);
+	if (arrow === -1) return call.slice(start);
+	const bodyStart = call.slice(arrow + 2).search(/\S/) + arrow + 2;
+	return call[bodyStart] === '{'
+		? call.slice(start, bodyStart) + callAt(call, bodyStart)
+		: call.slice(start, call.indexOf('\n', bodyStart));
+}
+
+/**
+ * Whether the handler gives its work back. An `async` arrow gives back a promise of all it
+ * awaits; an arrow whose body is an expression gives that back; a block body that is not
+ * `async` gives back nothing unless it starts with `return`. Work started inside and neither
+ * awaited nor returned (an `(async () => …)()` left running) is not counted by the lock, so
+ * it fails either way. Anything else (a named function passed in) fails: it cannot be read.
+ */
+function handsWorkBack(text: string): boolean {
+	const head = /^\w+:\s*(async\s+)?(?:\([^)]*\)|\w+)\s*=>\s*/.exec(text);
+	if (!head) return false;
+	const body = text.slice(head[0].length);
+	if (/(?<!await |return )\(async\b/.test(body)) return false;
+	if (head[1]) return true;
+	return !body.startsWith('{') || /^\{\s*return\b/.test(body);
+}
+
 describe('the chat sends one paid prompt at a time', () => {
 	it('takes its mutations and isSending through useOneSendAtATime', () => {
 		expect(hasLine(chat, '} = useOneSendAtATime(useChatMutations());')).toBe(true);
@@ -77,6 +128,36 @@ describe('the chat sends one paid prompt at a time', () => {
 		expect(
 			offenders(resolve(process.cwd(), 'src'), isOtherSource, new RegExp(wrapped.join('|'))),
 		).toEqual([]);
+	});
+
+	// The lock counts the chat's work after a confirmed send only if onSuccess gives it back.
+	// A handler that starts it and returns nothing releases the lock before the prompt is
+	// saved, and a press in between pays for the same prompt again.
+	it('starts four sends, and each onSuccess gives its work back to the lock', () => {
+		const calls = sendCalls();
+		expect(calls.map(c => c.name).sort()).toEqual(
+			[
+				'branchConversationMutation',
+				'initiatePromptMutation',
+				'initiatePromptMutation',
+				'regenerateMutation',
+			].sort(),
+		);
+		calls.forEach(({ name, call }) => {
+			const onSuccess = handler(call, 'onSuccess');
+			expect(onSuccess, name).not.toBe('');
+			expect(handsWorkBack(onSuccess), `${name}: ${onSuccess.slice(0, 80)}`).toBe(true);
+		});
+	});
+
+	// A prompt that was paid for but not saved on this device must not be sent again by
+	// reflex: the lock tells the user and asks for a sync, and the chat clears what it shows.
+	it('clears the composer and the edit box when a paid prompt could not be saved', () => {
+		const clears = sendCalls()
+			.filter(c => c.name === 'initiatePromptMutation')
+			.map(c => handler(c.call, 'onSaveFailed'));
+		expect(clears.some(text => /\breset\(\)/.test(text))).toBe(true);
+		expect(clears.some(text => /\bsetEditingMessageId\(null\)/.test(text))).toBe(true);
 	});
 
 	it.each(['EditPromptInput', 'MessageActions'])('passes the flag to %s', tag => {

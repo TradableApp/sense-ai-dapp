@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
 
+import * as Sentry from '@sentry/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { toast } from 'sonner';
 import { prepareContractCall, sendAndConfirmTransaction } from 'thirdweb';
 import {
 	type AbiEvent,
@@ -18,7 +20,14 @@ import agentAbi from '@/lib/abi/EVMAIAgent.json';
 import { encryptData } from '@/lib/crypto';
 import { blocksAction } from '@/lib/feeTokenCheck';
 
-import useOneSendAtATime from './useOneSendAtATime';
+import useOneSendAtATime, { forgetSaveFailureReports } from './useOneSendAtATime';
+
+vi.mock('@sentry/react', () => ({ captureException: vi.fn() }));
+const SESSION = vi.hoisted(() => ({
+	sessionKey: {} as CryptoKey,
+	ownerAddress: '0x00000000000000000000000000000000000000aa',
+}));
+vi.mock('@/features/auth/SessionProvider', () => ({ useSession: () => SESSION }));
 
 vi.mock('sonner', () => ({
 	toast: {
@@ -71,12 +80,14 @@ vi.mock('@/lib/crypto', () => ({ encryptData: vi.fn(async () => 'iv.cipher') }))
 vi.mock('@/lib/ecies', () => ({ default: vi.fn(async () => new Uint8Array([1, 2, 3, 4])) }));
 
 const sessionKey = {} as CryptoKey;
+const PROMPT_TEXT = 'hello again';
 const AGENT_ADDRESS = '0x00000000000000000000000000000000000000a9';
 
 type Sends = ReturnType<typeof useOneSendAtATime>;
 /** What the chat passes to `mutate` besides the variables. */
 type CallerCallbacks = {
 	onSuccess?: () => void | Promise<void>;
+	onSaveFailed?: () => void;
 	onError?: () => void;
 	onSettled?: () => void;
 };
@@ -93,7 +104,7 @@ const SENDS: { name: string; event: string; start: (_m: Sends, _o?: CallerCallba
 			m.initiatePromptMutation.mutate(
 				{
 					conversationId: '1',
-					promptText: 'hello again',
+					promptText: PROMPT_TEXT,
 					sessionKey,
 					parentId: 2,
 					parentCID: 'cid-2',
@@ -203,6 +214,7 @@ async function startAndWait(sends: { current: Sends }, start: (_m: Sends) => voi
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	forgetSaveFailureReports();
 	vi.stubEnv('VITE_ORACLE_PUBLIC_KEY', '0x04abcd');
 	vi.spyOn(window.crypto.subtle, 'exportKey').mockResolvedValue(new ArrayBuffer(32));
 	vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -432,6 +444,84 @@ describe('a confirmed send whose caller is still finishing', () => {
 
 		await startAndWait(sends, c.start, 2);
 		expect(console.error).toHaveBeenCalled();
+	});
+});
+
+describe('a confirmed send whose caller then fails to save it', () => {
+	/** Confirms `c`, then fails the caller's work after the transaction was confirmed. */
+	async function failedAfterConfirm(c: (typeof SENDS)[number], queryClient = newClient()) {
+		const onSaveFailed = vi.fn();
+		let fail: () => void = () => undefined;
+		const work = new Promise<void>((_resolve, reject) => {
+			// The prompt's text in the error, as a library's error could carry it.
+			fail = () => reject(new Error(`the local write failed for ${PROMPT_TEXT}`));
+		});
+		const sends = renderSends(queryClient).result;
+		await startAndWait(sends, m => c.start(m, { onSuccess: () => work, onSaveFailed }));
+		await act(async () => {
+			confirm(receiptWith(c.event));
+		});
+		await settleStarts();
+		await act(async () => {
+			fail();
+		});
+		await waitFor(() => expect(sends.current.isSending).toBe(false));
+		return { sends, onSaveFailed };
+	}
+
+	it.each(SENDS)('$name: the user is told it was sent and paid for and will appear', async c => {
+		await failedAfterConfirm(c);
+
+		expect(toast.warning).toHaveBeenCalledTimes(1);
+		const [title, options] = vi.mocked(toast.warning).mock.calls[0];
+		const description = String((options as { description?: string })?.description);
+		expect(title).toMatch(/sent/i);
+		expect(description).toMatch(/paid for/);
+		expect(description).toMatch(/sync/);
+		expect(description).toMatch(/no need to send it again/);
+	});
+
+	it.each(SENDS)("$name: the caller's onSaveFailed is called once", async c => {
+		const { onSaveFailed } = await failedAfterConfirm(c);
+
+		expect(onSaveFailed).toHaveBeenCalledTimes(1);
+	});
+
+	it.each(SENDS)('$name: a sync is asked for with the conversations key', async c => {
+		const queryClient = newClient();
+		const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+
+		await failedAfterConfirm(c, queryClient);
+
+		expect(invalidate).toHaveBeenCalledWith({
+			queryKey: ['conversations', SESSION.sessionKey, SESSION.ownerAddress],
+		});
+	});
+
+	it('is reported to Sentry once per page load, without the text of the prompt', async () => {
+		await failedAfterConfirm(SENDS[0]);
+		cleanup();
+		await failedAfterConfirm(SENDS[1]);
+
+		expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+		expect(JSON.stringify(vi.mocked(Sentry.captureException).mock.calls)).not.toContain(
+			PROMPT_TEXT,
+		);
+	});
+
+	it.each(SENDS)('$name saved: nothing is shown, cleared or reported', async c => {
+		const onSaveFailed = vi.fn();
+		const sends = renderSends().result;
+		await startAndWait(sends, m => c.start(m, { onSuccess: async () => undefined, onSaveFailed }));
+		await act(async () => {
+			confirm(receiptWith(c.event));
+		});
+		await settleStarts();
+		await waitFor(() => expect(sends.current.isSending).toBe(false));
+
+		expect(toast.warning).not.toHaveBeenCalled();
+		expect(onSaveFailed).not.toHaveBeenCalled();
+		expect(Sentry.captureException).not.toHaveBeenCalled();
 	});
 });
 
