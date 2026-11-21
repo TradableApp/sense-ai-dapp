@@ -257,7 +257,9 @@ describe('a revoke whose second step does not finish', () => {
 	it('gives the first line of the reason only, scrubbed', async () => {
 		sendAndConfirm
 			.mockResolvedValueOnce({ status: 'success' })
-			.mockRejectedValueOnce(new Error('HTTP request failed at https://rpc.example/v2/KEY123\nbody'));
+			.mockRejectedValueOnce(
+				new Error('HTTP request failed at https://rpc.example/v2/KEY123\nbody'),
+			);
 
 		await revoke();
 

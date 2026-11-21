@@ -144,9 +144,20 @@ test.describe('Spending plan management (T-PLAN)', () => {
 		await freshPlanModal.waitForTxCompletion();
 
 		const balanceBeforeCancel = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		// The plan left an approval for the escrow, so the revoke has a second step to take.
+		expect(
+			await getAllowance(TOKEN_ADDRESS, freshUserAccount.address, ESCROW_ADDRESS),
+		).toBeGreaterThan(0n);
 
 		await freshDashboardPage.managePlanButton.click();
 		await freshPlanModal.revoke();
+
+		// The revoke cancels the limit, then sets the approval for the escrow to zero.
+		await expect
+			.poll(() => getAllowance(TOKEN_ADDRESS, freshUserAccount.address, ESCROW_ADDRESS), {
+				timeout: 30_000,
+			})
+			.toBe(0n);
 
 		// Allowance model: nothing was escrowed at activation, so cancelling only
 		// clears the spending limit — the user's ABLE balance is unchanged.

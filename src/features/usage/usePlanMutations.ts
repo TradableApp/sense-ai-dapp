@@ -1,6 +1,6 @@
 import { type QueryClient, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { type Chain, getContract, prepareContractCall } from 'thirdweb';
+import { type Chain, getContract, prepareContractCall, readContract } from 'thirdweb';
 import { useActiveWallet, useSendAndConfirmTransaction } from 'thirdweb/react';
 
 import { CONTRACTS } from '@/config/contracts';
@@ -13,6 +13,7 @@ import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
 import { PaymentSwitchedOffError } from '@/lib/paymentGate';
 import { wait } from '@/lib/utils';
 
+import ApprovalNotClearedError, { REMOVE_APPROVAL_LABEL } from './ApprovalNotClearedError';
 import LimitNotSetError, { isReceiptNotFound } from './LimitNotSetError';
 
 /** An approval whose receipt did not come within thirdweb's wait. */
@@ -25,6 +26,9 @@ const APPROVAL_UNCONFIRMED =
  * Setting a plan approves the fee token, so it asks the payment gate first and refuses before
  * anything is built while plans are switched off, or while the fee token check has not yet
  * answered once. Revoking never asks: taking back a permission must stay possible always.
+ * Revoking cancels the escrow's limit and then sets the token approval for the escrow to
+ * zero; removing that approval again, from the notice a half-finished revoke shows, never
+ * asks either.
  */
 
 interface PlanMutationOptions {
@@ -142,6 +146,112 @@ async function approveAndSetLimit(
 	}
 }
 
+// Read with the standard signature, so the read does not depend on which token's ABI is synced.
+const ALLOWANCE_SIGNATURE =
+	'function allowance(address owner, address spender) view returns (uint256)';
+
+const SUCCESS_TITLE = 'Access Revoked';
+const SUCCESS_DESCRIPTION = 'The AI agent can no longer spend your tokens.';
+
+// One id for the notice that offers the approval of zero again, so a second failure
+// replaces it rather than stacking a second one.
+const APPROVAL_NOT_CLEARED_TOAST_ID = 'plan-approval-not-cleared';
+
+/** The approval the wallet has given the escrow on the fee token. */
+async function readEscrowAllowance(
+	chain: Chain,
+	contracts: ContractConfig,
+	owner: string | undefined,
+): Promise<bigint> {
+	if (!owner) throw new Error('No account to read the approval for');
+	const token = getContract({ client, chain, address: contracts.token.address });
+	const allowance = await readContract({
+		contract: token,
+		method: ALLOWANCE_SIGNATURE,
+		params: [owner, contracts.escrow.address],
+	} as unknown as Parameters<typeof readContract>[0]);
+	if (typeof allowance !== 'bigint') throw new Error('The approval read gave no number');
+	return allowance;
+}
+
+/**
+ * Sets the approval for the escrow to zero: one signature. Anything short of a confirmed
+ * success is an `ApprovalNotClearedError`, since the limit is already cancelled by then.
+ */
+async function clearApproval(
+	send: SendAndConfirm,
+	chain: Chain,
+	contracts: ContractConfig,
+	notice: string,
+): Promise<void> {
+	const noticeId = toast.info(notice);
+	try {
+		const receipt = await send(
+			contractCall(chain, contracts.token, 'approve', [contracts.escrow.address, 0n]),
+		);
+		if (receipt.status !== 'success') {
+			throw new Error('The approval of zero was reverted on chain, so the approval is unchanged.');
+		}
+	} catch (error) {
+		throw new ApprovalNotClearedError(error);
+	} finally {
+		toast.dismiss(noticeId);
+	}
+}
+
+/**
+ * Cancels the escrow's limit, then removes the approval for the escrow when one is left.
+ * The limit goes first: if the second step is declined, the plan is still gone. The other
+ * order would leave a limit standing with no approval behind it.
+ */
+async function cancelLimitAndClearApproval(
+	send: SendAndConfirm,
+	chain: Chain,
+	contracts: ContractConfig,
+	owner: string | undefined,
+): Promise<void> {
+	const revokeToastId = toast.info(
+		'Please confirm the transaction in your wallet to revoke access.',
+	);
+	try {
+		const cancel = await send(contractCall(chain, contracts.escrow, 'cancelSpendingLimit'));
+		// A mined transaction that reverted still resolves; only its status says it failed.
+		if (cancel.status !== 'success') {
+			throw new Error('The revoke was reverted on chain, so the plan still stands.');
+		}
+	} finally {
+		toast.dismiss(revokeToastId);
+	}
+
+	await wait(NODE_CATCH_UP_MS);
+	let allowance: bigint;
+	try {
+		allowance = await readEscrowAllowance(chain, contracts, owner);
+	} catch (error) {
+		throw new ApprovalNotClearedError(error, true);
+	}
+	if (allowance === 0n) return;
+
+	await clearApproval(
+		send,
+		chain,
+		contracts,
+		'Step 2/2: Please confirm removing the token approval in your wallet.',
+	);
+}
+
+/** What the user is told when the approval was not removed, with the step offered again. */
+function showApprovalNotCleared(error: ApprovalNotClearedError, retry: () => void): void {
+	const show = error.kind === 'failed' ? toast.error : toast.warning;
+	show(error.title, {
+		id: APPROVAL_NOT_CLEARED_TOAST_ID,
+		description: error.message,
+		// Kept until closed: the action is the only way to send the step again.
+		duration: Infinity,
+		action: { label: REMOVE_APPROVAL_LABEL, onClick: retry },
+	});
+}
+
 /** Asks the plan and the wallet's balance again, after the node has caught up. */
 async function refreshPlanQueries(
 	queryClient: QueryClient,
@@ -216,7 +326,10 @@ function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 	});
 }
 
-function useRevokePlanMutation({ onDone }: Pick<PlanMutationOptions, 'onDone'>) {
+function useRevokePlanMutation({
+	onDone,
+	retryClear,
+}: Pick<PlanMutationOptions, 'onDone'> & { retryClear: () => void }) {
 	const activeWallet = useActiveWallet();
 	const { mutateAsync: send } = useSendAndConfirmTransaction();
 	const queryClient = useQueryClient();
@@ -224,24 +337,28 @@ function useRevokePlanMutation({ onDone }: Pick<PlanMutationOptions, 'onDone'>) 
 	return useMutation<void, Error, void>({
 		mutationFn: async () => {
 			const { chain, contracts } = connectedContracts(activeWallet);
-			const revokeToastId = toast.info(
-				'Please confirm the transaction in your wallet to revoke access.',
+			await cancelLimitAndClearApproval(
+				send,
+				chain,
+				contracts,
+				activeWallet?.getAccount()?.address,
 			);
-			try {
-				await send(contractCall(chain, contracts.escrow, 'cancelSpendingLimit'));
-			} finally {
-				toast.dismiss(revokeToastId);
-			}
 		},
 		onSuccess: async () => {
-			toast.success('Access Revoked', {
-				description: 'The AI agent can no longer spend your tokens.',
-			});
+			toast.success(SUCCESS_TITLE, { description: SUCCESS_DESCRIPTION });
 			await refreshPlanQueries(queryClient, activeWallet);
 			onDone();
 		},
-		onError: error => {
-			console.error('revokeMutation Error:', error);
+		onError: async error => {
+			console.error('revokeMutation Error:', error.name);
+			if (error instanceof ApprovalNotClearedError) {
+				// The limit is cancelled: the plan is gone, so the dialog closes and the
+				// dashboard is read again, and the notice offers the step that is left.
+				showApprovalNotCleared(error, retryClear);
+				await refreshPlanQueries(queryClient, activeWallet);
+				onDone();
+				return;
+			}
 			toast.error('Revoke Failed', {
 				description: error.message || 'Could not revoke access. Please try again.',
 			});
@@ -249,9 +366,49 @@ function useRevokePlanMutation({ onDone }: Pick<PlanMutationOptions, 'onDone'>) 
 	});
 }
 
+/** Sends the approval of zero for the escrow again, and nothing else. */
+function useClearApprovalMutation() {
+	const activeWallet = useActiveWallet();
+	const { mutateAsync: send } = useSendAndConfirmTransaction();
+	const queryClient = useQueryClient();
+
+	const mutation = useMutation<void, Error, void>({
+		mutationFn: async () => {
+			try {
+				const { chain, contracts } = connectedContracts(activeWallet);
+				await clearApproval(
+					send,
+					chain,
+					contracts,
+					'Please confirm removing the token approval in your wallet.',
+				);
+			} catch (error) {
+				throw error instanceof ApprovalNotClearedError ? error : new ApprovalNotClearedError(error);
+			}
+		},
+		onSuccess: async () => {
+			toast.success(SUCCESS_TITLE, { description: SUCCESS_DESCRIPTION });
+			await refreshPlanQueries(queryClient, activeWallet);
+		},
+		onError: async error => {
+			console.error('clearApprovalMutation Error:', error.name);
+			if (error instanceof ApprovalNotClearedError) {
+				showApprovalNotCleared(error, () => mutation.mutate());
+			}
+			await refreshPlanQueries(queryClient, activeWallet);
+		},
+	});
+	return mutation;
+}
+
 export default function usePlanMutations(options: PlanMutationOptions) {
+	const clearApprovalMutation = useClearApprovalMutation();
 	return {
 		setPlanMutation: useSetPlanMutation(options),
-		revokeMutation: useRevokePlanMutation(options),
+		revokeMutation: useRevokePlanMutation({
+			onDone: options.onDone,
+			retryClear: () => clearApprovalMutation.mutate(),
+		}),
+		clearApprovalMutation,
 	};
 }

@@ -50,6 +50,7 @@ vi.mock('./usePlanMutations', () => ({
 	default: () => ({
 		setPlanMutation: { mutate: state.mutate, isPending: false },
 		revokeMutation: { mutate: vi.fn(), isPending: false },
+		clearApprovalMutation: { mutate: vi.fn(), isPending: false },
 	}),
 }));
 
