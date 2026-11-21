@@ -449,7 +449,11 @@ describe('a confirmed send whose caller is still finishing', () => {
 
 describe('a confirmed send whose caller then fails to save it', () => {
 	/** Confirms `c`, then fails the caller's work after the transaction was confirmed. */
-	async function failedAfterConfirm(c: (typeof SENDS)[number], queryClient = newClient()) {
+	async function failedAfterConfirm(
+		c: (typeof SENDS)[number],
+		queryClient = newClient(),
+		sent = 1,
+	) {
 		const onSaveFailed = vi.fn();
 		let fail: () => void = () => undefined;
 		const work = new Promise<void>((_resolve, reject) => {
@@ -457,7 +461,7 @@ describe('a confirmed send whose caller then fails to save it', () => {
 			fail = () => reject(new Error(`the local write failed for ${PROMPT_TEXT}`));
 		});
 		const sends = renderSends(queryClient).result;
-		await startAndWait(sends, m => c.start(m, { onSuccess: () => work, onSaveFailed }));
+		await startAndWait(sends, m => c.start(m, { onSuccess: () => work, onSaveFailed }), sent);
 		await act(async () => {
 			confirm(receiptWith(c.event));
 		});
@@ -501,7 +505,7 @@ describe('a confirmed send whose caller then fails to save it', () => {
 	it('is reported to Sentry once per page load, without the text of the prompt', async () => {
 		await failedAfterConfirm(SENDS[0]);
 		cleanup();
-		await failedAfterConfirm(SENDS[1]);
+		await failedAfterConfirm(SENDS[1], newClient(), 2);
 
 		expect(Sentry.captureException).toHaveBeenCalledTimes(1);
 		expect(JSON.stringify(vi.mocked(Sentry.captureException).mock.calls)).not.toContain(

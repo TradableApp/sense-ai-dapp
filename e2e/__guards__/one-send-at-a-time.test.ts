@@ -20,7 +20,7 @@ const mutations = read('src/hooks/useChatMutations.tsx');
 
 /** The mutations the lock wraps, by the name they have in `useChatMutations`. */
 const wrapped = [
-	...lock.matchAll(/startedAlone\(\s*(\w+),\s*isSendUnderWay,\s*untilFinished,?\s*\)/g),
+	...lock.matchAll(/startedAlone\(\s*(\w+),\s*isSendUnderWay,\s*untilFinished,\s*'[a-z]+',?\s*\)/g),
 ].map(match => match[1]);
 
 /**
