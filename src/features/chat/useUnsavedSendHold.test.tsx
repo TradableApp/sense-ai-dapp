@@ -197,10 +197,15 @@ describe('every reason a hold gives', () => {
 		expect(reason).not.toMatch(/reload/i);
 	});
 
-	it.each(PROMPT_REASONS)('says when it ends, and that a refund can then be claimed: %s', reason => {
-		expect(reason).toMatch(/back in your history/);
-		expect(reason).toMatch(/at the latest, an hour after it was sent, when a refund can be claimed/);
-	});
+	it.each(PROMPT_REASONS)(
+		'says when it ends, and that a refund can then be claimed: %s',
+		reason => {
+			expect(reason).toMatch(/back in your history/);
+			expect(reason).toMatch(
+				/at the latest, an hour after it was sent, when a refund can be claimed/,
+			);
+		},
+	);
 
 	// A branch's fee is paid directly: there is no refund to claim for it.
 	it('a branch says when it ends, and promises no refund', () => {
@@ -269,7 +274,9 @@ describe('the prompt shown from its receipt, kept with the hold', () => {
 		attachShownPrompt(queryClient, OWNER, '11', SHOWN);
 
 		expect(renderHold(queryClient).result.current.shownPrompt).toEqual(SHOWN);
-		expect(renderHold(queryClient, { activeConversationId: '6' }).result.current.shownPrompt).toBeNull();
+		expect(
+			renderHold(queryClient, { activeConversationId: '6' }).result.current.shownPrompt,
+		).toBeNull();
 	});
 
 	it('is not given back once the hold has ended', async () => {

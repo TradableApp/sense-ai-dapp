@@ -407,6 +407,8 @@ export function notePendingCount(
 			: next;
 	};
 	const next = apply(store.entries);
+	// A hold ended: the saved list is read again first, in case another tab changed it, and the
+	// same readings are applied to what is then held (the same result when nothing else changed).
 	if (next.length !== store.entries.length) changeAndSave(store, owner, apply);
 	// Only a peak or a count of readings moved: nothing saved changes, so nothing is written.
 	else if (next !== store.entries) announce(store, next);

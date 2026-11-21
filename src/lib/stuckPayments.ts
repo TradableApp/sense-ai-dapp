@@ -29,6 +29,12 @@ export const STUCK_PAGE_SIZE = 100;
 /** The subgraph refuses a skip past 5,000, so the last page starts there. */
 export const STUCK_MAX_PAGES = 5_000 / STUCK_PAGE_SIZE + 1;
 
+/**
+ * How many escrow reads are out at once. Each is its own call to the node, and a public node
+ * answers a burst with 429, which would fail the whole answer.
+ */
+export const STUCK_VERIFY_BATCH = 20;
+
 /** The escrow's status for a payment it still holds (`EscrowStatus.PENDING`). */
 const ESCROW_PENDING = 0;
 
@@ -67,7 +73,13 @@ export async function verifyStuck(
 	readStatus: (_id: string) => Promise<number>,
 	now: number,
 ): Promise<StuckPayment[]> {
-	const statuses = await Promise.all(candidates.map(payment => readStatus(payment.id)));
+	const statuses: number[] = [];
+	for (let start = 0; start < candidates.length; start += STUCK_VERIFY_BATCH) {
+		const batch = candidates.slice(start, start + STUCK_VERIFY_BATCH);
+		// One batch at a time: that is the limit on how many reads are out at once.
+		// eslint-disable-next-line no-await-in-loop
+		statuses.push(...(await Promise.all(batch.map(payment => readStatus(payment.id)))));
+	}
 	return candidates.flatMap((payment, index) => {
 		if (statuses[index] !== ESCROW_PENDING) return [];
 		const createdAt = Number(payment.createdAt) * 1000;

@@ -65,17 +65,20 @@ function useHoldExpiry(
 	owner: string | null | undefined,
 	holds: readonly UnsavedSend[],
 ) {
+	// The moment the first hold ends, as a number: the list itself is rebuilt on every reading
+	// of the pending count, and a timer keyed on it would be cleared and set again each time.
+	const firstEnd =
+		holds.length === 0 ? null : Math.min(...holds.map(send => send.confirmedAt + HOLD_LASTS_MS));
 	useEffect(() => {
-		if (!owner || holds.length === 0) return undefined;
+		if (!owner || firstEnd === null) return undefined;
 		const now = Date.now();
 		endExpiredSends(queryClient, owner, now);
-		const firstEnd = Math.min(...holds.map(send => send.confirmedAt + HOLD_LASTS_MS));
 		const timer = setTimeout(
 			() => endExpiredSends(queryClient, owner, Date.now()),
 			Math.max(0, firstEnd - now),
 		);
 		return () => clearTimeout(timer);
-	}, [queryClient, owner, holds]);
+	}, [queryClient, owner, firstEnd]);
 }
 
 const idsOf = (items: readonly WithId[] | undefined) =>

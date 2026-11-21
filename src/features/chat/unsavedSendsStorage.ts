@@ -59,8 +59,14 @@ function isInForce(confirmedAt: unknown, now: number): confirmedAt is number {
 	);
 }
 
+/** A conversation's id as a hold names it: conversations are numbered from 1. */
+const isConversationKey = (value: unknown): value is string => isId(value) && value !== '0';
+
 function areComposerKeys(value: unknown): value is string[] {
-	return Array.isArray(value) && value.every(key => key === NEW_CONVERSATION_KEY || isId(key));
+	return (
+		Array.isArray(value) &&
+		value.every(key => key === NEW_CONVERSATION_KEY || isConversationKey(key))
+	);
 }
 
 /** One saved hold rebuilt from the fields this build writes, or null if any is off. */
