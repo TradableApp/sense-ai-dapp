@@ -1,5 +1,7 @@
 /**
- * Transfers ABLE tokens from a funded wallet to a recipient.
+ * Transfers fee tokens (any ERC-20 at VITE_TOKEN_CONTRACT_ADDRESS, read with its own decimals)
+ * from a funded wallet to a recipient. SenseToken moves only when the sender or the recipient
+ * is its owner or listed by it. The console lines label amounts ABLE whatever the token.
  * Intended for localnet and testnet setup — funded test wallets for E2E testing.
  *
  * Run via:
@@ -7,13 +9,13 @@
  *   bun run fund:testnet
  *
  * Required env vars (loaded from the --env-file for the chosen network):
- *   VITE_TOKEN_CONTRACT_ADDRESS  — AbleToken proxy address
+ *   VITE_TOKEN_CONTRACT_ADDRESS  — the fee token's proxy address
  *   VITE_RPC_URL                 — JSON-RPC endpoint
- *   FUND_PRIVATE_KEY             — sender private key (must hold sufficient ABLE)
+ *   FUND_PRIVATE_KEY             — sender private key (must hold enough of the token)
  *   FUND_RECIPIENT               — recipient address
  *
  * Optional:
- *   FUND_AMOUNT                  — amount in ABLE (default: 100)
+ *   FUND_AMOUNT                  — amount in whole tokens (default: 100)
  *   FUND_NETWORK                 — chain name surfaced to viem (default: "chain-{chainId}")
  *
  * Localnet defaults (Hardhat Account #0 key is publicly known — safe to use here):

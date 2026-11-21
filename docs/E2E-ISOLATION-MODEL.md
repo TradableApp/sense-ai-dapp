@@ -62,7 +62,7 @@ fresh accounts — and even then prefer a localnet-only gate on the one test, as
 A pristine per-test account gives the same isolation as a revert without rewinding the chain.
 The allocator (`e2e/helpers/fresh-account.ts`) hands out Hardhat accounts 2–249, provisions ETH
 and impersonation at claim time, and resets per invocation (keyed on genesis hash). A fresh
-account holds **zero ABLE** by construction — several specs depend on that.
+account holds **zero fee tokens** by construction — several specs depend on that.
 
 ---
 

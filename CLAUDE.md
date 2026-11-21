@@ -62,12 +62,12 @@ child) the run dies partway and leaves the stack up. Detach with `Ctrl-b d`; it 
 
 ## Architecture
 
-### Provider Stack (`src/main.jsx`)
+### Provider Stack (`src/main.tsx`)
 
 Providers wrap the app in this order (innermost first in terms of dependency):
 `BrowserRouter` → `ThirdwebProvider` → Redux `Provider` → `QueryClientProvider` → `PostHogProvider` → `ThemeProvider` → `SessionProvider`
 
-### Route Structure (`src/pages/App.jsx`)
+### Route Structure (`src/pages/App.tsx`)
 
 Public routes: `/auth`, `/error`, `/privacy-policy`, `/terms-and-conditions`, `/website-disclaimer`
 
@@ -85,7 +85,7 @@ All feature pages are lazy-loaded. App waits for Firebase and Thirdweb to initia
 
 All conversation and message data is encrypted client-side with the user's `sessionKey` using AES-GCM before being stored in **IndexedDB** (via Dexie, `src/lib/db.ts`). The DB schema has four tables: `conversations`, `messageCache`, `searchIndex` and `userMetadata` (the sync cursor).
 
-There is one database per agent contract, named `SenseAI:<chainId>:<agent address>` by `src/lib/localStoreName.ts`. Conversation ids are counted by the agent, so a newly deployed agent starts again at 1; in a shared database a returning wallet would see the two agents' conversations merged and the old sync cursor would hide the new history. A missing or malformed chain id or agent address throws instead of naming a shared store, and `vite.config.ts` runs the same rule (`assertLocalStoreConfig`, which calls the function the browser calls) so a build or dev server stops with the reason rather than shipping a blank page; the reason says what was expected and describes the refused value by its shape only (empty, length, `0x` prefix, all hex), so a key pasted into the wrong setting is never printed (Vitest has its own configuration and does not run it; and when a running dev server is restarted by an edited settings file that fails the check, Vite prints the reason and keeps serving the old settings): the store module is in the first bundle, ahead of Sentry and the error boundary. A localnet build or a unit-test run with no agent address (the browser tests that run against no contracts; a test that loads the module unmocked) uses `SenseAI:localnet:unconfigured`. The `e2e/__guards__/local-store-per-agent` guard allows the Dexie library to be loaded only in `src/lib/db.ts` (type imports aside), one database there named from the build's chain id and agent address by `resolveLocalStoreName` imported from `localStoreName` (a local function of that name fails it), and requires the check in `vite.config.ts`. The `e2e/__guards__/build-config-checks` test runs the real Vite configuration, so a check still written there but no longer reached fails too. A localnet redeploy puts the agent at the same address, so after a chain reset clear the site data in a browser that was used before it. A database from before this naming (`SenseAI`) is neither read nor deleted; the wallet's history is synced again from the subgraph.
+There is one database per agent contract, named `SenseAI:<chainId>:<agent address>` by `src/lib/localStoreName.ts`. Conversation ids are counted by the agent, so a newly deployed agent starts again at 1; in a shared database a returning wallet would see the two agents' conversations merged and the old sync cursor would hide the new history. A missing or malformed chain id or agent address throws instead of naming a shared store, and `vite.config.ts` runs the same rule (`assertLocalStoreConfig`, which calls the function the browser calls) so a build or dev server stops with the reason rather than shipping a blank page; the reason says what was expected and describes the refused value by its shape only (empty, length, `0x` prefix, all hex), so a key pasted into the wrong setting is never printed (Vitest has its own configuration and does not run it; and when a running dev server is restarted by an edited settings file that fails the check, Vite prints the reason and keeps serving the old settings): the store module is in the first bundle, ahead of Sentry and the error boundary. A localnet build or a unit-test run with no agent address (the browser tests that run against no contracts; a test that loads the module unmocked) uses `SenseAI:localnet:unconfigured`. The `e2e/__guards__/local-store-per-agent` guard allows the Dexie library to be loaded only in `src/lib/db.ts` (type imports aside), one database there named from the build's chain id and agent address by `resolveLocalStoreName` imported from `localStoreName` (a local function of that name fails it), and requires this check and the fee token check in `vite.config.ts`. The `e2e/__guards__/build-config-checks` test runs the real Vite configuration, this check and the fee token check both, so a check still written there but no longer reached fails too; `vite preview`, which only serves a bundle that already passed, is not checked. A localnet redeploy puts the agent at the same address, so after a chain reset clear the site data in a browser that was used before it. A database from before this naming (`SenseAI`) is neither read nor deleted; the wallet's history is synced again from the subgraph.
 
 **`src/lib/dataService.ts`** — all IndexedDB read/write operations. Functions encrypt/decrypt on every access.
 
@@ -176,8 +176,8 @@ This dApp is the user-facing layer of the SenseAI stack. It depends on four sibl
 | -------------------- | ------------------------------------------------------------------------------------------------- |
 | `tokenized-ai-agent` | Provides `EVMAIAgent` and `EVMAIAgentEscrow` contracts that handle all writes                     |
 | `sense-ai-subgraph`  | Provides the GraphQL API for all read queries (conversations, messages, prompt status, activity)  |
-| `able-contracts`     | Provides `AbleToken` — the ERC20 payment token users must approve before prompting                |
-| `sense-contracts`    | Provides `SenseToken` — the other fee token; moves only to or from addresses its owner has listed |
+| `able-contracts`     | Provides `AbleToken` — the other fee token the code supports (`VITE_FEE_TOKEN=ABLE`)              |
+| `sense-contracts`    | Provides `SenseToken` — the launch fee token; moves only to or from addresses its owner lists     |
 
 ### ABI Sync Process
 
@@ -219,22 +219,18 @@ These are hardcoded in `EVMAIAgentEscrow`. Do not guess at them — verify again
 
 `VITE_ORACLE_PUBLIC_KEY` must match the public key of the active ROFL TEE oracle instance. If this key is stale or missing, `createEncryptedPayloads()` either fails silently or produces ciphertext the oracle cannot decrypt — prompts are submitted on-chain but never answered. Validate this key is present and current whenever the oracle is redeployed.
 
-### Ethers.js Note
+## Phase 3 Upgrades
 
-`ethers` v6 is currently listed as a direct dependency but is functionally redundant alongside ThirdWeb v5, which is built on viem internally. Removing it is planned for Phase 3.
+Where each Phase 3 upgrade stands:
 
-## Phase 3 Planned Upgrades
-
-The following changes are planned for `sense-ai-dapp` after Phase 2 is merged:
-
-| Change                   | Detail                                                                                                                                 |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| **Bun**                  | ✅ Done — `npm` replaced with Bun (`bun.lock` committed, CI runs on Bun 1.3.14).                                                       |
-| **viem**                 | Add as explicit direct dependency (ThirdWeb v5 exposes viem's ABI utils; explicit dep makes tree-shaking clear and allows direct use). |
-| **Remove ethers.js**     | Remove `ethers` from `package.json` and all import sites. Replace with ThirdWeb v5 / viem equivalents.                                 |
-| **TypeScript migration** | Migrate from `.jsx`/`.js` to `.tsx`/`.ts`. Add `tsconfig.json`.                                                                        |
-| **GraphQL codegen**      | Add `@graphql-codegen/cli` to auto-generate typed query hooks from `schema.graphql` + `.graphql` query files.                          |
-| **NO wagmi**             | ThirdWeb v5 already ships wagmi-equivalent React hooks. Do not add wagmi as a separate dependency.                                     |
+| Change                   | State                                                                                                                                                                                                                                                                                        |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Bun**                  | Done — `bun.lock` committed; CI installs with Bun 1.3.14 (`.github/workflows/ci.yml`).                                                                                                                                                                                                       |
+| **viem**                 | Done — a direct dependency in `package.json`, imported in `src/`.                                                                                                                                                                                                                            |
+| **Remove ethers.js**     | Done — `ethers` is not in `package.json` and nothing in `src/`, `e2e/` or `scripts/` imports it.                                                                                                                                                                                             |
+| **TypeScript migration** | Done for `src/` — no `.js`/`.jsx` files remain there; `tsconfig.json` (app) and `tsconfig.e2e.json` (Playwright).                                                                                                                                                                            |
+| **GraphQL codegen**      | Partly done — `bun run codegen` (`codegen.ts`, also run before `bun run typecheck`) writes the schema's types to `src/lib/graph/generated.ts`, which is not committed. The query result types in `src/lib/graph/query-types.ts` are written by hand from them; no query hooks are generated. |
+| **NO wagmi**             | Standing rule — ThirdWeb v5 already ships wagmi-equivalent React hooks. Do not add wagmi as a separate dependency.                                                                                                                                                                           |
 
 Vitest remains the test runner after Phase 3 — it integrates with the Vite pipeline (aliases, plugins, env). Bun adoption brings speed to install/run via `bun run vitest` without needing to change the test framework.
 

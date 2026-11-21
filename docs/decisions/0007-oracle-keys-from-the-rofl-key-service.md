@@ -5,6 +5,9 @@
 publisher loses the oracle role; the subgraph indexing of both. Not built yet: the oracle taking
 its keys from the key service and publishing, the ROFL manifests without a key secret, the dApp
 reading the key from chain, and the migration of Base Sepolia.
+**Status note:** Base Sepolia is not migrated. A fresh agent and escrow pair is deployed there
+instead, as on Base mainnet, so the migration named above and under Consequences does not
+happen; the decision text below is kept as it was accepted.
 **Applies to:** system-wide (`tokenized-ai-agent` contracts and oracle, `sense-ai-subgraph`,
 `sense-ai-dapp`, `sense-ai-e2e`).
 **Date:** 2026-11-14

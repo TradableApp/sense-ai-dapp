@@ -70,11 +70,12 @@ This guide explains how to set up the complete local environment. This is requir
 
 ### 1. Directory Structure
 
-**Crucial:** The `sync-contracts` script assumes the following sibling directory structure. Ensure all three repositories are cloned into the same parent folder:
+**Crucial:** The `sync-contracts` script copies the contract ABIs from sibling directories and stops before writing anything if one is missing. Clone these repositories into the same parent folder (or point `REPOS_ROOT` at the folder that holds them):
 
 ```text
 .
-├── able-contracts/         # The ERC-20 Token logic
+├── sense-contracts/        # SenseToken, the launch fee token
+├── able-contracts/         # AbleToken, the other fee token the code supports
 ├── tokenized-ai-agent/     # The Agent & Escrow logic
 └── sense-ai-dapp/          # This repository
 ```
@@ -103,11 +104,11 @@ For security, **never** import publicly-known private keys (like the ones from H
 
 ### 4. Deploy Smart Contracts
 
-**Deploy Token:**
+**Deploy the fee token:**
 
-1.  Open a new terminal in `able-contracts`.
-2.  Run: `bun run deploy:localnet`
-3.  **Copy** the deployed `AbleToken` address.
+1.  Open a new terminal in `sense-contracts`.
+2.  Run: `bun run deploy:localnet` (it reads that repository's `.env.localnet`, which names the token, its supply and its owner).
+3.  **Copy** the `SenseToken proxy` address it prints.
 
 **Deploy Agent:**
 
@@ -115,6 +116,10 @@ For security, **never** import publicly-known private keys (like the ones from H
 2.  Open `.env.base-localnet` (or create it). Set `TOKEN_CONTRACT_ADDRESS` to the address you just copied.
 3.  Run: `bun run deploy:base-localnet`
 4.  **Copy** the `EVMAIAgent` and `EVMAIAgentEscrow` addresses from the output.
+
+**List the escrow on the token:**
+
+`SenseToken` moves only to or from its owner or an address the owner has listed. From the owner's account, call `setTransferExempt(<EVMAIAgentEscrow address>, true)` on the token, and the same for the escrow's treasury (`TREASURY_ADDRESS`, or the deployer when it is unset) unless the treasury is the owner. Until they are listed, the dApp's fee token check shows a notice and switches off the paid actions it names.
 
 ### 5. Configure the dApp
 
@@ -124,8 +129,8 @@ For security, **never** import publicly-known private keys (like the ones from H
     ```sh
     bun run sync-contracts
     ```
-3.  **Update Addresses:**
-    Open `src/config/contracts.js`. Update the `[LOCAL_CHAIN_ID]` section with the new addresses you copied in Step 4.
+3.  **Set the localnet settings:**
+    In `.env.localnet` (the settings file Vite reads in `localnet` mode), set `VITE_CHAIN_ID=31337`, `VITE_FEE_TOKEN=SENSE`, and `VITE_TOKEN_CONTRACT_ADDRESS`, `VITE_AGENT_CONTRACT_ADDRESS` and `VITE_ESCROW_CONTRACT_ADDRESS` to the addresses from Step 4; `src/config/contracts.ts` reads the addresses from these settings. The other settings the app reads are declared in `src/vite-env.d.ts`. A build or dev server stops with the reason when `VITE_FEE_TOKEN` is not exactly `SENSE` or `ABLE`, or when the chain id or the agent address is malformed.
 
 4.  **Run Localnet Mode:**
     Start the app pointing to your local hardhat node:
@@ -171,4 +176,4 @@ Both scripts deploy `--only hosting:sense-ai` (the target in `firebase.json`); n
 
 - `bun run lint`: Runs ESLint.
 - `bun run format`: Formats code with Prettier.
-- `bun run sync-contracts`: Copies the latest `EVMAIAgent.json`, `EVMAIAgentEscrow.json`, and `AbleToken.json` artifacts from the sibling repositories into `src/lib/abi/`.
+- `bun run sync-contracts`: Copies the compiled `EVMAIAgent.json`, `EVMAIAgentEscrow.json`, `SenseToken.json` and `AbleToken.json` artifacts from the sibling repositories into `src/lib/abi/` and records each one's source commit in `src/lib/abi/SOURCE.json`. Compile the sibling repositories first.

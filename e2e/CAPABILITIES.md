@@ -115,7 +115,7 @@ path m/44'/60'/0'/0/i). Indices `0..E2E_TESTNET_ACCOUNT_COUNT-1` are pre-funded 
 `fund` stage (`bun run e2e:testnet:fund`); index 0 is the shared "user" behind
 `authenticatedPage` / `injectMockWallet` and the oracle smoke's sender (`e2e:testnet:key -- 0`).
 `allocateFreshAccount` claims indices beyond those, funded just in time from the treasury
-(0.0005 ETH + 5 ABLE, `e2e/testnet/treasury.ts`) and recorded in the accounts file BEFORE the
+(0.0005 ETH + 5 fee tokens, `e2e/testnet/treasury.ts`) and recorded in the accounts file BEFORE the
 transfer; the `freshUserAccount` fixture sweeps the account back on teardown so the float
 outstanding is one account's worth. `bun run e2e:testnet:sweep` returns everything the file lists
 and the runner reads every balance from the chain itself as the verdict. The accounts file holds
@@ -140,7 +140,7 @@ missing or malformed variable fails once, by name, before any request.
 `smoke`, `ui`, `auth`, `chat`, `history`, `branching`, `cancel`, `metadata`, `search`,
 `versions`, `multi-device`, `live-sync`, `activity`, `graph`, `reasoning`, `remaining-features`,
 `plan`. `T-BRANCH-08` (regenerating an inherited answer inside a branch: the new answer renders in the branch, is indexed under the branch and leaves the original untouched) needs agent contracts that file a regeneration under the conversation it was asked in; against older contracts the answer is filed under the original and the test fails. It checks the stored state on a second device (a clean browser context): the original is unchanged and the regenerated answer is in the branch. `T-BRANCH-09` and `T-BRANCH-10` open a branch on a second device, which holds none of the copies the branching device made: the dApp rebuilds the inherited history from the original conversation's messages, up to the branch point and no further (a prompt sent in the original after the branch was made does not appear in the branch). `T-BRANCH-11` does the same for a branch made after an edit: the second device shows the edited path the branch inherited, not the prompt the edit replaced. Chain-aware adaptations: `T-INIT-SMOKE-01/02` check the configured RPC's chain id and the Graph
-endpoint; `cancel` advances time by WAITING (`advanceTime`: Base's 2 s blocks move
+endpoint; `cancel` advances time by WAITING (`advanceTime`: Base's blocks, about every 200 ms, move
 `block.timestamp` on their own) instead of `evm_increaseTime`; `T-REASON-01` asserts a real
 reasoning block with ≥ 1 step and ≥ 1 http(s) source (the mock sentinel is inert on a real
 oracle) and `T-REASON-02` is testnet-skipped; `T-STUCK-01` and `T-PENDING-01` are testnet-skipped

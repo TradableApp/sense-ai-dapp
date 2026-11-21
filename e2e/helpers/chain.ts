@@ -413,7 +413,7 @@ export interface SendFromRequest {
 
 /**
  * Move chain time forward by `seconds`. Localnet: `evm_increaseTime` + a mined block. Testnet:
- * wall-clock wait — a public chain's `block.timestamp` advances on its own (Base: 2 s blocks),
+ * wall-clock wait — a public chain's `block.timestamp` advances on its own (Base: a block about every 200 ms),
  * so for the short protocol windows (the 3 s cancellation timeout) waiting IS advancing. Long
  * windows (the 1 h refund timeout) are not reachable this way; those specs stay localnet-only.
  */
