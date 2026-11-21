@@ -1,13 +1,139 @@
-import type { UnsavedSend } from './unsavedSends';
+import { REFUND_TIMEOUT_MS } from '@/lib/constants';
+import { resolveLocalStoreName } from '@/lib/localStoreName';
 
-export function savedSendsKey(_owner: string): string | null {
-	return null;
+import type { SendKind, UnsavedSend } from './unsavedSends';
+
+/**
+ * Saving the holds of paid sends that were confirmed but not saved here, so a reload keeps
+ * them. What is saved is ids, the kind, conversation keys and the confirmation time: never
+ * a prompt's text or any message content (the prompt shown from its receipt stays in memory).
+ * Every storage access is wrapped: storage that throws leaves the holds in memory only.
+ */
+
+/** How long a hold lasts at most: until a refund can be claimed for its send. */
+export const HOLD_LASTS_MS = REFUND_TIMEOUT_MS;
+
+// A saved time this far ahead of the clock was not written by this build.
+const CLOCK_SKEW_MS = 5 * 60_000;
+
+const KINDS: readonly SendKind[] = ['prompt', 'regenerate', 'branch'];
+const ID = /^\d{1,78}$/;
+const NEW_CONVERSATION_KEY = 'new';
+
+/** The agent store this build reads, or null when the build names none it could use. */
+function agentStoreName(): string | null {
+	try {
+		return resolveLocalStoreName(
+			import.meta.env.VITE_CHAIN_ID,
+			import.meta.env.VITE_AGENT_CONTRACT_ADDRESS,
+			import.meta.env.MODE,
+		);
+	} catch {
+		return null;
+	}
 }
 
+/** Where `owner`'s holds are saved for this build's agent store, or null when none can be. */
+export function savedSendsKey(owner: string): string | null {
+	const store = agentStoreName();
+	return store ? `senseai:unsavedSends:${store}:${owner.toLowerCase()}` : null;
+}
+
+type Fields = Record<string, unknown>;
+const isFields = (value: unknown): value is Fields => typeof value === 'object' && value !== null;
+const isId = (value: unknown): value is string => typeof value === 'string' && ID.test(value);
+
+/** A saved `{ conversationKey, <idName> }`, null, or undefined when it is neither. */
+function readPlace(value: unknown, idName: 'answerId' | 'messageId') {
+	if (value === null) return null;
+	if (!isFields(value) || !isId(value.conversationKey) || !isId(value[idName])) return undefined;
+	return { conversationKey: value.conversationKey, id: value[idName] as string };
+}
+
+function isInForce(confirmedAt: unknown, now: number): confirmedAt is number {
+	return (
+		typeof confirmedAt === 'number' &&
+		Number.isFinite(confirmedAt) &&
+		confirmedAt <= now + CLOCK_SKEW_MS &&
+		confirmedAt + HOLD_LASTS_MS > now
+	);
+}
+
+function areComposerKeys(value: unknown): value is string[] {
+	return Array.isArray(value) && value.every(key => key === NEW_CONVERSATION_KEY || isId(key));
+}
+
+/** One saved hold rebuilt from the fields this build writes, or null if any is off. */
+function readSend(value: unknown, owner: string, now: number): UnsavedSend | null {
+	if (!isFields(value)) return null;
+	const { kind, composerKeys, listedAs, endsOnPendingFall, confirmedAt } = value;
+	const isOwners =
+		typeof value.owner === 'string' && value.owner.toLowerCase() === owner.toLowerCase();
+	if (!isOwners || !KINDS.includes(kind as SendKind) || typeof endsOnPendingFall !== 'boolean') {
+		return null;
+	}
+	if (!isInForce(confirmedAt, now) || !areComposerKeys(composerKeys)) return null;
+	if (listedAs !== null && !isId(listedAs)) return null;
+	const answer = readPlace(value.answer, 'answerId');
+	const shownAs = readPlace(value.shownAs, 'messageId');
+	if (answer === undefined || shownAs === undefined) return null;
+	return {
+		owner: value.owner as string,
+		kind: kind as SendKind,
+		composerKeys,
+		answer: answer && { conversationKey: answer.conversationKey, answerId: answer.id },
+		shownAs: shownAs && { conversationKey: shownAs.conversationKey, messageId: shownAs.id },
+		listedAs,
+		endsOnPendingFall,
+		confirmedAt,
+	};
+}
+
+/** `owner`'s saved holds in force at `now`; anything this build did not write is ignored. */
 export function parseSavedSends(
-	_raw: string | null,
-	_owner: string,
-	_now: number,
+	raw: string | null,
+	owner: string,
+	now: number,
 ): readonly UnsavedSend[] {
-	return [];
+	if (raw === null) return [];
+	try {
+		const parsed: unknown = JSON.parse(raw);
+		if (!Array.isArray(parsed)) return [];
+		return parsed.flatMap(value => {
+			const send = readSend(value, owner, now);
+			return send ? [send] : [];
+		});
+	} catch {
+		return [];
+	}
+}
+
+/** What is saved of a hold: ids, kind, keys and time, nothing kept beside it in memory. */
+function savedFields(send: UnsavedSend) {
+	const { owner, kind, composerKeys, answer, shownAs, listedAs, endsOnPendingFall, confirmedAt } =
+		send;
+	return { owner, kind, composerKeys, answer, shownAs, listedAs, endsOnPendingFall, confirmedAt };
+}
+
+/** `owner`'s saved holds, or none when storage cannot be read. */
+export function readSavedSends(owner: string, now: number): readonly UnsavedSend[] {
+	const key = savedSendsKey(owner);
+	if (!key) return [];
+	try {
+		return parseSavedSends(localStorage.getItem(key), owner, now);
+	} catch {
+		return [];
+	}
+}
+
+/** Saves `owner`'s holds, or removes the entry when there are none. */
+export function writeSavedSends(owner: string, sends: readonly UnsavedSend[]): void {
+	const key = savedSendsKey(owner);
+	if (!key) return;
+	try {
+		if (sends.length === 0) localStorage.removeItem(key);
+		else localStorage.setItem(key, JSON.stringify(sends.map(savedFields)));
+	} catch {
+		// The holds stay in memory for this page: a reload then shows what the chain has.
+	}
 }

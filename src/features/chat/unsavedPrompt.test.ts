@@ -3,7 +3,7 @@ import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import showUnsavedPrompt from './unsavedPrompt';
-import { holdUnsavedSend, unsavedSendFor, type UnsavedSend, useUnsavedSends } from './unsavedSends';
+import { holdUnsavedSend, type UnsavedSend, unsavedSendFor, useUnsavedSends } from './unsavedSends';
 
 const OWNER = '0x00000000000000000000000000000000000000aa';
 const IDS = { conversationId: '5', promptMessageId: '11', answerMessageId: '12' };

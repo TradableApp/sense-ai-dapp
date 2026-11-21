@@ -11,8 +11,11 @@ import {
 } from '@/components/ai/sendingReason';
 
 import {
+	endExpiredSends,
 	endShownSends,
+	HOLD_LASTS_MS,
 	NEW_CONVERSATION_KEY,
+	type ShownMessage,
 	type UnsavedSend,
 	useUnsavedSends,
 } from './unsavedSends';
@@ -36,6 +39,8 @@ export interface UnsavedSendHold {
 	/** Why edit and its save are off in this conversation; null when they are not. */
 	editHeldReason: string | null;
 	heldReasonFor: (_answerId: string | number | null | undefined) => string | null;
+	/** The prompt shown from its receipt for a hold in this conversation, to show again. */
+	shownPrompt: readonly ShownMessage[] | null;
 }
 
 /** Why the composer is held, or null: "here", or a send that started another conversation. */
@@ -43,6 +48,34 @@ function composerReason(holds: readonly UnsavedSend[], conversationKey: string |
 	const key = conversationKey ?? NEW_CONVERSATION_KEY;
 	if (!holds.some(send => send.composerKeys.includes(key))) return null;
 	return conversationKey ? UNSAVED_SEND_COMPOSER_REASON : UNSAVED_NEW_CONVERSATION_REASON;
+}
+
+/** The prompt shown from its receipt for a hold in this conversation, or null. */
+function shownPromptIn(holds: readonly UnsavedSend[], conversationKey: string | null) {
+	if (!conversationKey) return null;
+	const held = holds.find(
+		send => send.shownAs?.conversationKey === conversationKey && send.shownPrompt,
+	);
+	return held?.shownPrompt ?? null;
+}
+
+/** Ends `owner`'s holds as each reaches `HOLD_LASTS_MS` after its send was confirmed. */
+function useHoldExpiry(
+	queryClient: QueryClient,
+	owner: string | null | undefined,
+	holds: readonly UnsavedSend[],
+) {
+	useEffect(() => {
+		if (!owner || holds.length === 0) return undefined;
+		const now = Date.now();
+		endExpiredSends(queryClient, owner, now);
+		const firstEnd = Math.min(...holds.map(send => send.confirmedAt + HOLD_LASTS_MS));
+		const timer = setTimeout(
+			() => endExpiredSends(queryClient, owner, Date.now()),
+			Math.max(0, firstEnd - now),
+		);
+		return () => clearTimeout(timer);
+	}, [queryClient, owner, holds]);
 }
 
 const idsOf = (items: readonly WithId[] | undefined) =>
@@ -65,6 +98,8 @@ export default function useUnsavedSendHold({
 	const conversationKey = activeConversationId ? String(activeConversationId) : null;
 	const storedMessageIds = useMemo(() => idsOf(storedMessages), [storedMessages]);
 	const listedConversationIds = useMemo(() => idsOf(conversations), [conversations]);
+
+	useHoldExpiry(queryClient, ownerAddress, holds);
 
 	useEffect(() => {
 		if (!ownerAddress || holds.length === 0) return;
@@ -96,5 +131,6 @@ export default function useUnsavedSendHold({
 		composerHoldReason,
 		editHeldReason,
 		heldReasonFor,
+		shownPrompt: shownPromptIn(holds, conversationKey),
 	};
 }

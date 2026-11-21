@@ -235,6 +235,8 @@ async function startAndWait(sends: { current: Sends }, start: (_m: Sends) => voi
 }
 
 beforeEach(() => {
+	// Holds are saved per wallet: each test starts with none.
+	localStorage.clear();
 	vi.clearAllMocks();
 	forgetSaveFailureReports();
 	currentSession.value = null;

@@ -344,7 +344,7 @@ describe('createStatePoller', () => {
 
 		expect(deps.read).toHaveBeenCalledTimes(3);
 		expect(onReading).toHaveBeenCalledTimes(3);
-		expect(onReading).toHaveBeenLastCalledWith(snap());
+		expect(onReading).toHaveBeenLastCalledWith(snap(), expect.any(Number));
 		expect(deps.onChange).not.toHaveBeenCalled();
 		poller.stop();
 	});

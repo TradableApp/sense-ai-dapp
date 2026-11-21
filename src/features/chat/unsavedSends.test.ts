@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { REFUND_TIMEOUT_MS } from '@/lib/constants';
 
 import {
+	attachShownPrompt,
 	endExpiredSends,
 	endsHoldAt,
 	endShownSends,
@@ -12,7 +13,6 @@ import {
 	holdUnsavedSend,
 	NEW_CONVERSATION_KEY,
 	notePendingCount,
-	attachShownPrompt,
 	type UnsavedSend,
 	unsavedSendFor,
 	useUnsavedSends,
