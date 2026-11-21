@@ -236,3 +236,15 @@ export function useUnsavedSends(
 		return sends.length > 0 ? sends.map(entry => entry.send) : NONE;
 	}, [entries, owner]);
 }
+
+/** How long a hold lasts at most: until a refund can be claimed. */
+export const HOLD_LASTS_MS = 0;
+
+export function endExpiredSends(_queryClient: QueryClient, _owner: string, _now: number): void {}
+
+export function attachShownPrompt(
+	_queryClient: QueryClient,
+	_owner: string,
+	_messageId: string,
+	_messages: readonly object[],
+): void {}

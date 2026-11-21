@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { addMessageToConversation } from '@/lib/dataService';
+import { addMessageToConversation, createNewConversation } from '@/lib/dataService';
 import { appendLiveMessages, setActiveConversationId } from '@/store/chatSlice';
 
 import Chat from './Chat';
@@ -118,6 +118,7 @@ const NOT_HELD = {
 	composerHoldReason: null,
 	editHeldReason: null,
 	heldReasonFor: () => null,
+	shownPrompt: null,
 };
 
 /** A conversation with one answered prompt, open in the chat. */
@@ -309,5 +310,81 @@ describe('the controls a held conversation switches off', () => {
 		const [input] = vi.mocked(useUnsavedSendHold).mock.calls.at(-1) ?? [];
 		// The store mock returns no messages while two are shown.
 		expect(input?.storedMessages ?? []).toEqual([]);
+	});
+});
+
+describe('a prompt kept with its hold, when its conversation is opened again', () => {
+	const SHOWN = [
+		{ id: '11', role: 'user', content: 'A follow-up', conversationId: '5', parentId: '4' },
+		{ id: '12', role: 'assistant', content: null, conversationId: '5', parentId: '11' },
+	];
+
+	it('is shown again', () => {
+		chatState.value = OPEN_CONVERSATION;
+		vi.mocked(useUnsavedSendHold).mockReturnValue({ ...NOT_HELD, shownPrompt: SHOWN });
+
+		renderChat();
+
+		expect(actionsOfType(appendLiveMessages.type)).toEqual([appendLiveMessages(SHOWN as never)]);
+	});
+
+	it('is not added a second time while it is shown, and shows its cancel control', () => {
+		chatState.value = {
+			...OPEN_CONVERSATION,
+			activeConversationMessages: [...OPEN_CONVERSATION.activeConversationMessages, ...SHOWN],
+		};
+		vi.mocked(useUnsavedSendHold).mockReturnValue({ ...NOT_HELD, shownPrompt: SHOWN });
+
+		renderChat();
+
+		expect(actionsOfType(appendLiveMessages.type)).toEqual([]);
+		expect(screen.getByRole('button', { name: /cancel/i })).toBeTruthy();
+	});
+
+	it('is not added once its hold has ended', () => {
+		chatState.value = OPEN_CONVERSATION;
+
+		renderChat();
+
+		expect(actionsOfType(appendLiveMessages.type)).toEqual([]);
+	});
+});
+
+describe('a confirmed prompt that started a conversation, saved late', () => {
+	beforeEach(() => {
+		vi.mocked(createNewConversation).mockResolvedValue({
+			newConversation: { id: '9' },
+			finalUserMessage: { id: '11' },
+			finalAiMessage: { id: '12' },
+		} as never);
+	});
+
+	it('opens the new conversation and clears the composer when nothing was typed since', async () => {
+		renderChat();
+		const { onSuccess } = await sendPrompt('A new question');
+
+		await act(async () => {
+			await onSuccess(IDS);
+		});
+
+		expect(actionsOfType(setActiveConversationId.type)).toEqual([setActiveConversationId('9')]);
+		expect(composer().value).toBe('');
+	});
+
+	// The composer is free once a send is given up on: what the user typed since is theirs,
+	// and moving them to the old send's conversation would take them away from it.
+	it('neither moves the user nor clears a draft typed since', async () => {
+		renderChat();
+		const { onSuccess } = await sendPrompt('A new question');
+		await act(async () => {
+			fireEvent.change(composer(), { target: { value: 'Another question' } });
+		});
+
+		await act(async () => {
+			await onSuccess(IDS);
+		});
+
+		expect(actionsOfType(setActiveConversationId.type)).toEqual([]);
+		expect(composer().value).toBe('Another question');
 	});
 });

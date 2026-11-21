@@ -872,6 +872,13 @@ describe('a confirmed send whose caller never finishes saving it', () => {
 	});
 });
 
+describe('the time a save is given up on', () => {
+	// The tests above wait for the constant, so they would pass whatever it said.
+	it('is thirty seconds', () => {
+		expect(SAVE_GIVE_UP_MS).toBe(30_000);
+	});
+});
+
 describe('mutateAsync', () => {
 	it('is not offered, so nothing can start a send around the refusal', () => {
 		const sends = renderSends().result;

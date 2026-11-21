@@ -349,6 +349,27 @@ describe('createStatePoller', () => {
 		poller.stop();
 	});
 
+	// A hold ends only on a reading asked for after it began: the time is when the request
+	// went out, not when its answer came back.
+	it('gives each reading with the time its request was sent', async () => {
+		const onReading = vi.fn<NonNullable<StatePollerDeps['onReading']>>();
+		const read = vi.fn<() => Promise<EscrowSnapshot>>(
+			() =>
+				new Promise(resolve => {
+					setTimeout(() => resolve(snap()), 500);
+				}),
+		);
+		const { poller } = makePoller({ read, onReading });
+		const sentAt = Date.now();
+
+		poller.start();
+		await vi.advanceTimersByTimeAsync(500);
+
+		expect(onReading).toHaveBeenCalledTimes(1);
+		expect(onReading).toHaveBeenCalledWith(snap(), sentAt);
+		poller.stop();
+	});
+
 	it('reports a throwing reading handler without backing off', async () => {
 		const onReading = vi.fn<NonNullable<StatePollerDeps['onReading']>>().mockImplementation(() => {
 			throw new Error('reading blew up');
