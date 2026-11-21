@@ -97,6 +97,23 @@ describe('chatSlice', () => {
 			expect(state.activeConversationMessages).toHaveLength(2);
 			expect(state.activeConversationMessages[1].content).toBe('second');
 		});
+
+		// A prompt shown from its receipt after a save gave up can be added again by the save
+		// that finished late: on-chain ids are unique, so the second copy is left out.
+		it('leaves out a message whose id is already there', () => {
+			const withMessages: ChatState = {
+				...initialState,
+				activeConversationMessages: [{ id: '1', content: 'first' }],
+			};
+			const state = chatReducer(
+				withMessages,
+				appendLiveMessages([
+					{ id: '1', content: 'first' },
+					{ id: '2', content: 'second' },
+				]),
+			);
+			expect(state.activeConversationMessages.map(m => m.id)).toEqual(['1', '2']);
+		});
 	});
 
 	describe('addReasoningStepById', () => {

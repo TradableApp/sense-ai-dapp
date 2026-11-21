@@ -7,7 +7,8 @@ import scrubSecrets from '@/lib/scrubSecrets';
  * endpoint with its provider key and a batch's call data with the wallet address; the error
  * boundary would send it as it is. So every text field is scrubbed, nested data that cannot
  * be scrubbed with certainty is dropped, and the request body is dropped (it can hold
- * encrypted payloads). Stack frames and the exception type are kept: the frames point at
+ * encrypted payloads). So are an exception's mechanism data, the request's cookies and
+ * environment, and each span's links: their values are of any shape. Stack frames and the exception type are kept: the frames point at
  * the app's own files and are what make the report useful. So are real-shaped trace and
  * span ids, which carry nothing but are what link a transaction to its spans and errors.
  * Not touched: the user, the fingerprint, frame variables and breadcrumb categories (none
@@ -67,14 +68,25 @@ function scrubContexts(contexts: ErrorEvent['contexts']): ErrorEvent['contexts']
 	);
 }
 
+/** The mechanism without its `data`, which a handler fills with whatever it caught. */
+function withoutMechanismData(mechanism: NonNullable<Exception['mechanism']>) {
+	const { data: _dropped, ...rest } = mechanism;
+	return rest;
+}
+
 function scrubException(exception: Exception): Exception {
-	return { ...exception, value: scrubText(exception.value) };
+	const scrubbed = { ...exception, value: scrubText(exception.value) };
+	return exception.mechanism
+		? { ...scrubbed, mechanism: withoutMechanismData(exception.mechanism) }
+		: scrubbed;
 }
 
 function scrubRequest(request: ErrorEvent['request']): ErrorEvent['request'] {
 	if (!request) return undefined;
+	// Cookies and the environment are name and value pairs no pattern can tell from a secret.
+	const { cookies: _cookies, env: _env, ...rest } = request;
 	return {
-		...request,
+		...rest,
 		url: scrubText(request.url),
 		// A query is all parameters (`key=…`), which no pattern can tell from a secret.
 		query_string: undefined,
@@ -127,8 +139,10 @@ function scrubSpan(span: SpanJson): SpanJson {
 	const data = Object.fromEntries(
 		Object.entries(span.data ?? {}).filter(([key]) => !DROPPED_SPAN_DATA.has(key)),
 	);
+	// Links carry attributes of any shape, set by whatever made them: dropped whole.
+	const { links: _links, ...rest } = span;
 	// The span's own ids are top-level fields, not data, and are kept as they are.
-	return { ...span, description: scrubText(span.description), data: scrubFlat(data) ?? {} };
+	return { ...rest, description: scrubText(span.description), data: scrubFlat(data) ?? {} };
 }
 
 export function scrubTransactionEvent(event: TransactionEvent): TransactionEvent | null {

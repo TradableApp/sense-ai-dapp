@@ -27,6 +27,7 @@ vi.mock('@/features/auth/SessionProvider', () => ({
 }));
 vi.mock('@/store/hooks', () => ({
 	useAppDispatch: () => vi.fn(),
+	useAppStore: () => ({ getState: () => ({ chat: { activeConversationId: null } }) }),
 	useAppSelector: (select: (_state: unknown) => unknown) =>
 		select({
 			chat: { activeConversationId: null, activeConversationMessages: [] },

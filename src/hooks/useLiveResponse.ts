@@ -8,6 +8,7 @@ import { useActiveWalletChain } from 'thirdweb/react';
 import { CONTRACTS } from '@/config/contracts';
 import { client, deploymentChain } from '@/config/thirdweb';
 import { useSession } from '@/features/auth/SessionProvider';
+import { notePendingCount } from '@/features/chat/unsavedSends';
 import { wait } from '@/lib/utils';
 import { useAppSelector } from '@/store/hooks';
 import type { RootState } from '@/store/store';
@@ -235,6 +236,10 @@ export default function useLiveResponse() {
 					});
 				});
 			},
+			// Every reading, not only a change: a paid send held for a failed save ends on one
+			// (see UnsavedSend), and its answer may have come before it was held.
+			onReading: snapshot =>
+				notePendingCount(queryClient, ownerAddress, snapshot.pendingEscrowCount),
 			report: (message, data) =>
 				Sentry.addBreadcrumb({ category: 'rpc.poll', level: 'warning', message, data }),
 			isHidden: () => document.visibilityState === 'hidden',
@@ -251,7 +256,14 @@ export default function useLiveResponse() {
 			document.removeEventListener('visibilitychange', onVisibilityChange);
 			poller.stop();
 		};
-	}, [addInvalidationKey, escrowContract, ownerAddress, processSyncQueue, tokenBalanceKey]);
+	}, [
+		addInvalidationKey,
+		escrowContract,
+		ownerAddress,
+		processSyncQueue,
+		queryClient,
+		tokenBalanceKey,
+	]);
 
 	// --- 3. Fallback poll for a pending answer ---
 	// The state poller is best-effort: it backs off under RPC pressure, pauses while the

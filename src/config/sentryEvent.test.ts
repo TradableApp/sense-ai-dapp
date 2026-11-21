@@ -240,3 +240,55 @@ describe('span data and tags', () => {
 		expect(scrubbed?.tags).toEqual({ endpoint: '<url>', chainId: '84532', retried: true, n: 2 });
 	});
 });
+
+describe('fields no pattern can scrub with certainty', () => {
+	it("drops an exception's mechanism data and keeps its mechanism type", () => {
+		const scrubbed = scrubErrorEvent(
+			errorEvent({
+				exception: {
+					values: [
+						{
+							type: 'Error',
+							value: 'boom',
+							mechanism: { type: 'onerror', handled: false, data: { url: RPC, target: WALLET } },
+						},
+					],
+				},
+			}),
+		);
+		const mechanism = scrubbed?.exception?.values?.[0].mechanism;
+
+		expect(mechanism).toEqual({ type: 'onerror', handled: false });
+		expect(leaks(scrubbed)).toEqual([]);
+	});
+
+	it("drops the request's cookies and environment", () => {
+		const scrubbed = scrubErrorEvent(
+			errorEvent({
+				request: { url: 'https://app.example/chat', cookies: { session: KEY }, env: { RPC } },
+			}),
+		);
+
+		expect(scrubbed?.request).not.toHaveProperty('cookies');
+		expect(scrubbed?.request).not.toHaveProperty('env');
+		expect(leaks(scrubbed)).toEqual([]);
+	});
+
+	it("drops a span's links", () => {
+		const scrubbed = scrubTransactionEvent({
+			type: 'transaction',
+			spans: [
+				{
+					span_id: SPAN_ID,
+					trace_id: TRACE_ID,
+					start_timestamp: 0,
+					data: {},
+					links: [{ trace_id: TRACE_ID, span_id: SPAN_ID, attributes: { 'peer.url': RPC } }],
+				},
+			],
+		} as TransactionEvent);
+
+		expect(scrubbed?.spans?.[0]).not.toHaveProperty('links');
+		expect(leaks(scrubbed)).toEqual([]);
+	});
+});

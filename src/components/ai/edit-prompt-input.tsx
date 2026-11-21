@@ -26,6 +26,8 @@ interface EditPromptInputProps {
 	onCancel: () => void;
 	/** True while a prompt is being sent: Save and Enter then send nothing. */
 	isSending?: boolean;
+	/** Set while this conversation holds a paid send not saved here: Save then sends nothing. */
+	heldReason?: string | null;
 }
 
 export default function EditPromptInput({
@@ -33,6 +35,7 @@ export default function EditPromptInput({
 	onSave,
 	onCancel,
 	isSending = false,
+	heldReason = null,
 }: EditPromptInputProps) {
 	const {
 		register,
@@ -45,7 +48,7 @@ export default function EditPromptInput({
 	// Saving an edit sends the prompt again, so it is off while prompts are.
 	// Nor is it sent twice: it waits while a prompt is being sent.
 	const saveSwitchedOff = useSwitchedOffReason('prompt');
-	const saveOff = saveSwitchedOff ?? (isSending ? SENDING_REASON : null);
+	const saveOff = saveSwitchedOff ?? (isSending ? SENDING_REASON : null) ?? heldReason;
 	const reasonId = useId();
 	const save = handleSubmit(data => {
 		if (!saveOff) onSave(data);
