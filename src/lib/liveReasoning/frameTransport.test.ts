@@ -71,7 +71,11 @@ function start(responses: Array<StreamResponse | Error>): Harness {
 	const handle = startFrameStream({
 		url: URL_42,
 		proof: PROOF,
-		onEvent: e => events.push(e),
+		// The cursor follows the frames received, as the reducer's does.
+		onEvent: e => {
+			events.push(e);
+			cursor.value = e.id;
+		},
 		getCursor: () => cursor.value,
 		onStop: reason => stops.push(reason),
 		fetchImpl: fetchImpl as unknown as StreamFetch,
@@ -133,10 +137,8 @@ describe('the frame transport', () => {
 
 	it('reconnects with Last-Event-ID after the server ends the response', async () => {
 		const h = start([ok([event(0), event(1)]), ok([], { hold: true })]);
-		await vi.advanceTimersByTimeAsync(0);
-		h.cursor.value = `${RUN}.1`;
 
-		// A response that delivered frames is followed at once by the next connection.
+		// A response that delivered frames is followed at once (0 ms) by the next connection.
 		await vi.advanceTimersByTimeAsync(0);
 
 		expect(h.fetchImpl).toHaveBeenCalledTimes(2);
@@ -227,7 +229,7 @@ describe('the frame transport', () => {
 	it('reconnects with no cursor when asked for a fresh connection', async () => {
 		const h = start([ok([event(0)], { hold: true }), ok([], { hold: true })]);
 		await vi.advanceTimersByTimeAsync(0);
-		h.cursor.value = `${RUN}.0`;
+		expect(h.cursor.value).toBe(`${RUN}.0`);
 
 		h.handle.reconnect(true);
 		await vi.advanceTimersByTimeAsync(0);
@@ -240,7 +242,6 @@ describe('the frame transport', () => {
 	it('reconnects from the cursor when asked to', async () => {
 		const h = start([ok([event(0)], { hold: true }), ok([], { hold: true })]);
 		await vi.advanceTimersByTimeAsync(0);
-		h.cursor.value = `${RUN}.0`;
 
 		h.handle.reconnect(false);
 		await vi.advanceTimersByTimeAsync(0);

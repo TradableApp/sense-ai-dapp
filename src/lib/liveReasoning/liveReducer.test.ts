@@ -19,7 +19,7 @@ const RUN_B = 'fedcba9876543210';
 type FrameBody = Pick<Frame, 'type' | 'data'>;
 
 const frame = (seq: number, body: FrameBody, run = RUN_A, answerMessageId = ID): Frame =>
-	({ v: 1, answerMessageId, run, seq, replica: 'deadbeef', ...body }) as Frame;
+	({ v: 1, answerMessageId, run, seq, replica: 'deadbeef', ...body } as Frame);
 
 const reset = (run = RUN_A): Frame => frame(0, { type: 'reset', data: { reason: 'start' } }, run);
 const step = (seq: number, title: string, attemptNo = 1, run = RUN_A): Frame =>
@@ -27,10 +27,10 @@ const step = (seq: number, title: string, attemptNo = 1, run = RUN_A): Frame =>
 
 /** Applies frames in order, each with its own SSE id, at time `now`. */
 function applyAll(frames: Frame[], start = initialLiveState(ID), now = 0) {
-	return frames.reduce(
-		({ state }, f) => applyFrame(state, f, { run: f.run, seq: f.seq }, now),
-		{ state: start, effect: 'none' as const } as ReturnType<typeof applyFrame>,
-	);
+	return frames.reduce(({ state }, f) => applyFrame(state, f, { run: f.run, seq: f.seq }, now), {
+		state: start,
+		effect: 'none' as const,
+	} as ReturnType<typeof applyFrame>);
 }
 
 const titles = (state: LiveAnswerState) => state.steps.map(s => s.title);
@@ -57,7 +57,12 @@ describe('the live reducer', () => {
 	it('drops a frame of another run that is not its reset, and asks for a fresh connection', () => {
 		const first = applyAll([reset(), step(1, 'one')]).state;
 
-		const { state, effect } = applyFrame(first, step(2, 'stray', 1, RUN_B), { run: RUN_B, seq: 2 }, 0);
+		const { state, effect } = applyFrame(
+			first,
+			step(2, 'stray', 1, RUN_B),
+			{ run: RUN_B, seq: 2 },
+			0,
+		);
 
 		expect(effect).toBe('reconnect-fresh');
 		expect(titles(state)).toEqual(['one']);
@@ -105,10 +110,15 @@ describe('the live reducer', () => {
 			started,
 		);
 
-		const { effect } = applyFrame(filled, step(MAX_HELD_FRAMES + 2, 'over'), {
-			run: RUN_A,
-			seq: MAX_HELD_FRAMES + 2,
-		}, 0);
+		const { effect } = applyFrame(
+			filled,
+			step(MAX_HELD_FRAMES + 2, 'over'),
+			{
+				run: RUN_A,
+				seq: MAX_HELD_FRAMES + 2,
+			},
+			0,
+		);
 
 		expect(MAX_HELD_FRAMES).toBe(64);
 		expect(effect).toBe('reconnect-from-cursor');
@@ -116,7 +126,12 @@ describe('the live reducer', () => {
 
 	it('rejects a frame that names another answer id', () => {
 		const started = applyAll([reset()]).state;
-		const other = frame(1, { type: 'step', data: { attempt: 1, title: 'x', description: 'y' } }, RUN_A, '43');
+		const other = frame(
+			1,
+			{ type: 'step', data: { attempt: 1, title: 'x', description: 'y' } },
+			RUN_A,
+			'43',
+		);
 
 		const { state } = applyFrame(started, other, { run: RUN_A, seq: 1 }, 0);
 
@@ -142,7 +157,10 @@ describe('the live reducer', () => {
 	it('keeps earlier steps on a fallback attempt and tags each step and source with its attempt', () => {
 		const { state } = applyAll([
 			reset(),
-			frame(1, { type: 'sources', data: { attempt: 1, sources: [{ title: 'A', url: 'https://a.example' }] } }),
+			frame(1, {
+				type: 'sources',
+				data: { attempt: 1, sources: [{ title: 'A', url: 'https://a.example' }] },
+			}),
 			step(2, 'first try'),
 			frame(3, { type: 'attempt', data: { attempt: 2 } }),
 			step(4, 'second try', 2),
@@ -160,7 +178,10 @@ describe('the live reducer', () => {
 		const { state } = applyAll([
 			reset(),
 			step(1, 'one'),
-			frame(2, { type: 'answer', data: { text: 'Up.', answerMessageCID: 'bafy1', reasoningDuration: 3 } }),
+			frame(2, {
+				type: 'answer',
+				data: { text: 'Up.', answerMessageCID: 'bafy1', reasoningDuration: 3 },
+			}),
 			frame(3, { type: 'done', data: { outcome: 'answered' } }),
 		]);
 

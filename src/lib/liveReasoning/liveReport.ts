@@ -8,7 +8,12 @@ import * as Sentry from '@sentry/react';
 
 import { isReplica } from '@/lib/liveReasoning/contract';
 
-export type MismatchKind = 'step-count' | 'step-text' | 'source-count' | 'source-text' | 'answer-text';
+export type MismatchKind =
+	| 'step-count'
+	| 'step-text'
+	| 'source-count'
+	| 'source-text'
+	| 'answer-text';
 export type RefusalKind = 'bad-request' | 'proof-refused';
 
 const reported = new Set<string>();
@@ -43,7 +48,10 @@ export function reportMismatch(
 ): void {
 	send(
 		`mismatch:${answerMessageId}`,
-		named('LiveReasoningMismatch', `What was shown live differs from the stored answer: ${mismatch}.`),
+		named(
+			'LiveReasoningMismatch',
+			`What was shown live differs from the stored answer: ${mismatch}.`,
+		),
 		{ mismatch, ...(isReplica(replica) ? { replica } : {}) },
 		[mismatch],
 	);

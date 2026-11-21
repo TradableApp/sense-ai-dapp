@@ -43,7 +43,10 @@ describe('compareLiveWithStored', () => {
 	it('names a step whose text differs', () => {
 		const live = answered({ steps: [STEPS[0], { ...STEPS[1], description: 'Other.' }] });
 
-		expect(compareLiveWithStored(live, stored)).toEqual({ kind: 'mismatch', mismatch: 'step-text' });
+		expect(compareLiveWithStored(live, stored)).toEqual({
+			kind: 'mismatch',
+			mismatch: 'step-text',
+		});
 	});
 
 	it('names a step count that differs', () => {
@@ -56,7 +59,10 @@ describe('compareLiveWithStored', () => {
 	it('names a step whose attempt differs', () => {
 		const live = answered({ steps: [STEPS[0], { ...STEPS[1], attempt: 2 }] });
 
-		expect(compareLiveWithStored(live, stored)).toEqual({ kind: 'mismatch', mismatch: 'step-text' });
+		expect(compareLiveWithStored(live, stored)).toEqual({
+			kind: 'mismatch',
+			mismatch: 'step-text',
+		});
 	});
 
 	it('names sources that differ', () => {
@@ -65,7 +71,10 @@ describe('compareLiveWithStored', () => {
 			mismatch: 'source-count',
 		});
 		expect(
-			compareLiveWithStored(answered({ sources: [{ ...SOURCES[0], url: 'https://x.example' }] }), stored),
+			compareLiveWithStored(
+				answered({ sources: [{ ...SOURCES[0], url: 'https://x.example' }] }),
+				stored,
+			),
 		).toEqual({ kind: 'mismatch', mismatch: 'source-text' });
 	});
 

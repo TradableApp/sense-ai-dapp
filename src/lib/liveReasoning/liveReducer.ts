@@ -112,7 +112,11 @@ function applyInOrder(state: LiveAnswerState, frame: Frame): LiveAnswerState {
 				...next,
 				sources: [
 					...state.sources,
-					...frame.data.sources.map(s => ({ title: s.title, url: s.url, attempt: frame.data.attempt })),
+					...frame.data.sources.map(s => ({
+						title: s.title,
+						url: s.url,
+						attempt: frame.data.attempt,
+					})),
 				],
 			};
 		case FRAME_TYPES.STEP: {

@@ -25,7 +25,10 @@ export type Comparison =
 /** An item stored before attempts were recorded belongs to attempt 1. */
 const attemptOf = (item: { attempt?: number }) => item.attempt ?? 1;
 
-const sameSteps = (live: LiveAnswerState['steps'], stored: NonNullable<StoredAnswer['reasoning']>) =>
+const sameSteps = (
+	live: LiveAnswerState['steps'],
+	stored: NonNullable<StoredAnswer['reasoning']>,
+) =>
 	live.every(
 		(step, i) =>
 			step.title === stored[i].title &&
@@ -33,7 +36,10 @@ const sameSteps = (live: LiveAnswerState['steps'], stored: NonNullable<StoredAns
 			step.attempt === attemptOf(stored[i]),
 	);
 
-const sameSources = (live: LiveAnswerState['sources'], stored: NonNullable<StoredAnswer['sources']>) =>
+const sameSources = (
+	live: LiveAnswerState['sources'],
+	stored: NonNullable<StoredAnswer['sources']>,
+) =>
 	live.every(
 		(source, i) =>
 			source.title === stored[i].title &&
