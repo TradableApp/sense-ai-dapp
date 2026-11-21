@@ -12,6 +12,8 @@ import { FeeTokenBlockedError } from '@/lib/feeTokenCheck';
 import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
 import { wait } from '@/lib/utils';
 
+import LimitNotSetError from './LimitNotSetError';
+
 /**
  * Setting and revoking a spending plan: the only transactions the plan dialog sends.
  *
@@ -96,10 +98,12 @@ async function approveAndSetLimit(
 	// The notice now showing. Only it is taken down on a failure: a dismissal of every toast
 	// would also take down the notice of a new version.
 	let noticeId = approvalToastId;
+	let isApproved = false;
 	try {
 		await send(
 			contractCall(chain, contracts.token, 'approve', [contracts.escrow.address, limitInWei]),
 		);
+		isApproved = true;
 		toast.dismiss(approvalToastId);
 
 		onStatus('Waiting for network...');
@@ -116,7 +120,7 @@ async function approveAndSetLimit(
 		toast.dismiss(limitToastId);
 	} catch (error) {
 		toast.dismiss(noticeId);
-		throw error;
+		throw isApproved ? new LimitNotSetError(error) : error;
 	}
 }
 
@@ -162,8 +166,14 @@ function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 			await refreshPlanQueries(queryClient, activeWallet);
 			onDone();
 		},
-		onError: error => {
+		onError: async error => {
 			console.error('setPlanMutation Error:', error);
+			if (error instanceof LimitNotSetError) {
+				// Half done: the approval is on chain, so what the dialog shows is read again.
+				toast.error('Limit Not Set', { description: error.message });
+				await refreshPlanQueries(queryClient, activeWallet);
+				return;
+			}
 			// Refused or held before anything was sent: not a failed transaction.
 			const wasNotSent = error instanceof FeeTokenBlockedError || error instanceof PlanHeldError;
 			toast.error(wasNotSent ? 'Not sent' : 'Transaction Failed', {
