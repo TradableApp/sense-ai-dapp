@@ -55,6 +55,11 @@ interface MessageActionsProps {
 	initialFeedback?: string | null;
 	/** True while a prompt is being sent: regenerate and branch are then off, and say why. */
 	isSending?: boolean;
+	/**
+	 * Set while a paid send from this answer was confirmed but not saved on this device:
+	 * regenerate and branch are then off, and say why. Cancel and refund are never held.
+	 */
+	heldReason?: string | null;
 }
 
 function ActionButton({ label, icon, onClick }: ActionButtonProps) {
@@ -137,6 +142,7 @@ export default function MessageActions({
 	onBranch,
 	initialFeedback,
 	isSending = false,
+	heldReason = null,
 }: MessageActionsProps) {
 	const { ownerAddress } = useSession();
 	const [isCopied, setIsCopied] = useState(false);
@@ -303,7 +309,7 @@ export default function MessageActions({
 				label="Try again"
 				icon={RotateCcwIcon}
 				align="start"
-				disabledReason={regenerateSwitchedOff ?? sendingReason}
+				disabledReason={regenerateSwitchedOff ?? sendingReason ?? heldReason}
 			>
 				<DropdownMenuItem onClick={() => onRegenerate?.('default')}>
 					<RotateCcwIcon className="mr-2 size-4" />
@@ -329,7 +335,7 @@ export default function MessageActions({
 				label="More actions"
 				icon={MoreHorizontal}
 				align="end"
-				disabledReason={branchSwitchedOff ?? sendingReason}
+				disabledReason={branchSwitchedOff ?? sendingReason ?? heldReason}
 			>
 				<DropdownMenuItem onClick={() => onBranch?.()}>
 					<Split className="mr-2 size-4 rotate-90" />

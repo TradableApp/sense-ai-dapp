@@ -7,5 +7,13 @@ const SENDING_REASON =
 
 export default SENDING_REASON;
 
-/** Why regenerate and branch are off on an answer whose paid send was not saved here. */
-export const UNSAVED_SEND_REASON = '';
+/**
+ * Why regenerate and branch are off on an answer whose paid send was confirmed but not saved
+ * on this device: a second press would pay again for what is already on the chain.
+ */
+export const UNSAVED_SEND_REASON =
+	'A paid request from this answer is on the chain but not shown on this device yet. This comes back once it appears or its answer arrives, so nothing is paid for twice.';
+
+/** What the composer says while its conversation holds such a send. */
+export const UNSAVED_SEND_COMPOSER_REASON =
+	'Your last paid prompt here is on the chain but not shown on this device yet. You can send again once it appears or its answer arrives, so nothing is paid for twice or threaded off the wrong message.';

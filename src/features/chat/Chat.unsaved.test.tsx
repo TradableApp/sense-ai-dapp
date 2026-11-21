@@ -66,6 +66,9 @@ vi.mock('thirdweb/react', () => ({
 	useActiveAccount: () => undefined,
 	useActiveWallet: () => undefined,
 	useActiveWalletChain: () => undefined,
+	AccountProvider: ({ children }: { children: ReactNode }) => children,
+	AccountAvatar: () => null,
+	Blobbie: () => null,
 }));
 vi.mock('@/lib/feedbackService', () => ({ default: vi.fn() }));
 vi.mock('firebase/firestore', () => ({ collection: vi.fn(), query: vi.fn(), where: vi.fn() }));

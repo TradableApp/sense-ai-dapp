@@ -153,7 +153,7 @@ const SENDS: { name: string; event: string; start: (_m: Sends, _o?: CallerCallba
 ];
 
 /** Rows of a table, each led by its send's name for the test's title. */
-const named = <T,>(rows: readonly (readonly [{ name: string }, T])[]) =>
+const named = <C extends { name: string }, T>(rows: readonly (readonly [C, T])[]) =>
 	rows.map(([c, x]) => [c.name, c, x] as const);
 
 /** A prompt that starts a conversation: the chat sends it with no conversation id. */
@@ -792,7 +792,9 @@ describe('a confirmed send whose caller never finishes saving it', () => {
 			try {
 				const onSaveFailed = vi.fn();
 				const sends = renderSends().result;
-				const never = new Promise<void>(() => undefined);
+				const never = new Promise<void>(() => {
+					// Never settles.
+				});
 				await startAndWait(sends, m => c.start(m, { onSuccess: () => never, onSaveFailed }));
 				await act(async () => {
 					confirm(receiptWith(c.event));
@@ -818,7 +820,9 @@ describe('a confirmed send whose caller never finishes saving it', () => {
 		vi.useFakeTimers({ shouldAdvanceTime: true });
 		try {
 			const sends = renderSends().result;
-			const never = new Promise<void>(() => undefined);
+			const never = new Promise<void>(() => {
+				// Never settles.
+			});
 			await startAndWait(sends, m => SENDS[0].start(m, { onSuccess: () => never }));
 			await act(async () => {
 				confirm(receiptWith(SENDS[0].event));

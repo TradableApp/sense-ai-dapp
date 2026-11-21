@@ -8,6 +8,7 @@ import { useActiveWalletChain } from 'thirdweb/react';
 import { CONTRACTS } from '@/config/contracts';
 import { client, deploymentChain } from '@/config/thirdweb';
 import { useSession } from '@/features/auth/SessionProvider';
+import { endSendsOnPendingFall } from '@/features/chat/unsavedSends';
 import { wait } from '@/lib/utils';
 import { useAppSelector } from '@/store/hooks';
 import type { RootState } from '@/store/store';
@@ -220,6 +221,11 @@ export default function useLiveResponse() {
 		const poller = createStatePoller({
 			read,
 			onChange: ({ prev, next }) => {
+				// A pending prompt of this wallet was answered, cancelled or refunded: a paid send
+				// held for a failed save stops being held (see UnsavedSend).
+				if (next.pendingEscrowCount < prev.pendingEscrowCount) {
+					endSendsOnPendingFall(queryClient, ownerAddress);
+				}
 				deriveInvalidations(prev, next, {
 					tokenBalanceKey,
 					ownerAddress,
@@ -251,7 +257,14 @@ export default function useLiveResponse() {
 			document.removeEventListener('visibilitychange', onVisibilityChange);
 			poller.stop();
 		};
-	}, [addInvalidationKey, escrowContract, ownerAddress, processSyncQueue, tokenBalanceKey]);
+	}, [
+		addInvalidationKey,
+		escrowContract,
+		ownerAddress,
+		processSyncQueue,
+		queryClient,
+		tokenBalanceKey,
+	]);
 
 	// --- 3. Fallback poll for a pending answer ---
 	// The state poller is best-effort: it backs off under RPC pressure, pauses while the

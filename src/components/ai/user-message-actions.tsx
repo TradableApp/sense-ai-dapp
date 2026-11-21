@@ -68,10 +68,11 @@ export default function UserMessageActions({
 							<span>Refunded</span>
 						</>
 					)}
+					{/* Pending is on the chain and waiting for its answer, not still being sent. */}
 					{message.status === 'pending' && isUser && (
 						<>
 							<span className="size-1.5 rounded-full bg-current animate-pulse" />
-							<span>Sending...</span>
+							<span>Awaiting answer</span>
 						</>
 					)}
 				</div>

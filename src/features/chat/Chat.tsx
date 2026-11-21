@@ -63,10 +63,13 @@ import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
 import ActivatePlanCTA from './ActivatePlanCTA';
 import { cancelWindow } from './cancelWindow';
+import ComposerHoldNotices, { composerHoldDescription } from './ComposerHoldNotices';
 import isQueryAhead from './messageReconcile';
 import { composerStateFor } from './promptParent';
+import showUnsavedPrompt, { noWalletAddressError } from './unsavedPrompt';
 import useHeldBranchRefresh from './useHeldBranchRefresh';
 import useOneSendAtATime from './useOneSendAtATime';
+import useUnsavedSendHold from './useUnsavedSendHold';
 
 interface MarkdownParagraphProps {
 	children: ReactNode;
@@ -304,6 +307,14 @@ export default function Chat() {
 		sessionKey,
 		queryClient,
 	});
+	// Held while a paid send from here was confirmed but not saved on this device.
+	const unsavedSend = useUnsavedSendHold({
+		queryClient,
+		activeConversationId,
+		ownerAddress,
+		storedMessages: messagesFromQuery,
+		conversations,
+	});
 
 	useEffect(() => {
 		setActiveMessageId(null);
@@ -383,7 +394,7 @@ export default function Chat() {
 			},
 			{
 				onSuccess: async ({ newAnswerMessageId }) => {
-					if (!ownerAddress) return;
+					if (!ownerAddress) throw noWalletAddressError();
 					const { finalAiMessage } = await regenerateAssistantResponse(
 						sessionKey,
 						ownerAddress,
@@ -425,7 +436,7 @@ export default function Chat() {
 			},
 			{
 				onSuccess: async newIds => {
-					if (!ownerAddress) return;
+					if (!ownerAddress) throw noWalletAddressError();
 					const parentId = originalMessage.parentId ?? 0;
 					const { finalUserMessage, finalAiMessage } = await editUserMessage(
 						sessionKey,
@@ -513,7 +524,7 @@ export default function Chat() {
 			},
 			{
 				onSuccess: async ({ newConversationId }) => {
-					if (!ownerAddress) return;
+					if (!ownerAddress) throw noWalletAddressError();
 					await branchConversation(
 						sessionKey,
 						ownerAddress,
@@ -750,7 +761,7 @@ export default function Chat() {
 						answerMessageId,
 					} = newIds;
 
-					if (!ownerAddress) return;
+					if (!ownerAddress) throw noWalletAddressError();
 
 					if (activeConversationId) {
 						const parentMsgId = messagesToDisplay?.at(-1)?.id ?? 0;
@@ -792,8 +803,18 @@ export default function Chat() {
 					openCancelWindow();
 					reset();
 				},
-				// Sent and paid for, not saved here: the composer is cleared so it is not sent again.
-				onSaveFailed: () => reset(),
+				// Sent and paid for, not saved here: the composer is cleared so it is not sent again,
+				// and the prompt is shown from its receipt with the cancel window open, as on success.
+				onSaveFailed: newIds => {
+					reset();
+					showUnsavedPrompt(dispatch, {
+						activeConversationId,
+						parentId: messagesToDisplay?.at(-1)?.id,
+						content: data.prompt,
+						ids: newIds,
+					});
+					openCancelWindow();
+				},
 				// onError: () => {},
 			},
 		);
@@ -809,6 +830,7 @@ export default function Chat() {
 		isLoadingPlan ||
 		!hasActivePlan ||
 		composer.kind !== 'ready' ||
+		unsavedSend.isComposerHeld ||
 		arePromptsSwitchedOff;
 
 	const isInputDisabled =
@@ -817,6 +839,7 @@ export default function Chat() {
 		isLoadingPlan ||
 		!hasActivePlan ||
 		composer.kind !== 'ready' ||
+		unsavedSend.isComposerHeld ||
 		arePromptsSwitchedOff;
 
 	// Calculate UI status for the submit button
@@ -951,6 +974,7 @@ export default function Chat() {
 												onNavigate={handleNavigate}
 												onBranch={() => handleBranch(message as unknown as ActiveMessage)}
 												isSending={isProcessing}
+												heldReason={unsavedSend.heldReasonFor(message.id)}
 												initialFeedback={
 													feedbackData[msgIdStr] ? String(feedbackData[msgIdStr]) : null
 												}
@@ -1023,21 +1047,16 @@ export default function Chat() {
 						<PromptInputTextarea
 							placeholder="Ask about market sentiment, on-chain data..."
 							disabled={isDisabled}
-							aria-describedby={isHeldForBranchHistory ? 'branch-history-hold' : undefined}
+							aria-describedby={composerHoldDescription({
+								isHeldForBranchHistory,
+								isHeldForUnsavedSend: unsavedSend.isComposerHeld,
+							})}
 							{...register('prompt')}
 						/>
-						{/* Always mounted, so a screen reader announces the text when it appears. */}
-						<p
-							id="branch-history-hold"
-							className={
-								isHeldForBranchHistory ? 'px-3 py-1.5 text-xs text-muted-foreground' : 'sr-only'
-							}
-							role="status"
-							data-testid="branch-history-hold"
-						>
-							{isHeldForBranchHistory &&
-								'This branch\u2019s earlier messages have not loaded on this device yet. We keep trying, and you can send a prompt as soon as they are here.'}
-						</p>
+						<ComposerHoldNotices
+							isHeldForBranchHistory={isHeldForBranchHistory}
+							isHeldForUnsavedSend={unsavedSend.isComposerHeld}
+						/>
 						{isAiThinking && refundSecondsLeft !== null && (
 							<div className="flex items-center justify-end px-3 py-1.5 text-xs text-muted-foreground">
 								{refundSecondsLeft > 0 ? (

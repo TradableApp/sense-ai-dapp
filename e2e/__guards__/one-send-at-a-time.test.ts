@@ -205,13 +205,15 @@ describe('the chat sends one paid prompt at a time', () => {
 	});
 
 	// A prompt that was paid for but not saved on this device must not be sent again by
-	// reflex: the lock tells the user and asks for a sync, and each prompt call clears its own
-	// input. The call is known by what it saves.
+	// reflex: the lock tells the user, holds the conversation and asks for a sync, and each
+	// prompt call clears its own input. The composer clears first, then shows the prompt from
+	// its receipt and opens the cancel window, as its onSuccess does. The call is known by
+	// what it saves.
 	it.each([
 		[
 			'the composer',
 			/\b(?:addMessageToConversation|createNewConversation)\(/,
-			/^onSaveFailed:\s*\(\)\s*=>\s*reset\(\),?$/,
+			/^onSaveFailed:\s*newIds\s*=>\s*\{\s*reset\(\);\s*showUnsavedPrompt\(dispatch,[\s\S]*\bids: newIds,[\s\S]*\}\);\s*openCancelWindow\(\);\s*\},?$/,
 		],
 		[
 			'the edit box',
