@@ -147,10 +147,13 @@ export type Notice = { title: string; description: string };
 const CLOSED_ACTIONS = 'New prompts, branches, renames, deletes and new plans';
 const MONEY_BACK_WORKS = 'Cancelling a prompt, claiming a refund and revoking a plan still work.';
 // Beside a fee token notice, which may say a refund would be refused, "still work" could be
-// untrue; what stays true is that the closure is not what stops them.
+// untrue; what stays true is that the closure is not what stops them. No position words:
+// these words also reach toasts and dialogs.
 const MONEY_BACK_UNAFFECTED =
-	'The closure does not affect cancelling a prompt, claiming a refund or revoking a plan; the notice below says what else is wrong.';
-const GOES_AWAY = 'this notice goes away by itself when it does';
+	'The closure does not affect cancelling a prompt, claiming a refund or revoking a plan; the other notice on this page says what else is wrong.';
+// Not "goes away by itself": a tab whose listener keeps failing never hears the reopening.
+const WHEN_IT_REOPENS =
+	'This notice is removed when prompts reopen; if it is still here later, reload the page.';
 
 const SWITCH_WORDS: Record<SwitchWording, { title: string; lead: string; tail?: string }> = {
 	'pair-retired': {
@@ -160,16 +163,18 @@ const SWITCH_WORDS: Record<SwitchWording, { title: string; lead: string; tail?: 
 	},
 	maintenance: {
 		title: 'Prompts are closed for maintenance',
-		lead: `SenseAI is closed for maintenance. ${CLOSED_ACTIONS} are switched off until it reopens, and ${GOES_AWAY}.`,
+		lead: `SenseAI is closed for maintenance. ${CLOSED_ACTIONS} are switched off until it reopens.`,
+		tail: WHEN_IT_REOPENS,
 	},
 	incident: {
 		title: 'Prompts are paused',
-		lead: `SenseAI has paused prompts while we look into a problem. ${CLOSED_ACTIONS} are switched off until it reopens, and ${GOES_AWAY}.`,
+		lead: `SenseAI has paused prompts while we look into a problem. ${CLOSED_ACTIONS} are switched off until it reopens.`,
+		tail: WHEN_IT_REOPENS,
 	},
 	generic: {
 		title: 'Prompts are closed for now',
-		lead: `SenseAI has closed prompts for now. ${CLOSED_ACTIONS} are switched off until it reopens, and ${GOES_AWAY}.`,
-		tail: 'If this message stays, tell us through Support in the menu.',
+		lead: `SenseAI has closed prompts for now. ${CLOSED_ACTIONS} are switched off until it reopens.`,
+		tail: `${WHEN_IT_REOPENS} If it stays after a reload, tell us through Support in the menu.`,
 	},
 };
 

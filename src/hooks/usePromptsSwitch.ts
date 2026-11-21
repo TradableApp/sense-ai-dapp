@@ -11,3 +11,12 @@ import { readPromptsSwitch, subscribePromptsSwitch } from '@/lib/promptsSwitchSo
 export default function usePromptsSwitch(): PromptsSwitchState {
 	return useSyncExternalStore(subscribePromptsSwitch, readPromptsSwitch);
 }
+
+/**
+ * The switch as it is at this moment, not as it was when a component last rendered: for an
+ * action that runs on after a wait, such as the second transaction of a plan. Read it
+ * through `usePaymentGate`'s `blocksNow`.
+ */
+export function readPromptsSwitchNow(): PromptsSwitchState {
+	return readPromptsSwitch();
+}

@@ -83,13 +83,17 @@ function contractCall(
 	} as unknown as ContractCall);
 }
 
-/** Approves the limit for the escrow, then sets it there: two signatures in the wallet. */
+/**
+ * Approves the limit for the escrow, then sets it there: two signatures in the wallet.
+ * `beforeLimit` throws if the limit may no longer be set (the gate is asked again).
+ */
 async function approveAndSetLimit(
 	send: SendAndConfirm,
 	chain: Chain,
 	contracts: ContractConfig,
 	{ limitInWei, expiresAtTimestamp }: PlanRequest,
 	onStatus: (_text: string) => void,
+	beforeLimit: () => void,
 ): Promise<void> {
 	onStatus('1/2: Approving...');
 	const approvalToastId = toast.info(
@@ -112,6 +116,9 @@ async function approveAndSetLimit(
 
 		onStatus('Waiting for network...');
 		await wait(NODE_CATCH_UP_MS);
+		// Prompts may have closed while the approval was confirmed: the approval stands, so a
+		// refusal here is a limit not set, which says so and how to revoke.
+		beforeLimit();
 
 		onStatus('2/2: Setting Limit...');
 		const limitToastId = toast.info(
@@ -157,6 +164,10 @@ function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 	const queryClient = useQueryClient();
 	const paymentGate = usePaymentGate();
 	const isAwaitingFirstAnswer = useIsAwaitingFirstAnswer();
+	const refuseIfClosedNow = () => {
+		if (paymentGate.blocksNow('plan'))
+			throw new PaymentSwitchedOffError(paymentGate.stateNow(), 'plan', FEE_TOKEN.symbol);
+	};
 
 	return useMutation<void, Error, PlanRequest>({
 		mutationFn: async plan => {
@@ -166,7 +177,7 @@ function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 			// Nothing has said yet that this is the right token to approve.
 			if (isAwaitingFirstAnswer) throw new PlanHeldError();
 			const { chain, contracts } = connectedContracts(activeWallet);
-			await approveAndSetLimit(send, chain, contracts, plan, onStatus);
+			await approveAndSetLimit(send, chain, contracts, plan, onStatus, refuseIfClosedNow);
 		},
 		onSuccess: async () => {
 			toast.success('Spending Limit Set!', { description: 'Your new plan is now active.' });

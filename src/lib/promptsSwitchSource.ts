@@ -6,15 +6,14 @@
  * Reading follows `parseSwitchSnapshot`: only the server's word changes the state. An error,
  * an offline start or a cached answer keeps the last confirmed state; a confirmed closure is
  * saved in this browser so it holds through a reload made offline, and a confirmed open
- * clears it. The collection is named only here (the `prompts-switch-source` guard).
+ * clears it. A listener that cannot read the document is reported (`promptsSwitchReport.ts`)
+ * but changes nothing. The collection is named only here (the `prompts-switch-source` guard).
  */
-import * as Sentry from '@sentry/react';
 import { doc, type DocumentSnapshot, onSnapshot } from 'firebase/firestore';
 
 import { db } from '@/config/firebase';
 import {
 	type ClosedState,
-	describeSwitchDocument,
 	parseSavedSwitch,
 	parseSwitchSnapshot,
 	type PromptsSwitchState,
@@ -23,8 +22,15 @@ import {
 	SWITCH_OPEN,
 	SWITCH_UNKNOWN,
 	switchDocId,
-	type SwitchFault,
 } from '@/lib/promptsSwitch';
+import {
+	forgetSwitchReports,
+	hasReportedListenerFailure,
+	reportFault,
+	reportListenerFailure,
+	reportNoFirestore,
+	reportNoServerAnswer,
+} from '@/lib/promptsSwitchReport';
 
 const COLLECTION = 'senseai_prompts_switch';
 
@@ -35,11 +41,19 @@ const COLLECTION = 'senseai_prompts_switch';
  */
 export const SWITCH_RETRY_MS = 30_000;
 
+/**
+ * How long the listener may go without a server answer, while the browser says it is online,
+ * before that is reported. A blocked Firestore host looks offline to the SDK, which then
+ * answers only from its cache and never calls the error callback.
+ */
+export const SWITCH_FIRST_ANSWER_MS = 60_000;
+
 let current: PromptsSwitchState | null = null;
 const subscribers = new Set<() => void>();
 let stopListening: (() => void) | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
-const reported = new Set<SwitchFault>();
+let answerTimer: ReturnType<typeof setTimeout> | null = null;
+let hasServerAnswer = false;
 
 /** The document this build is for, read when needed so a test can set the build's values. */
 const configuredDocId = () =>
@@ -92,20 +106,6 @@ function publish(next: PromptsSwitchState): void {
 	subscribers.forEach(notify => notify());
 }
 
-// Once per page load per kind of fault, with the document's shape and never its values.
-function reportOnce(fault: SwitchFault, data: unknown): void {
-	if (reported.has(fault)) return;
-	reported.add(fault);
-	const error = new Error(
-		`The prompts switch document is ${fault}: ${describeSwitchDocument(data)}.`,
-	);
-	error.name = 'PromptsSwitchFault';
-	Sentry.captureException(error, {
-		tags: { check: 'prompts-switch', fault, chainId: String(import.meta.env.VITE_CHAIN_ID) },
-		fingerprint: ['prompts-switch', fault],
-	});
-}
-
 function onReading(docId: string, snapshot: DocumentSnapshot): void {
 	const data: unknown = snapshot.data();
 	const reading = parseSwitchSnapshot({
@@ -114,31 +114,58 @@ function onReading(docId: string, snapshot: DocumentSnapshot): void {
 		data,
 	});
 	if (!reading.confirmed) return;
-	if (reading.fault) reportOnce(reading.fault, data);
+	hasServerAnswer = true;
+	if (answerTimer) clearTimeout(answerTimer);
+	answerTimer = null;
+	// Saved and shown first: a report that fails cannot leave a malformed document open.
 	remember(docId, reading.state);
 	publish(reading.state);
+	if (reading.fault) reportFault(reading.fault, data);
+}
+
+function onListenError(code: unknown, relisten: () => void): void {
+	// The last state is kept. Only the code is logged and reported: the message can carry
+	// project detail.
+	stopListening = null;
+	console.warn('[prompts switch] listener stopped, keeping the last state:', code);
+	reportListenerFailure(code);
+	if (subscribers.size > 0 && !retryTimer) {
+		retryTimer = setTimeout(() => {
+			retryTimer = null;
+			if (subscribers.size > 0) relisten();
+		}, SWITCH_RETRY_MS);
+	}
+}
+
+// Once per page load: no server answer in time while online, unless a listener failure
+// already explains it.
+function awaitFirstAnswer(): void {
+	if (hasServerAnswer || answerTimer) return;
+	answerTimer = setTimeout(() => {
+		answerTimer = null;
+		if (!hasServerAnswer && navigator.onLine && !hasReportedListenerFailure()) {
+			reportNoServerAnswer();
+		}
+	}, SWITCH_FIRST_ANSWER_MS);
 }
 
 function listen(): void {
 	const docId = configuredDocId();
-	// No document for this build, or Firestore did not start: nothing to listen to, and the
-	// state stays where it started (a saved closure holds; see startingState).
-	if (!docId || !db || stopListening) return;
+	// No document for this build: nothing to listen to (see startingState).
+	if (!docId) return;
+	// Firestore did not start: the state stays where it started (a saved closure holds).
+	if (!db) {
+		reportNoFirestore();
+		return;
+	}
+	// Listening already, or a retry is waiting: a new reader does not cut the wait short.
+	if (stopListening || retryTimer) return;
+	awaitFirstAnswer();
 	stopListening = onSnapshot(
 		doc(db, COLLECTION, docId),
 		{ includeMetadataChanges: true },
 		snapshot => onReading(docId, snapshot),
-		error => {
-			// The last state is kept. Only the code is logged: the message can carry project detail.
-			stopListening = null;
-			console.warn('[prompts switch] listener stopped, keeping the last state:', error.code);
-			if (subscribers.size > 0 && !retryTimer) {
-				retryTimer = setTimeout(() => {
-					retryTimer = null;
-					if (subscribers.size > 0) listen();
-				}, SWITCH_RETRY_MS);
-			}
-		},
+		error => onListenError(error.code, listen),
 	);
 }
 
@@ -147,6 +174,8 @@ function stop(): void {
 	stopListening = null;
 	if (retryTimer) clearTimeout(retryTimer);
 	retryTimer = null;
+	if (answerTimer) clearTimeout(answerTimer);
+	answerTimer = null;
 }
 
 /** For `useSyncExternalStore`: the first subscriber starts the listener, the last stops it. */
@@ -165,5 +194,6 @@ export function resetPromptsSwitchSource(): void {
 	stop();
 	subscribers.clear();
 	current = null;
-	reported.clear();
+	hasServerAnswer = false;
+	forgetSwitchReports();
 }

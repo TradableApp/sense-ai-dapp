@@ -61,6 +61,12 @@ first and any fee token notice after it. One `onSnapshot` per page feeds a store
   recalled. App Check with Firestore reads in the PWA, how fast a backgrounded or installed
   app hears a change, and a mobile wallet's in-app browser keeping the listener can only be
   proven in a deployed environment.
+- **Negative (by decision c):** with nothing saved, a paid send can go through before the
+  server's first answer; a browser that refuses storage and is reloaded while offline reads as
+  unknown, which is open. Saved closures for a retired pair stay on the device (keyed by that
+  pair, so they close nothing else). A listener that cannot read the document (rules not
+  deployed, App Check refusing, a blocked host) is reported to Sentry, but it cannot close a
+  tab: such a tab keeps its last state.
 - **Alternatives rejected:**
   - _Where:_ an on-chain flag (needs a contract upgrade; pausing the escrow was ruled out);
     Remote Config (its SDK is not loaded, and it caches for 12 hours); a static JSON file
