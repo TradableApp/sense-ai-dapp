@@ -6,10 +6,11 @@ import { useActiveWallet, useSendAndConfirmTransaction } from 'thirdweb/react';
 import { CONTRACTS } from '@/config/contracts';
 import { FEE_TOKEN } from '@/config/feeToken';
 import { client } from '@/config/thirdweb';
-import useFeeTokenCheck, { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
+import { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
+import usePaymentGate from '@/hooks/usePaymentGate';
 import { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
-import { FeeTokenBlockedError } from '@/lib/feeTokenCheck';
 import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
+import { PaymentSwitchedOffError } from '@/lib/paymentGate';
 import { wait } from '@/lib/utils';
 
 import LimitNotSetError from './LimitNotSetError';
@@ -17,10 +18,9 @@ import LimitNotSetError from './LimitNotSetError';
 /**
  * Setting and revoking a spending plan: the only transactions the plan dialog sends.
  *
- * Setting a plan approves the fee token for the escrow, so it asks the fee token check
- * first and refuses before anything is built while plans are switched off, or while the
- * check has not answered once. Revoking a plan
- * never asks: taking back a permission must stay possible whatever the check found.
+ * Setting a plan approves the fee token, so it asks the payment gate first and refuses before
+ * anything is built while plans are switched off, or while the fee token check has not yet
+ * answered once. Revoking never asks: taking back a permission must stay possible always.
  */
 
 interface PlanMutationOptions {
@@ -83,13 +83,17 @@ function contractCall(
 	} as unknown as ContractCall);
 }
 
-/** Approves the limit for the escrow, then sets it there: two signatures in the wallet. */
+/**
+ * Approves the limit for the escrow, then sets it there: two signatures in the wallet.
+ * `beforeLimit` throws if the limit may no longer be set (the gate is asked again).
+ */
 async function approveAndSetLimit(
 	send: SendAndConfirm,
 	chain: Chain,
 	contracts: ContractConfig,
 	{ limitInWei, expiresAtTimestamp }: PlanRequest,
 	onStatus: (_text: string) => void,
+	beforeLimit: () => void,
 ): Promise<void> {
 	onStatus('1/2: Approving...');
 	const approvalToastId = toast.info(
@@ -112,6 +116,9 @@ async function approveAndSetLimit(
 
 		onStatus('Waiting for network...');
 		await wait(NODE_CATCH_UP_MS);
+		// Prompts may have closed while the approval was confirmed: the approval stands, so a
+		// refusal here is a limit not set, which says so and how to revoke.
+		beforeLimit();
 
 		onStatus('2/2: Setting Limit...');
 		const limitToastId = toast.info(
@@ -155,18 +162,22 @@ function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 	const activeWallet = useActiveWallet();
 	const { mutateAsync: send } = useSendAndConfirmTransaction();
 	const queryClient = useQueryClient();
-	const feeTokenCheck = useFeeTokenCheck();
+	const paymentGate = usePaymentGate();
 	const isAwaitingFirstAnswer = useIsAwaitingFirstAnswer();
+	const refuseIfClosedNow = () => {
+		if (paymentGate.blocksNow('plan'))
+			throw new PaymentSwitchedOffError(paymentGate.stateNow(), 'plan', FEE_TOKEN.symbol);
+	};
 
 	return useMutation<void, Error, PlanRequest>({
 		mutationFn: async plan => {
 			// The form is disabled too; this is the refusal that holds whoever calls it.
-			if (feeTokenCheck.blocks('plan'))
-				throw new FeeTokenBlockedError(feeTokenCheck.verdict, FEE_TOKEN.symbol);
+			if (paymentGate.blocks('plan'))
+				throw new PaymentSwitchedOffError(paymentGate.state, 'plan', FEE_TOKEN.symbol);
 			// Nothing has said yet that this is the right token to approve.
 			if (isAwaitingFirstAnswer) throw new PlanHeldError();
 			const { chain, contracts } = connectedContracts(activeWallet);
-			await approveAndSetLimit(send, chain, contracts, plan, onStatus);
+			await approveAndSetLimit(send, chain, contracts, plan, onStatus, refuseIfClosedNow);
 		},
 		onSuccess: async () => {
 			toast.success('Spending Limit Set!', { description: 'Your new plan is now active.' });
@@ -186,7 +197,7 @@ function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 				return;
 			}
 			// Refused or held before anything was sent: not a failed transaction.
-			const wasNotSent = error instanceof FeeTokenBlockedError || error instanceof PlanHeldError;
+			const wasNotSent = error instanceof PaymentSwitchedOffError || error instanceof PlanHeldError;
 			toast.error(wasNotSent ? 'Not sent' : 'Transaction Failed', {
 				description: error.message || 'An unexpected error occurred. Please try again.',
 			});

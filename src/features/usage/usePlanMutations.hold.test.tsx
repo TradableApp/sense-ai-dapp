@@ -51,6 +51,11 @@ vi.mock('@/config/contracts', () => ({
 	},
 }));
 // The chain's answer, held until the test gives it.
+// The prompts switch stays open here; its own tests close it.
+vi.mock('@/hooks/usePromptsSwitch', () => ({
+	default: () => ({ status: 'open' }),
+	readPromptsSwitchNow: () => ({ status: 'open' }),
+}));
 vi.mock('@/lib/feeTokenCheck', async original => ({
 	...(await original<typeof import('@/lib/feeTokenCheck')>()),
 	readFeeTokenVerdict: vi.fn(),

@@ -61,11 +61,9 @@ import AbleTokenABI from '@/lib/abi/AbleToken.json';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 import SenseTokenABI from '@/lib/abi/SenseToken.json';
-import {
-	feeTokenBlockCopy,
-	FeeTokenBlockedError,
-	type FeeTokenCheckState,
-} from '@/lib/feeTokenCheck';
+import { feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
+import { PaymentSwitchedOffError } from '@/lib/paymentGate';
+import { switchCopy } from '@/lib/promptsSwitch';
 import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
 
 import { buildErrorHandler } from './useChatMutations';
@@ -541,19 +539,44 @@ describe('buildErrorHandler — Generic fallbacks', () => {
 	});
 });
 
-describe('buildErrorHandler — an action the fee token check switched off', () => {
+describe('buildErrorHandler — an action the payment gate switched off', () => {
 	it('says what the banner says, and does not log it as a failure', () => {
 		(toast.error as any).mockClear();
 		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
 		const profile = FEE_TOKEN_PROFILES.SENSE;
 		const handler = buildErrorHandler(false, false, 100, vi.fn(), profile);
 
-		handler(new FeeTokenBlockedError('treasury-not-exempt', profile.symbol), 'branch conversation');
+		handler(
+			new PaymentSwitchedOffError(
+				{ feeToken: 'treasury-not-exempt', prompts: { status: 'open' } },
+				'branch',
+				profile.symbol,
+			),
+			'branch conversation',
+		);
 
 		const copy = feeTokenBlockCopy('treasury-not-exempt', profile.symbol);
 		expect(toast.error).toHaveBeenCalledTimes(1);
 		expect(toast.error).toHaveBeenCalledWith(copy?.title, { description: copy?.description });
 		expect(logged).not.toHaveBeenCalled();
 		logged.mockRestore();
+	});
+
+	it('says what the switch says when prompts are closed', () => {
+		(toast.error as any).mockClear();
+		const handler = buildErrorHandler(false, false, 100, vi.fn(), FEE_TOKEN_PROFILES.SENSE);
+
+		handler(
+			new PaymentSwitchedOffError(
+				{ feeToken: 'ok', prompts: { status: 'closed', wording: 'pair-retired' } },
+				'prompt',
+				FEE_TOKEN_PROFILES.SENSE.symbol,
+			),
+			'send prompt',
+		);
+
+		const copy = switchCopy('pair-retired');
+		expect(toast.error).toHaveBeenCalledTimes(1);
+		expect(toast.error).toHaveBeenCalledWith(copy.title, { description: copy.description });
 	});
 });

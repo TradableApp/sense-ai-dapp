@@ -3,11 +3,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
 import { blocksAction, feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
-import { switchedOffReason } from '@/lib/feeTokenRefusal';
+import { switchedOffReason } from '@/lib/paymentGate';
 import { DISAGREEING_STATES } from '@/test/feeTokenVerdicts';
 
 import DeleteConversationDialog from './DeleteConversationDialog';
 
+// The prompts switch stays open here; its own tests close it.
+vi.mock('@/hooks/usePromptsSwitch', () => ({ default: () => ({ status: 'open' }) }));
 vi.mock('@/hooks/useFeeTokenCheck', () => ({ default: vi.fn() }));
 vi.mock('@/config/feeToken', () => ({ FEE_TOKEN: { symbol: 'PTS' } }));
 
@@ -71,7 +73,12 @@ describe('DeleteConversationDialog', () => {
 			const describedBy = button.getAttribute('aria-describedby') ?? '';
 			expect(describedBy).not.toBe('');
 			expect(document.getElementById(describedBy)?.textContent).toBe(
-				switchedOffReason(verdict, 'PTS', 'dialog'),
+				switchedOffReason(
+					{ feeToken: verdict, prompts: { status: 'open' } },
+					'metadata',
+					'PTS',
+					'dialog',
+				),
 			);
 
 			button.focus();

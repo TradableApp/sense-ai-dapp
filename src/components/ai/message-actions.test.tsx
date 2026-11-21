@@ -1,15 +1,18 @@
 import { useState } from 'react';
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
+import usePromptsSwitch from '@/hooks/usePromptsSwitch';
 import { blocksAction, feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
+import { switchCopy } from '@/lib/promptsSwitch';
 import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
 
 import MessageActions from './message-actions';
 import UserMessageActions from './user-message-actions';
 
+vi.mock('@/hooks/usePromptsSwitch', () => ({ default: vi.fn() }));
 vi.mock('@/hooks/useFeeTokenCheck', () => ({ default: vi.fn() }));
 vi.mock('@/config/feeToken', () => ({ FEE_TOKEN: { symbol: 'PTS' } }));
 vi.mock('@/features/auth/SessionProvider', () => ({
@@ -54,6 +57,10 @@ const tooltipText = () =>
 
 const answer = { id: 3, role: 'assistant', content: 'An answer', conversationId: '1', parentId: 2 };
 const prompt = { id: 2, role: 'user', content: 'A prompt' };
+
+beforeEach(() => {
+	vi.mocked(usePromptsSwitch).mockReturnValue({ status: 'open' });
+});
 
 afterEach(cleanup);
 
@@ -255,4 +262,27 @@ describe('the controls on an answer while a prompt is being sent', () => {
 			expect(description(button(trigger))).toMatch(/being sent/i);
 		},
 	);
+});
+
+describe('the controls on an answer while prompts are closed by the switch', () => {
+	it.each(ANSWER_CONTROLS)(
+		'$name is switched off with the switch title as its reason',
+		({ name }) => {
+			checkReturns('ok');
+			vi.mocked(usePromptsSwitch).mockReturnValue({ status: 'closed', wording: 'incident' });
+
+			render(<MessageActions message={answer} />);
+
+			expect(isSwitchedOff(button(name))).toBe(true);
+			expect(description(button(name))).toContain(switchCopy('incident').title);
+		},
+	);
+
+	it.each(ANSWER_CONTROLS)('$name is on again once the switch is open', ({ name }) => {
+		checkReturns('ok');
+
+		render(<MessageActions message={answer} />);
+
+		expect(button(name).getAttribute('aria-disabled')).not.toBe('true');
+	});
 });

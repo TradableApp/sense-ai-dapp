@@ -9,9 +9,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONTRACTS } from '@/config/contracts';
 import { FEE_TOKEN } from '@/config/feeToken';
 import useFeeTokenCheck, { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
+import usePromptsSwitch, { readPromptsSwitchNow } from '@/hooks/usePromptsSwitch';
 import { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
 import { blocksAction, feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
 import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
+import { SWITCH_WORDINGS, switchCopy } from '@/lib/promptsSwitch';
 import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
 
 import usePlanMutations from './usePlanMutations';
@@ -49,6 +51,7 @@ vi.mock('@/hooks/useFeeTokenCheck', () => ({
 	default: vi.fn(),
 	useIsAwaitingFirstAnswer: vi.fn(() => false),
 }));
+vi.mock('@/hooks/usePromptsSwitch', () => ({ default: vi.fn(), readPromptsSwitchNow: vi.fn() }));
 // The real waits are two seconds each; nothing here depends on them.
 vi.mock('@/lib/utils', async original => ({
 	...(await original<typeof import('@/lib/utils')>()),
@@ -101,6 +104,8 @@ beforeEach(() => {
 	vi.spyOn(console, 'error').mockImplementation(() => undefined);
 	sendAndConfirm.mockResolvedValue({ status: 'success' });
 	vi.mocked(useIsAwaitingFirstAnswer).mockReturnValue(false);
+	vi.mocked(usePromptsSwitch).mockReturnValue({ status: 'open' });
+	vi.mocked(readPromptsSwitchNow).mockReturnValue({ status: 'open' });
 });
 
 afterEach(() => {
@@ -162,6 +167,74 @@ describe('revoking a plan is never switched off', () => {
 			expect.objectContaining({ method: 'cancelSpendingLimit' }),
 		);
 		expect(sendAndConfirm).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('setting a plan while prompts are closed by the switch', () => {
+	const closedCases = FEE_TOKEN_STATES.flatMap(verdict =>
+		SWITCH_WORDINGS.map(wording => ({ verdict, wording })),
+	);
+
+	it.each(closedCases)(
+		'under $verdict, closed for $wording, nothing is approved, prepared or sent',
+		async ({ verdict, wording }) => {
+			withVerdict(verdict);
+			vi.mocked(usePromptsSwitch).mockReturnValue({ status: 'closed', wording });
+
+			const { onDone } = await attempt(setPlan);
+
+			expect(prepareContractCall).not.toHaveBeenCalled();
+			expect(sendAndConfirm).not.toHaveBeenCalled();
+			expect(onDone).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(SWITCH_WORDINGS)('closed for %s, the user sees the switch words', async wording => {
+		withVerdict('ok');
+		vi.mocked(usePromptsSwitch).mockReturnValue({ status: 'closed', wording });
+
+		await attempt(setPlan);
+
+		const copy = switchCopy(wording);
+		expect(toast.error).toHaveBeenCalledWith('Not sent', {
+			description: `${copy.title}. ${copy.description}`,
+		});
+	});
+
+	it.each(SWITCH_WORDINGS)('closed for %s, a plan can still be revoked', async wording => {
+		withVerdict('ok');
+		vi.mocked(usePromptsSwitch).mockReturnValue({ status: 'closed', wording });
+
+		await attempt(revoke);
+
+		expect(prepareContractCall).toHaveBeenCalledWith(
+			expect.objectContaining({ method: 'cancelSpendingLimit' }),
+		);
+		expect(sendAndConfirm).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('a switch that closes between the approval and the limit', () => {
+	it('sends no limit and says the approval stands and how to revoke it', async () => {
+		withVerdict('ok');
+		// The approval goes through; by the time it is confirmed, prompts are closed.
+		sendAndConfirm.mockImplementationOnce(async () => {
+			vi.mocked(readPromptsSwitchNow).mockReturnValue({ status: 'closed', wording: 'incident' });
+			return { status: 'success' };
+		});
+
+		const { onDone } = await attempt(setPlan);
+
+		expect(sendAndConfirm).toHaveBeenCalledTimes(1);
+		expect(prepareContractCall).not.toHaveBeenCalledWith(
+			expect.objectContaining({ method: 'setSpendingLimit' }),
+		);
+		expect(onDone).not.toHaveBeenCalled();
+		const [title, options] = vi.mocked(toast.error).mock.calls[0];
+		const description = String((options as { description?: string }).description);
+		expect(title).toBe('Limit Not Set');
+		expect(description).toMatch(/approval went through and stands/);
+		expect(description).toMatch(/Revoke/);
 	});
 });
 

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FEE_TOKEN } from '@/config/feeToken';
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
+import usePromptsSwitch from '@/hooks/usePromptsSwitch';
 import { encryptData } from '@/lib/crypto';
 import eciesEncrypt from '@/lib/ecies';
 import {
@@ -17,6 +18,7 @@ import {
 	type FeeTokenCheckState,
 	type PaidAction,
 } from '@/lib/feeTokenCheck';
+import { type PromptsSwitchState, SWITCH_WORDINGS, switchCopy } from '@/lib/promptsSwitch';
 import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
 
 import useChatMutations from './useChatMutations';
@@ -60,6 +62,7 @@ vi.mock('@/config/contracts', async () => {
 });
 vi.mock('@/hooks/useFaucetConfig', () => ({ default: () => ({ data: { amount: 100 } }) }));
 vi.mock('@/hooks/useFeeTokenCheck', () => ({ default: vi.fn() }));
+vi.mock('@/hooks/usePromptsSwitch', () => ({ default: vi.fn() }));
 vi.mock('@/lib/faucetService', () => ({
 	default: vi.fn(),
 	awaitFaucetReceipt: vi.fn(),
@@ -163,6 +166,8 @@ function withVerdict(verdict: FeeTokenCheckState) {
 	});
 }
 
+const switchIs = (state: PromptsSwitchState) => vi.mocked(usePromptsSwitch).mockReturnValue(state);
+
 function renderMutations() {
 	const queryClient = new QueryClient({
 		defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -190,6 +195,7 @@ const nothingWasPrepared = () => {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	switchIs({ status: 'open' });
 	vi.stubEnv('VITE_ORACLE_PUBLIC_KEY', '0x04abcd');
 	vi.spyOn(window.crypto.subtle, 'exportKey').mockResolvedValue(new ArrayBuffer(32));
 	vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -274,6 +280,66 @@ describe('getting money back is never switched off', () => {
 
 	it.each(moneyBackCases)('$name is sent under $verdict', async ({ run, method, verdict }) => {
 		withVerdict(verdict);
+
+		await attempt(run);
+
+		expect(prepareContractCall).toHaveBeenCalledWith(expect.objectContaining({ method }));
+		expect(sendAndConfirmTransaction).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('a paying action while prompts are closed by the switch', () => {
+	const closedCases = PAYING_ACTIONS.flatMap(action =>
+		FEE_TOKEN_STATES.map(verdict => ({ ...action, verdict })),
+	);
+
+	it.each(closedCases)(
+		'$name under $verdict: nothing is encrypted, prepared or sent',
+		async ({ run, verdict }) => {
+			withVerdict(verdict);
+			switchIs({ status: 'closed', wording: 'maintenance' });
+
+			await attempt(run);
+
+			nothingWasPrepared();
+		},
+	);
+
+	it.each(PAYING_ACTIONS.flatMap(a => SWITCH_WORDINGS.map(wording => ({ ...a, wording }))))(
+		'$name closed for $wording: the user sees the switch words',
+		async ({ run, wording }) => {
+			withVerdict('ok');
+			switchIs({ status: 'closed', wording });
+
+			await attempt(run);
+
+			const copy = switchCopy(wording);
+			expect(toast.error).toHaveBeenCalledTimes(1);
+			expect(toast.error).toHaveBeenCalledWith(copy.title, { description: copy.description });
+		},
+	);
+
+	it.each(PAYING_ACTIONS)('$name is sent again once the switch reopens', async ({ run }) => {
+		withVerdict('ok');
+		switchIs({ status: 'open' });
+
+		await attempt(run);
+
+		expect(sendAndConfirmTransaction).toHaveBeenCalledTimes(1);
+	});
+
+	it.each(PAYING_ACTIONS)('$name is sent while the switch has not been heard', async ({ run }) => {
+		withVerdict('ok');
+		switchIs({ status: 'unknown' });
+
+		await attempt(run);
+
+		expect(sendAndConfirmTransaction).toHaveBeenCalledTimes(1);
+	});
+
+	it.each(MONEY_BACK)('$name is still sent while prompts are closed', async ({ run, method }) => {
+		withVerdict('ok');
+		switchIs({ status: 'closed', wording: 'incident' });
 
 		await attempt(run);
 

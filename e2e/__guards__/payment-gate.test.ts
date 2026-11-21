@@ -1,14 +1,15 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import path, { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { stripComments } from './source-scan';
+import { E2E_DIR, sourceFiles, stripComments } from './source-scan';
 
 /**
- * The fee token check decides nothing by itself: it has to be asked at each place that
- * sends a payment. Nothing renders those components in a unit test, so this reads the
- * source and pins each place. Deleting one of them leaves every other test green.
+ * The payment gate (`usePaymentGate`: the fee token check and the remote prompts switch
+ * together) decides nothing by itself: it has to be asked at each place that sends a
+ * payment. Nothing renders those components in a unit test, so this reads the source and
+ * pins each place. Deleting one of them leaves every other test green.
  */
 const read = (file: string) => readFileSync(resolve(process.cwd(), file), 'utf8');
 
@@ -89,9 +90,12 @@ function disabledOf(source: string, tag: string, marker: string): string {
 	return opening.slice(open + 1, close).trim();
 }
 
-/** Whether an expression depends on the fee token check. */
+/** Whether an expression depends on the payment gate or either thing it reads. */
 const isGatedByCheck = (expression: string) =>
-	/SwitchedOff|feeTokenCheck|blocks\(/.test(expression);
+	/SwitchedOff|feeTokenCheck|paymentGate|promptsSwitch|blocks\(/i.test(expression);
+
+/** What getting money back must never mention: the gate, or either thing it reads. */
+const GATE_WORDS = ['refuseIfSwitchedOff', 'paymentGate', 'feeTokenCheck', 'promptsSwitch'];
 
 /** The body of the `useMutation` assigned to `name`, up to the next mutation or the return. */
 function mutationBody(source: string, name: string): string {
@@ -102,14 +106,15 @@ function mutationBody(source: string, name: string): string {
 	return rest.slice(0, next === -1 ? undefined : next);
 }
 
-describe('where the fee token check is asked', () => {
+describe('where the payment gate is asked', () => {
 	const mutations = code('src/hooks/useChatMutations.tsx');
 
-	it('the shared refusal throws whenever the check blocks the action', () => {
+	it('the shared refusal throws whenever the gate blocks the action', () => {
 		const refusal =
-			'if (feeTokenCheck.blocks(action)) throw new FeeTokenBlockedError(feeTokenCheck.verdict, FEE_TOKEN.symbol);';
+			'if (paymentGate.blocks(action)) throw new PaymentSwitchedOffError(paymentGate.state, action, FEE_TOKEN.symbol);';
 
 		expect(hasStatement(mutations, refusal)).toBe(true);
+		expect(hasStatement(mutations, 'const paymentGate = usePaymentGate();')).toBe(true);
 	});
 
 	it.each([
@@ -131,16 +136,16 @@ describe('where the fee token check is asked', () => {
 		'%s is never refused: getting money back stays possible',
 		name => {
 			const body = mutationBody(mutations, name);
-			expect(body).not.toContain('refuseIfSwitchedOff');
-			expect(body).not.toContain('feeTokenCheck');
+			GATE_WORDS.forEach(word => expect(body.toLowerCase()).not.toContain(word.toLowerCase()));
 		},
 	);
 
 	it('the composer is disabled while prompts are switched off', () => {
 		const chat = code('src/features/chat/Chat.tsx');
-		expect(
-			hasStatement(chat, "const arePromptsSwitchedOff = feeTokenCheck.blocks('prompt');"),
-		).toBe(true);
+		expect(hasStatement(chat, 'const paymentGate = usePaymentGate();')).toBe(true);
+		expect(hasStatement(chat, "const arePromptsSwitchedOff = paymentGate.blocks('prompt');")).toBe(
+			true,
+		);
 		['isDisabled', 'isInputDisabled'].forEach(name => {
 			const expression = chat.match(new RegExp(`const ${name} =([^;]+);`))?.[1] ?? '';
 			expect(isOperandOf(expression, 'arePromptsSwitchedOff'), name).toBe(true);
@@ -149,7 +154,7 @@ describe('where the fee token check is asked', () => {
 
 	it('the plan dialog refuses to submit, says why, and still lets a plan be revoked', () => {
 		const dialog = code('src/features/usage/ManagePlanModal.tsx');
-		expect(hasStatement(dialog, "const isPlanSwitchedOff = feeTokenCheck.blocks('plan');")).toBe(
+		expect(hasStatement(dialog, "const isPlanSwitchedOff = paymentGate.blocks('plan');")).toBe(
 			true,
 		);
 		const submit = dialog.match(/type="submit"\s+disabled=\{([^}]+)\}/)?.[1] ?? '';
@@ -167,11 +172,33 @@ describe('where the fee token check is asked', () => {
 		const setPlan = plans.slice(setPlanAt, revokeAt);
 		const refusal = statementAt(
 			setPlan,
-			"if (feeTokenCheck.blocks('plan')) throw new FeeTokenBlockedError(feeTokenCheck.verdict, FEE_TOKEN.symbol);",
+			"if (paymentGate.blocks('plan')) throw new PaymentSwitchedOffError(paymentGate.state, 'plan', FEE_TOKEN.symbol);",
 		);
 		expect(refusal, 'setting a plan does not refuse').toBeGreaterThan(-1);
 		expect(refusal).toBeLessThan(setPlan.indexOf('approveAndSetLimit('));
-		expect(plans.slice(revokeAt)).not.toContain('feeTokenCheck');
+		GATE_WORDS.forEach(word =>
+			expect(plans.slice(revokeAt).toLowerCase()).not.toContain(word.toLowerCase()),
+		);
+		// Prompts can close while the approval is confirmed: the gate's current state is asked
+		// again, and the limit is not built if it refuses now.
+		const recheck = statementAt(
+			setPlan,
+			"if (paymentGate.blocksNow('plan')) throw new PaymentSwitchedOffError(paymentGate.stateNow(), 'plan', FEE_TOKEN.symbol);",
+		);
+		expect(recheck, 'the limit does not ask the gate again').toBeGreaterThan(-1);
+		expect(
+			hasStatement(
+				setPlan,
+				'await approveAndSetLimit(send, chain, contracts, plan, onStatus, refuseIfClosedNow);',
+			),
+		).toBe(true);
+		const approveAt = plans.indexOf('async function approveAndSetLimit(');
+		expect(approveAt, 'approveAndSetLimit not found').toBeGreaterThan(-1);
+		const approve = plans.slice(approveAt, plans.indexOf('\n}\n', approveAt));
+		const asked = statementAt(approve, 'beforeLimit();');
+		expect(asked, 'the second transaction does not ask first').toBeGreaterThan(-1);
+		expect(asked).toBeLessThan(approve.indexOf("'setSpendingLimit'"));
+		expect(asked).toBeGreaterThan(approve.indexOf("'approve'"));
 		// Before the check's first answer the approval is held too, in the mutation and in the
 		// dialog; revoking is never held.
 		const hold = statementAt(setPlan, 'if (isAwaitingFirstAnswer) throw new PlanHeldError();');
@@ -184,7 +211,7 @@ describe('where the fee token check is asked', () => {
 		expect(hasStatement(dialog, 'if (isPlanSwitchedOff || isAwaitingFirstAnswer) return;')).toBe(
 			true,
 		);
-		expect(dialog).toContain('<FeeTokenMismatchBanner');
+		expect(dialog).toContain('<PaymentsSwitchedOffBanner');
 		const revoke = dialog.match(
 			/<AlertDialogAction onClick=\{handleRevoke\} disabled=\{([^}]+)\}/,
 		)?.[1];
@@ -248,7 +275,7 @@ describe('where the fee token check is asked', () => {
 		});
 	});
 
-	it('the cancel and refund buttons are never disabled by the check', () => {
+	it('the cancel and refund buttons are never disabled by the gate', () => {
 		const chat = code('src/features/chat/Chat.tsx');
 		const cancel = disabledOf(chat, 'PromptInputCancel', 'onClick={handleCancelPrompt}');
 		const refund = disabledOf(chat, 'Button', 'processRefundMutation.mutate(');
@@ -263,14 +290,45 @@ describe('where the fee token check is asked', () => {
 		'src/features/history/DeleteConversationDialog.tsx',
 	])('%s carries the banner itself', file => {
 		const dialog = code(file);
-		expect(dialog).toMatch(/\n\t+<FeeTokenMismatchBanner /);
-		expect(dialog).not.toMatch(/&&\s*<FeeTokenMismatchBanner/);
+		expect(dialog).toMatch(/\n\t+<PaymentsSwitchedOffBanner /);
+		expect(dialog).not.toMatch(/&&\s*<PaymentsSwitchedOffBanner/);
 	});
 
 	it('the banner is mounted once for every page, outside any condition', () => {
 		const layout = code('src/layouts/MainLayout.tsx');
-		expect(layout).toMatch(/\n\t+<FeeTokenMismatchBanner /);
-		expect(layout).not.toMatch(/&&\s*<FeeTokenMismatchBanner/);
+		expect(layout).toMatch(/\n\t+<PaymentsSwitchedOffBanner /);
+		expect(layout).not.toMatch(/&&\s*<PaymentsSwitchedOffBanner/);
+	});
+});
+
+describe('one place decides', () => {
+	const SRC = path.resolve(E2E_DIR, '..', 'src');
+	const appFiles = sourceFiles(SRC, f => /\.(ts|tsx)$/.test(f) && !/\.test\.tsx?$/.test(f));
+	const filesCalling = (pattern: RegExp) =>
+		appFiles.filter(f => pattern.test(stripComments(readFileSync(path.join(SRC, f), 'utf8'))));
+
+	// A control or mutation that read either source directly would decide on half the facts.
+	// A call, not the hook's own declaration.
+	it.each([
+		['the fee token check', /(?<!function )\buseFeeTokenCheck\(\)/],
+		['the prompts switch', /(?<!function )\busePromptsSwitch\(\)/],
+		['the current state of the prompts switch', /(?<!function )\breadPromptsSwitchNow\(/],
+	])('only the payment gate reads %s', (_, pattern) => {
+		expect(filesCalling(pattern)).toEqual([path.join('hooks', 'usePaymentGate.ts')]);
+	});
+
+	it('only the gate and the check itself weigh a verdict', () => {
+		expect(filesCalling(/\bblocksAction\(/).sort()).toEqual(
+			[
+				path.join('hooks', 'useFeeTokenCheck.ts'),
+				path.join('lib', 'feeTokenCheck.ts'),
+				path.join('lib', 'paymentGate.ts'),
+			].sort(),
+		);
+	});
+
+	it('the old banner and the old refusal are gone', () => {
+		expect(filesCalling(/FeeTokenMismatchBanner|FeeTokenBlockedError/)).toEqual([]);
 	});
 });
 
@@ -326,7 +384,7 @@ describe('how the guard reads the button that sends a refund', () => {
 
 describe('the gate guard itself', () => {
 	const refusal = "refuseIfSwitchedOff('prompt');";
-	const flag = "const isPlanSwitchedOff = feeTokenCheck.blocks('plan');";
+	const flag = "const isPlanSwitchedOff = paymentGate.blocks('plan');";
 
 	it('finds a refusal that stands as its own statement', () => {
 		expect(hasStatement(`\t\t\t${refusal}\n\t\t\tconst chain = 1;`, refusal)).toBe(true);
@@ -345,25 +403,25 @@ describe('the gate guard itself', () => {
 	});
 
 	it.each([
-		['a trailing condition', "const isPlanSwitchedOff = feeTokenCheck.blocks('plan') && false;"],
-		['a leading condition', "const isPlanSwitchedOff = false && feeTokenCheck.blocks('plan');"],
-		['a fallback', "const isPlanSwitchedOff = feeTokenCheck.blocks('plan') || null;"],
+		['a trailing condition', "const isPlanSwitchedOff = paymentGate.blocks('plan') && false;"],
+		['a leading condition', "const isPlanSwitchedOff = false && paymentGate.blocks('plan');"],
+		['a fallback', "const isPlanSwitchedOff = paymentGate.blocks('plan') || null;"],
 	])('refuses a flag with %s', (_, line) => {
 		expect(hasStatement(`\t${line}\n`, flag)).toBe(false);
 	});
 
 	it('accepts a statement the formatter wrapped over two lines', () => {
-		const thrown = 'if (blocked) throw new FeeTokenBlockedError(verdict, symbol);';
+		const thrown = 'if (blocked) throw new PaymentSwitchedOffError(state, action, symbol);';
 
 		expect(
 			hasStatement(
-				'\t\tif (blocked)\n\t\t\tthrow new FeeTokenBlockedError(verdict, symbol);',
+				'\t\tif (blocked)\n\t\t\tthrow new PaymentSwitchedOffError(state, action, symbol);',
 				thrown,
 			),
 		).toBe(true);
 		expect(
 			hasStatement(
-				'\t\tif (blocked)\n\t\t\tthrow new FeeTokenBlockedError(verdict, symbol) && 0;',
+				'\t\tif (blocked)\n\t\t\tthrow new PaymentSwitchedOffError(state, action, symbol) && 0;',
 				thrown,
 			),
 		).toBe(false);

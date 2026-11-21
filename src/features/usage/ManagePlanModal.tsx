@@ -8,7 +8,7 @@ import { parseUnits } from 'viem';
 import { z } from 'zod';
 
 import CommunityLinksNotice from '@/components/CommunityLinksNotice';
-import FeeTokenMismatchBanner from '@/components/FeeTokenMismatchBanner';
+import PaymentsSwitchedOffBanner from '@/components/PaymentsSwitchedOffBanner';
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -34,10 +34,8 @@ import Label from '@/components/ui/label';
 import { LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
 import { defaultPlanLimit, FEE_TOKEN, fullBalanceLabel } from '@/config/feeToken';
 import useFaucetRequest from '@/hooks/useFaucetRequest';
-import useFeeTokenCheck, {
-	useAskFeeTokenAgain,
-	useIsAwaitingFirstAnswer,
-} from '@/hooks/useFeeTokenCheck';
+import { useAskFeeTokenAgain, useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
+import usePaymentGate from '@/hooks/usePaymentGate';
 import useTokenBalance from '@/hooks/useTokenBalance';
 import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
 import { cn } from '@/lib/utils';
@@ -150,9 +148,9 @@ export default function ManagePlanModal({
 
 	// Logic to block actions if there are pending prompts
 	const hasPendingPrompts = (existingPlan?.pendingEscrowCount ?? 0) > 0;
-	// Setting a plan approves the token; not while the chain disagrees about which token.
-	const feeTokenCheck = useFeeTokenCheck();
-	const isPlanSwitchedOff = feeTokenCheck.blocks('plan');
+	// Setting a plan approves the token; not while the payment gate refuses plans.
+	const paymentGate = usePaymentGate();
+	const isPlanSwitchedOff = paymentGate.blocks('plan');
 	// Before the check's first answer the approval waits; the submit stays focusable and says why.
 	const isAwaitingFirstAnswer = useIsAwaitingFirstAnswer();
 	const askFeeTokenAgain = useAskFeeTokenAgain();
@@ -202,7 +200,7 @@ export default function ManagePlanModal({
 
 				<form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pt-4">
 					{/* The page's own banner is behind this dialog. */}
-					<FeeTokenMismatchBanner />
+					<PaymentsSwitchedOffBanner />
 					<div className="space-y-2">
 						<div className="flex items-baseline justify-between gap-2">
 							<Label htmlFor="limit">Spending Limit ({FEE_TOKEN.symbol})</Label>

@@ -10,15 +10,16 @@ import { describe, expect, it } from 'vitest';
 import { E2E_DIR, sourceFiles, stripComments } from './source-scan';
 
 /**
- * A transaction is sent only from the files where the fee token check is asked first.
+ * A transaction is sent only from the files where the payment gate is asked first.
  *
- * The check stops a payment only where something asks it, and the fee-token-gate guard
- * pins each of those places. A new file that sent a transaction on its own would pay
- * through a token the chain disagrees about with no refusal and no banner, and every
- * other test would stay green. So the files that can send are listed here:
- * - `useChatMutations.tsx`: prompts, branches, renames and deletes (each asks the check),
+ * The gate (the fee token check and the prompts switch) stops a payment only where something
+ * asks it, and the payment-gate guard pins each of those places. A new file that sent a
+ * transaction on its own would pay while prompts are closed, or through a token the chain
+ * disagrees about, with no refusal and no banner, and every other test would stay green.
+ * So the files that can send are listed here:
+ * - `useChatMutations.tsx`: prompts, branches, renames and deletes (each asks the gate),
  *   and cancel and refund (never refused, so money can always come back);
- * - `usePlanMutations.ts`: setting a plan (asks the check) and revoking one (never refused);
+ * - `usePlanMutations.ts`: setting a plan (asks the gate) and revoking one (never refused);
  * - `faucetService.ts`: the local faucet, an unlocked development account sending test
  *   tokens to the user. The user pays nothing, so there is nothing to refuse.
  */

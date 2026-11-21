@@ -11,19 +11,15 @@ import { CONTRACTS, LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts'
 import { FEE_TOKEN, type FeeTokenProfile, TRANSFER_RESTRICTION_ABI } from '@/config/feeToken';
 import { client } from '@/config/thirdweb';
 import useFaucetRequest, { FAUCET_OFFER_TOAST_ID } from '@/hooks/useFaucetRequest';
-import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
+import usePaymentGate from '@/hooks/usePaymentGate';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 import { messageNamesError } from '@/lib/contractErrorSelector';
 import { encryptData } from '@/lib/crypto';
 import eciesEncrypt from '@/lib/ecies';
-import {
-	feeTokenBlockCopy,
-	FeeTokenBlockedError,
-	type FeeTokenCheckState,
-	type PaidAction,
-} from '@/lib/feeTokenCheck';
+import type { FeeTokenCheckState, PaidAction } from '@/lib/feeTokenCheck';
 import { CANCEL_ACTION, REFUND_ACTION, refusedTransferMessage } from '@/lib/feeTokenRefusal';
+import { PaymentSwitchedOffError } from '@/lib/paymentGate';
 
 import { getTokenBalanceQueryKey } from './useTokenBalance';
 
@@ -145,12 +141,9 @@ export function buildErrorHandler(
 	verdict: FeeTokenCheckState = 'unknown',
 ): (_error: unknown, _action: string) => void {
 	return function genericOnError(error: unknown, action: string): void {
-		if (error instanceof FeeTokenBlockedError) {
-			// Refused before anything was sent; the banner says the same.
-			const copy = feeTokenBlockCopy(error.state, feeToken.symbol);
-			toast.error(copy?.title ?? 'Payments are switched off', {
-				description: copy?.description,
-			});
+		if (error instanceof PaymentSwitchedOffError) {
+			// Refused by the payment gate before anything was sent; the banner says the same.
+			toast.error(error.notice.title, { description: error.notice.description });
 			return;
 		}
 		console.error(`Failed to ${action}:`, error);
@@ -346,12 +339,13 @@ export default function useChatMutations() {
 	const isLocalnet = chainId === LOCAL_CHAIN_ID;
 	const { requestTokensFromOffer: handleFaucetRequest, faucetAmount } = useFaucetRequest();
 	const queryClient = useQueryClient();
-	const feeTokenCheck = useFeeTokenCheck();
-	// Every paying mutation asks this first, so a new caller cannot send what the check has
-	// switched off. Cancel and refund never ask: getting money back stays possible.
+	const paymentGate = usePaymentGate();
+	// Every paying mutation asks this first, so a new caller cannot send what the payment gate
+	// (the fee token check and the prompts switch) refuses. Cancel and refund never ask:
+	// getting money back stays possible.
 	const refuseIfSwitchedOff = (action: PaidAction) => {
-		if (feeTokenCheck.blocks(action))
-			throw new FeeTokenBlockedError(feeTokenCheck.verdict, FEE_TOKEN.symbol);
+		if (paymentGate.blocks(action))
+			throw new PaymentSwitchedOffError(paymentGate.state, action, FEE_TOKEN.symbol);
 	};
 
 	// We invalidate 'usagePlan' (Allowance, Pending Count) and the wallet balance immediately after a
@@ -373,7 +367,7 @@ export default function useChatMutations() {
 		faucetAmount,
 		handleFaucetRequest,
 		FEE_TOKEN,
-		feeTokenCheck.verdict,
+		paymentGate.state.feeToken,
 	);
 
 	// --- MUTATIONS ---
