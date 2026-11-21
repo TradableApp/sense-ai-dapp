@@ -27,7 +27,11 @@ const SESSION = vi.hoisted(() => ({
 	sessionKey: {} as CryptoKey,
 	ownerAddress: '0x00000000000000000000000000000000000000aa',
 }));
-vi.mock('@/features/auth/SessionProvider', () => ({ useSession: () => SESSION }));
+// The session the chat has now; a test changes it to see which one a late failure uses.
+const currentSession = vi.hoisted(() => ({ value: null as null | Record<string, unknown> }));
+vi.mock('@/features/auth/SessionProvider', () => ({
+	useSession: () => currentSession.value ?? SESSION,
+}));
 
 vi.mock('sonner', () => ({
 	toast: {
@@ -215,6 +219,7 @@ async function startAndWait(sends: { current: Sends }, start: (_m: Sends) => voi
 beforeEach(() => {
 	vi.clearAllMocks();
 	forgetSaveFailureReports();
+	currentSession.value = null;
 	vi.stubEnv('VITE_ORACLE_PUBLIC_KEY', '0x04abcd');
 	vi.spyOn(window.crypto.subtle, 'exportKey').mockResolvedValue(new ArrayBuffer(32));
 	vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -421,6 +426,30 @@ describe('a confirmed send whose caller is still finishing', () => {
 		},
 	);
 
+	it.each(pairs.map(({ first, second }) => [second.name, first.name, first, second] as const))(
+		'%s is refused in a chat opened again while the caller of %s is still finishing',
+		async (_second, _first, first, second) => {
+			const queryClient = newClient();
+			const { work } = unfinishedWork();
+			const left = renderSends(queryClient);
+			await startAndWait(left.result, m => first.start(m, { onSuccess: () => work }));
+			await act(async () => {
+				confirm(receiptWith(first.event));
+			});
+			await settleStarts();
+			left.unmount();
+
+			const reopened = renderSends(queryClient).result;
+			await act(async () => {
+				second.start(reopened.current);
+			});
+			await settleStarts();
+
+			expect(sendAndConfirmTransaction).toHaveBeenCalledTimes(1);
+			expect(reopened.current.isSending).toBe(true);
+		},
+	);
+
 	it.each(SENDS)('$name: the next send goes through once the caller has finished', async c => {
 		const { work, finish } = unfinishedWork();
 		const sends = await confirmedWith(c, work);
@@ -448,29 +477,41 @@ describe('a confirmed send whose caller is still finishing', () => {
 });
 
 describe('a confirmed send whose caller then fails to save it', () => {
-	/** Confirms `c`, then fails the caller's work after the transaction was confirmed. */
-	async function failedAfterConfirm(
+	/** Starts and confirms `c`; its caller's work is still running until `fail` is called. */
+	async function confirmedThenFailing(
 		c: (typeof SENDS)[number],
-		queryClient = newClient(),
-		sent = 1,
+		{
+			queryClient = newClient(),
+			sent = 1,
+			onSaveFailed = vi.fn(),
+		}: { queryClient?: QueryClient; sent?: number; onSaveFailed?: () => void } = {},
 	) {
-		const onSaveFailed = vi.fn();
 		let fail: () => void = () => undefined;
 		const work = new Promise<void>((_resolve, reject) => {
 			// The prompt's text in the error, as a library's error could carry it.
 			fail = () => reject(new Error(`the local write failed for ${PROMPT_TEXT}`));
 		});
-		const sends = renderSends(queryClient).result;
+		const rendered = renderSends(queryClient);
+		const sends = rendered.result;
 		await startAndWait(sends, m => c.start(m, { onSuccess: () => work, onSaveFailed }), sent);
 		await act(async () => {
 			confirm(receiptWith(c.event));
 		});
 		await settleStarts();
+		return { rendered, sends, onSaveFailed, fail: () => fail() };
+	}
+
+	/** Confirms `c`, then fails the caller's work after the transaction was confirmed. */
+	async function failedAfterConfirm(
+		c: (typeof SENDS)[number],
+		options: Parameters<typeof confirmedThenFailing>[1] = {},
+	) {
+		const confirmed = await confirmedThenFailing(c, options);
 		await act(async () => {
-			fail();
+			confirmed.fail();
 		});
-		await waitFor(() => expect(sends.current.isSending).toBe(false));
-		return { sends, onSaveFailed };
+		await waitFor(() => expect(confirmed.sends.current.isSending).toBe(false));
+		return confirmed;
 	}
 
 	it.each(SENDS)('$name: the user is told it was sent and paid for and will appear', async c => {
@@ -495,7 +536,7 @@ describe('a confirmed send whose caller then fails to save it', () => {
 		const queryClient = newClient();
 		const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
 
-		await failedAfterConfirm(c, queryClient);
+		await failedAfterConfirm(c, { queryClient });
 
 		expect(invalidate).toHaveBeenCalledWith({
 			queryKey: ['conversations', SESSION.sessionKey, SESSION.ownerAddress],
@@ -505,12 +546,68 @@ describe('a confirmed send whose caller then fails to save it', () => {
 	it('is reported to Sentry once per page load, without the text of the prompt', async () => {
 		await failedAfterConfirm(SENDS[0]);
 		cleanup();
-		await failedAfterConfirm(SENDS[1], newClient(), 2);
+		await failedAfterConfirm(SENDS[1], { sent: 2 });
 
 		expect(Sentry.captureException).toHaveBeenCalledTimes(1);
 		expect(JSON.stringify(vi.mocked(Sentry.captureException).mock.calls)).not.toContain(
 			PROMPT_TEXT,
 		);
+	});
+
+	// Sentry's console breadcrumb joins console.error's arguments into its message, and goes
+	// with the report and every later event: the error's message must not be among them.
+	it.each(SENDS)('$name: the console is given the error name only', async c => {
+		await failedAfterConfirm(c);
+
+		const logged = vi.mocked(console.error).mock.calls.flat().map(String).join(' ');
+		expect(console.error).toHaveBeenCalled();
+		expect(logged).toContain('Error');
+		expect(logged).not.toContain(PROMPT_TEXT);
+		expect(logged).not.toContain('local write failed');
+	});
+
+	it.each(SENDS)(
+		'$name: an onSaveFailed that throws still warns and releases the lock',
+		async c => {
+			const onSaveFailed = vi.fn(() => {
+				throw new Error('the composer is gone');
+			});
+			const { sends } = await failedAfterConfirm(c, { onSaveFailed });
+
+			expect(toast.warning).toHaveBeenCalledTimes(1);
+			expect(sends.current.isSending).toBe(false);
+			await startAndWait(sends, c.start, 2);
+		},
+	);
+
+	// Long words, and on regenerate and branch the only thing between the user and a reflex
+	// second press: it stays until closed, and a second failure replaces it.
+	it('stays up until closed, under one id, and a second failure shows it again', async () => {
+		await failedAfterConfirm(SENDS[0]);
+		cleanup();
+		await failedAfterConfirm(SENDS[1], { sent: 2 });
+
+		expect(toast.warning).toHaveBeenCalledTimes(2);
+		const [first, second] = vi.mocked(toast.warning).mock.calls.map(([, options]) => options);
+		expect(first).toMatchObject({ duration: Infinity, id: expect.any(String) });
+		expect(second).toMatchObject({ duration: Infinity, id: (first as { id: string }).id });
+	});
+
+	it('asks for the sync of the session the send was made in', async () => {
+		const queryClient = newClient();
+		const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+		const { rendered, fail } = await confirmedThenFailing(SENDS[0], { queryClient });
+
+		currentSession.value = { sessionKey: {} as CryptoKey, ownerAddress: '0x' + 'b'.repeat(40) };
+		rendered.rerender();
+		await act(async () => {
+			fail();
+		});
+		await waitFor(() => expect(invalidate).toHaveBeenCalled());
+
+		expect(invalidate).toHaveBeenCalledWith({
+			queryKey: ['conversations', SESSION.sessionKey, SESSION.ownerAddress],
+		});
 	});
 
 	it.each(SENDS)('$name saved: nothing is shown, cleared or reported', async c => {

@@ -75,19 +75,40 @@ function handler(call: string, property: string): string {
 }
 
 /**
- * Whether the handler gives its work back. An `async` arrow gives back a promise of all it
- * awaits; an arrow whose body is an expression gives that back; a block body that is not
- * `async` gives back nothing unless it starts with `return`. Work started inside and neither
- * awaited nor returned (an `(async () => …)()` left running) is not counted by the lock, so
- * it fails either way. Anything else (a named function passed in) fails: it cannot be read.
+ * The chat's writes to the local store after a confirmed send. Each must be awaited (or
+ * returned) inside its `onSuccess`, or the lock lets go before the prompt is saved.
  */
-function handsWorkBack(text: string): boolean {
-	const head = /^\w+:\s*(async\s+)?(?:\([^)]*\)|\w+)\s*=>\s*/.exec(text);
-	if (!head) return false;
-	const body = text.slice(head[0].length);
-	if (/(?<!await |return )\(async\b/.test(body)) return false;
-	if (head[1]) return true;
-	return !body.startsWith('{') || /^\{\s*return\b/.test(body);
+const SAVES = [
+	'addMessageToConversation',
+	'createNewConversation',
+	'editUserMessage',
+	'regenerateAssistantResponse',
+	'branchConversation',
+];
+
+/** The body of an `async` arrow handler, or null when the handler is anything else. */
+function asyncBody(text: string): string | null {
+	const head = /^\w+:\s*async\s+(?:\([^)]*\)|\w+)\s*=>\s*/.exec(text);
+	return head ? text.slice(head[0].length) : null;
+}
+
+/**
+ * Why the handler does not give the chat's work back to the lock, or '' when it does. It
+ * must be an `async` arrow (a promise of all it awaits), call at least one save, and await or
+ * return every save it calls. Nothing in it may start work it does not wait for: an
+ * `(async () => …)()` left running, `.then(`, `setTimeout`, `queueMicrotask` or `void`.
+ */
+function whyNotHandedBack(text: string): string {
+	const body = asyncBody(text);
+	if (body === null) return 'not an async arrow';
+	if (/(?<!await |return )\(async\b/.test(body))
+		return 'starts an async function it does not await';
+	const unwaited = /\.then\(|\bsetTimeout\(|\bqueueMicrotask\(|\bvoid\b/.exec(body);
+	if (unwaited) return `starts work it does not wait for (${unwaited[0]})`;
+	const calls = [...body.matchAll(new RegExp(`\\b(${SAVES.join('|')})\\(`, 'g'))];
+	if (calls.length === 0) return 'calls none of the saves';
+	const bare = calls.find(call => !/\b(?:await|return)\s+$/.test(body.slice(0, call.index ?? 0)));
+	return bare ? `${bare[1]} is neither awaited nor returned` : '';
 }
 
 describe('the chat sends one paid prompt at a time', () => {
@@ -145,19 +166,30 @@ describe('the chat sends one paid prompt at a time', () => {
 		);
 		calls.forEach(({ name, call }) => {
 			const onSuccess = handler(call, 'onSuccess');
-			expect(onSuccess, name).not.toBe('');
-			expect(handsWorkBack(onSuccess), `${name}: ${onSuccess.slice(0, 80)}`).toBe(true);
+			expect(whyNotHandedBack(onSuccess), `${name}: ${onSuccess.slice(0, 80)}`).toBe('');
 		});
 	});
 
 	// A prompt that was paid for but not saved on this device must not be sent again by
-	// reflex: the lock tells the user and asks for a sync, and the chat clears what it shows.
-	it('clears the composer and the edit box when a paid prompt could not be saved', () => {
-		const clears = sendCalls()
-			.filter(c => c.name === 'initiatePromptMutation')
-			.map(c => handler(c.call, 'onSaveFailed'));
-		expect(clears.some(text => /\breset\(\)/.test(text))).toBe(true);
-		expect(clears.some(text => /\bsetEditingMessageId\(null\)/.test(text))).toBe(true);
+	// reflex: the lock tells the user and asks for a sync, and each prompt call clears its own
+	// input. The call is known by what it saves.
+	it.each([
+		[
+			'the composer',
+			/\b(?:addMessageToConversation|createNewConversation)\(/,
+			/^onSaveFailed:\s*\(\)\s*=>\s*reset\(\),?$/,
+		],
+		[
+			'the edit box',
+			/\beditUserMessage\(/,
+			/^onSaveFailed:\s*\(\)\s*=>\s*setEditingMessageId\(null\),?$/,
+		],
+	])('clears %s when its paid prompt could not be saved', (_input, saves, clears) => {
+		const calls = sendCalls().filter(
+			c => c.name === 'initiatePromptMutation' && saves.test(handler(c.call, 'onSuccess')),
+		);
+		expect(calls).toHaveLength(1);
+		expect(handler(calls[0].call, 'onSaveFailed').trim()).toMatch(clears);
 	});
 
 	it.each(['EditPromptInput', 'MessageActions'])('passes the flag to %s', tag => {
