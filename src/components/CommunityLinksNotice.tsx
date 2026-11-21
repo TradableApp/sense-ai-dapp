@@ -21,7 +21,7 @@ function ExternalLink({ link }: { link: CommunityLink }) {
 
 /** Points a wallet that cannot get the fee token in the app to where it can find out how. */
 export default function CommunityLinksNotice({ symbol, hasNone }: CommunityLinksNoticeProps) {
-	const [x, telegram] = COMMUNITY_LINKS;
+	const { x, telegram } = COMMUNITY_LINKS;
 	return (
 		<p>
 			{hasNone ? `You have no ${symbol} yet.` : `You do not have enough ${symbol}.`} Follow{' '}

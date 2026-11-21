@@ -33,9 +33,10 @@ describe('CommunityLinksNotice', () => {
 	it('takes its links from the one config module', () => {
 		render(<CommunityLinksNotice symbol="PTS" hasNone />);
 
-		expect(screen.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual(
-			COMMUNITY_LINKS.map(link => link.href),
-		);
+		expect(screen.getAllByRole('link').map(link => link.getAttribute('href'))).toEqual([
+			COMMUNITY_LINKS.x.href,
+			COMMUNITY_LINKS.telegram.href,
+		]);
 	});
 
 	it('names no price, value or comparison', () => {

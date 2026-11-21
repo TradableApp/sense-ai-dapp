@@ -9,7 +9,8 @@ export interface CommunityLink {
 	href: string;
 }
 
-export const COMMUNITY_LINKS: readonly [CommunityLink, CommunityLink] = [
-	{ label: 'SenseAI on X', href: 'https://x.com/SenseAI_agent' },
-	{ label: 'the SenseAI Telegram group', href: 'https://t.me/tradable_community' },
-];
+/** Named, not listed: the sentence says "follow" of one and "join" of the other. */
+export const COMMUNITY_LINKS: Readonly<Record<'x' | 'telegram', CommunityLink>> = {
+	x: { label: 'SenseAI on X', href: 'https://x.com/SenseAI_agent' },
+	telegram: { label: 'the SenseAI Telegram group', href: 'https://t.me/tradable_community' },
+};

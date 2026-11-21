@@ -1,5 +1,3 @@
-import type { MouseEventHandler } from 'react';
-
 import CommunityLinksNotice from '@/components/CommunityLinksNotice';
 import { Button } from '@/components/ui/button';
 import type { FeeTokenProfile } from '@/config/feeToken';
@@ -45,7 +43,9 @@ export default function InsufficientBalanceNotice({
 					size="sm"
 					variant="outline"
 					className="w-full border-primary/20 bg-primary/10 hover:bg-primary/20 text-primary"
-					onClick={faucetOffer.onRequest as MouseEventHandler<HTMLButtonElement>}
+					onClick={() => {
+						faucetOffer.onRequest();
+					}}
 				>
 					{faucetOffer.label}
 				</Button>
