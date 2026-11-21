@@ -43,6 +43,9 @@ const TESTNET_SPECS = [
 	'activity',
 	'graph',
 	'reasoning',
+	// T-STREAM-01 and T-STREAM-06 only; the others skip themselves on testnet (they need the mock
+	// oracle's sentinels). Needs a hosted build with VITE_REASONING_STREAM_URL set.
+	'live-reasoning',
 	'remaining-features',
 	'plan',
 ];
@@ -211,6 +214,17 @@ const LOCALNET_PROJECTS: Project[] = [
 		// Each test does a full prompt → answer round-trip before asserting the reasoning/sources
 		// disclosure, so it needs the same headroom as the other answer-flow specs.
 		timeout: 120_000,
+		use: { ...devices['Desktop Chrome'] },
+	},
+	{
+		name: 'live-reasoning',
+		testMatch: '**/live-reasoning.spec.ts',
+		fullyParallel: false,
+		// The heaviest test, T-STREAM-04, connects two devices (each a connect + session sign), does
+		// one full round trip (up to the 90 s answer budget), then a second prompt whose answer the
+		// mock oracle holds ~26 s while device B syncs and streams, then waits for that answer to
+		// land: about 200 s at worst, so 240 s, as versions and branching.
+		timeout: 240_000,
 		use: { ...devices['Desktop Chrome'] },
 	},
 	{
