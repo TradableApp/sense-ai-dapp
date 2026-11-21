@@ -13,6 +13,8 @@
  */
 import { z } from 'zod';
 
+import safeHref from '@/lib/safeHref';
+
 export const STREAM_CONTRACT_VERSION = 1;
 
 export const FRAME_TYPES = Object.freeze({
@@ -106,14 +108,8 @@ export const streamUrl = (endpoint: StreamEndpoint, answerMessageId: string): st
 
 const utf8Bytes = (text: string): number => new TextEncoder().encode(text).length;
 
-const isWebUrl = (value: string): boolean => {
-	try {
-		const { protocol } = new URL(value);
-		return protocol === 'http:' || protocol === 'https:';
-	} catch {
-		return false;
-	}
-};
+/** The same rule the links use (`safeHref`), so a frame with any other scheme is refused whole. */
+const isWebUrl = (value: string): boolean => safeHref(value) !== null;
 
 const attempt = z.number().int().min(1).max(LIMITS.maxAttempts);
 

@@ -65,7 +65,8 @@ describe('live reasoning is an overlay in memory only', () => {
 	});
 
 	it('starts the transport only from useLiveReasoning', () => {
-		const valueImport = /^import\s+(?!type\b)[^;]*from\s+['"][^'"]*liveReasoning\/frameTransport['"]/m;
+		const valueImport =
+			/^import\s+(?!type\b)[^;]*from\s+['"][^'"]*liveReasoning\/frameTransport['"]/m;
 		const importers = ALL_SRC.filter(
 			file => !file.endsWith('frameTransport.ts') && valueImport.test(stripComments(read(file))),
 		);
@@ -77,7 +78,9 @@ describe('live reasoning is an overlay in memory only', () => {
 		const readers = ALL_SRC.filter(file =>
 			/import\.meta\.env\.VITE_REASONING_STREAM_(URL|MODE)/.test(stripComments(read(file))),
 		);
-		const namers = ALL_SRC.filter(file => /VITE_REASONING_STREAM_URL/.test(stripComments(read(file))));
+		const namers = ALL_SRC.filter(file =>
+			/VITE_REASONING_STREAM_URL/.test(stripComments(read(file))),
+		);
 
 		expect(readers).toEqual(['src/config/reasoningStream.ts']);
 		expect(namers.sort()).toEqual([
@@ -88,16 +91,21 @@ describe('live reasoning is an overlay in memory only', () => {
 	});
 
 	it('checks the stream setting in vite.config.ts', () => {
-		expect(stripComments(read('vite.config.ts'))).toMatch(/assertReasoningStreamConfig\(mode, env\);/);
+		expect(stripComments(read('vite.config.ts'))).toMatch(
+			/assertReasoningStreamConfig\(mode, env\);/,
+		);
 	});
 
 	it('never puts the proof of key in a log line, a report or a URL', () => {
 		const leaks = /\bproof\b[^\n]*(console\.|Sentry|captureException|addBreadcrumb|streamUrl\(|`)/i;
-		const leaksReversed = /(console\.|Sentry|captureException|addBreadcrumb|streamUrl\()[^\n]*\bproof\b/i;
+		const leaksReversed =
+			/(console\.|Sentry|captureException|addBreadcrumb|streamUrl\()[^\n]*\bproof\b/i;
 
 		expect(offending(LIVE_FILES, leaks)).toEqual([]);
 		expect(offending(LIVE_FILES, leaksReversed)).toEqual([]);
-		expect(read(`${LIVE_DIR}/frameTransport.ts`)).toMatch(/\[STREAM_HTTP\.proofHeader\]: options\.proof/);
+		expect(read(`${LIVE_DIR}/frameTransport.ts`)).toMatch(
+			/\[STREAM_HTTP\.proofHeader\]: options\.proof/,
+		);
 	});
 
 	it('renders nothing live as raw HTML', () => {
@@ -108,6 +116,24 @@ describe('live reasoning is an overlay in memory only', () => {
 		];
 
 		expect(offending(files, /dangerouslySetInnerHTML|innerHTML/)).toEqual([]);
+	});
+
+	it('turns a source URL into a link only through safeHref', () => {
+		const files = ['src/components/ai/source.tsx', 'src/components/ai/earlier-attempt.tsx'];
+
+		// Passing the URL to the `Source` component is fine: it applies safeHref itself.
+		const rawLinks = ALL_SRC.flatMap(file => {
+			const lines = stripComments(read(file)).split('\n');
+			return lines.flatMap((line, i) =>
+				/href=\{\s*source\.url\s*\}/.test(line) &&
+				!/<Source\b/.test(lines.slice(Math.max(0, i - 3), i).join('\n'))
+					? [`${file}:${i + 1}`]
+					: [],
+			);
+		});
+
+		expect(rawLinks).toEqual([]);
+		files.forEach(file => expect(stripComments(read(file))).toMatch(/safeHref\(/));
 	});
 
 	it('has no second live path: the socket service, its mock and the Redux live reducers are gone', () => {

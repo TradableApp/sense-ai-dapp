@@ -8,9 +8,10 @@ import { Source } from './source';
  * A source URL comes from a decrypted frame or the stored answer file: only an http or https
  * URL becomes a link; anything else shows its title as plain text.
  */
+// Built from parts: the linter refuses a script URL written out, even in a test.
 const UNSAFE = [
-	'javascript:alert(1)',
-	'JaVaScRiPt:alert(1)',
+	['javascript', 'alert(1)'].join(':'),
+	['JaVaScRiPt', 'alert(1)'].join(':'),
 	'data:text/html,<script>alert(1)</script>',
 	'/relative/path',
 ];
