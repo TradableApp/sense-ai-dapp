@@ -39,13 +39,26 @@ function element(source: string, tag: string): string {
 const hasLine = (text: string, attribute: string) =>
 	new RegExp(`^[ \\t]*${attribute.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[ \\t]*$`, 'm').test(text);
 
-/** The text of the call that starts at `start` (an opening parenthesis), brackets balanced. */
+/**
+ * The text of the call that starts at `start` (an opening parenthesis), brackets balanced.
+ * A bracket inside a quoted string or a template is words, not code. Comments are stripped
+ * before this reads; a regular expression holding a quote or a bracket is not understood.
+ */
 function callAt(source: string, start: number): string {
 	let depth = 0;
+	let quote = '';
 	for (let i = start; i < source.length; i += 1) {
-		if ('([{'.includes(source[i])) depth += 1;
-		if (')]}'.includes(source[i])) depth -= 1;
-		if (depth === 0) return source.slice(start, i + 1);
+		const char = source[i];
+		if (quote) {
+			if (char === '\\') i += 1;
+			else if (char === quote) quote = '';
+		} else if ('\'"`'.includes(char)) {
+			quote = char;
+		} else {
+			if ('([{'.includes(char)) depth += 1;
+			if (')]}'.includes(char)) depth -= 1;
+			if (depth === 0) return source.slice(start, i + 1);
+		}
 	}
 	return source.slice(start);
 }
@@ -96,14 +109,17 @@ function asyncBody(text: string): string | null {
  * Why the handler does not give the chat's work back to the lock, or '' when it does. It
  * must be an `async` arrow (a promise of all it awaits), call at least one save, and await or
  * return every save it calls. Nothing in it may start work it does not wait for: an
- * `(async () => …)()` left running, `.then(`, `setTimeout`, `queueMicrotask` or `void`.
+ * `(async () => …)()` left running, `.then(`, `setTimeout`, `queueMicrotask` or the `void`
+ * operator (the `void` type, after a colon or inside `<…>`, is not work).
  */
 function whyNotHandedBack(text: string): string {
 	const body = asyncBody(text);
 	if (body === null) return 'not an async arrow';
 	if (/(?<!await |return )\(async\b/.test(body))
 		return 'starts an async function it does not await';
-	const unwaited = /\.then\(|\bsetTimeout\(|\bqueueMicrotask\(|\bvoid\b/.exec(body);
+	const unwaited = /\.then\(|\bsetTimeout\(|\bqueueMicrotask\(|(?<![:<|]\s*)\bvoid\s+[\w(]/.exec(
+		body,
+	);
 	if (unwaited) return `starts work it does not wait for (${unwaited[0]})`;
 	const calls = [...body.matchAll(new RegExp(`\\b(${SAVES.join('|')})\\(`, 'g'))];
 	if (calls.length === 0) return 'calls none of the saves';

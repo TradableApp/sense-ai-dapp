@@ -119,12 +119,21 @@ function changeFinishing(store: FinishingStore, change: 1 | -1): void {
 /** What the console and the report may say of an error: its name, never its message. */
 const errorName = (error: unknown) => (error instanceof Error ? error.name : typeof error);
 
+/** `console.error` that cannot stop the handling it reports on. */
+function logError(message: string, name: string): void {
+	try {
+		console.error(message, name);
+	} catch {
+		// A console that throws leaves nowhere to say so; the steps after it still run.
+	}
+}
+
 /** Runs one step of the failure handling; a step that throws is logged and the rest go on. */
 function attempt(step: string, run: () => unknown): void {
 	try {
 		run();
 	} catch (error) {
-		console.error(`After a failed save, ${step} failed:`, errorName(error));
+		logError(`After a failed save, ${step} failed:`, errorName(error));
 	}
 }
 
@@ -221,10 +230,7 @@ export default function useOneSendAtATime(mutations: ChatMutations) {
 						// brings it from the chain; until then the chat must not offer the same text
 						// for a second payment.
 						try {
-							console.error(
-								'A prompt was sent, but saving it on this device failed:',
-								errorName(error),
-							);
+							logError('A prompt was sent, but saving it on this device failed:', errorName(error));
 							attempt('the warning', () => announceSaveFailure(kind));
 							attempt('clearing the input', () => onSaveFailed?.());
 							attempt('the report', () => reportSaveFailure(kind, error));
