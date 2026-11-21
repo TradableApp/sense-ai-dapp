@@ -6,3 +6,6 @@ const SENDING_REASON =
 	'A prompt is being sent. Confirm or reject it in your wallet, then wait until it is confirmed.';
 
 export default SENDING_REASON;
+
+/** Why regenerate and branch are off on an answer whose paid send was not saved here. */
+export const UNSAVED_SEND_REASON = '';

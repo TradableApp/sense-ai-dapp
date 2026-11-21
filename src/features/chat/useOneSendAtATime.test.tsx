@@ -20,7 +20,8 @@ import agentAbi from '@/lib/abi/EVMAIAgent.json';
 import { encryptData } from '@/lib/crypto';
 import { blocksAction } from '@/lib/feeTokenCheck';
 
-import useOneSendAtATime, { forgetSaveFailureReports } from './useOneSendAtATime';
+import { useUnsavedSends } from './unsavedSends';
+import useOneSendAtATime, { forgetSaveFailureReports, SAVE_GIVE_UP_MS } from './useOneSendAtATime';
 
 vi.mock('@sentry/react', () => ({ captureException: vi.fn() }));
 const SESSION = vi.hoisted(() => ({
@@ -93,7 +94,7 @@ type Sends = ReturnType<typeof useOneSendAtATime>;
 /** What the chat passes to `mutate` besides the variables. */
 type CallerCallbacks = {
 	onSuccess?: () => void | Promise<void>;
-	onSaveFailed?: () => void;
+	onSaveFailed?: (_ids?: unknown) => void;
 	onError?: () => void;
 	onSettled?: () => void;
 };
@@ -150,6 +151,21 @@ const SENDS: { name: string; event: string; start: (_m: Sends, _o?: CallerCallba
 			),
 	},
 ];
+
+/** Rows of a table, each led by its send's name for the test's title. */
+const named = <T,>(rows: readonly (readonly [{ name: string }, T])[]) =>
+	rows.map(([c, x]) => [c.name, c, x] as const);
+
+/** A prompt that starts a conversation: the chat sends it with no conversation id. */
+const NEW_CONVERSATION_PROMPT: (typeof SENDS)[number] = {
+	name: 'starting a conversation',
+	event: 'PromptSubmitted',
+	start: (m, o) =>
+		m.initiatePromptMutation.mutate(
+			{ conversationId: 0, promptText: PROMPT_TEXT, sessionKey, parentId: null, parentCID: null },
+			o,
+		),
+};
 
 const SAMPLE_VALUES: Record<string, unknown> = {
 	address: '0x00000000000000000000000000000000000000aa',
@@ -486,7 +502,7 @@ describe('a confirmed send whose caller then fails to save it', () => {
 			queryClient = newClient(),
 			sent = 1,
 			onSaveFailed = vi.fn(),
-		}: { queryClient?: QueryClient; sent?: number; onSaveFailed?: () => void } = {},
+		}: { queryClient?: QueryClient; sent?: number; onSaveFailed?: (_ids?: unknown) => void } = {},
 	) {
 		let fail: () => void = () => undefined;
 		const work = new Promise<void>((_resolve, reject) => {
@@ -516,17 +532,111 @@ describe('a confirmed send whose caller then fails to save it', () => {
 		return confirmed;
 	}
 
-	it.each(SENDS)('$name: the user is told it was sent and paid for and will appear', async c => {
-		await failedAfterConfirm(c);
+	// An edit or a prompt in a conversation is indexed when it is sent; a new conversation, a
+	// regenerate and a branch show nothing until the answer comes. On a device whose store is
+	// what failed it may never show, so nothing promises it will.
+	it.each(
+		named([
+			[SENDS[0], /will appear once your history syncs/],
+			[NEW_CONVERSATION_PROMPT, /will appear when the answer arrives/],
+			[SENDS[1], /will appear when the answer arrives/],
+			[SENDS[2], /will appear when the answer arrives/],
+		] as const),
+	)(
+		'%s: the user is told it was sent and paid for, and when it appears',
+		async (_name, c, when) => {
+			await failedAfterConfirm(c);
 
-		expect(toast.warning).toHaveBeenCalledTimes(1);
-		const [title, options] = vi.mocked(toast.warning).mock.calls[0];
-		const description = String((options as { description?: string })?.description);
-		expect(title).toMatch(/sent/i);
-		expect(description).toMatch(/paid for/);
-		expect(description).toMatch(/sync/);
-		expect(description).toMatch(/no need to send it again/);
+			expect(toast.warning).toHaveBeenCalledTimes(1);
+			const [title, options] = vi.mocked(toast.warning).mock.calls[0];
+			const description = String((options as { description?: string })?.description);
+			expect(title).toMatch(/sent/i);
+			expect(description).toMatch(/paid for/);
+			expect(description).toMatch(when);
+			expect(description).toMatch(/unless saving on this device keeps failing/);
+			expect(description).toMatch(/no need to send it again/);
+		},
+	);
+
+	it.each(
+		named([
+			[SENDS[0], { kind: 'prompt', composerKeys: ['1'] }],
+			[NEW_CONVERSATION_PROMPT, { kind: 'prompt', composerKeys: ['new', '7'] }],
+			[SENDS[1], { kind: 'regenerate', composerKeys: ['1'] }],
+			[SENDS[2], { kind: 'branch', composerKeys: [] }],
+		] as const),
+	)('%s: the send is held for every chat on the same client', async (_name, c, expected) => {
+		const queryClient = newClient();
+		await failedAfterConfirm(c, { queryClient });
+
+		const held = renderHook(() => useUnsavedSends(queryClient, SESSION.ownerAddress)).result;
+		expect(held.current).toEqual([expect.objectContaining(expected)]);
 	});
+
+	it.each(SENDS)('$name saved: nothing is held', async c => {
+		const queryClient = newClient();
+		const sends = renderSends(queryClient).result;
+		await startAndWait(sends, m => c.start(m, { onSuccess: async () => undefined }));
+		await act(async () => {
+			confirm(receiptWith(c.event));
+		});
+		await waitFor(() => expect(sends.current.isSending).toBe(false));
+
+		const held = renderHook(() => useUnsavedSends(queryClient, SESSION.ownerAddress)).result;
+		expect(held.current).toEqual([]);
+	});
+
+	it.each(
+		named([
+			[SENDS[0], { conversationId: '7', promptMessageId: '7', answerMessageId: '7' }],
+			[SENDS[1], { newAnswerMessageId: '7' }],
+			[SENDS[2], { newConversationId: '7' }],
+		] as const),
+	)("%s: the caller's onSaveFailed is given the receipt's ids", async (_name, c, ids) => {
+		const { onSaveFailed } = await failedAfterConfirm(c);
+
+		expect(onSaveFailed).toHaveBeenCalledWith(ids);
+	});
+
+	it.each(
+		named([
+			[SENDS[0], '1'],
+			[NEW_CONVERSATION_PROMPT, '7'],
+			[SENDS[1], '1'],
+			[SENDS[2], '7'],
+		] as const),
+	)('%s: the messages of the conversation it shows in are read again', async (_name, c, id) => {
+		const queryClient = newClient();
+		const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+
+		await failedAfterConfirm(c, { queryClient });
+
+		expect(invalidate).toHaveBeenCalledWith({
+			queryKey: ['messages', id, SESSION.ownerAddress],
+		});
+	});
+
+	// The warning is a step like the others: one that throws must not cost the user the
+	// cleared input, the sync, the report or the lock.
+	it.each(SENDS)(
+		'$name: a warning that throws still clears, syncs, reports and releases',
+		async c => {
+			vi.mocked(toast.warning).mockImplementation(() => {
+				throw new Error('the toaster is gone');
+			});
+			const queryClient = newClient();
+			const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+
+			const { sends, onSaveFailed } = await failedAfterConfirm(c, { queryClient });
+
+			expect(onSaveFailed).toHaveBeenCalledTimes(1);
+			expect(invalidate).toHaveBeenCalledWith({
+				queryKey: ['conversations', SESSION.sessionKey, SESSION.ownerAddress],
+			});
+			expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+			expect(sends.current.isSending).toBe(false);
+		},
+	);
 
 	it.each(SENDS)("$name: the caller's onSaveFailed is called once", async c => {
 		const { onSaveFailed } = await failedAfterConfirm(c);
@@ -625,6 +735,37 @@ describe('a confirmed send whose caller then fails to save it', () => {
 		});
 	});
 
+	// The session is read as the send starts: a session that changes while the wallet is open
+	// must not decide which wallet's history is asked for.
+	it('asks for the sync of the session the send was started in, not the one confirmed in', async () => {
+		const queryClient = newClient();
+		const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+		let fail: () => void = () => undefined;
+		const work = new Promise<void>((_resolve, reject) => {
+			fail = () => reject(new Error('the local write failed'));
+		});
+		const rendered = renderSends(queryClient);
+		await startAndWait(rendered.result, m => SENDS[0].start(m, { onSuccess: () => work }));
+
+		currentSession.value = { sessionKey: {} as CryptoKey, ownerAddress: `0x${'b'.repeat(40)}` };
+		rendered.rerender();
+		await act(async () => {
+			confirm(receiptWith(SENDS[0].event));
+		});
+		await settleStarts();
+		await act(async () => {
+			fail();
+		});
+		await waitFor(() => expect(invalidate).toHaveBeenCalled());
+
+		expect(invalidate).toHaveBeenCalledWith({
+			queryKey: ['conversations', SESSION.sessionKey, SESSION.ownerAddress],
+		});
+		expect(invalidate).not.toHaveBeenCalledWith(
+			expect.objectContaining({ queryKey: expect.arrayContaining([`0x${'b'.repeat(40)}`]) }),
+		);
+	});
+
 	it.each(SENDS)('$name saved: nothing is shown, cleared or reported', async c => {
 		const onSaveFailed = vi.fn();
 		const sends = renderSends().result;
@@ -638,6 +779,61 @@ describe('a confirmed send whose caller then fails to save it', () => {
 		expect(toast.warning).not.toHaveBeenCalled();
 		expect(onSaveFailed).not.toHaveBeenCalled();
 		expect(Sentry.captureException).not.toHaveBeenCalled();
+	});
+});
+
+describe('a confirmed send whose caller never finishes saving it', () => {
+	// A save that never settles (the store blocked by another tab) would otherwise refuse
+	// every paid send for the rest of the page load, with nothing said.
+	it.each(SENDS)(
+		'$name: after a named time the lock lets go and the failure is handled',
+		async c => {
+			vi.useFakeTimers({ shouldAdvanceTime: true });
+			try {
+				const onSaveFailed = vi.fn();
+				const sends = renderSends().result;
+				const never = new Promise<void>(() => undefined);
+				await startAndWait(sends, m => c.start(m, { onSuccess: () => never, onSaveFailed }));
+				await act(async () => {
+					confirm(receiptWith(c.event));
+				});
+				await settleStarts();
+				expect(sends.current.isSending).toBe(true);
+
+				await act(async () => {
+					vi.advanceTimersByTime(SAVE_GIVE_UP_MS);
+				});
+
+				await waitFor(() => expect(sends.current.isSending).toBe(false));
+				expect(toast.warning).toHaveBeenCalledTimes(1);
+				expect(onSaveFailed).toHaveBeenCalledTimes(1);
+				expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+			} finally {
+				vi.useRealTimers();
+			}
+		},
+	);
+
+	it('does not let go before that time', async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		try {
+			const sends = renderSends().result;
+			const never = new Promise<void>(() => undefined);
+			await startAndWait(sends, m => SENDS[0].start(m, { onSuccess: () => never }));
+			await act(async () => {
+				confirm(receiptWith(SENDS[0].event));
+			});
+			await settleStarts();
+
+			await act(async () => {
+				vi.advanceTimersByTime(SAVE_GIVE_UP_MS - 1_000);
+			});
+
+			expect(sends.current.isSending).toBe(true);
+			expect(toast.warning).not.toHaveBeenCalled();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });
 

@@ -283,9 +283,7 @@ describe('fields no pattern can scrub with certainty', () => {
 					trace_id: TRACE_ID,
 					start_timestamp: 0,
 					data: {},
-					links: [
-						{ trace_id: TRACE_ID, span_id: SPAN_ID, attributes: { 'peer.url': RPC } },
-					],
+					links: [{ trace_id: TRACE_ID, span_id: SPAN_ID, attributes: { 'peer.url': RPC } }],
 				},
 			],
 		} as TransactionEvent);

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { UNSAVED_SEND_REASON } from '@/components/ai/sendingReason';
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
 import usePromptsSwitch from '@/hooks/usePromptsSwitch';
 import { blocksAction, feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
@@ -284,5 +285,36 @@ describe('the controls on an answer while prompts are closed by the switch', () 
 		render(<MessageActions message={answer} />);
 
 		expect(button(name).getAttribute('aria-disabled')).not.toBe('true');
+	});
+});
+
+describe('the controls on an answer whose paid send was not saved here', () => {
+	it.each(ANSWER_CONTROLS)('$name is switched off and says why', ({ name }) => {
+		checkReturns('ok');
+
+		render(<MessageActions message={answer} heldReason={UNSAVED_SEND_REASON} />);
+
+		expect(isSwitchedOff(button(name))).toBe(true);
+		expect(description(button(name))).toBe(UNSAVED_SEND_REASON);
+	});
+
+	it.each(ANSWER_CONTROLS)('$name is on with no reason given', ({ name }) => {
+		checkReturns('ok');
+
+		render(<MessageActions message={answer} heldReason={null} />);
+
+		expect(button(name).getAttribute('aria-disabled')).not.toBe('true');
+	});
+});
+
+describe('the status under a prompt', () => {
+	// The prompt is on chain and waiting for its answer: "Sending" would say it is not sent.
+	it('says a pending prompt is awaiting its answer, not sending', () => {
+		checkReturns('ok');
+
+		render(<UserMessageActions message={{ ...prompt, status: 'pending' }} />);
+
+		expect(screen.getByText('Awaiting answer')).toBeTruthy();
+		expect(screen.queryByText(/Sending/)).toBeNull();
 	});
 });
