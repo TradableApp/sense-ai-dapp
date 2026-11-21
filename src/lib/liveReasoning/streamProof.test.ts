@@ -31,7 +31,9 @@ describe('streamProof', () => {
 		const key = await importVectorKey();
 
 		await Promise.all(
-			['042', '-1', '', '0x2a'].map(bad => expect(streamProof(key, bad)).rejects.toThrow(TypeError)),
+			['042', '-1', '', '0x2a'].map(bad =>
+				expect(streamProof(key, bad)).rejects.toThrow(TypeError),
+			),
 		);
 	});
 });
