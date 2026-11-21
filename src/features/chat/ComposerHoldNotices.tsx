@@ -1,5 +1,3 @@
-import { UNSAVED_SEND_COMPOSER_REASON } from '@/components/ai/sendingReason';
-
 const BRANCH_HOLD_ID = 'branch-history-hold';
 const UNSAVED_HOLD_ID = 'unsaved-send-hold';
 
@@ -8,17 +6,18 @@ const BRANCH_HOLD_TEXT =
 
 interface HoldFlags {
 	isHeldForBranchHistory: boolean;
-	isHeldForUnsavedSend: boolean;
+	/** Why a paid send not saved here holds the composer (`useUnsavedSendHold`), or null. */
+	unsavedSendReason: string | null;
 }
 
 /** The ids of the notices that say why the composer is held, for its `aria-describedby`. */
 export function composerHoldDescription({
 	isHeldForBranchHistory,
-	isHeldForUnsavedSend,
+	unsavedSendReason,
 }: HoldFlags): string | undefined {
 	const ids = [
 		...(isHeldForBranchHistory ? [BRANCH_HOLD_ID] : []),
-		...(isHeldForUnsavedSend ? [UNSAVED_HOLD_ID] : []),
+		...(unsavedSendReason ? [UNSAVED_HOLD_ID] : []),
 	];
 	return ids.length > 0 ? ids.join(' ') : undefined;
 }
@@ -29,7 +28,7 @@ export function composerHoldDescription({
  */
 export default function ComposerHoldNotices({
 	isHeldForBranchHistory,
-	isHeldForUnsavedSend,
+	unsavedSendReason,
 }: HoldFlags) {
 	const shown = 'px-3 py-1.5 text-xs text-muted-foreground';
 	return (
@@ -44,11 +43,11 @@ export default function ComposerHoldNotices({
 			</p>
 			<p
 				id={UNSAVED_HOLD_ID}
-				className={isHeldForUnsavedSend ? shown : 'sr-only'}
+				className={unsavedSendReason ? shown : 'sr-only'}
 				role="status"
 				data-testid={UNSAVED_HOLD_ID}
 			>
-				{isHeldForUnsavedSend && UNSAVED_SEND_COMPOSER_REASON}
+				{unsavedSendReason}
 			</p>
 		</>
 	);

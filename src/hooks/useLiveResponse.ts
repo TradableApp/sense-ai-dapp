@@ -8,7 +8,7 @@ import { useActiveWalletChain } from 'thirdweb/react';
 import { CONTRACTS } from '@/config/contracts';
 import { client, deploymentChain } from '@/config/thirdweb';
 import { useSession } from '@/features/auth/SessionProvider';
-import { endSendsOnPendingFall } from '@/features/chat/unsavedSends';
+import { notePendingCount } from '@/features/chat/unsavedSends';
 import { wait } from '@/lib/utils';
 import { useAppSelector } from '@/store/hooks';
 import type { RootState } from '@/store/store';
@@ -221,11 +221,6 @@ export default function useLiveResponse() {
 		const poller = createStatePoller({
 			read,
 			onChange: ({ prev, next }) => {
-				// A pending prompt of this wallet was answered, cancelled or refunded: a paid send
-				// held for a failed save stops being held (see UnsavedSend).
-				if (next.pendingEscrowCount < prev.pendingEscrowCount) {
-					endSendsOnPendingFall(queryClient, ownerAddress);
-				}
 				deriveInvalidations(prev, next, {
 					tokenBalanceKey,
 					ownerAddress,
@@ -241,6 +236,10 @@ export default function useLiveResponse() {
 					});
 				});
 			},
+			// Every reading, not only a change: a paid send held for a failed save ends on one
+			// (see UnsavedSend), and its answer may have come before it was held.
+			onReading: snapshot =>
+				notePendingCount(queryClient, ownerAddress, snapshot.pendingEscrowCount),
 			report: (message, data) =>
 				Sentry.addBreadcrumb({ category: 'rpc.poll', level: 'warning', message, data }),
 			isHidden: () => document.visibilityState === 'hidden',

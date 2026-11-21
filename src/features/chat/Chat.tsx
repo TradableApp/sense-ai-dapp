@@ -59,14 +59,14 @@ import {
 	setActiveConversationId,
 	setActiveConversationMessages,
 } from '@/store/chatSlice';
-import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import { useAppDispatch, useAppSelector, useAppStore } from '@/store/hooks';
 
 import ActivatePlanCTA from './ActivatePlanCTA';
 import { cancelWindow } from './cancelWindow';
 import ComposerHoldNotices, { composerHoldDescription } from './ComposerHoldNotices';
 import isQueryAhead from './messageReconcile';
 import { composerStateFor } from './promptParent';
-import showUnsavedPrompt, { noWalletAddressError } from './unsavedPrompt';
+import showUnsavedPrompt, { isActiveConversation, noWalletAddressError } from './unsavedPrompt';
 import useHeldBranchRefresh from './useHeldBranchRefresh';
 import useOneSendAtATime from './useOneSendAtATime';
 import useUnsavedSendHold from './useUnsavedSendHold';
@@ -115,6 +115,11 @@ const promptSchema = z.object({
 
 export default function Chat() {
 	const dispatch = useAppDispatch();
+	const store = useAppStore();
+	// Read from the store when asked: a save that ends after another conversation was opened
+	// must not act on the one open now.
+	const isStillActive = (id: string | number | null | undefined) =>
+		isActiveConversation(store.getState(), id);
 	const queryClient = useQueryClient();
 	const navigate = useNavigate();
 	const { sessionKey, ownerAddress } = useSession();
@@ -405,6 +410,7 @@ export default function Chat() {
 						newAnswerMessageId,
 						queryClient,
 					);
+					if (!isStillActive(activeConversationId)) return;
 					dispatch(appendLiveMessages([finalAiMessage as unknown as ActiveMessage]));
 				},
 				// onError: () => {},
@@ -448,6 +454,7 @@ export default function Chat() {
 						newIds.answerMessageId,
 						queryClient,
 					);
+					if (!isStillActive(activeConversationId)) return;
 					dispatch(
 						appendLiveMessages([
 							finalUserMessage as unknown as ActiveMessage,
@@ -456,8 +463,11 @@ export default function Chat() {
 					);
 					setEditingMessageId(null);
 				},
-				// Sent and paid for, not saved here: the edit is closed so it is not sent again.
-				onSaveFailed: () => setEditingMessageId(null),
+				// Sent and paid for, not saved here: the edit is closed so it is not sent again, unless
+				// another conversation is open now, whose edit box is the user's own.
+				onSaveFailed: () => {
+					if (isStillActive(activeConversationId)) setEditingMessageId(null);
+				},
 				// onError: () => {},
 			},
 		);
@@ -533,8 +543,9 @@ export default function Chat() {
 						newConversationId,
 						queryClient,
 					);
+					// The new branch is opened, unless the user has opened another conversation since.
+					if (!isStillActive(activeConversationId)) return;
 
-					// Navigate to the new branch immediately
 					dispatch(setActiveConversationId(newConversationId));
 					// const newMessages = await getMessagesForConversation(
 					// 	sessionKey,
@@ -658,10 +669,10 @@ export default function Chat() {
 		return () => clearInterval(id);
 	}, [cancelDeadline]);
 
-	const openCancelWindow = () => {
-		const now = Date.now();
-		setCancelClock(now);
-		setCancelDeadline(now + CANCELLATION_TIMEOUT_MS);
+	// From when the prompt was confirmed: now on success, the confirmation after a failed save.
+	const openCancelWindow = (confirmedAt = Date.now()) => {
+		setCancelClock(Date.now());
+		setCancelDeadline(confirmedAt + CANCELLATION_TIMEOUT_MS);
 	};
 
 	// Refund eligibility countdown
@@ -775,6 +786,7 @@ export default function Chat() {
 							String(answerMessageId),
 							queryClient,
 						);
+						if (!isStillActive(activeConversationId)) return;
 						dispatch(
 							appendLiveMessages([
 								finalUserMessage as unknown as ActiveMessage,
@@ -792,6 +804,7 @@ export default function Chat() {
 								String(answerMessageId),
 								queryClient,
 							);
+						if (!isStillActive(activeConversationId)) return;
 						dispatch(setActiveConversationId(newConversation.id));
 						dispatch(
 							setActiveConversationMessages([
@@ -804,16 +817,20 @@ export default function Chat() {
 					reset();
 				},
 				// Sent and paid for, not saved here: the composer is cleared so it is not sent again,
-				// and the prompt is shown from its receipt with the cancel window open, as on success.
-				onSaveFailed: newIds => {
+				// and the prompt is shown from its receipt, at the time it was confirmed, with the cancel
+				// window open from then. Only in the conversation it was sent in: another one open now
+				// keeps its own draft and shows nothing of it (the hold is registered for it all the same).
+				onSaveFailed: (newIds, confirmedAt) => {
+					if (!isStillActive(activeConversationId)) return;
 					reset();
 					showUnsavedPrompt(dispatch, {
 						activeConversationId,
 						parentId: messagesToDisplay?.at(-1)?.id,
 						content: data.prompt,
 						ids: newIds,
+						at: confirmedAt,
 					});
-					openCancelWindow();
+					openCancelWindow(confirmedAt);
 				},
 				// onError: () => {},
 			},
@@ -904,6 +921,7 @@ export default function Chat() {
 										originalContent={message.content ?? ''}
 										onSave={handleSaveEdit}
 										isSending={isProcessing}
+										heldReason={unsavedSend.editHeldReason}
 										onCancel={() => setEditingMessageId(null)}
 									/>
 								</div>
@@ -1014,6 +1032,7 @@ export default function Chat() {
 									<UserMessageActions
 										message={message}
 										versionInfo={versionInfo[msgIdStr]}
+										heldReason={unsavedSend.editHeldReason}
 										onEdit={() => setEditingMessageId(message.id ?? null)}
 										onNavigate={handleNavigate}
 									/>
@@ -1049,13 +1068,13 @@ export default function Chat() {
 							disabled={isDisabled}
 							aria-describedby={composerHoldDescription({
 								isHeldForBranchHistory,
-								isHeldForUnsavedSend: unsavedSend.isComposerHeld,
+								unsavedSendReason: unsavedSend.composerHoldReason,
 							})}
 							{...register('prompt')}
 						/>
 						<ComposerHoldNotices
 							isHeldForBranchHistory={isHeldForBranchHistory}
-							isHeldForUnsavedSend={unsavedSend.isComposerHeld}
+							unsavedSendReason={unsavedSend.composerHoldReason}
 						/>
 						{isAiThinking && refundSecondsLeft !== null && (
 							<div className="flex items-center justify-end px-3 py-1.5 text-xs text-muted-foreground">

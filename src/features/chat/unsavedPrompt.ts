@@ -5,7 +5,7 @@ import {
 	setActiveConversationId,
 	setActiveConversationMessages,
 } from '@/store/chatSlice';
-import type { AppDispatch } from '@/store/store';
+import type { AppDispatch, RootState } from '@/store/store';
 
 /** The ids a confirmed prompt's receipt gave. */
 export interface PromptIds {
@@ -19,6 +19,8 @@ interface UnsavedPromptInput {
 	parentId: string | number | null | undefined;
 	content: string;
 	ids: PromptIds;
+	/** When the send was confirmed: the prompt's time, which the refund countdown runs from. */
+	at: number;
 }
 
 /**
@@ -29,7 +31,7 @@ interface UnsavedPromptInput {
  */
 export default function showUnsavedPrompt(
 	dispatch: AppDispatch,
-	{ activeConversationId, parentId, content, ids }: UnsavedPromptInput,
+	{ activeConversationId, parentId, content, ids, at }: UnsavedPromptInput,
 ): void {
 	const conversationId = activeConversationId ? String(activeConversationId) : ids.conversationId;
 	const { finalUserMessage, finalAiMessage } = promptPair({
@@ -38,6 +40,7 @@ export default function showUnsavedPrompt(
 		content,
 		promptMessageId: ids.promptMessageId,
 		answerMessageId: ids.answerMessageId,
+		now: at,
 	});
 	const messages = [finalUserMessage, finalAiMessage] as unknown as ActiveMessage[];
 	if (activeConversationId) {
@@ -55,4 +58,16 @@ export default function showUnsavedPrompt(
  */
 export function noWalletAddressError(): Error {
 	return new Error('There is no wallet address to save the confirmed send under.');
+}
+
+/**
+ * Whether `conversationId` (null for the new chat) is the conversation open in the store now.
+ * A save that ends after another was opened must not act on the one open then.
+ */
+export function isActiveConversation(
+	state: Pick<RootState, 'chat'>,
+	conversationId: string | number | null | undefined,
+): boolean {
+	const open = state.chat.activeConversationId;
+	return (open == null ? null : String(open)) === (conversationId ? String(conversationId) : null);
 }

@@ -818,7 +818,7 @@ describe('a confirmed send whose caller never finishes saving it', () => {
 
 	// The prompt is shown with the time it was confirmed, not the time the save was given up
 	// on: the refund countdown and the cancel window run from the confirmation.
-	it.each(SENDS)("$name: onSaveFailed is given the time the send was confirmed", async c => {
+	it.each(SENDS)('$name: onSaveFailed is given the time the send was confirmed', async c => {
 		vi.useFakeTimers({ shouldAdvanceTime: true });
 		try {
 			const onSaveFailed = vi.fn();

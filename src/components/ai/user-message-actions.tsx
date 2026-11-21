@@ -21,6 +21,11 @@ interface UserMessageActionsProps {
 	versionInfo?: any;
 	onEdit?: () => void;
 	onNavigate?: (_direction: string) => void;
+	/**
+	 * Set while this conversation holds a paid send that was not saved on this device: saving
+	 * an edit sends a paid prompt, so edit is off and says why.
+	 */
+	heldReason?: string | null;
 }
 
 export default function UserMessageActions({
@@ -28,10 +33,13 @@ export default function UserMessageActions({
 	versionInfo,
 	onEdit,
 	onNavigate,
+	heldReason = null,
 }: UserMessageActionsProps) {
 	const [isCopied, setIsCopied] = useState(false);
 	// Editing a prompt sends it again, so it is off while prompts are.
 	const editSwitchedOff = useSwitchedOffReason('prompt');
+	// Also off while this conversation holds a paid send not saved here.
+	const editOff = editSwitchedOff ?? heldReason;
 
 	const handleCopy = async () => {
 		if (!message?.content) return;
@@ -101,10 +109,10 @@ export default function UserMessageActions({
 				</Tooltip>
 			</TooltipProvider>
 
-			{editSwitchedOff ? (
+			{editOff ? (
 				<SwitchedOffButton
 					label="Edit message"
-					reason={editSwitchedOff}
+					reason={editOff}
 					className="size-7 text-muted-foreground"
 				>
 					<PencilIcon className="size-4" />

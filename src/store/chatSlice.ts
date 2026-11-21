@@ -1,5 +1,5 @@
 /* eslint-disable no-param-reassign */
-import { createSlice } from '@reduxjs/toolkit';
+import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
 interface ConversationRef {
 	id: string;
@@ -62,15 +62,13 @@ export const chatSlice = createSlice({
 		setActiveConversationMessages: (state, action) => {
 			state.activeConversationMessages = action.payload;
 		},
-		appendLiveMessages: (state, action) => {
+		appendLiveMessages: (state, action: PayloadAction<ActiveMessage[]>) => {
 			// On-chain ids are unique: a message already here (shown from its receipt after a save
 			// was given up on, then added by the save that finished late) is not added twice.
 			const present = new Set(
 				state.activeConversationMessages.flatMap(m => (m.id == null ? [] : [String(m.id)])),
 			);
-			const added = (action.payload as ActiveMessage[]).filter(
-				m => m.id == null || !present.has(String(m.id)),
-			);
+			const added = action.payload.filter(m => m.id == null || !present.has(String(m.id)));
 			state.activeConversationMessages.push(...added);
 		},
 		addReasoningStepById: (state, action) => {
