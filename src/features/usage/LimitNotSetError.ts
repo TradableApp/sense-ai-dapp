@@ -14,9 +14,10 @@ export function isReceiptNotFound(error: unknown): boolean {
 /**
  * The approval was confirmed and setting the limit then did not finish: it failed, was
  * reverted, or has not been confirmed yet (`isUnconfirmed`). The approval stays on the token,
- * so the user is told what holds and the plan and balance are read again. The agent spends
- * only within a limit on the escrow, so a limit not set leaves any earlier plan as it was;
- * Revoke ends that plan, but the escrow refuses it while a prompt is pending.
+ * so the user is told what holds and the plan and balance are read again. The approval
+ * replaced the escrow's allowance: an earlier plan's limit still stands on the escrow, but it
+ * can spend only up to the new approval. The escrow refuses a new limit, and Revoke, while a
+ * prompt is pending, so both are offered for once none is.
  *
  * The guidance comes first and the reason last: the reason is the first line of the error,
  * scrubbed and capped (thirdweb's text runs on with the RPC URL and the call data).
@@ -30,7 +31,7 @@ export default class LimitNotSetError extends Error {
 		super(
 			isUnconfirmed
 				? 'The approval went through and stands. The new limit was sent but is not confirmed yet and may still be set; the plan here will show it once it is.'
-				: `The approval went through and stands, but the new limit was not set, so any earlier plan still applies. Set the plan again to finish. To stop spending under an earlier plan, use Revoke once no prompt is pending.${
+				: `The approval went through and stands: the token approval is now the new amount. The new limit was not set. An earlier plan's limit still stands, but it can spend only up to the new approval. The limit can be set again once no prompt is pending. To stop spending under an earlier plan, use Revoke once no prompt is pending.${
 						line ? ` Reason: ${line}` : ''
 				  }`,
 		);
