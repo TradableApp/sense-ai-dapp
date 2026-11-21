@@ -7,6 +7,26 @@ import describeShape from '../lib/settingShape';
 export const FEE_TOKEN_NAMES = ['SENSE', 'ABLE'] as const;
 export type FeeTokenName = (typeof FEE_TOKEN_NAMES)[number];
 
+/**
+ * The part of each profile that code outside the browser bundle needs. The e2e suite runs in
+ * Node and cannot load the profiles' logos and ABIs, so it reads these; `feeToken.ts` builds
+ * each profile on them, so the two cannot disagree.
+ */
+export const FEE_TOKEN_BASICS = {
+	SENSE: { symbol: 'SENSE', transferable: false },
+	ABLE: { symbol: 'ABLE', transferable: true },
+} as const satisfies Record<FeeTokenName, { symbol: string; transferable: boolean }>;
+
+/**
+ * The token a setting names, read the way the app reads it: trimmed, any letter case, and
+ * anything but a known name is the first. That fallback is for the unit tests only;
+ * `assertFeeTokenConfig` stops a build that relies on it.
+ */
+export function feeTokenNameFor(value: string | undefined): FeeTokenName {
+	const name = (value ?? '').trim().toUpperCase();
+	return FEE_TOKEN_NAMES.find(known => known === name) ?? FEE_TOKEN_NAMES[0];
+}
+
 /** The build does not say which token pays the fees, or names one that does not exist. */
 export class FeeTokenConfigError extends Error {
 	constructor(message: string) {

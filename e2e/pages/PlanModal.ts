@@ -1,5 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 
+import { feeTokenSymbolPattern } from '../helpers/feeToken';
+
 /**
  * Page Object Model for ManagePlanModal.
  */
@@ -50,7 +52,7 @@ export class PlanModal {
 	}
 
 	get tokenBalance() {
-		return this.modal.getByText(/able/i).filter({ hasText: /\d/ }).first();
+		return this.modal.getByText(feeTokenSymbolPattern()).filter({ hasText: /\d/ }).first();
 	}
 
 	get faucetButton() {
@@ -77,11 +79,11 @@ export class PlanModal {
 		await this.waitForTxCompletion();
 	}
 
-	async fillAndSubmit(limitAble: number, days: number) {
+	async fillAndSubmit(limitTokens: number, days: number) {
 		await expect(this.modal).toBeVisible({ timeout: 5_000 });
 
 		await this.limitInput.clear();
-		await this.limitInput.fill(String(limitAble));
+		await this.limitInput.fill(String(limitTokens));
 
 		await this.daysInput.clear();
 		await this.daysInput.fill(String(days));

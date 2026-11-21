@@ -5,7 +5,7 @@ import senseLogo from '@/assets/logos/senseai-logo.svg';
 import AbleTokenABI from '@/lib/abi/AbleToken.json';
 import SenseTokenABI from '@/lib/abi/SenseToken.json';
 
-import { type FeeTokenName } from './feeTokenConfig';
+import { FEE_TOKEN_BASICS, type FeeTokenName, feeTokenNameFor } from './feeTokenConfig';
 
 export { assertFeeTokenConfig, FeeTokenConfigError } from './feeTokenConfig';
 
@@ -54,12 +54,11 @@ export interface FeeTokenProfile {
 
 export const FEE_TOKEN_PROFILES = {
 	SENSE: {
-		symbol: 'SENSE',
+		...FEE_TOKEN_BASICS.SENSE,
 		name: 'SENSE',
 		icon: senseLogo,
 		abi: SenseTokenABI.abi as Abi,
 		showsMarketValue: false,
-		transferable: false,
 		purchasable: false,
 		pausable: true,
 		// It has no price to size a limit by and no use but this one, so the limit offered is
@@ -70,12 +69,11 @@ export const FEE_TOKEN_PROFILES = {
 		decimals: 18,
 	},
 	ABLE: {
-		symbol: 'ABLE',
+		...FEE_TOKEN_BASICS.ABLE,
 		name: 'ABLE Token',
 		icon: ableTokenLogo,
 		abi: AbleTokenABI.abi as Abi,
 		showsMarketValue: true,
-		transferable: true,
 		purchasable: true,
 		pausable: true,
 		defaultPlanLimit: { kind: 'fixed', amount: 1000 },
@@ -99,10 +97,7 @@ export const TRANSFER_RESTRICTION_ABI: Abi = SenseTokenABI.abi as Abi;
  * build before it exists.
  */
 export function selectFeeToken(value: string | undefined): FeeTokenProfile {
-	const name = (value ?? '').trim().toUpperCase();
-	return name === FEE_TOKEN_PROFILES.ABLE.symbol
-		? FEE_TOKEN_PROFILES.ABLE
-		: FEE_TOKEN_PROFILES.SENSE;
+	return FEE_TOKEN_PROFILES[feeTokenNameFor(value)];
 }
 
 /** The limit the plan dialog first offers, in whole tokens. */

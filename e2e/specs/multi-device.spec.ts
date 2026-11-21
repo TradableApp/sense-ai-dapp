@@ -3,7 +3,7 @@ import { type BrowserContext } from '@playwright/test';
 import { expect, test } from '../fixtures';
 import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
-import { createWalletContext, openDevice, parseAble } from '../helpers/devices';
+import { createWalletContext, openDevice, parseTokenAmount } from '../helpers/devices';
 import { freshAccountPool } from '../helpers/fresh-account';
 import {
 	getConversation,
@@ -11,7 +11,7 @@ import {
 	getPromptRequests,
 	waitForGraph,
 } from '../helpers/graph';
-import { fundABLE, getABLEBalance } from '../helpers/hardhat';
+import { fundFeeToken, getFeeTokenBalance } from '../helpers/hardhat';
 import { AuthPage } from '../pages/AuthPage';
 import { ChatPage } from '../pages/ChatPage';
 import { HistoryPage } from '../pages/HistoryPage';
@@ -251,10 +251,10 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		);
 
 		// The wallet is then credited more tokens (e.g. via the faucet/treasury).
-		await fundABLE(TOKEN_ADDRESS, account.address, FAUCET_CREDIT); // +50 ABLE
+		await fundFeeToken(TOKEN_ADDRESS, account.address, FAUCET_CREDIT); // +50 ABLE
 
 		// The single on-chain balance now reflects BOTH the spend and the credit.
-		const onChainAble = Number(await getABLEBalance(TOKEN_ADDRESS, account.address)) / 1e18;
+		const onChainTokens = Number(await getFeeTokenBalance(TOKEN_ADDRESS, account.address)) / 1e18;
 
 		// A fresh device B reads the SAME shared state.
 		const deviceB = await openDevice(browser, account, openContexts);
@@ -262,7 +262,9 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		// The spent allowance is visible on B's dashboard (non-zero after A's prompt) — so B cannot
 		// re-spend what A already spent against the single on-chain spending limit.
 		await expect(deviceB.dashboard.spentValue).toBeVisible({ timeout: 30_000 });
-		expect(parseAble((await deviceB.dashboard.spentValue.textContent()) ?? '')).toBeGreaterThan(0);
+		expect(
+			parseTokenAmount((await deviceB.dashboard.spentValue.textContent()) ?? ''),
+		).toBeGreaterThan(0);
 
 		// And B sees the credited wallet balance. The balance is surfaced in the plan modal's
 		// insufficient-balance hint ("You have <X> ABLE …"), which appears once the requested limit
@@ -273,9 +275,9 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await deviceB.planModal.limitInput.fill('100000');
 		const balanceHint = deviceB.planModal.modal.getByText(/you have [\d.]+ able/i);
 		await expect(balanceHint).toBeVisible({ timeout: 15_000 });
-		expect(Math.abs(parseAble((await balanceHint.textContent()) ?? '') - onChainAble)).toBeLessThan(
-			1,
-		);
+		expect(
+			Math.abs(parseTokenAmount((await balanceHint.textContent()) ?? '') - onChainTokens),
+		).toBeLessThan(1);
 	});
 
 	test('T-MULTI-07: switching wallets on the same device shows no data from the previous wallet', async ({

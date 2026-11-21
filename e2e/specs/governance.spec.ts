@@ -1,6 +1,7 @@
 import { expect, test } from '../fixtures';
 import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
+import { feeToken } from '../helpers/feeToken';
 import {
 	getFeeConfig,
 	getOracleChanges,
@@ -13,7 +14,7 @@ import {
 	acceptOwnership,
 	addOracle,
 	DEPLOYER_ADDRESS,
-	getABLEBalance,
+	getFeeTokenBalance,
 	getOwner,
 	getPendingOwner,
 	getPromptFee,
@@ -32,9 +33,10 @@ import {
 	upgradeEscrowToV2,
 	usePromptFeeRestore,
 } from '../helpers/hardhat';
+import { isTransferExempt, setTransferExempt } from '../helpers/transferRule';
 
 const AGENT_ADDRESS = process.env.VITE_AGENT_CONTRACT_ADDRESS ?? '';
-const ABLE = 10n ** 18n;
+const ONE_TOKEN = 10n ** 18n;
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + escrow + Graph node (set E2E_LOCAL_SERVICES=1)';
 
@@ -59,6 +61,22 @@ const NEW_ORACLE = '0x000000000000000000000000000000000000face';
 // the subgraph stores Bytes lowercase.
 const OWNER = DEPLOYER_ADDRESS.toLowerCase();
 
+/**
+ * A token that moves only to or from listed addresses refuses a payout to an unlisted treasury,
+ * so on such a token NEW_TREASURY is listed before the escrow points at it and unlisted after the
+ * treasury is restored (only if this spec listed it). Owner-global state, put back forward-only.
+ */
+async function listNewTreasury(): Promise<boolean> {
+	if (feeToken().transferable) return false;
+	if (await isTransferExempt(TOKEN_ADDRESS, NEW_TREASURY)) return false;
+	await setTransferExempt(TOKEN_ADDRESS, NEW_TREASURY, true);
+	return true;
+}
+
+async function unlistNewTreasury(listedHere: boolean): Promise<void> {
+	if (listedHere) await setTransferExempt(TOKEN_ADDRESS, NEW_TREASURY, false);
+}
+
 const isPending = (r: {
 	isAnswered: boolean;
 	isCancelled: boolean;
@@ -82,6 +100,7 @@ test.describe('Governance config indexing (T-GOV-CFG)', () => {
 	// change into the rest of the run. (Fee sentinels are intentionally NOT restored: no downstream
 	// test asserts an exact fee, and contract-cost reads/restores its own fee dynamically.)
 	let originalTreasury: string | undefined;
+	let listedNewTreasury = false;
 	test.beforeEach(async () => {
 		originalTreasury = await getTreasury(ESCROW_ADDRESS);
 	});
@@ -89,14 +108,17 @@ test.describe('Governance config indexing (T-GOV-CFG)', () => {
 		// Guard: if beforeEach threw before snapshotting, don't restore with undefined (which would
 		// throw a cryptic viem error in afterEach and mask the real beforeEach failure).
 		if (originalTreasury !== undefined) await setTreasury(ESCROW_ADDRESS, originalTreasury);
+		// After the restore, so the escrow never points at an unlisted treasury.
+		await unlistNewTreasury(listedNewTreasury);
+		listedNewTreasury = false;
 	});
 
 	test('T-GOV-CFG-01: the four fee changes are indexed into the FeeConfig singleton', async () => {
 		// Distinct sentinel values so the assertion can't pass by coincidence with the deploy defaults.
-		const promptFee = 3n * ABLE;
-		const branchFee = 4n * ABLE;
-		const cancellationFee = 5n * ABLE;
-		const metadataUpdateFee = 6n * ABLE;
+		const promptFee = 3n * ONE_TOKEN;
+		const branchFee = 4n * ONE_TOKEN;
+		const cancellationFee = 5n * ONE_TOKEN;
+		const metadataUpdateFee = 6n * ONE_TOKEN;
 
 		await setPromptFee(ESCROW_ADDRESS, promptFee);
 		await setBranchFee(ESCROW_ADDRESS, branchFee);
@@ -115,6 +137,7 @@ test.describe('Governance config indexing (T-GOV-CFG)', () => {
 	});
 
 	test('T-GOV-CFG-02: a treasury change is indexed into the ProtocolConfig singleton', async () => {
+		listedNewTreasury = await listNewTreasury();
 		await setTreasury(ESCROW_ADDRESS, NEW_TREASURY);
 
 		await waitForGraph(
@@ -146,7 +169,7 @@ test.describe('Governance continuity (T-GOV-CFG)', () => {
 		// then send a prompt — proving a governance change mid-session doesn't break the answer path
 		// (not merely that the dApp cold-starts correctly after a change).
 		await freshChatPage.goto();
-		await setPromptFee(ESCROW_ADDRESS, 2n * ABLE);
+		await setPromptFee(ESCROW_ADDRESS, 2n * ONE_TOKEN);
 		await freshChatPage.sendPromptAndWaitForResponse(
 			'Still working after a mid-session fee change?',
 		);
@@ -202,7 +225,7 @@ test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
 		await offerOwnership(ESCROW_ADDRESS, NEW_OWNER);
 		expect((await getOwner(ESCROW_ADDRESS)).toLowerCase()).toBe(DEPLOYER_ADDRESS.toLowerCase());
 		expect((await getPendingOwner(ESCROW_ADDRESS)).toLowerCase()).toBe(NEW_OWNER.toLowerCase());
-		await expect(setPromptFeeFrom(ESCROW_ADDRESS, NEW_OWNER, 7n * ABLE)).rejects.toThrow();
+		await expect(setPromptFeeFrom(ESCROW_ADDRESS, NEW_OWNER, 7n * ONE_TOKEN)).rejects.toThrow();
 		// Nothing to restore: the fee has not changed. Writing the same value shows the deployer
 		// can still set it, and a revert here fails the test.
 		await setPromptFee(ESCROW_ADDRESS, originalPromptFee as bigint);
@@ -212,15 +235,15 @@ test.describe('Governance ownership transfer (T-GOV-OWN)', () => {
 		expect(BigInt(await getPendingOwner(ESCROW_ADDRESS))).toBe(0n);
 
 		// The old owner (deployer) can no longer set fees — the onlyOwner guard reverts the tx.
-		await expect(setPromptFee(ESCROW_ADDRESS, 7n * ABLE)).rejects.toThrow();
+		await expect(setPromptFee(ESCROW_ADDRESS, 7n * ONE_TOKEN)).rejects.toThrow();
 
 		// The new owner can, and the change still indexes into FeeConfig (cross-layer). Runs after the
 		// continuity describe's answer round-trip, so graph-node can lag well past the 30s default —
 		// give the indexing wait headroom (same reason as T-REFUND-03).
-		await setPromptFeeFrom(ESCROW_ADDRESS, NEW_OWNER, 7n * ABLE);
+		await setPromptFeeFrom(ESCROW_ADDRESS, NEW_OWNER, 7n * ONE_TOKEN);
 		await waitForGraph(
 			() => getFeeConfig(),
-			c => c?.promptFee === String(7n * ABLE),
+			c => c?.promptFee === String(7n * ONE_TOKEN),
 			{
 				label: 'new owner fee change indexed',
 			},
@@ -251,29 +274,34 @@ test.describe('Governance treasury routing (T-GOV-TREAS)', () => {
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
 	let originalTreasury: string;
+	let listedNewTreasury = false;
 	test.beforeEach(async ({ freshUserAccount }) => {
 		originalTreasury = await getTreasury(ESCROW_ADDRESS);
 		await fundAndActivatePlan(freshUserAccount.address);
 	});
 	test.afterEach(async () => {
 		await setTreasury(ESCROW_ADDRESS, originalTreasury);
+		// After the restore, so the escrow never points at an unlisted treasury.
+		await unlistNewTreasury(listedNewTreasury);
+		listedNewTreasury = false;
 	});
 
 	test('T-GOV-TREAS-01: a settled prompt routes its fee to the current treasury', async ({
 		freshChatPage,
 	}) => {
+		listedNewTreasury = await listNewTreasury();
 		await setTreasury(ESCROW_ADDRESS, NEW_TREASURY);
 		const fee = await getPromptFee(ESCROW_ADDRESS);
 		// Guard against a vacuous pass: if a prior test left the fee at 0, the balance-delta assertion
 		// below (`after - before == fee`) would trivially hold while nothing was actually routed.
 		expect(fee).toBeGreaterThan(0n);
-		const treasuryBefore = await getABLEBalance(TOKEN_ADDRESS, NEW_TREASURY);
+		const treasuryBefore = await getFeeTokenBalance(TOKEN_ADDRESS, NEW_TREASURY);
 
 		// A full prompt → answer round-trip finalizes the escrow, which pays the fee out to the treasury.
 		await freshChatPage.goto();
 		await freshChatPage.sendPromptAndWaitForResponse('Route my fee to the new treasury.');
 
-		const treasuryAfter = await getABLEBalance(TOKEN_ADDRESS, NEW_TREASURY);
+		const treasuryAfter = await getFeeTokenBalance(TOKEN_ADDRESS, NEW_TREASURY);
 		expect(treasuryAfter - treasuryBefore).toBe(fee);
 	});
 });

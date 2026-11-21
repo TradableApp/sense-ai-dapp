@@ -10,7 +10,7 @@ import {
 	type IndexedPromptRequest,
 	waitForGraph,
 } from '../helpers/graph';
-import { getABLEBalance } from '../helpers/hardhat';
+import { getFeeTokenBalance } from '../helpers/hardhat';
 import {
 	evidenceDirFrom,
 	oracleDownSkipReason,
@@ -81,7 +81,7 @@ test.describe('Resilience — real 1 h refund through the dApp (R-REFUND-01)', (
 
 		try {
 			// 1. Record the balance before the prompt; the window is read from the contract.
-			const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, owner);
+			const balanceBefore = await getFeeTokenBalance(TOKEN_ADDRESS, owner);
 			const refundTimeoutS = await refundTimeoutSeconds(ESCROW_ADDRESS);
 			evidence.tokenBalance = { beforePrompt: balanceBefore };
 			evidence.refundTimeoutS = refundTimeoutS;
@@ -252,7 +252,7 @@ test.describe('Resilience — real 1 h refund through the dApp (R-REFUND-01)', (
 				await pendingEscrowCount(ESCROW_ADDRESS, owner),
 				'no pending escrow after refund',
 			).toBe(0n);
-			const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, owner);
+			const balanceAfter = await getFeeTokenBalance(TOKEN_ADDRESS, owner);
 			evidence.tokenBalance = { ...(evidence.tokenBalance as object), afterRefund: balanceAfter };
 			expect(balanceAfter, 'token balance restored to the pre-prompt value').toBe(balanceBefore);
 

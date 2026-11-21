@@ -1,6 +1,5 @@
 import { test as base, expect } from '@playwright/test';
 
-
 import { test } from '../fixtures';
 import { injectMockWallet } from '../fixtures/mock-wallet';
 import { LIVE_STACK } from '../helpers/chain';
@@ -149,7 +148,7 @@ test.describe('Security — encryption at rest and in transit (T-SEC-CRYPTO)', (
 	}) => {
 		const testPrompt = `ECIES_PLAINTEXT_CHECK_${Date.now()}`;
 
-		// Intercept the eth_sendTransaction RPC call to inspect calldata. fundABLE/activatePlan run
+		// Intercept the eth_sendTransaction RPC call to inspect calldata. fundFeeToken/activatePlan run
 		// off-page (direct RPC), so the first on-page eth_sendTransaction is the prompt itself.
 		const txDataPromise = new Promise<string>(resolve => {
 			freshPage.on('request', req => {

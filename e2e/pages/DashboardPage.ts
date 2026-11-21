@@ -1,5 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 
+import { feeTokenSymbolPattern } from '../helpers/feeToken';
+
 /**
  * Page Object Model for the Usage Dashboard (/).
  */
@@ -31,7 +33,7 @@ export class DashboardPage {
 	get allowanceValue() {
 		return this.page
 			.getByTestId('plan-allowance')
-			.or(this.page.getByText(/able/i).filter({ hasText: /\d/ }).first());
+			.or(this.page.getByText(feeTokenSymbolPattern()).filter({ hasText: /\d/ }).first());
 	}
 
 	/** "Manage Plan" button */
@@ -39,13 +41,19 @@ export class DashboardPage {
 		return this.page.getByRole('button', { name: /manage plan|manage/i });
 	}
 
-	/** The "Spent" value in PlanStatusCard ("<n> ABLE"). Sourced from useUsagePlan →
+	/** The "Spent" value in PlanStatusCard ("<n> <symbol>"). Sourced from useUsagePlan →
 	 *  spendingLimits.spentAmount, so it reflects the per-prompt cost actually
 	 *  debited. Testid-first (matching `allowanceValue`), with a text fallback. */
 	get spentValue() {
 		return this.page
 			.getByTestId('plan-spent-value')
-			.or(this.page.getByText('Spent', { exact: true }).locator('..').getByText(/ABLE/).first());
+			.or(
+				this.page
+					.getByText('Spent', { exact: true })
+					.locator('..')
+					.getByText(feeTokenSymbolPattern())
+					.first(),
+			);
 	}
 
 	/** RecentActivityCard root (data-testid on the Card). Scope activity-row assertions to this so a

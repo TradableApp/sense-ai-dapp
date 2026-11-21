@@ -3,7 +3,7 @@ import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { getPromptRequests, waitForGraph } from '../helpers/graph';
 import {
-	getABLEBalance,
+	getFeeTokenBalance,
 	getLatestBlockTimestamp,
 	increaseTime,
 	processRefund,
@@ -61,7 +61,7 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		const stuck = pendingReqs.find(isPending)!;
 
 		// The escrow holds the prompt fee now (balance already debited at submission).
-		const balanceWhileStuck = await getABLEBalance(TOKEN_ADDRESS, owner);
+		const balanceWhileStuck = await getFeeTokenBalance(TOKEN_ADDRESS, owner);
 
 		// Advance EVM time past the 1h refund window, then claim on-chain (signed by the user).
 		await increaseTime(REFUND_TIMEOUT_S + 1);
@@ -75,7 +75,7 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		);
 
 		// Contract: the escrowed fee is returned to the wallet.
-		const balanceAfterRefund = await getABLEBalance(TOKEN_ADDRESS, owner);
+		const balanceAfterRefund = await getFeeTokenBalance(TOKEN_ADDRESS, owner);
 		expect(balanceAfterRefund).toBeGreaterThan(balanceWhileStuck);
 	});
 
@@ -126,7 +126,7 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 			{ label: 'pending PromptRequest' },
 		);
 		const stuck = pendingReqs.find(isPending)!;
-		const balanceWhileStuck = await getABLEBalance(TOKEN_ADDRESS, owner);
+		const balanceWhileStuck = await getFeeTokenBalance(TOKEN_ADDRESS, owner);
 
 		// On the dashboard the stuck request is auto-detected, but the window hasn't elapsed, so the
 		// UI shows "Wait 1h" — no Refund button yet. This is the wall-clock gate, closed.
@@ -167,6 +167,6 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 			reqs => reqs.some(r => r.id === stuck.id && r.isRefunded),
 			{ label: 'PromptRequest.isRefunded (via button)' },
 		);
-		expect(await getABLEBalance(TOKEN_ADDRESS, owner)).toBeGreaterThan(balanceWhileStuck);
+		expect(await getFeeTokenBalance(TOKEN_ADDRESS, owner)).toBeGreaterThan(balanceWhileStuck);
 	});
 });
