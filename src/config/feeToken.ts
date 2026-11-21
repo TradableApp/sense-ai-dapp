@@ -93,8 +93,8 @@ export const TRANSFER_RESTRICTION_ABI: Abi = SenseTokenABI.abi as Abi;
 /**
  * The profile a build setting names; anything but a known name is SENSE.
  *
- * The fallback exists for a developer's machine and the unit tests only. It is not safe for
- * a deployed build: SENSE settings on another token mean a wrong label, no value shown and
+ * The fallback exists for the unit tests only; every build must name its token. It is not
+ * safe for a deployed build: SENSE settings on another token mean a wrong label, no value shown and
  * a first offer to approve the wallet's whole balance. `assertFeeTokenConfig` stops such a
  * build before it exists.
  */
@@ -114,6 +114,33 @@ export function defaultPlanLimit(
 	if (rule.kind === 'fixed') return rule.amount;
 	const whole = Math.floor(walletBalance ?? 0);
 	return Number.isFinite(whole) && whole >= 1 ? whole : rule.whenEmpty;
+}
+
+/**
+ * Whether the plan dialog's first offer is the wallet's whole balance (every whole token
+ * it holds), so the dialog can say so. False for a fixed offer, and for a wallet offered
+ * the profile's fallback because it holds less than one whole token.
+ */
+export function offersFullBalance(
+	profile: FeeTokenProfile,
+	walletBalance: number | undefined,
+): boolean {
+	if (profile.defaultPlanLimit.kind !== 'walletBalance' || walletBalance === undefined)
+		return false;
+	return Math.floor(walletBalance) >= 1;
+}
+
+/**
+ * What the plan dialog says beside a first offer drawn from the wallet's balance: "your
+ * full balance" only when the offer is all of it, "your balance in whole tokens" when the
+ * balance has a fraction the offer leaves out, and nothing otherwise.
+ */
+export function fullBalanceLabel(
+	profile: FeeTokenProfile,
+	walletBalance: number | undefined,
+): string | null {
+	if (!offersFullBalance(profile, walletBalance) || walletBalance === undefined) return null;
+	return Number.isInteger(walletBalance) ? 'your full balance' : 'your balance in whole tokens';
 }
 
 export const FEE_TOKEN: FeeTokenProfile = selectFeeToken(import.meta.env.VITE_FEE_TOKEN);

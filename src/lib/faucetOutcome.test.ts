@@ -117,6 +117,16 @@ describe('faucetNotice', () => {
 		expect(notice.description).toMatch(description);
 	});
 
+	// After a timeout the balance is asked once, at once; it is asked again only when the
+	// user comes back to the tab or reloads, so nothing may promise that it updates by itself.
+	it('does not promise a balance update that comes only when the user looks again', () => {
+		const { description } = faucetNotice({ kind: 'timeout' }, symbol);
+
+		expect(description).not.toMatch(/will update/i);
+		expect(description).toMatch(/not checked again for it/i);
+		expect(description).toMatch(/coming back to this tab or reloading the page/i);
+	});
+
 	it('refuses an outcome it does not know rather than calling it still confirming', () => {
 		const unknownOutcome = { kind: 'refunded' } as unknown as FaucetOutcome;
 

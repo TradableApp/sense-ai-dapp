@@ -581,6 +581,25 @@ describe('feeTokenBlockCopy', () => {
 		expect(copy?.description).toMatch(/cancel/i);
 	});
 
+	// A cancellation pays its fee from the user straight to the treasury, and a restricted
+	// token lets that through only when one end is listed: neither is, so it always fails.
+	// A refund goes from the listed escrow back to the user, so it gets through.
+	it('says a cancellation is refused, not that it may be, when only the treasury is not listed', () => {
+		const description = feeTokenBlockCopy('treasury-not-exempt', 'PTS')?.description ?? '';
+
+		expect(description).toMatch(/cancelling a prompt will be refused/i);
+		expect(description).not.toMatch(/may be refused/i);
+		expect(description).toMatch(/not answered can be refunded one hour after it was sent/i);
+	});
+
+	// Both a cancellation and a refund pay the prompt's payment from the escrow back to the
+	// user, and an unlisted escrow can move nothing to an unlisted user.
+	it('says cancelling and refunds are refused too when the escrow is not listed', () => {
+		const description = feeTokenBlockCopy('escrow-not-exempt', 'PTS')?.description ?? '';
+
+		expect(description).toMatch(/cancelling a prompt or claiming a refund would be refused too/i);
+	});
+
 	it('points to support inside the app, and names only the token the build is for', () => {
 		const all = blocking
 			.map(verdict => JSON.stringify(feeTokenBlockCopy(verdict, 'PTS')))

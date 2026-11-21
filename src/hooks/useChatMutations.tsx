@@ -1,12 +1,12 @@
-import React from 'react';
-
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { getContract, prepareContractCall, sendAndConfirmTransaction } from 'thirdweb';
 import { useActiveAccount, useActiveWallet } from 'thirdweb/react';
 import { type AbiEvent, decodeEventLog, getAbiItem, toEventSelector, toHex } from 'viem';
 
-import { Button } from '@/components/ui/button';
+import InsufficientBalanceNotice, {
+	offersAWayToGetMore,
+} from '@/components/InsufficientBalanceNotice';
 import { CONTRACTS, LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
 import { FEE_TOKEN, type FeeTokenProfile, TRANSFER_RESTRICTION_ABI } from '@/config/feeToken';
 import { client } from '@/config/thirdweb';
@@ -166,25 +166,20 @@ export function buildErrorHandler(
 
 		// --- Token Errors ---
 		if (isError(feeToken.abi, 'ERC20InsufficientBalance')) {
+			const faucetOffer =
+				isTestnet || isLocalnet
+					? {
+							label: `Get ${faucetAmount} ${isLocalnet ? 'Localnet' : 'Testnet'} ${
+								feeToken.symbol
+							}`,
+							onRequest: handleFaucetRequest,
+					  }
+					: null;
 			toast.error(`Insufficient ${feeToken.symbol} Balance`, {
-				description: (
-					<div className="flex flex-col gap-3 mt-1">
-						<p>You need more {feeToken.symbol} to pay for this action.</p>
-						{(isTestnet || isLocalnet) && (
-							<Button
-								size="sm"
-								variant="outline"
-								className="w-full border-primary/20 bg-primary/10 hover:bg-primary/20 text-primary"
-								onClick={handleFaucetRequest as React.MouseEventHandler<HTMLButtonElement>}
-							>
-								{`Get ${faucetAmount} ${isLocalnet ? 'Localnet' : 'Testnet'} ${feeToken.symbol}`}
-							</Button>
-						)}
-					</div>
-				),
-				// Kept up while it offers the faucet, whose request closes it by this id.
+				description: <InsufficientBalanceNotice profile={feeToken} faucetOffer={faucetOffer} />,
+				// Kept up while it offers something to click; a faucet request closes it by this id.
 				id: FAUCET_OFFER_TOAST_ID,
-				duration: isTestnet || isLocalnet ? Infinity : 4000,
+				duration: offersAWayToGetMore(feeToken, !!faucetOffer) ? Infinity : 4000,
 			});
 			return;
 		}

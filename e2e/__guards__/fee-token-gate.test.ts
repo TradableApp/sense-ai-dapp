@@ -154,15 +154,36 @@ describe('where the fee token check is asked', () => {
 		);
 		const submit = dialog.match(/type="submit"\s+disabled=\{([^}]+)\}/)?.[1] ?? '';
 		expect(isOperandOf(submit, 'isPlanSwitchedOff')).toBe(true);
-		expect(hasStatement(dialog, 'if (isPlanSwitchedOff) return;')).toBe(true);
-		// The mutation refuses too, before the approval is built, like the ones in useChatMutations.
-		const plan = dialog.slice(dialog.indexOf('const setPlanMutation = useMutation'));
+		// The dialog builds no call of its own: it sends through the plan hook, whose refusal
+		// usePlanMutations.test.tsx drives through the real mutation under every verdict. This
+		// only pins where that refusal stands, so a reader finds it where the test proves it.
+		expect(dialog).toMatch(/\busePlanMutations\(/);
+		expect(dialog).not.toContain('prepareContractCall(');
+		const plans = code('src/features/usage/usePlanMutations.ts');
+		const revokeAt = plans.indexOf('function useRevokePlanMutation(');
+		const setPlanAt = plans.indexOf('function useSetPlanMutation(');
+		expect(setPlanAt, 'useSetPlanMutation not found').toBeGreaterThan(-1);
+		expect(revokeAt, 'useRevokePlanMutation not found').toBeGreaterThan(setPlanAt);
+		const setPlan = plans.slice(setPlanAt, revokeAt);
 		const refusal = statementAt(
-			plan,
-			'if (isPlanSwitchedOff) throw new FeeTokenBlockedError(feeTokenCheck.verdict, FEE_TOKEN.symbol);',
+			setPlan,
+			"if (feeTokenCheck.blocks('plan')) throw new FeeTokenBlockedError(feeTokenCheck.verdict, FEE_TOKEN.symbol);",
 		);
-		expect(refusal, 'setPlanMutation does not refuse').toBeGreaterThan(-1);
-		expect(refusal).toBeLessThan(plan.indexOf('prepareContractCall('));
+		expect(refusal, 'setting a plan does not refuse').toBeGreaterThan(-1);
+		expect(refusal).toBeLessThan(setPlan.indexOf('approveAndSetLimit('));
+		expect(plans.slice(revokeAt)).not.toContain('feeTokenCheck');
+		// Before the check's first answer the approval is held too, in the mutation and in the
+		// dialog; revoking is never held.
+		const hold = statementAt(setPlan, 'if (isAwaitingFirstAnswer) throw new PlanHeldError();');
+		expect(hold, 'setting a plan does not wait for the first answer').toBeGreaterThan(-1);
+		expect(hold).toBeLessThan(setPlan.indexOf('approveAndSetLimit('));
+		expect(plans.slice(revokeAt)).not.toContain('isAwaitingFirstAnswer');
+		expect(hasStatement(dialog, 'const isAwaitingFirstAnswer = useIsAwaitingFirstAnswer();')).toBe(
+			true,
+		);
+		expect(hasStatement(dialog, 'if (isPlanSwitchedOff || isAwaitingFirstAnswer) return;')).toBe(
+			true,
+		);
 		expect(dialog).toContain('<FeeTokenMismatchBanner');
 		const revoke = dialog.match(
 			/<AlertDialogAction onClick=\{handleRevoke\} disabled=\{([^}]+)\}/,
@@ -192,6 +213,10 @@ describe('where the fee token check is asked', () => {
 			'src/features/history/RenameConversationModal.tsx',
 			"const renameSwitchedOff = useSwitchedOffReason('metadata', 'dialog');",
 		],
+		[
+			'src/features/history/DeleteConversationDialog.tsx',
+			"const deleteSwitchedOff = useSwitchedOffReason('metadata', 'dialog');",
+		],
 	])('%s asks whether its action is switched off: %s', (file, statement) => {
 		expect(hasStatement(code(file), statement)).toBe(true);
 	});
@@ -199,6 +224,9 @@ describe('where the fee token check is asked', () => {
 	it('the history list disables rename and delete while renames and deletes are switched off', () => {
 		const history = code('src/features/history/History.tsx');
 		expect(history).toContain('<ConversationActionsMenu');
+		// The confirmation is its own dialog, which carries the banner and the switched-off state.
+		expect(history).toContain('<DeleteConversationDialog');
+		expect(history).not.toContain('<AlertDialogAction');
 		expect(history).not.toContain('<DropdownMenuItem');
 
 		const menu = code('src/features/history/ConversationActionsMenu.tsx');
@@ -232,6 +260,7 @@ describe('where the fee token check is asked', () => {
 	it.each([
 		'src/features/usage/ManagePlanModal.tsx',
 		'src/features/history/RenameConversationModal.tsx',
+		'src/features/history/DeleteConversationDialog.tsx',
 	])('%s carries the banner itself', file => {
 		const dialog = code(file);
 		expect(dialog).toMatch(/\n\t+<FeeTokenMismatchBanner /);

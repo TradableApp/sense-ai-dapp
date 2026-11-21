@@ -255,7 +255,9 @@ export function feeTokenBlockCopy(
 		case 'escrow-not-exempt':
 			return {
 				title: 'Payments are switched off',
-				description: `The SenseAI payment contract cannot receive ${symbol} yet, so a payment would be refused. ${EVERYTHING} until this is fixed. ${GET_HELP}`,
+				// A cancellation and a refund both pay out of the escrow to the user, and neither
+				// end is listed, so the token refuses both.
+				description: `The SenseAI payment contract cannot receive ${symbol} yet, so a payment would be refused. ${EVERYTHING} until this is fixed. Cancelling a prompt or claiming a refund would be refused too, because both pay ${symbol} out of the payment contract. ${GET_HELP}`,
 			};
 		case 'contract-not-found':
 			return {
@@ -275,7 +277,9 @@ export function feeTokenBlockCopy(
 		case 'treasury-not-exempt':
 			return {
 				title: 'Some actions are switched off',
-				description: `The fee for a branch, a rename or a delete cannot be received yet and would be refused, so those are switched off until this is fixed. Prompts still work. Cancelling a prompt may be refused; one that is not answered can be refunded after an hour. ${GET_HELP}`,
+				// A cancellation pays its fee from the user straight to the treasury, and with
+				// neither end listed the token always refuses it. A refund leaves the listed escrow.
+				description: `The fee for a branch, a rename or a delete cannot be received yet and would be refused, so those are switched off until this is fixed. Prompts still work. Cancelling a prompt will be refused too, because its fee is paid the same way; a prompt that is not answered can be refunded one hour after it was sent. ${GET_HELP}`,
 			};
 		default: {
 			// A verdict with no words here fails to compile: a block must never be silent.

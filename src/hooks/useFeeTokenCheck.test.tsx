@@ -11,7 +11,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ESCROW_FEE_TOKEN_GETTER } from '@/config/feeTokenConfig';
 import { PAID_ACTIONS } from '@/lib/feeTokenCheck';
 
-import useFeeTokenCheck, { FEE_TOKEN_RECHECK_MS, forgetReportedFailures } from './useFeeTokenCheck';
+import useFeeTokenCheck, {
+	AWAITING_RECHECK_MS,
+	FEE_TOKEN_RECHECK_MS,
+	forgetReportedFailures,
+	useAskFeeTokenAgain,
+	useIsAwaitingFirstAnswer,
+} from './useFeeTokenCheck';
 
 const CHAIN_ID = 84532;
 const TOKEN = '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512';
@@ -388,6 +394,184 @@ describe('useFeeTokenCheck', () => {
 		const { result, queryClient } = harness();
 
 		await expectNothingRead(queryClient, result);
+	});
+});
+
+// Setting a plan approves the token, so it waits for the check's first answer. Once any
+// answer has come, a later failed read keeps it (the query keeps its last answer) and the
+// plan is not held again. A chain the check cannot read never answers, and is not held.
+describe('waiting for the first answer', () => {
+	function awaitingHarness() {
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		const wrapper = ({ children }: { children: ReactNode }) => (
+			<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		);
+		return {
+			queryClient,
+			...renderHook(() => ({ check: useFeeTokenCheck(), awaiting: useIsAwaitingFirstAnswer() }), {
+				wrapper,
+			}),
+		};
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		forgetReportedFailures();
+		onChain(CHAIN_ID);
+	});
+	afterEach(cleanup);
+
+	it('is waiting until the first answer arrives, and not after', async () => {
+		chainAnswers();
+		const { result } = awaitingHarness();
+
+		expect(result.current.awaiting).toBe(true);
+		await waitFor(() => expect(result.current.check.verdict).toBe('ok'));
+		expect(result.current.awaiting).toBe(false);
+	});
+
+	it('is still waiting when the first read fails', async () => {
+		chainAnswers({ treasury: new Error('RPC request failed with status 429') });
+		const { result } = awaitingHarness();
+
+		await waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(1));
+		expect(result.current.check.verdict).toBe('unknown');
+		expect(result.current.awaiting).toBe(true);
+	});
+
+	it('does not wait again when a read fails after an answer has come', async () => {
+		chainAnswers();
+		const { result, queryClient } = awaitingHarness();
+		await waitFor(() => expect(result.current.awaiting).toBe(false));
+
+		chainAnswers({ treasury: new Error('later read: connection lost') });
+		await refetch(queryClient);
+		await waitFor(() =>
+			expect(
+				queryClient.getQueryCache().findAll({ queryKey: ['feeTokenCheck'] })[0].state.error,
+			).toBeTruthy(),
+		);
+
+		expect(result.current.awaiting).toBe(false);
+	});
+
+	it('does not wait on a chain the build has no agent for: nothing will ever answer', async () => {
+		onChain(CHAIN_WITHOUT_AGENT);
+		chainAnswers();
+		const { result } = awaitingHarness();
+
+		await act(async () => {
+			await new Promise(resolve => {
+				setTimeout(resolve, 20);
+			});
+		});
+		expect(readContract).not.toHaveBeenCalled();
+		expect(result.current.awaiting).toBe(false);
+	});
+
+	it('does not wait with no wallet connected', () => {
+		vi.mocked(useActiveWalletChain).mockReturnValue(undefined);
+		const { result } = awaitingHarness();
+
+		expect(result.current.awaiting).toBe(false);
+	});
+});
+
+// After a failed first read the plan is held, and the five-minute recheck is too slow for a
+// notice that says "try again in a moment". While there is no answer the check is asked
+// again every few seconds while the page is visible, and a press on the held submit asks
+// at once. Once an answer has come, neither happens.
+describe('asking again while there is no first answer', () => {
+	function awaitingHarness() {
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		const wrapper = ({ children }: { children: ReactNode }) => (
+			<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		);
+		return renderHook(
+			() => ({
+				check: useFeeTokenCheck(),
+				awaiting: useIsAwaitingFirstAnswer(),
+				askAgain: useAskFeeTokenAgain(),
+			}),
+			{ wrapper },
+		);
+	}
+	const reads = () => vi.mocked(readContract).mock.calls.length;
+	const failing = () => chainAnswers({ treasury: new Error('RPC request failed with status 429') });
+	const settle = () => act(() => Promise.resolve());
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		forgetReportedFailures();
+		onChain(CHAIN_ID);
+		vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+	});
+	afterEach(() => {
+		cleanup();
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+	});
+
+	it('asks every few seconds, far sooner than the five-minute recheck', () => {
+		expect(AWAITING_RECHECK_MS).toBeLessThanOrEqual(10_000);
+	});
+
+	it('asks again after a failed first read, and lifts the hold when an answer comes', async () => {
+		failing();
+		const { result } = awaitingHarness();
+		await vi.waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(1));
+		const before = reads();
+		chainAnswers();
+
+		await act(() => {
+			vi.advanceTimersByTime(AWAITING_RECHECK_MS);
+		});
+
+		await vi.waitFor(() => expect(result.current.check.verdict).toBe('ok'));
+		expect(reads()).toBeGreaterThan(before);
+		expect(result.current.awaiting).toBe(false);
+	});
+
+	it('does not ask while the page is hidden', async () => {
+		failing();
+		awaitingHarness();
+		await vi.waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(1));
+		const before = reads();
+		vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+
+		await act(() => {
+			vi.advanceTimersByTime(AWAITING_RECHECK_MS * 3);
+		});
+		await settle();
+
+		expect(reads()).toBe(before);
+	});
+
+	it('does not ask every few seconds once an answer has come', async () => {
+		chainAnswers();
+		const { result } = awaitingHarness();
+		await vi.waitFor(() => expect(result.current.check.verdict).toBe('ok'));
+		const before = reads();
+
+		await act(() => {
+			vi.advanceTimersByTime(AWAITING_RECHECK_MS * 3);
+		});
+		await settle();
+
+		expect(reads()).toBe(before);
+	});
+
+	it('asks at once when asked, as a press on the held submit does', async () => {
+		failing();
+		const { result } = awaitingHarness();
+		await vi.waitFor(() => expect(Sentry.captureException).toHaveBeenCalledTimes(1));
+		chainAnswers();
+
+		await act(async () => {
+			result.current.askAgain();
+		});
+
+		await vi.waitFor(() => expect(result.current.awaiting).toBe(false));
 	});
 });
 

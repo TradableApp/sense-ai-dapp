@@ -77,7 +77,7 @@ describe('describeFailure', () => {
 		expect(line).toBe('RPC Error from <url> oops');
 	});
 
-	it('replaces 0x and eight or more hex digits, which can be a wallet address or call data', () => {
+	it('replaces 0x and nine or more hex digits, which can be a wallet address or call data', () => {
 		const error = new Error(`execution reverted for ${ADDRESS} with 0xdeadbeef01`);
 
 		const { line } = describeFailure(error);
@@ -110,6 +110,32 @@ describe('describeFailure', () => {
 			'from node.example.com:8545, retrying',
 			'from <url> retrying',
 		],
+		[
+			'a user and password before a host, with no scheme',
+			'refused by alice:s3cret@node.example.com now',
+			'refused by <url> now',
+		],
+		[
+			'a key in the user part before a host and port',
+			'refused by KEY123@node.example.com:8545',
+			'refused by <url>',
+		],
+		[
+			'a host followed only by a query',
+			'refused by node.example.com?apikey=s3cret now',
+			'refused by <url> now',
+		],
+		['localhost followed by a path', 'refused by localhost/v2/KEY123', 'refused by <url>'],
+		[
+			'an IPv6 literal with a port',
+			'connect ECONNREFUSED [::1]:8545',
+			'connect ECONNREFUSED <url>',
+		],
+		[
+			'an IPv6 literal with a path',
+			'refused by [2001:db8::7]/v2/KEY123 now',
+			'refused by <url> now',
+		],
 	])('replaces %s', (_label, message, expected) => {
 		const { line } = describeFailure(new Error(message));
 
@@ -121,6 +147,8 @@ describe('describeFailure', () => {
 		'timeout: 30',
 		'status:429 after retry 3:2',
 		'block 12:45 at height 1.5: 7',
+		'did you mean config.json? no',
+		'array [1] and [0:2] are fine',
 	])('leaves the ordinary colon and number in %j alone', message => {
 		const { line } = describeFailure(new Error(message));
 

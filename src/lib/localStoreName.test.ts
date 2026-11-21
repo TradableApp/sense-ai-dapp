@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import leaksPartOf from '@/test/leaksPartOf';
+
 import {
 	assertLocalStoreConfig,
 	LocalStoreConfigError,
@@ -38,12 +40,9 @@ describe('localStoreName', () => {
 		'not-an-address',
 		`0x${'a'.repeat(41)}`,
 		`0x${'g'.repeat(40)}`,
-	])(
-		'refuses the agent address %j rather than naming a store all agents would share',
-		agent => {
-			expect(() => localStoreName('84532', agent)).toThrow(LocalStoreConfigError);
-		},
-	);
+	])('refuses the agent address %j rather than naming a store all agents would share', agent => {
+		expect(() => localStoreName('84532', agent)).toThrow(LocalStoreConfigError);
+	});
 
 	it.each([undefined, '', 'abc', '0', '-1', '1.5'])('refuses the chain id %j', chainId => {
 		expect(() => localStoreName(chainId, AGENT_A)).toThrow(LocalStoreConfigError);
@@ -63,11 +62,11 @@ describe('localStoreName error messages', () => {
 		}
 		throw new Error('expected a throw');
 	};
-	// Any six digits in a row from the key, anywhere in the message, would be a leak.
-	const leaksPartOf = (message: string, value: string): boolean =>
-		Array.from({ length: value.length - 5 }, (_, i) => value.slice(i, i + 6)).some(part =>
-			message.includes(part),
-		);
+	// Any four characters in a row from the key, anywhere in the message, would be a leak.
+	it('the leak check catches four characters of the key and no fewer are needed', () => {
+		expect(leaksPartOf(`got ${KEY.slice(20, 24)} here`, KEY)).toBe(true);
+		expect(leaksPartOf(`got ${KEY.slice(20, 23)} here`, KEY)).toBe(false);
+	});
 
 	it.each([KEY, `0x${KEY}`])('does not print an agent address that looks like a key', value => {
 		const message = messageFor(() => localStoreName('84532', value));

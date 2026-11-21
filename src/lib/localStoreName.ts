@@ -1,3 +1,6 @@
+// A relative import: `vite.config.ts` loads this file before the `@/` alias exists.
+import describeShape from './settingShape';
+
 /** The local store cannot be named: the chain id or the agent address is missing or malformed. */
 export class LocalStoreConfigError extends Error {
 	constructor(message: string) {
@@ -9,22 +12,6 @@ export class LocalStoreConfigError extends Error {
 const STORE_PREFIX = 'SenseAI';
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const CHAIN_ID = /^[1-9][0-9]*$/;
-const HEX = /^[0-9a-fA-F]+$/;
-
-/**
- * What a refused value looks like, without the value: a private key pasted into the wrong
- * setting is 64 hex digits, and this message is printed to a terminal or a CI log.
- */
-function describeShape(value: string): string {
-	if (value === '') return 'nothing';
-	const prefixed = value.startsWith('0x');
-	const digits = prefixed ? value.slice(2) : value;
-	return [
-		`${value.length} characters`,
-		prefixed ? 'starts with 0x' : 'does not start with 0x',
-		HEX.test(digits) ? 'all hex' : 'not all hex',
-	].join(', ');
-}
 
 /**
  * Name of the browser database for one agent contract on one chain.

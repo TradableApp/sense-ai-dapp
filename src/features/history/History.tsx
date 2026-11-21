@@ -1,21 +1,11 @@
 import { type ChangeEvent, type MouseEvent, useEffect, useMemo, useState } from 'react';
 
 import { useQueryClient } from '@tanstack/react-query';
-import { Loader2, MessageSquare, PlusCircle, Search } from 'lucide-react';
+import { MessageSquare, PlusCircle, Search } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import StorageUnavailableBanner from '@/components/StorageUnavailableBanner';
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import Input from '@/components/ui/input';
@@ -37,6 +27,7 @@ import {
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
 import ConversationActionsMenu from './ConversationActionsMenu';
+import DeleteConversationDialog from './DeleteConversationDialog';
 import RenameConversationModal from './RenameConversationModal';
 
 export default function History() {
@@ -316,33 +307,13 @@ export default function History() {
 					</div>
 				</div>
 			</div>
-			<AlertDialog open={isAlertOpen} onOpenChange={setIsAlertOpen}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-						<AlertDialogDescription>
-							This will permanently delete this conversation. This action requires a transaction and
-							cannot be undone.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel
-							onClick={() => setConversationToDelete(null)}
-							disabled={metadataUpdateMutation.isPending}
-						>
-							Cancel
-						</AlertDialogCancel>
-						<AlertDialogAction
-							className="bg-destructive hover:bg-destructive/90"
-							onClick={confirmDelete}
-							disabled={metadataUpdateMutation.isPending}
-						>
-							{metadataUpdateMutation.isPending && <Loader2 className="mr-2 size-4 animate-spin" />}
-							Continue
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			<DeleteConversationDialog
+				open={isAlertOpen}
+				onOpenChange={setIsAlertOpen}
+				onConfirm={confirmDelete}
+				onCancel={() => setConversationToDelete(null)}
+				isProcessing={metadataUpdateMutation.isPending}
+			/>
 		</>
 	);
 }

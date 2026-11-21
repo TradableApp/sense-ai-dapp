@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// Static guard over src/, index.html, vite.config.ts and public/ (pure Node; see the adr-0002 guard for why the environment is
+// Static guard over src/ (stylesheets included), index.html, vite.config.ts and public/ (pure Node; see the adr-0002 guard for why the environment is
 // pinned per file).
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -34,7 +34,7 @@ const ALLOWED = [
 	path.join('lib', 'abi') + path.sep,
 ];
 const isChecked = (file: string) =>
-	/\.(ts|tsx|js|jsx)$/.test(file) &&
+	/\.(ts|tsx|js|jsx|css)$/.test(file) &&
 	!/\.test\.(ts|tsx|js|jsx)$/.test(file) &&
 	!ALLOWED.some(allowed => file === allowed || file.startsWith(allowed));
 
@@ -97,6 +97,20 @@ const TOKEN_NAME = new RegExp(
 		'[\'"`](?:able|sense)[\'"`]',
 		'(?:^|[^A-Za-z])(?:able|sense)(?:Token|[-_]token)',
 		'[a-z](?:Able|Sense)(?:Token|Build|Profile|Abi)\\b',
+		// glued to letters: after a lower-case letter (`buyABLE`, `getSense`, but not the
+		// product name `useSenseAI`), or in capitals before a lower-case one (`SENSEpoints`,
+		// but not `DISABLEd`)
+		'[a-z](?:ABLE|SENSE)',
+		'[a-z](?:Able|Sense)(?![a-z]|AI)',
+		'(?<![A-Z])(?:ABLE|SENSE)[a-z]',
+		// lower-case and joined by a dash or underscore, as in a stylesheet (`.able-badge`,
+		// `--sense-accent`), but not the product's own `sense-ai` or `sense_ai`
+		'(?:^|[^A-Za-z])(?:able|sense)[-_](?!ai\\b)',
+		// lower-case as an object key (`{ able: 0.015 }`, a key on its own line) or a member
+		// access (`profiles.sense`); a key needs a brace, a comma or the start of the line
+		// before it, so "makes sense: wait" in a sentence is not one
+		`(?:[{,]\\s*|^\\s*)['"]?(?:able|sense)['"]?\\s*:`,
+		'\\.(?:able|sense)(?![\\w-])',
 	].join('|'),
 );
 
@@ -124,6 +138,8 @@ describe('the fee token is named only in its profile', () => {
 
 		expect(scanned).toContain(path.join('src', 'config', 'contracts.ts'));
 		expect(scanned).toContain(path.join('src', 'features', 'usage', 'ManagePlanModal.tsx'));
+		// Stylesheets are served too: a class or a `content:` can carry a name to the screen.
+		expect(scanned).toContain(path.join('src', 'index.css'));
 		expect(scanned).not.toContain(path.join('src', 'config', 'feeToken.ts'));
 		expect(scanned.length).toBeGreaterThan(100);
 	});
@@ -211,7 +227,7 @@ describe('the fee token is named only in its profile', () => {
 		const documented = lines.filter((_, i) => isExemptLine(VITE_ENV, lines, i)).join(' ');
 
 		expect(documented).not.toBe('');
-		// Unset stops every build but localnet's, and a misspelt value stops every build.
+		// Unset stops every build, localnet's included, and a misspelt value stops every build.
 		expect(documented).not.toMatch(/unknown means/i);
 		expect(documented).toMatch(/localnet/i);
 		expect(documented).toMatch(/stops/i);
@@ -233,6 +249,23 @@ describe('the fee token is named only in its profile', () => {
 			'const ableTokenAbi = load();',
 			'const isSenseBuild = true;',
 			'Sense credits cannot be sent',
+			// glued to letters on either side
+			'const buyABLE = true;',
+			'getSENSE()',
+			'const SENSEpoints = 1;',
+			'ABLEbalance',
+			'const buyAble = true;',
+			'getSense()',
+			// in a stylesheet
+			'.able-badge { color: red; }',
+			'--sense-accent: #fff;',
+			'content: "SENSE";',
+			// a lower-case property key or member access
+			'const prices = { able: 0.015 };',
+			"const prices = { 'sense': 0 };",
+			'\tsense: SENSE_PROFILE,',
+			'const profile = profiles.sense;',
+			'return FEE_TOKEN_PROFILES.able',
 		];
 		const allowed = [
 			'available',
@@ -245,6 +278,21 @@ describe('the fee token is named only in its profile', () => {
 			'it makes sense to wait',
 			'you will be able to cancel',
 			'isTransferable',
+			'useSenseAI()',
+			'const DISABLED = true;',
+			'TABLE_NAME',
+			'ENABLE_SYNC',
+			'isCapable',
+			'Senses and sensed',
+			'sense-ai-dapp',
+			'general/sense_ai',
+			'enable',
+			'tablet',
+			'sensitive',
+			'it makes sense: wait',
+			'const disabled = { enabled: true };',
+			'isSensible.value',
+			'senseai.tradable.app',
 		];
 
 		samples.forEach(sample => expect(TOKEN_NAME.test(sample), sample).toBe(true));

@@ -4,6 +4,7 @@ import ableTokenLogo from '@/assets/able-token-logo.svg';
 import senseLogo from '@/assets/logos/senseai-logo.svg';
 import AbleTokenABI from '@/lib/abi/AbleToken.json';
 import SenseTokenABI from '@/lib/abi/SenseToken.json';
+import leaksPartOf from '@/test/leaksPartOf';
 
 import {
 	assertFeeTokenConfig,
@@ -11,6 +12,8 @@ import {
 	FEE_TOKEN_PROFILES,
 	FeeTokenConfigError,
 	type FeeTokenProfile,
+	fullBalanceLabel,
+	offersFullBalance,
 	selectFeeToken,
 } from './feeToken';
 
@@ -129,7 +132,7 @@ describe('FEE_TOKEN — the build setting is what selects the profile', () => {
 	});
 });
 
-// The fallback to SENSE is right for a developer's machine and wrong for a deployed build:
+// The fallback to SENSE is right for the unit tests and wrong for a deployed build:
 // SENSE settings on another token mean a wrong label, no value shown, and a first offer
 // to approve the wallet's whole balance. A deployed build must name its token.
 describe('assertFeeTokenConfig', () => {
@@ -154,13 +157,73 @@ describe('assertFeeTokenConfig', () => {
 		expect(() => assertFeeTokenConfig('mainnet', { VITE_FEE_TOKEN: value })).not.toThrow();
 	});
 
-	it.each(['localnet', 'test'])('lets a %s run fall back when none is named', mode => {
-		expect(() => assertFeeTokenConfig(mode, {})).not.toThrow();
+	// Vitest has its own configuration and never runs this; the build check's own test calls
+	// the real Vite configuration in the test mode, which must keep working with no setting.
+	it('lets a unit-test run fall back when none is named', () => {
+		expect(() => assertFeeTokenConfig('test', {})).not.toThrow();
+	});
+
+	// The e2e harness's sync always writes the setting on localnet, so a localnet run without
+	// it is a mistake in setting up, and it stops with the reason like every other build.
+	it('stops a localnet run with no fee token named', () => {
+		expect(() => assertFeeTokenConfig('localnet', {})).toThrow(FeeTokenConfigError);
+		expect(() => assertFeeTokenConfig('localnet', { VITE_FEE_TOKEN: '' })).toThrow(
+			/VITE_FEE_TOKEN/,
+		);
+	});
+
+	it('describes a refused value by its shape and never prints it', () => {
+		const KEY = '4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318';
+		let message = '';
+		try {
+			assertFeeTokenConfig('testnet', { VITE_FEE_TOKEN: `0x${KEY}` });
+		} catch (error) {
+			message = (error as Error).message;
+		}
+
+		expect(message).toMatch(/VITE_FEE_TOKEN must be one of/);
+		expect(message).toMatch(/66 characters, starts with 0x, all hex/);
+		expect(leaksPartOf(message, KEY)).toBe(false);
+	});
+
+	it('does not print a misspelt name either', () => {
+		expect(() => assertFeeTokenConfig('mainnet', { VITE_FEE_TOKEN: 'ABEL' })).toThrow(
+			/got 4 characters, does not start with 0x, not all hex/,
+		);
+		expect(() => assertFeeTokenConfig('mainnet', { VITE_FEE_TOKEN: 'ABEL' })).not.toThrow(/ABEL/);
 	});
 
 	it.each(['localnet', 'test'])('still stops a %s run that names an unknown token', mode => {
 		expect(() => assertFeeTokenConfig(mode, { VITE_FEE_TOKEN: 'ABEL' })).toThrow(
 			FeeTokenConfigError,
 		);
+	});
+});
+
+// The plan dialog labels its first offer "your full balance" only when that is what it is.
+describe('offersFullBalance', () => {
+	it("is true where the first offer is the wallet's whole balance", () => {
+		expect(offersFullBalance(SENSE, 30.7)).toBe(true);
+	});
+
+	it.each([
+		['a wallet with less than one whole token, offered the fallback', SENSE, 0.5],
+		['a balance not known yet', SENSE, undefined],
+		['a profile whose first offer is a fixed amount', ABLE, 30_000],
+	] as const)('is false for %s', (_label, profile, balance) => {
+		expect(offersFullBalance(profile, balance)).toBe(false);
+	});
+});
+
+// "your full balance" only when the offer is every bit of it; a balance with a fraction is
+// offered its whole tokens and says so.
+describe('fullBalanceLabel', () => {
+	it.each([
+		['a whole balance', SENSE, 30, 'your full balance'],
+		['a balance with a fraction', SENSE, 25.7, 'your balance in whole tokens'],
+		['less than one whole token', SENSE, 0.5, null],
+		['a fixed first offer', ABLE, 30, null],
+	] as const)('labels %s', (_label, profile, balance, expected) => {
+		expect(fullBalanceLabel(profile, balance)).toBe(expected);
 	});
 });

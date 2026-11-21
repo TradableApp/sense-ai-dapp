@@ -1,5 +1,7 @@
+import { useCallback, useEffect } from 'react';
+
 import * as Sentry from '@sentry/react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getContract, readContract } from 'thirdweb';
 import { useActiveWalletChain } from 'thirdweb/react';
 import { eth_getCode as getCodeAt, getRpcClient } from 'thirdweb/rpc';
@@ -41,6 +43,15 @@ function contractReader(
  */
 export const FEE_TOKEN_RECHECK_MS = 5 * 60 * 1000;
 
+/**
+ * How often the check is asked again while it has never answered on this chain and the
+ * page is visible. The plan waits for that answer and says "try again in a moment", so the
+ * five-minute recheck is far too slow; once any answer has come this stops.
+ */
+export const AWAITING_RECHECK_MS = 5_000;
+
+const FEE_TOKEN_CHECK_KEY = 'feeTokenCheck';
+
 // A failure is repeated on every retry and every later read. Each kind is reported once per
 // chain per page load, so an unreachable node cannot fill the error tracker. The line is
 // not part of the key: a provider that puts request ids in its errors would make every
@@ -75,15 +86,8 @@ export interface FeeTokenCheck {
 	blocks: (_action: PaidAction) => boolean;
 }
 
-/**
- * Whether the chain agrees with the token this build is for.
- *
- * Something is switched off only for a confirmed disagreement. Before the first answer, or
- * when the first read fails, the verdict is `unknown` and nothing is stopped: an unreachable
- * node is not a wrong token. A failed read is rethrown so the query retries it and keeps the
- * last answer it had, which means a block that was confirmed stays until a read passes.
- */
-export default function useFeeTokenCheck(): FeeTokenCheck {
+/** The check's query, shared by the hooks below: one read serves both. */
+function useFeeTokenCheckQuery(): { data: FeeTokenVerdict | undefined; isConfigured: boolean } {
 	const chain = useActiveWalletChain();
 	const contracts = chain ? CONTRACTS[chain.id] : undefined;
 	const escrowAddress: string | undefined = contracts?.escrow?.address;
@@ -96,7 +100,7 @@ export default function useFeeTokenCheck(): FeeTokenCheck {
 
 	const { data } = useQuery({
 		queryKey: [
-			'feeTokenCheck',
+			FEE_TOKEN_CHECK_KEY,
 			chain?.id,
 			escrowAddress,
 			tokenAddress,
@@ -134,6 +138,59 @@ export default function useFeeTokenCheck(): FeeTokenCheck {
 		refetchInterval: 5 * 60 * 1000,
 	});
 
+	return { data, isConfigured };
+}
+
+/**
+ * Whether the chain agrees with the token this build is for.
+ *
+ * Something is switched off only for a confirmed disagreement. Before the first answer, or
+ * when the first read fails, the verdict is `unknown` and nothing is stopped: an unreachable
+ * node is not a wrong token. A failed read is rethrown so the query retries it and keeps the
+ * last answer it had, which means a block that was confirmed stays until a read passes.
+ */
+export default function useFeeTokenCheck(): FeeTokenCheck {
+	const { data } = useFeeTokenCheckQuery();
 	const verdict: FeeTokenCheckState = data ?? 'unknown';
 	return { verdict, blocks: action => blocksAction(verdict, action) };
+}
+
+/**
+ * Asks the check again now, as a press on the held plan submit does. A read already under
+ * way is left to finish rather than restarted: the reads are made one after another, and a
+ * slow node would otherwise never get to the end of them.
+ */
+export function useAskFeeTokenAgain(): () => void {
+	const queryClient = useQueryClient();
+	return useCallback(() => {
+		queryClient
+			.refetchQueries({ queryKey: [FEE_TOKEN_CHECK_KEY] }, { cancelRefetch: false })
+			// A failed read is already reported once by the query; nothing more to do here.
+			.catch(() => undefined);
+	}, [queryClient]);
+}
+
+/**
+ * Whether the check is still waiting for its first answer on this chain. Setting a plan
+ * approves the token, so it waits for that answer; nothing else does. The query keeps its
+ * last answer through a failed read, so once any answer has come this stays false. Where
+ * the check reads nothing (no wallet, or no contracts or agent for the chain) nothing will
+ * ever answer, and this is false: waiting would leave a plan that can never be set.
+ */
+export function useIsAwaitingFirstAnswer(): boolean {
+	const { data, isConfigured } = useFeeTokenCheckQuery();
+	const isAwaiting = isConfigured && data === undefined;
+	const askAgain = useAskFeeTokenAgain();
+
+	// While it waits, the check is asked again every few seconds, but not while the page is
+	// hidden; the effect ends as soon as an answer has come.
+	useEffect(() => {
+		if (!isAwaiting) return undefined;
+		const timer = setInterval(() => {
+			if (document.visibilityState === 'visible') askAgain();
+		}, AWAITING_RECHECK_MS);
+		return () => clearInterval(timer);
+	}, [isAwaiting, askAgain]);
+
+	return isAwaiting;
 }
