@@ -76,9 +76,9 @@ the TEE. Metadata only — never plaintext.
   `topic(answerMessageId)`** on a broker (NATS / Redis Streams / PubSub). The device — which already
   holds `answerMessageId` from the `PromptSubmitted` receipt (param index 3) — subscribes and decrypts.
   The TEE never opens a connection *to* a device; it publishes to a topic. The final reasoning+answer
-  is also persisted encrypted (durable plane) for late joiners / other devices. The dApp already has
-  both sides of this structure: `chatSlice.addReasoningStepById` (live append) and
-  `MessageFile.reasoning` (durable, the Area-6 shape).
+  is also persisted encrypted (durable plane) for late joiners / other devices. (Superseded for the
+  live plane: see "Live plane as agreed" below. The live side is an overlay in memory, not a Redux
+  append.)
   - *Security:* the broker sees only ciphertext + topic ids + timing. Be explicit about the trust
     level, though: because subscription uses a **wallet-signed token**, the broker operator can
     correlate **device IP ↔ wallet address ↔ specific `answerMessageId` activity, in real time**. The
@@ -140,3 +140,32 @@ not reliable today, with a sharper edge than the "5-minute lag" framing above:
   layer) independent of active-conversation pending state.
 - The desired behaviour is encoded as `test.fixme` `T-LIVE-01`/`T-LIVE-02` in
   `e2e/specs/live-sync.spec.ts` — un-fixme when Phase 1 lands.
+
+### Live plane as agreed (2026-11-21)
+
+The live plane is built without a broker, and it differs from the Phase 3 sketch above in four ways:
+
+- **Served by the TEE, keyed by the answer, not by the device.** The oracle answering a prompt
+  runs a small HTTP server in its ROFL TEE: `GET /stream/{answerMessageId}`. It holds only
+  ciphertext frames per answer in memory and never learns which device reads them.
+- **Proof of key, no wallet token.** The reader proves it holds the prompt's session key with
+  `X-SenseAI-Stream-Proof` = base64url(HMAC-SHA256(session key, `senseai-stream:` + answer id)).
+  The oracle hands the server only the expected proof, never the key. No wallet-signed token is
+  sent, so nothing ties a device's network identity to a wallet beyond what the chain already
+  shows. The proof travels in a header, so the dApp reads with `fetch()`, not `EventSource`,
+  and the proof stays out of URLs and access logs.
+- **Live equals stored.** Each frame (reset, sources, step, attempt, answer, done) is sealed with
+  the session key as the answer file is, and the stored reasoning and sources are a projection
+  of the same frames. The answer frame is sent only after the oracle's own `submitAnswer` is
+  mined. When the stored answer lands, the dApp compares it with what it showed and reports a
+  difference by kind only; the stored record is always what is rendered.
+- **An overlay, never a store.** The dApp keeps what it shows in memory (`src/lib/liveReasoning/`,
+  `useLiveReasoning`), writes none of it to IndexedDB, Redux, the query cache or browser storage,
+  and keeps every chat rule (composer, cancel, paid sends) on the stored messages. With
+  `VITE_REASONING_STREAM_URL` unset or the stream unreachable the chat is exactly as before.
+
+The interface contract (names, limits, refusals, the shared test vector) lives in
+`tokenized-ai-agent/oracle/src/stream/streamContract.js` and its dApp copy
+`src/lib/liveReasoning/contract.ts`; a change to one is a change to both. What still rests on
+measurement on real ROFL (where TLS ends, proxy buffering and idle limits, which set
+`VITE_REASONING_STREAM_MODE` and the server's timings) is recorded with the Phase 0 findings.
