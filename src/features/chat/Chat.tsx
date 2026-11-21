@@ -825,7 +825,8 @@ export default function Chat() {
 					reset();
 					showUnsavedPrompt(dispatch, {
 						activeConversationId,
-						parentId: messagesToDisplay?.at(-1)?.id,
+						// The parent the prompt was sent with: the list shown may have moved on by now.
+						parentId,
 						content: data.prompt,
 						ids: newIds,
 						at: confirmedAt,

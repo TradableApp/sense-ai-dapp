@@ -61,7 +61,9 @@ const isFields = (value: unknown): value is Fields => typeof value === 'object' 
 
 /** A non-empty id as a string, or null: ids are numeric strings, and 0 means none here. */
 function idOf(value: unknown): string | null {
-	if (typeof value !== 'string' && typeof value !== 'number') return null;
+	if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'bigint') {
+		return null;
+	}
 	const id = String(value);
 	return id === '' || id === '0' ? null : id;
 }
