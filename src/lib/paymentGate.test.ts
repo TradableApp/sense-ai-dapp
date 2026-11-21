@@ -86,9 +86,9 @@ describe('gateNotice', () => {
 	});
 
 	it('is the switch notice when the switch is closed, whatever the check says', () => {
-		expect(gateNotice({ feeToken: 'ok', prompts: closed('pair-retired') }, 'branch', 'PTS')).toEqual(
-			switchCopy('pair-retired'),
-		);
+		expect(
+			gateNotice({ feeToken: 'ok', prompts: closed('pair-retired') }, 'branch', 'PTS'),
+		).toEqual(switchCopy('pair-retired'));
 		expect(
 			gateNotice({ feeToken: 'token-paused', prompts: closed('pair-retired') }, 'branch', 'PTS'),
 		).toEqual(switchCopy('pair-retired', { otherProblem: true }));
@@ -128,7 +128,12 @@ describe('switchedOffReason', () => {
 
 	it('is the check title when only the check blocks, and points above in a dialog', () => {
 		expect(
-			switchedOffReason({ feeToken: 'contract-not-found', prompts: OPEN }, 'metadata', 'PTS', 'dialog'),
+			switchedOffReason(
+				{ feeToken: 'contract-not-found', prompts: OPEN },
+				'metadata',
+				'PTS',
+				'dialog',
+			),
 		).toBe(`${feeTokenBlockCopy('contract-not-found', 'PTS')?.title}. The notice above says why.`);
 	});
 });

@@ -122,7 +122,9 @@ describe('switchCopy', () => {
 		expect(title.length).toBeGreaterThan(0);
 		expect(description).toMatch(/prompts/i);
 		expect(description).toMatch(/branches, renames, deletes and new plans/);
-		expect(description).toMatch(/cancelling a prompt, claiming a refund and revoking a plan still work/i);
+		expect(description).toMatch(
+			/cancelling a prompt, claiming a refund and revoking a plan still work/i,
+		);
 	});
 
 	it('the wordings differ from each other', () => {
