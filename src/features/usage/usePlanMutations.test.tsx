@@ -327,9 +327,10 @@ describe('a plan whose approval went through and whose limit then failed', () =>
 		expect(description).toMatch(/user rejected\.?$/);
 	});
 
-	// An earlier plan is not touched by a failed limit, and Revoke is refused while a prompt is
-	// pending: the words must hold in both cases.
-	it('says an earlier plan still applies and that Revoke waits for pending prompts', async () => {
+	// The approval replaced the allowance: an earlier plan's limit still stands on the escrow
+	// but can spend only up to the new approval. The escrow refuses a new limit, and Revoke,
+	// while a prompt is pending: the words must hold in every case.
+	it('says the approval is now the new amount and caps an earlier plan', async () => {
 		approvedThenFailed();
 
 		await attempt(setPlan);
@@ -337,8 +338,11 @@ describe('a plan whose approval went through and whose limit then failed', () =>
 		const description = String(
 			(vi.mocked(toast.error).mock.calls[0][1] as { description?: string }).description,
 		);
-		expect(description).toMatch(/earlier plan still applies/);
-		expect(description).toMatch(/no prompt is pending/);
+		expect(description).not.toMatch(/earlier plan still applies/);
+		expect(description).toMatch(/approval is now the new amount/);
+		expect(description).toMatch(/can spend only up to the new approval/);
+		expect(description).toMatch(/limit can be set again once no prompt is pending/);
+		expect(description).toMatch(/Revoke once no prompt is pending/);
 	});
 
 	// thirdweb's text runs to several lines with the RPC URL and the call data.
@@ -437,6 +441,31 @@ describe('a plan whose approval went through and whose limit then failed', () =>
 		expect(description).toMatch(/reverted/);
 		expect(description).toMatch(/nothing was approved/);
 		expect(toast.success).not.toHaveBeenCalled();
+		expect(onDone).not.toHaveBeenCalled();
+	});
+
+	// thirdweb gives up waiting for the approval's receipt: it may still be mined, so it is not
+	// called a failure, no limit is sent, and the plan and balance are read again.
+	it('an approval whose receipt has not come is not confirmed, not failed', async () => {
+		withVerdict('ok');
+		sendAndConfirm.mockRejectedValueOnce(
+			new Error(`Transaction receipt for 0x${'ab'.repeat(32)} not found after 100 blocks`),
+		);
+
+		const { invalidate, onDone } = await attempt(setPlan);
+
+		expect(toast.error).not.toHaveBeenCalled();
+		expect(toast.warning).toHaveBeenCalledTimes(1);
+		const [title, options] = vi.mocked(toast.warning).mock.calls[0];
+		const description = String((options as { description?: string }).description);
+		expect(title).toBe('Approval Not Confirmed');
+		expect(description).toMatch(/may still be mined/);
+		expect(description).not.toMatch(/failed/i);
+		expect(description).not.toContain(FEE_TOKEN.symbol);
+		expect(prepareContractCall).not.toHaveBeenCalledWith(
+			expect.objectContaining({ method: 'setSpendingLimit' }),
+		);
+		expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['usagePlan'] }));
 		expect(onDone).not.toHaveBeenCalled();
 	});
 
