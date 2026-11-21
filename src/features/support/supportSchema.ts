@@ -2,7 +2,13 @@ import { z } from 'zod';
 
 const supportSchema = z.object({
 	topic: z
-		.string({ required_error: 'Please select a topic.' })
+		.string({
+			// No topic chosen yet: the select leaves the value undefined.
+			error: issue =>
+				issue.code === 'invalid_type' && issue.input === undefined
+					? 'Please select a topic.'
+					: undefined,
+		})
 		.min(1, { message: 'Please select a topic.' }),
 	subject: z
 		.string()

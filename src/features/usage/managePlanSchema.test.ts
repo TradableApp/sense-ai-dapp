@@ -50,8 +50,13 @@ describe('managePlanSchema', () => {
 		expect(messagesFor(managePlanSchema, { ...VALID, days: 1.5 })).toEqual({
 			days: ['Days must be a number.'],
 		});
-		expect(messagesFor(managePlanSchema, { ...VALID, days: -1.5 })).toEqual({
-			days: ['Days must be a number.', 'Duration must be at least one day.'],
+		// zod 4 stops at the failed `.int()`, so the second message zod 3 also listed is gone; the
+		// form shows only the first message for a field, which is unchanged.
+		expect(messagesFor(managePlanSchema, { ...VALID, days: -1.5 }).days[0]).toBe(
+			'Days must be a number.',
+		);
+		expect(await resolverMessages(managePlanSchema, { ...VALID, days: -1.5 })).toEqual({
+			days: 'Days must be a number.',
 		});
 		expect(await resolverMessages(managePlanSchema, { ...VALID, days: 1.5 })).toEqual({
 			days: 'Days must be a number.',
