@@ -71,6 +71,8 @@ vi.mock('@/config/contracts', async () => {
 	};
 });
 vi.mock('@/hooks/useFaucetConfig', () => ({ default: () => ({ data: { amount: 100 } }) }));
+// The prompts switch stays open here; its own tests close it.
+vi.mock('@/hooks/usePromptsSwitch', () => ({ default: () => ({ status: 'open' }) }));
 vi.mock('@/hooks/useFeeTokenCheck', () => ({ default: vi.fn() }));
 vi.mock('@/lib/faucetService', () => ({
 	default: vi.fn(),

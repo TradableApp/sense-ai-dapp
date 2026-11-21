@@ -2,7 +2,7 @@ import { useId } from 'react';
 
 import { Loader2 } from 'lucide-react';
 
-import FeeTokenMismatchBanner from '@/components/FeeTokenMismatchBanner';
+import PaymentsSwitchedOffBanner from '@/components/PaymentsSwitchedOffBanner';
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -25,7 +25,7 @@ interface DeleteConversationDialogProps {
 }
 
 /**
- * Asks before a conversation is deleted. A delete pays a fee, and the fee token check can
+ * Asks before a conversation is deleted. A delete pays a fee, and the payment gate can
  * switch deletes off while this is open, so the dialog mounts the banner itself (its
  * backdrop hides the page's) and marks Continue switched off: `aria-disabled` with the
  * reason as its description, still focusable, and a click that does nothing and keeps the
@@ -51,7 +51,7 @@ export default function DeleteConversationDialog({
 						cannot be undone.
 					</AlertDialogDescription>
 				</AlertDialogHeader>
-				<FeeTokenMismatchBanner />
+				<PaymentsSwitchedOffBanner />
 				{deleteSwitchedOff && (
 					<p id={reasonId} className="text-sm text-muted-foreground">
 						{deleteSwitchedOff}

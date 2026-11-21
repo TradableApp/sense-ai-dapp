@@ -10,6 +10,8 @@ import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
 import MessageActions from './message-actions';
 import UserMessageActions from './user-message-actions';
 
+// The prompts switch stays open here; its own tests close it.
+vi.mock('@/hooks/usePromptsSwitch', () => ({ default: () => ({ status: 'open' }) }));
 vi.mock('@/hooks/useFeeTokenCheck', () => ({ default: vi.fn() }));
 vi.mock('@/config/feeToken', () => ({ FEE_TOKEN: { symbol: 'PTS' } }));
 vi.mock('@/features/auth/SessionProvider', () => ({

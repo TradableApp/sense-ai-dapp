@@ -1,8 +1,9 @@
 /**
- * What to tell the user when the fee token refuses a transfer, and why a control is
- * switched off. Worded from the fee token check's answer, never from a token's name.
+ * What to tell the user when the fee token refuses a transfer, and why setting a plan
+ * waits. Worded from the fee token check's answer, never from a token's name. Why a
+ * control is switched off is worded by the payment gate (`switchedOffReason`).
  */
-import { feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
+import type { FeeTokenCheckState } from '@/lib/feeTokenCheck';
 
 /** The action names the error handler is given for getting money back. */
 export const CANCEL_ACTION = 'cancel prompt';
@@ -122,33 +123,6 @@ export function refusedTransferMessage(
 		description:
 			'SenseAI could not take this payment, so no tokens were taken. Please try again later or contact support.',
 	};
-}
-
-/**
- * Where the banner is, seen from the control: at the top of the page for a control on the
- * page, or above it for one in a dialog, whose backdrop hides the page's banner and which
- * therefore shows its own.
- */
-export type BannerPlace = 'page' | 'dialog';
-
-const WHERE_THE_BANNER_IS: Record<BannerPlace, string> = {
-	page: 'The notice at the top of the page says why.',
-	dialog: 'The notice above says why.',
-};
-
-/**
- * Why a control is switched off, for its tooltip and its accessible description: the
- * banner's title, and where to read the rest.
- */
-export function switchedOffReason(
-	state: FeeTokenCheckState,
-	symbol: string,
-	place: BannerPlace = 'page',
-): string {
-	// The banner copy is empty only for `ok` and `unknown`, which switch nothing off and so
-	// never reach here. If this fallback is ever shown, a new state lacks its banner words.
-	const title = feeTokenBlockCopy(state, symbol)?.title ?? 'This action is switched off';
-	return `${title}. ${WHERE_THE_BANNER_IS[place]}`;
 }
 
 /**

@@ -36,6 +36,8 @@ vi.mock('@/config/contracts', () => ({ LOCAL_CHAIN_ID: 31337, TESTNET_CHAIN_ID: 
 vi.mock('@/hooks/useFaucetRequest', () => ({
 	default: () => ({ requestTokens: vi.fn(), faucetAmount: 100 }),
 }));
+// The prompts switch stays open here; its own tests close it.
+vi.mock('@/hooks/usePromptsSwitch', () => ({ default: () => ({ status: 'open' }) }));
 vi.mock('@/hooks/useFeeTokenCheck', () => ({
 	default: vi.fn(),
 	useIsAwaitingFirstAnswer: vi.fn(),

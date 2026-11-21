@@ -38,8 +38,8 @@ import { db } from '@/config/firebase';
 import { useSession } from '@/features/auth/SessionProvider';
 import useChatMutations from '@/hooks/useChatMutations';
 import useConversations from '@/hooks/useConversations';
-import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
 import useFirestoreCollectionListener from '@/hooks/useFirestoreCollectionListener';
+import usePaymentGate from '@/hooks/usePaymentGate';
 import useUsagePlan from '@/hooks/useUsagePlan';
 import { CANCELLATION_TIMEOUT_MS, REFUND_TIMEOUT_MS } from '@/lib/constants';
 import {
@@ -291,10 +291,10 @@ export default function Chat() {
 			!isFetching &&
 			((messagesFromQuery?.length ?? 0) === 0 || activeConversationMessages.length > 0),
 	});
-	// A build whose token the chain does not agree with sends nothing: see useFeeTokenCheck.
-	// The mutations refuse too; this is what greys the composer out.
-	const feeTokenCheck = useFeeTokenCheck();
-	const arePromptsSwitchedOff = feeTokenCheck.blocks('prompt');
+	// Nothing is sent while the payment gate refuses prompts (the prompts switch is closed, or
+	// the chain disagrees about the token). The mutations refuse too; this greys the composer.
+	const paymentGate = usePaymentGate();
+	const arePromptsSwitchedOff = paymentGate.blocks('prompt');
 	const hasBranchOrigin = composer.kind === 'ready' && composer.hasBranchOrigin;
 	// True from the moment the branch is held until it can send, re-reads included.
 	const isHeldForBranchHistory = useHeldBranchRefresh({

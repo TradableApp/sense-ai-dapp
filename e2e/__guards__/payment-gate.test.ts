@@ -288,9 +288,10 @@ describe('one place decides', () => {
 		appFiles.filter(f => pattern.test(stripComments(readFileSync(path.join(SRC, f), 'utf8'))));
 
 	// A control or mutation that read either source directly would decide on half the facts.
+	// A call, not the hook's own declaration.
 	it.each([
-		['the fee token check', /\buseFeeTokenCheck\(\)/],
-		['the prompts switch', /\busePromptsSwitch\(\)/],
+		['the fee token check', /(?<!function )\buseFeeTokenCheck\(\)/],
+		['the prompts switch', /(?<!function )\busePromptsSwitch\(\)/],
 	])('only the payment gate reads %s', (_, pattern) => {
 		expect(filesCalling(pattern)).toEqual([path.join('hooks', 'usePaymentGate.ts')]);
 	});

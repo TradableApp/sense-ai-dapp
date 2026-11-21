@@ -5,7 +5,7 @@ import { Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
-import FeeTokenMismatchBanner from '@/components/FeeTokenMismatchBanner';
+import PaymentsSwitchedOffBanner from '@/components/PaymentsSwitchedOffBanner';
 import { Button } from '@/components/ui/button';
 import {
 	Dialog,
@@ -81,7 +81,7 @@ export default function RenameConversationModal({
 					<DialogTitle>Rename Conversation</DialogTitle>
 					<DialogDescription>Enter a new name for this conversation.</DialogDescription>
 				</DialogHeader>
-				<FeeTokenMismatchBanner />
+				<PaymentsSwitchedOffBanner />
 
 				<form onSubmit={handleSubmit(onSubmit)} className="space-y-2">
 					<Input placeholder="Conversation title" disabled={isProcessing} {...register('title')} />

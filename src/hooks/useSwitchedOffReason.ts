@@ -1,7 +1,7 @@
 import { FEE_TOKEN } from '@/config/feeToken';
-import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
+import usePaymentGate from '@/hooks/usePaymentGate';
 import type { PaidAction } from '@/lib/feeTokenCheck';
-import { type BannerPlace, switchedOffReason } from '@/lib/feeTokenRefusal';
+import { type BannerPlace, switchedOffReason } from '@/lib/paymentGate';
 
 /**
  * Why the controls for `action` are switched off, or null while it is allowed. A control
@@ -14,8 +14,8 @@ export default function useSwitchedOffReason(
 	action: PaidAction,
 	place: BannerPlace = 'page',
 ): string | null {
-	const feeTokenCheck = useFeeTokenCheck();
-	return feeTokenCheck.blocks(action)
-		? switchedOffReason(feeTokenCheck.verdict, FEE_TOKEN.symbol, place)
+	const paymentGate = usePaymentGate();
+	return paymentGate.blocks(action)
+		? switchedOffReason(paymentGate.state, action, FEE_TOKEN.symbol, place)
 		: null;
 }

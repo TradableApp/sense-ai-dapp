@@ -9,6 +9,8 @@ import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
 
 import EditPromptInput from './edit-prompt-input';
 
+// The prompts switch stays open here; its own tests close it.
+vi.mock('@/hooks/usePromptsSwitch', () => ({ default: () => ({ status: 'open' }) }));
 vi.mock('@/hooks/useFeeTokenCheck', () => ({ default: vi.fn() }));
 vi.mock('@/config/feeToken', () => ({ FEE_TOKEN: { symbol: 'PTS' } }));
 

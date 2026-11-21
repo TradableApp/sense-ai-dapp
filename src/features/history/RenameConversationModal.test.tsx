@@ -2,15 +2,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
-import {
-	blocksAction,
-	feeTokenBlockCopy,
-	FeeTokenBlockedError,
-	type FeeTokenCheckState,
-} from '@/lib/feeTokenCheck';
+import { blocksAction, feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
+import { PaymentSwitchedOffError } from '@/lib/paymentGate';
 
 import RenameConversationModal from './RenameConversationModal';
 
+// The prompts switch stays open here; its own tests close it.
+vi.mock('@/hooks/usePromptsSwitch', () => ({ default: () => ({ status: 'open' }) }));
 vi.mock('@/hooks/useFeeTokenCheck', () => ({ default: vi.fn() }));
 vi.mock('@/config/feeToken', () => ({ FEE_TOKEN: { symbol: 'PTS' } }));
 
@@ -51,7 +49,11 @@ afterEach(cleanup);
 describe('RenameConversationModal', () => {
 	it('shows the banner words, not a developer message, when the rename was switched off', () => {
 		checkReturns('ok');
-		const error = new FeeTokenBlockedError('escrow-not-exempt', 'PTS');
+		const error = new PaymentSwitchedOffError(
+			{ feeToken: 'escrow-not-exempt', prompts: { status: 'open' } },
+			'metadata',
+			'PTS',
+		);
 
 		renderDialog(error);
 

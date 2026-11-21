@@ -3,7 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { ConnectButton } from 'thirdweb/react';
 
 import senseaiLogo from '@/assets/logos/senseai-logo.svg';
-import FeeTokenMismatchBanner from '@/components/FeeTokenMismatchBanner';
+import PaymentsSwitchedOffBanner from '@/components/PaymentsSwitchedOffBanner';
 import ThemeToggle from '@/components/ThemeToggle';
 import {
 	Breadcrumb,
@@ -100,7 +100,7 @@ export default function MainLayout() {
 							)}
 						</div>
 					</header>
-					<FeeTokenMismatchBanner className="rounded-none border-x-0 border-t-0" />
+					<PaymentsSwitchedOffBanner className="rounded-none border-x-0 border-t-0" />
 					<main className="flex-1 overflow-y-auto p-4">
 						<Outlet />
 					</main>
