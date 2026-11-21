@@ -8,7 +8,10 @@ import scrubSecrets from '@/lib/scrubSecrets';
  * boundary would send it as it is. So every text field is scrubbed, nested data that cannot
  * be scrubbed with certainty is dropped, and the request body is dropped (it can hold
  * encrypted payloads). Stack frames and the exception type are kept: the frames point at
- * the app's own files and are what make the report useful.
+ * the app's own files and are what make the report useful. So are real-shaped trace and
+ * span ids, which carry nothing but are what link a transaction to its spans and errors.
+ * Not touched: the user, the fingerprint, frame variables and breadcrumb categories (none
+ * is set to anything secret here; breadcrumbs are scrubbed by `beforeBreadcrumb`).
  *
  * An event that cannot be read is dropped whole: sending it raw would be the leak this
  * exists to prevent, and a partly scrubbed event cannot be told apart from a whole one.
@@ -33,10 +36,34 @@ function scrubFlat(record: object | undefined): Record<string, Primitive> | unde
 	);
 }
 
+/**
+ * The ids that link a transaction to its spans and errors, by the shape the SDK makes them:
+ * 32 lower-case hex characters for a trace, 16 for a span. The scrub would turn them into
+ * `<hex>` and Sentry could link nothing. Kept only in the trace context and only when exactly
+ * that shape; anything else under those names is scrubbed as any other text.
+ */
+const TRACE_IDS: Record<string, RegExp> = {
+	trace_id: /^[0-9a-f]{32}$/,
+	span_id: /^[0-9a-f]{16}$/,
+	parent_span_id: /^[0-9a-f]{16}$/,
+};
+
+function scrubTraceContext(context: object | undefined): Record<string, Primitive> | undefined {
+	const scrubbed = scrubFlat(context);
+	if (!context || !scrubbed) return scrubbed;
+	const kept = Object.entries(context).filter(
+		([key, value]) => typeof value === 'string' && TRACE_IDS[key]?.test(value),
+	);
+	return { ...scrubbed, ...Object.fromEntries(kept) };
+}
+
 function scrubContexts(contexts: ErrorEvent['contexts']): ErrorEvent['contexts'] {
 	if (!contexts) return undefined;
 	return Object.fromEntries(
-		Object.entries(contexts).map(([name, context]) => [name, scrubFlat(context)]),
+		Object.entries(contexts).map(([name, context]) => [
+			name,
+			name === 'trace' ? scrubTraceContext(context) : scrubFlat(context),
+		]),
 	);
 }
 
@@ -67,6 +94,7 @@ function scrubCommon<T extends ErrorEvent | TransactionEvent>(event: T): T {
 		message: scrubText(event.message),
 		transaction: scrubText(event.transaction),
 		extra: scrubFlat(event.extra),
+		tags: scrubFlat(event.tags),
 		contexts: scrubContexts(event.contexts),
 		request: scrubRequest(event.request),
 	};
@@ -89,8 +117,18 @@ export function scrubErrorEvent(event: ErrorEvent): ErrorEvent | null {
 
 type SpanJson = NonNullable<TransactionEvent['spans']>[number];
 
+/**
+ * Span data the SDK sets on every fetch span that no pattern can scrub with certainty: a query
+ * is all parameters (`key=…`), a fragment is free text and a host label can be the key.
+ */
+const DROPPED_SPAN_DATA = new Set(['http.query', 'http.fragment', 'server.address']);
+
 function scrubSpan(span: SpanJson): SpanJson {
-	return { ...span, description: scrubText(span.description), data: scrubFlat(span.data) ?? {} };
+	const data = Object.fromEntries(
+		Object.entries(span.data ?? {}).filter(([key]) => !DROPPED_SPAN_DATA.has(key)),
+	);
+	// The span's own ids are top-level fields, not data, and are kept as they are.
+	return { ...span, description: scrubText(span.description), data: scrubFlat(data) ?? {} };
 }
 
 export function scrubTransactionEvent(event: TransactionEvent): TransactionEvent | null {
