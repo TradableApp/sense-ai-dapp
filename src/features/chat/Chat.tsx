@@ -822,6 +822,9 @@ export default function Chat() {
 								String(answerMessageId),
 								queryClient,
 							);
+						// The composer cannot be typed in while a send is under way, so a new draft means the
+						// save was given up on first (`SAVE_GIVE_UP_MS`): the cancel window, a few seconds
+						// from the confirmation, has long closed and is not opened here.
 						if (!isStillActive(activeConversationId) || hasNewDraft()) return;
 						dispatch(setActiveConversationId(newConversation.id));
 						dispatch(
