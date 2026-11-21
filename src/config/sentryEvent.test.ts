@@ -1,6 +1,8 @@
 import type { ErrorEvent } from '@sentry/react';
 import { describe, expect, it } from 'vitest';
 
+import scrubSecrets from '@/lib/scrubSecrets';
+
 import { scrubErrorEvent, scrubTransactionEvent, type TransactionEvent } from './sentryEvent';
 
 // thirdweb's error text names the RPC endpoint, key included, and a batch's call data.
@@ -8,6 +10,11 @@ const KEY = 'KEY123abc';
 const RPC = `https://84532.rpc.example/v2/${KEY}`;
 const WALLET = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 const THIRDWEB_MESSAGE = `HTTP request failed.\nURL: ${RPC}\nRequest body: {"params":[{"to":"${WALLET}"}]}`;
+
+// Real-shaped ids, as the SDK makes them: 32 and 16 lower-case hex characters.
+const TRACE_ID = '0af7651916cd43dd8448eb211c80319c';
+const SPAN_ID = 'b7ad6b7169203331';
+const PARENT_SPAN_ID = '00f067aa0ba902b7';
 
 const leaks = (value: unknown) => {
 	const text = JSON.stringify(value ?? null);
@@ -95,8 +102,8 @@ describe('scrubTransactionEvent', () => {
 			transaction: `/chat?rpc=${RPC}`,
 			spans: [
 				{
-					span_id: '1',
-					trace_id: '2',
+					span_id: SPAN_ID,
+					trace_id: TRACE_ID,
 					start_timestamp: 0,
 					description: `POST ${RPC}`,
 					data: { 'http.url': RPC, 'http.response.status_code': 200 },
@@ -112,5 +119,124 @@ describe('scrubTransactionEvent', () => {
 			'http.url': '<url>',
 			'http.response.status_code': 200,
 		});
+	});
+});
+
+describe('trace and span ids', () => {
+	const trace = {
+		trace_id: TRACE_ID,
+		span_id: SPAN_ID,
+		parent_span_id: PARENT_SPAN_ID,
+		op: 'pageload',
+		description: `GET ${RPC}`,
+	};
+
+	// Sentry links a transaction and its errors by these ids; scrubbed, nothing is linked.
+	it.each([
+		['an error event', (e: object) => scrubErrorEvent(errorEvent(e))],
+		[
+			'a transaction event',
+			(e: object) => scrubTransactionEvent({ type: 'transaction', ...e } as TransactionEvent),
+		],
+	])('%s keeps real-shaped ids in the trace context and scrubs the rest', (_name, scrub) => {
+		const scrubbed = scrub({ contexts: { trace } });
+
+		expect(scrubbed?.contexts?.trace).toEqual({
+			trace_id: TRACE_ID,
+			span_id: SPAN_ID,
+			parent_span_id: PARENT_SPAN_ID,
+			op: 'pageload',
+			description: 'GET <url>',
+		});
+	});
+
+	// Anything else under those names is scrubbed as any other text is.
+	it.each([
+		['upper case', TRACE_ID.toUpperCase(), SPAN_ID.toUpperCase()],
+		['too long', `${TRACE_ID}00`, `${SPAN_ID}00`],
+		['swapped lengths', SPAN_ID, TRACE_ID],
+		['a URL', RPC, RPC],
+	])('scrubs ids that are not real-shaped (%s)', (_name, traceId, spanId) => {
+		const scrubbed = scrubErrorEvent(
+			errorEvent({
+				contexts: { trace: { trace_id: traceId, span_id: spanId, parent_span_id: spanId } },
+			}),
+		);
+
+		expect(scrubbed?.contexts?.trace).toEqual({
+			trace_id: scrubSecrets(traceId),
+			span_id: scrubSecrets(spanId),
+			parent_span_id: scrubSecrets(spanId),
+		});
+		expect(scrubbed?.contexts?.trace?.trace_id).not.toBe(traceId);
+		expect(scrubbed?.contexts?.trace?.span_id).not.toBe(spanId);
+		expect(leaks(scrubbed)).toEqual([]);
+	});
+
+	it('keeps real-shaped ids under those names only in the trace context', () => {
+		const scrubbed = scrubErrorEvent(errorEvent({ contexts: { other: { trace_id: TRACE_ID } } }));
+
+		expect(scrubbed?.contexts?.other?.trace_id).not.toBe(TRACE_ID);
+	});
+
+	it("keeps a span's own ids", () => {
+		const scrubbed = scrubTransactionEvent({
+			type: 'transaction',
+			spans: [
+				{
+					span_id: SPAN_ID,
+					trace_id: TRACE_ID,
+					parent_span_id: PARENT_SPAN_ID,
+					start_timestamp: 0,
+					data: {},
+				},
+			],
+		});
+
+		expect(scrubbed?.spans?.[0]).toMatchObject({
+			span_id: SPAN_ID,
+			trace_id: TRACE_ID,
+			parent_span_id: PARENT_SPAN_ID,
+		});
+	});
+});
+
+describe('span data and tags', () => {
+	// The SDK sets these on every fetch span; a query string or a host label can carry a key.
+	it('drops http.query, http.fragment and server.address from span data', () => {
+		const scrubbed = scrubTransactionEvent({
+			type: 'transaction',
+			spans: [
+				{
+					span_id: SPAN_ID,
+					trace_id: TRACE_ID,
+					start_timestamp: 0,
+					data: {
+						'http.query': `?apikey=${KEY}`,
+						'http.fragment': `#${KEY}`,
+						'server.address': `${KEY}.rpc.example`,
+						'http.method': 'POST',
+						'http.response.status_code': 200,
+					},
+				},
+			],
+		});
+
+		expect(scrubbed?.spans?.[0].data).toEqual({
+			'http.method': 'POST',
+			'http.response.status_code': 200,
+		});
+	});
+
+	it.each([
+		['an error event', (e: object) => scrubErrorEvent(errorEvent(e))],
+		[
+			'a transaction event',
+			(e: object) => scrubTransactionEvent({ type: 'transaction', ...e } as TransactionEvent),
+		],
+	])("%s has its tags' string values scrubbed", (_name, scrub) => {
+		const scrubbed = scrub({ tags: { endpoint: RPC, chainId: '84532', retried: true, n: 2 } });
+
+		expect(scrubbed?.tags).toEqual({ endpoint: '<url>', chainId: '84532', retried: true, n: 2 });
 	});
 });
