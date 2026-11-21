@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { prepareContractCall } from 'thirdweb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
 import { type FeeTokenVerdict, readFeeTokenVerdict } from '@/lib/feeTokenCheck';
 import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
 
@@ -63,15 +64,19 @@ const PLAN = { limitInWei: 100n, expiresAtTimestamp: 2_000_000_000n };
 
 let answer: (_verdict: FeeTokenVerdict) => void = () => undefined;
 
-function renderPlanMutations() {
+function newWrapper() {
 	const queryClient = new QueryClient({
 		defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
 	});
-	const wrapper = ({ children }: { children: ReactNode }) => (
+	return ({ children }: { children: ReactNode }) => (
 		<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 	);
-	return renderHook(() => usePlanMutations({ onStatus: vi.fn(), onDone: vi.fn() }), { wrapper })
-		.result;
+}
+
+function renderPlanMutations() {
+	return renderHook(() => usePlanMutations({ onStatus: vi.fn(), onDone: vi.fn() }), {
+		wrapper: newWrapper(),
+	}).result;
 }
 
 beforeEach(() => {
@@ -105,19 +110,27 @@ describe('setting a plan, through the real fee token check', () => {
 		expect(toast.error).toHaveBeenCalledWith('Not sent', { description: AWAITING_CHECK_REASON });
 	});
 
-	it('goes through once the check has answered', async () => {
-		const result = renderPlanMutations();
+	it('goes through at the first press once the check has answered', async () => {
+		const { result } = renderHook(
+			() => ({
+				plan: usePlanMutations({ onStatus: vi.fn(), onDone: vi.fn() }),
+				isAwaiting: useIsAwaitingFirstAnswer(),
+			}),
+			{ wrapper: newWrapper() },
+		);
 		await waitFor(() => expect(readFeeTokenVerdict).toHaveBeenCalled());
+		expect(result.current.isAwaiting).toBe(true);
 		await act(async () => {
 			answer('ok');
 		});
+		await waitFor(() => expect(result.current.isAwaiting).toBe(false));
 
-		await waitFor(async () => {
-			await act(async () => {
-				await result.current.setPlanMutation.mutateAsync(PLAN).catch(() => undefined);
-			});
-			expect(sendAndConfirm).toHaveBeenCalledTimes(2);
+		await act(async () => {
+			await result.current.plan.setPlanMutation.mutateAsync(PLAN);
 		});
+
+		expect(toast.error).not.toHaveBeenCalled();
+		expect(sendAndConfirm).toHaveBeenCalledTimes(2);
 		expect(vi.mocked(prepareContractCall).mock.calls.map(([call]) => call)).toEqual([
 			expect.objectContaining({ method: 'approve' }),
 			expect.objectContaining({ method: 'setSpendingLimit' }),
