@@ -6,7 +6,6 @@ import { Loader2, Mail } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { getUserEmail } from 'thirdweb/wallets';
-import { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -25,20 +24,10 @@ import { sendFeedback } from '@/lib/contactService';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { closeModal } from '@/store/uiSlice';
 
-const feedbackSchema = z.object({
-	feedback: z
-		.string()
-		.trim()
-		.min(10, { message: 'Please provide at least 10 characters of feedback.' })
-		.max(2000, { message: 'Feedback cannot exceed 2000 characters.' }),
-	email: z
-		.string()
-		.min(1, { message: 'Email address is required.' })
-		.email({ message: 'Please enter a valid email address.' }),
-});
+import feedbackSchema, { type FeedbackValues } from './feedbackSchema';
 
 interface FeedbackVariables {
-	data: z.infer<typeof feedbackSchema>;
+	data: FeedbackValues;
 	userAddress: string;
 	displayName?: string;
 }
@@ -97,7 +86,7 @@ export default function FeedbackModal() {
 		},
 	});
 
-	const onSubmit = (data: z.infer<typeof feedbackSchema>) => {
+	const onSubmit = (data: FeedbackValues) => {
 		const displayName: string | undefined = undefined;
 		feedbackMutation.mutate({ data, userAddress: ownerAddress || '', displayName });
 	};

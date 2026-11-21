@@ -5,7 +5,6 @@ import { AlertCircle, Loader2, Trash2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useActiveWallet } from 'thirdweb/react';
 import { parseUnits } from 'viem';
-import { z } from 'zod';
 
 import CommunityLinksNotice from '@/components/CommunityLinksNotice';
 import PaymentsSwitchedOffBanner from '@/components/PaymentsSwitchedOffBanner';
@@ -41,21 +40,12 @@ import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
 import { cn } from '@/lib/utils';
 import pointsToCommunity from '@/lib/whereToGetToken';
 
+import managePlanSchema, { type ManagePlanValues } from './managePlanSchema';
 import shouldResetPlanForm from './planFormReset';
 import PlanValueEstimate from './PlanValueEstimate';
 import usePlanMutations from './usePlanMutations';
 
-const managePlanSchema = z.object({
-	limit: z
-		.number({ invalid_type_error: 'Limit must be a number.' })
-		.positive({ message: 'Limit must be greater than zero.' }),
-	days: z
-		.number({ invalid_type_error: 'Days must be a number.' })
-		.int()
-		.positive({ message: 'Duration must be at least one day.' }),
-});
-
-type FormValues = z.infer<typeof managePlanSchema>;
+type FormValues = ManagePlanValues;
 
 const DEFAULT_DAYS = 365;
 
