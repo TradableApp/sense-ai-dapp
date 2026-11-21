@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Reasoning, ReasoningContent } from './reasoning';
 
@@ -91,5 +91,41 @@ describe('ReasoningContent', () => {
 		const group = screen.getByTestId('reasoning-earlier-attempt');
 		expect(within(group).getByText('Old source')).toBeTruthy();
 		expect(within(group).queryByText('New source')).toBeNull();
+	});
+});
+
+describe('ReasoningContent typing', () => {
+	const streaming = (steps: Step[]) => (
+		<Reasoning isStreaming reasoningSteps={steps}>
+			<ReasoningContent reasoningSteps={steps} />
+		</Reasoning>
+	);
+	const step = { title: 'Reading', description: 'Checked recent sentiment.' };
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('leaves no timer behind when unmounted before a new step starts typing', () => {
+		vi.useFakeTimers();
+		const { rerender, unmount } = render(streaming([]));
+		// A new step schedules its typing on the next tick.
+		rerender(streaming([step]));
+		unmount();
+
+		expect(vi.getTimerCount()).toBe(0);
+		vi.advanceTimersByTime(5_000);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it('leaves no timer behind when unmounted while a step is typing', () => {
+		vi.useFakeTimers();
+		const { rerender, unmount } = render(streaming([]));
+		rerender(streaming([step]));
+		// The start tick and a few characters: the typing interval is running.
+		vi.advanceTimersByTime(100);
+		unmount();
+
+		expect(vi.getTimerCount()).toBe(0);
 	});
 });
