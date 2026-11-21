@@ -111,6 +111,24 @@ function whyNotHandedBack(text: string): string {
 	return bare ? `${bare[1]} is neither awaited nor returned` : '';
 }
 
+describe("the guard's own reading of a handler", () => {
+	it('does not count a bracket inside a string as code', () => {
+		expect(callAt("(a, 'an open ( in words', `and [ here`, b) + (c)", 0)).toBe(
+			"(a, 'an open ( in words', `and [ here`, b)",
+		);
+		expect(callAt("('it\\'s ( open', b).rest", 0)).toBe("('it\\'s ( open', b)");
+	});
+
+	it('reads void as unwaited work only where it is the operator', () => {
+		const typed =
+			'onSuccess: async () => { const done: Promise<void> = ready; const noop = (): void => undefined; await addMessageToConversation(x); }';
+		const discarded = 'onSuccess: async () => { void addMessageToConversation(x); }';
+
+		expect(whyNotHandedBack(typed)).toBe('');
+		expect(whyNotHandedBack(discarded)).toMatch(/does not wait for \(void/);
+	});
+});
+
 describe('the chat sends one paid prompt at a time', () => {
 	it('takes its mutations and isSending through useOneSendAtATime', () => {
 		expect(hasLine(chat, '} = useOneSendAtATime(useChatMutations());')).toBe(true);

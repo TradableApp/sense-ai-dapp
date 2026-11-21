@@ -580,6 +580,19 @@ describe('a confirmed send whose caller then fails to save it', () => {
 		},
 	);
 
+	// The log is a step like the others: a console that throws must not cost the user the
+	// warning, the cleared input or the sync.
+	it.each(SENDS)('$name: a console that throws still warns, clears and releases', async c => {
+		vi.mocked(console.error).mockImplementation(() => {
+			throw new Error('the console is gone');
+		});
+		const { sends, onSaveFailed } = await failedAfterConfirm(c);
+
+		expect(toast.warning).toHaveBeenCalledTimes(1);
+		expect(onSaveFailed).toHaveBeenCalledTimes(1);
+		expect(sends.current.isSending).toBe(false);
+	});
+
 	// Long words, and on regenerate and branch the only thing between the user and a reflex
 	// second press: it stays until closed, and a second failure replaces it.
 	it('stays up until closed, under one id, and a second failure shows it again', async () => {
