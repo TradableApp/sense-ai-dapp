@@ -598,7 +598,7 @@ describe('a confirmed send whose caller then fails to save it', () => {
 		const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
 		const { rendered, fail } = await confirmedThenFailing(SENDS[0], { queryClient });
 
-		currentSession.value = { sessionKey: {} as CryptoKey, ownerAddress: '0x' + 'b'.repeat(40) };
+		currentSession.value = { sessionKey: {} as CryptoKey, ownerAddress: `0x${'b'.repeat(40)}` };
 		rendered.rerender();
 		await act(async () => {
 			fail();
