@@ -17,8 +17,8 @@ export interface ActiveMessage {
 	answerMessageId?: string;
 	// Shape matches the oracle's answer MessageFile + the Reasoning/Source UI components
 	// (see components/ai/reasoning.tsx / source.tsx) and lib/types Message.
-	sources?: Array<{ title: string; url: string }>;
-	reasoning?: Array<{ title: string; description: string }>;
+	sources?: Array<{ title: string; url: string; attempt?: number }>;
+	reasoning?: Array<{ title: string; description: string; attempt?: number }>;
 	reasoningDuration?: number;
 	[key: string]: unknown;
 }
