@@ -307,6 +307,29 @@ describe('the controls on an answer whose paid send was not saved here', () => {
 	});
 });
 
+describe('the edit control on a prompt whose conversation holds an unsaved paid send', () => {
+	// Saving an edit sends a paid prompt: resent while the first is not shown, it is paid twice.
+	it('is switched off, starts no edit and says why', () => {
+		checkReturns('ok');
+		const onEdit = vi.fn();
+		render(<UserMessageActions message={prompt} onEdit={onEdit} heldReason="Held for now." />);
+
+		activate(button('Edit message'));
+
+		expect(isSwitchedOff(button('Edit message'))).toBe(true);
+		expect(description(button('Edit message'))).toBe('Held for now.');
+		expect(onEdit).not.toHaveBeenCalled();
+	});
+
+	it('is on with no reason given', () => {
+		checkReturns('ok');
+
+		render(<UserMessageActions message={prompt} heldReason={null} />);
+
+		expect(button('Edit message').getAttribute('aria-disabled')).not.toBe('true');
+	});
+});
+
 describe('the status under a prompt', () => {
 	// The prompt is on chain and waiting for its answer: "Sending" would say it is not sent.
 	it('says a pending prompt is awaiting its answer, not sending', () => {

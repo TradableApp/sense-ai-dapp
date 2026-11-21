@@ -540,7 +540,7 @@ describe('a confirmed send whose caller then fails to save it', () => {
 			[SENDS[0], /will appear once your history syncs/],
 			[NEW_CONVERSATION_PROMPT, /will appear when the answer arrives/],
 			[SENDS[1], /will appear when the answer arrives/],
-			[SENDS[2], /will appear when the answer arrives/],
+			[SENDS[2], /will appear in your history once it is listed/],
 		] as const),
 	)(
 		'%s: the user is told it was sent and paid for, and when it appears',
@@ -595,7 +595,7 @@ describe('a confirmed send whose caller then fails to save it', () => {
 	)("%s: the caller's onSaveFailed is given the receipt's ids", async (_name, c, ids) => {
 		const { onSaveFailed } = await failedAfterConfirm(c);
 
-		expect(onSaveFailed).toHaveBeenCalledWith(ids);
+		expect(vi.mocked(onSaveFailed).mock.calls[0][0]).toEqual(ids);
 	});
 
 	it.each(
@@ -815,6 +815,37 @@ describe('a confirmed send whose caller never finishes saving it', () => {
 			}
 		},
 	);
+
+	// The prompt is shown with the time it was confirmed, not the time the save was given up
+	// on: the refund countdown and the cancel window run from the confirmation.
+	it.each(SENDS)("$name: onSaveFailed is given the time the send was confirmed", async c => {
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		try {
+			const onSaveFailed = vi.fn();
+			const sends = renderSends().result;
+			const never = new Promise<void>(() => {
+				// Never settles.
+			});
+			await startAndWait(sends, m => c.start(m, { onSuccess: () => never, onSaveFailed }));
+			const beforeConfirm = Date.now();
+			await act(async () => {
+				confirm(receiptWith(c.event));
+			});
+			await settleStarts();
+			const afterConfirm = Date.now();
+
+			await act(async () => {
+				vi.advanceTimersByTime(SAVE_GIVE_UP_MS);
+			});
+			await waitFor(() => expect(onSaveFailed).toHaveBeenCalledTimes(1));
+
+			const confirmedAt = onSaveFailed.mock.calls[0][1] as number;
+			expect(confirmedAt).toBeGreaterThanOrEqual(beforeConfirm);
+			expect(confirmedAt).toBeLessThanOrEqual(afterConfirm);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 
 	it('does not let go before that time', async () => {
 		vi.useFakeTimers({ shouldAdvanceTime: true });

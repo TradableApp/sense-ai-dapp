@@ -332,6 +332,41 @@ describe('createStatePoller', () => {
 		poller.stop();
 	});
 
+	// A paid send held for a failed save ends on a reading, not only on a change: the answer
+	// can land before the hold exists, and the count then stays at zero with nothing changing.
+	it('gives every reading to onReading, the first and the unchanged ones included', async () => {
+		const onReading = vi.fn<NonNullable<StatePollerDeps['onReading']>>();
+		const { deps, poller } = makePoller({ onReading });
+
+		poller.start();
+		await flush();
+		await vi.advanceTimersByTimeAsync(LIVE_POLL_INTERVAL_MS * 2);
+
+		expect(deps.read).toHaveBeenCalledTimes(3);
+		expect(onReading).toHaveBeenCalledTimes(3);
+		expect(onReading).toHaveBeenLastCalledWith(snap());
+		expect(deps.onChange).not.toHaveBeenCalled();
+		poller.stop();
+	});
+
+	it('reports a throwing reading handler without backing off', async () => {
+		const onReading = vi.fn<NonNullable<StatePollerDeps['onReading']>>().mockImplementation(() => {
+			throw new Error('reading blew up');
+		});
+		const { deps, poller } = makePoller({ onReading });
+
+		poller.start();
+		await flush();
+		await vi.advanceTimersByTimeAsync(LIVE_POLL_INTERVAL_MS);
+
+		expect(deps.report).toHaveBeenCalledWith(
+			'live poll: reading handler failed',
+			expect.objectContaining({ reason: 'reading blew up' }),
+		);
+		expect(deps.read).toHaveBeenCalledTimes(2);
+		poller.stop();
+	});
+
 	it('stop cancels the next tick and ignores an in-flight result', async () => {
 		let resolveRead: ((_s: EscrowSnapshot) => void) | undefined;
 		const read = vi

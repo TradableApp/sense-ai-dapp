@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { addMessageToConversation } from '@/lib/dataService';
 import { appendLiveMessages, setActiveConversationId } from '@/store/chatSlice';
 
 import Chat from './Chat';
@@ -36,6 +37,8 @@ vi.mock('@/hooks/useFeeTokenCheck', () => ({
 vi.mock('@/features/auth/SessionProvider', () => ({ useSession: () => session.value }));
 vi.mock('@/store/hooks', () => ({
 	useAppDispatch: () => dispatch,
+	// What the store holds at the moment it is asked, which a test changes after rendering.
+	useAppStore: () => ({ getState: () => ({ chat: chatState.value }) }),
 	useAppSelector: (select: (_state: unknown) => unknown) =>
 		select({
 			chat: chatState.value,
@@ -106,9 +109,28 @@ async function sendPrompt(text = 'What is the market doing?') {
 	expect(promptMutate).toHaveBeenCalledTimes(1);
 	return promptMutate.mock.calls[0][1] as {
 		onSuccess: (_ids: object) => Promise<void>;
-		onSaveFailed: (_ids: object) => void;
+		onSaveFailed: (_ids: object, _confirmedAt?: number) => void;
 	};
 }
+
+const NOT_HELD = {
+	isComposerHeld: false,
+	composerHoldReason: null,
+	editHeldReason: null,
+	heldReasonFor: () => null,
+};
+
+/** A conversation with one answered prompt, open in the chat. */
+const OPEN_CONVERSATION = {
+	activeConversationId: '5',
+	activeConversationMessages: [
+		{ id: '3', role: 'user', content: 'q', conversationId: '5' },
+		{ id: '4', role: 'assistant', content: 'a', parentId: '3', conversationId: '5' },
+	],
+};
+
+const actionsOfType = (type: string) =>
+	dispatch.mock.calls.map(([action]) => action).filter(action => action.type === type);
 
 const IDS = { conversationId: '9', promptMessageId: '11', answerMessageId: '12' };
 
@@ -116,10 +138,7 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	session.value = { sessionKey: {}, ownerAddress: OWNER };
 	chatState.value = { activeConversationId: null, activeConversationMessages: [] };
-	vi.mocked(useUnsavedSendHold).mockReturnValue({
-		isComposerHeld: false,
-		heldReasonFor: () => null,
-	});
+	vi.mocked(useUnsavedSendHold).mockReturnValue(NOT_HELD);
 });
 
 afterEach(cleanup);
@@ -127,14 +146,15 @@ afterEach(cleanup);
 describe('the composer while a paid send is not saved here', () => {
 	it('cannot send and says why', async () => {
 		vi.mocked(useUnsavedSendHold).mockReturnValue({
+			...NOT_HELD,
 			isComposerHeld: true,
-			heldReasonFor: () => null,
+			composerHoldReason: 'Held: the reason.',
 		});
 		renderChat();
 
 		expect(composer().disabled).toBe(true);
 		const notice = screen.getByTestId('unsaved-send-hold');
-		expect(notice.textContent).toMatch(/not shown on this device yet/);
+		expect(notice.textContent).toBe('Held: the reason.');
 		expect(composer().getAttribute('aria-describedby')).toContain('unsaved-send-hold');
 	});
 
@@ -175,13 +195,7 @@ describe('a confirmed prompt', () => {
 	});
 
 	it('whose save failed in a conversation is added to it from the receipt', async () => {
-		chatState.value = {
-			activeConversationId: '5',
-			activeConversationMessages: [
-				{ id: '3', role: 'user', content: 'q', conversationId: '5' },
-				{ id: '4', role: 'assistant', content: 'a', parentId: '3', conversationId: '5' },
-			],
-		};
+		chatState.value = OPEN_CONVERSATION;
 		renderChat();
 		const { onSaveFailed } = await sendPrompt('A follow-up');
 
@@ -194,5 +208,106 @@ describe('a confirmed prompt', () => {
 			expect.objectContaining({ id: '11', parentId: '4', content: 'A follow-up' }),
 			expect.objectContaining({ id: '12', parentId: '11', content: null }),
 		]);
+	});
+});
+
+describe('a confirmed prompt whose conversation is no longer open', () => {
+	// The user opened another conversation while the send was saved: the prompt must not be
+	// shown in it, its cancel must not act on it, and its draft is the user's own.
+	it('whose save failed shows nothing in the open one and leaves its draft alone', async () => {
+		chatState.value = OPEN_CONVERSATION;
+		renderChat();
+		const { onSaveFailed } = await sendPrompt('A follow-up');
+		chatState.value = { activeConversationId: '6', activeConversationMessages: [] };
+		await act(async () => {
+			fireEvent.change(composer(), { target: { value: 'A new draft' } });
+		});
+
+		act(() => onSaveFailed({ ...IDS, conversationId: '5' }));
+
+		expect(actionsOfType(appendLiveMessages.type)).toEqual([]);
+		expect(actionsOfType(setActiveConversationId.type)).toEqual([]);
+		expect(composer().value).toBe('A new draft');
+	});
+
+	it('whose save finished late shows nothing in the open one and leaves its draft alone', async () => {
+		vi.mocked(addMessageToConversation).mockResolvedValue({
+			finalUserMessage: { id: '11' },
+			finalAiMessage: { id: '12' },
+		} as never);
+		chatState.value = OPEN_CONVERSATION;
+		renderChat();
+		const { onSuccess } = await sendPrompt('A follow-up');
+		chatState.value = { activeConversationId: '6', activeConversationMessages: [] };
+		await act(async () => {
+			fireEvent.change(composer(), { target: { value: 'A new draft' } });
+		});
+
+		await act(async () => {
+			await onSuccess({ ...IDS, conversationId: '5' });
+		});
+
+		expect(addMessageToConversation).toHaveBeenCalledTimes(1);
+		expect(actionsOfType(appendLiveMessages.type)).toEqual([]);
+		expect(composer().value).toBe('A new draft');
+	});
+
+	it('that started a conversation does not move the user out of the one they opened', async () => {
+		renderChat();
+		const { onSaveFailed } = await sendPrompt('A new question');
+		chatState.value = OPEN_CONVERSATION;
+
+		act(() => onSaveFailed(IDS));
+
+		expect(actionsOfType(setActiveConversationId.type)).toEqual([]);
+		expect(actionsOfType('chat/setActiveConversationMessages')).toEqual([]);
+	});
+});
+
+describe('a confirmed prompt whose save failed, shown from its receipt', () => {
+	// The refund countdown runs from the prompt's time: the confirmation, not the failure.
+	it('carries the time it was confirmed', async () => {
+		renderChat();
+		const { onSaveFailed } = await sendPrompt('A new question');
+		const confirmedAt = Date.now() - 30_000;
+
+		act(() => onSaveFailed(IDS, confirmedAt));
+
+		const [shown] = actionsOfType('chat/setActiveConversationMessages');
+		expect(shown.payload[0].createdAt).toBe(confirmedAt);
+		expect(shown.payload[1].createdAt).toBe(confirmedAt + 1);
+	});
+});
+
+describe('the controls a held conversation switches off', () => {
+	it("passes the answer's held reason to its regenerate and branch", () => {
+		chatState.value = OPEN_CONVERSATION;
+		vi.mocked(useUnsavedSendHold).mockReturnValue({
+			...NOT_HELD,
+			heldReasonFor: (id: string | number | null | undefined) =>
+				String(id) === '4' ? 'Held answer.' : null,
+		});
+		renderChat();
+
+		const tryAgain = screen.getByRole('button', { name: 'Try again' });
+		expect(tryAgain.getAttribute('aria-disabled')).toBe('true');
+	});
+
+	it('passes the edit hold to the edit control', () => {
+		chatState.value = OPEN_CONVERSATION;
+		vi.mocked(useUnsavedSendHold).mockReturnValue({ ...NOT_HELD, editHeldReason: 'Held edit.' });
+		renderChat();
+
+		const edit = screen.getByRole('button', { name: 'Edit message' });
+		expect(edit.getAttribute('aria-disabled')).toBe('true');
+	});
+
+	it('reads the stored messages for the hold, not the ones shown', () => {
+		chatState.value = OPEN_CONVERSATION;
+		renderChat();
+
+		const [input] = vi.mocked(useUnsavedSendHold).mock.calls.at(-1) ?? [];
+		// The store mock returns no messages while two are shown.
+		expect(input?.storedMessages ?? []).toEqual([]);
 	});
 });

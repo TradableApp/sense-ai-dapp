@@ -132,3 +132,27 @@ describe('saving an edited prompt while it is being sent', () => {
 		expect(description(save())).toMatch(/being sent/i);
 	});
 });
+
+describe('saving an edited prompt while its conversation holds an unsaved paid send', () => {
+	it('is disabled, says why, and Enter sends nothing', async () => {
+		checkReturns('ok');
+		const onSave = vi.fn();
+		render(
+			<EditPromptInput
+				originalContent="A prompt"
+				onSave={onSave}
+				onCancel={vi.fn()}
+				heldReason="Held for now."
+			/>,
+		);
+		const save = screen.getByRole('button', { name: 'Update' }) as HTMLButtonElement;
+
+		await act(async () => {
+			fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+		});
+
+		expect(save.disabled).toBe(true);
+		expect(description(save)).toBe('Held for now.');
+		expect(onSave).not.toHaveBeenCalled();
+	});
+});

@@ -202,3 +202,9 @@ export function useUnsavedSends(
 	if (!owner) return NONE;
 	return holds.some(send => send.owner === owner) ? holds.filter(s => s.owner === owner) : NONE;
 }
+
+export function endsHoldAt(_peak: bigint | null, _count: bigint): boolean {
+	return false;
+}
+
+export function notePendingCount(_queryClient: QueryClient, _owner: string, _count: bigint): void {}

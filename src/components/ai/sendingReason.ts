@@ -17,3 +17,7 @@ export const UNSAVED_SEND_REASON =
 /** What the composer says while its conversation holds such a send. */
 export const UNSAVED_SEND_COMPOSER_REASON =
 	'Your last paid prompt here is on the chain but not shown on this device yet. You can send again once it appears or its answer arrives, so nothing is paid for twice or threaded off the wrong message.';
+
+export const UNSAVED_BRANCH_REASON = '';
+export const UNSAVED_EDIT_REASON = '';
+export const UNSAVED_NEW_CONVERSATION_REASON = '';
