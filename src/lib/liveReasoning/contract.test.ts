@@ -185,7 +185,20 @@ describe('the live reasoning contract (version 1)', () => {
 			bad.forEach(frame => expect(parseFramePlaintext(frame)).toBeNull());
 		});
 
-		it('accepts a sources list shorter than the limit, as the oracle trims to fit a frame', () => {
+		it('refuses a source whose URL is not http or https, whatever its case', () => {
+		const withUrl = (url: string) =>
+			frameOf({ type: 'sources', data: { attempt: 1, sources: [{ title: 'x', url }] } });
+
+		[
+			['JaVaScRiPt', 'alert(1)'].join(':'),
+			'data:text/html,hi',
+			'/relative/path',
+			'vbscript:msgbox(1)',
+		].forEach(url => expect(parseFramePlaintext(withUrl(url))).toBeNull());
+		expect(parseFramePlaintext(withUrl('https://news.example'))).not.toBeNull();
+	});
+
+	it('accepts a sources list shorter than the limit, as the oracle trims to fit a frame', () => {
 			const frame = frameOf({ type: 'sources', data: { attempt: 3, sources: [] } });
 
 			expect(parseFramePlaintext(frame)).not.toBeNull();
