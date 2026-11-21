@@ -100,9 +100,13 @@ async function approveAndSetLimit(
 	let noticeId = approvalToastId;
 	let isApproved = false;
 	try {
-		await send(
+		const approval = await send(
 			contractCall(chain, contracts.token, 'approve', [contracts.escrow.address, limitInWei]),
 		);
+		// A mined transaction that reverted still resolves; only its status says it failed.
+		if (approval.status !== 'success') {
+			throw new Error('The approval was reverted on chain, so nothing was approved.');
+		}
 		isApproved = true;
 		toast.dismiss(approvalToastId);
 
@@ -114,9 +118,12 @@ async function approveAndSetLimit(
 			'Step 2/2: Please confirm setting the new spending limit in your wallet.',
 		);
 		noticeId = limitToastId;
-		await send(
+		const limit = await send(
 			contractCall(chain, contracts.escrow, 'setSpendingLimit', [limitInWei, expiresAtTimestamp]),
 		);
+		if (limit.status !== 'success') {
+			throw new Error('the limit transaction was reverted on chain');
+		}
 		toast.dismiss(limitToastId);
 	} catch (error) {
 		toast.dismiss(noticeId);
@@ -170,7 +177,11 @@ function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 			console.error('setPlanMutation Error:', error);
 			if (error instanceof LimitNotSetError) {
 				// Half done: the approval is on chain, so what the dialog shows is read again.
-				toast.error('Limit Not Set', { description: error.message });
+				if (error.isUnconfirmed) {
+					toast.warning('Limit Not Confirmed', { description: error.message });
+				} else {
+					toast.error('Limit Not Set', { description: error.message });
+				}
 				await refreshPlanQueries(queryClient, activeWallet);
 				return;
 			}
