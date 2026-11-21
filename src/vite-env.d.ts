@@ -27,12 +27,18 @@ interface ImportMetaEnv {
 	readonly VITE_MEASUREMENT_ID: string;
 	readonly VITE_MESSAGING_SENDER_ID: string;
 	readonly VITE_ORACLE_PUBLIC_KEY: string;
-	readonly VITE_ORACLE_WEBSOCKET_URL: string;
 	/** Public build label for filtering internal traffic. Inlined into the bundle — never a secret. */
 	readonly VITE_POSTHOG_DEBUG_LABEL: string;
 	readonly VITE_PROJECT_ID: string;
 	readonly VITE_PUBLIC_POSTHOG_HOST: string;
 	readonly VITE_PUBLIC_POSTHOG_KEY: string;
+	/** Live reasoning stream base: an https origin with an optional path and no trailing slash
+	 *  (plain http only for a loopback host on localnet). Unset = the stream is off and the
+	 *  chat works as before. Checked by shape in `vite.config.ts`; read only in
+	 *  `src/config/reasoningStream.ts`. */
+	readonly VITE_REASONING_STREAM_URL: string | undefined;
+	/** `sse` (the default when unset) or `poll`: how the live reasoning stream is read. */
+	readonly VITE_REASONING_STREAM_MODE: string | undefined;
 	readonly VITE_RECAPTCHA_SITE_KEY: string | undefined;
 	readonly VITE_SENTRY_DSN: string | undefined;
 	readonly VITE_SENTRY_ENVIRONMENT: string | undefined;
