@@ -62,14 +62,20 @@ vi.mock('@/lib/db', () => {
 		default: {
 			conversations: {
 				get: async (parts: unknown) => store.conversations.get(key(parts)),
-				bulkPut: async (rows: Array<{ ownerAddress: string; id: string; encryptedData: string }>) => {
+				bulkPut: async (
+					rows: Array<{ ownerAddress: string; id: string; encryptedData: string }>,
+				) => {
 					store.conversationBulkPuts.push(rows);
 					rows.forEach(row => store.conversations.set(key([row.ownerAddress, row.id]), row));
 				},
 			},
 			messageCache: {
 				get: async (parts: unknown) => store.messageCache.get(key(parts)),
-				put: async (row: { ownerAddress: string; conversationId: string; encryptedData: string }) => {
+				put: async (row: {
+					ownerAddress: string;
+					conversationId: string;
+					encryptedData: string;
+				}) => {
 					store.messageCache.set(key([row.ownerAddress, row.conversationId]), row);
 				},
 			},
@@ -188,7 +194,10 @@ describe('syncWithRemote — a full sync reads every page', () => {
 		vi.stubGlobal(
 			'fetch',
 			vi.fn(async (url: string) => {
-				const encrypted = await encryptData(sessionKey, payloads.get(url.slice(GATEWAY.length)) ?? {});
+				const encrypted = await encryptData(
+					sessionKey,
+					payloads.get(url.slice(GATEWAY.length)) ?? {},
+				);
 				return { ok: true, status: 200, text: async () => encrypted };
 			}),
 		);
@@ -213,7 +222,9 @@ describe('syncWithRemote — a full sync reads every page', () => {
 	});
 
 	it('asks again for the messages of a conversation that returned 1000, and stores all 1,200', async () => {
-		const graph = useGraph([conversation('c1', T0 + 1200, { messages: messagesOf('c1', 1, 1200) })]);
+		const graph = useGraph([
+			conversation('c1', T0 + 1200, { messages: messagesOf('c1', 1, 1200) }),
+		]);
 
 		await sync();
 
@@ -242,7 +253,9 @@ describe('syncWithRemote — a full sync reads every page', () => {
 
 	it('marks nothing synced and leaves the cursor alone when page 2 fails', async () => {
 		const graph = createFakeGraph(
-			Array.from({ length: 150 }, (_, i) => conversation(`c${i}`, T0 + i, { messages: messagesOf(`c${i}`, i + 1, i + 1) })),
+			Array.from({ length: 150 }, (_, i) =>
+				conversation(`c${i}`, T0 + i, { messages: messagesOf(`c${i}`, i + 1, i + 1) }),
+			),
 		);
 		const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
 		graphRequestMock
@@ -294,7 +307,9 @@ describe('syncWithRemote — a full sync reads every page', () => {
 		expect(graph.requests).toEqual(['GetUserUpdates']);
 		expect(new Set(storedConversationIds())).toEqual(new Set(['c1', 'c2', 'c3']));
 		// Each conversation: 5 messages (ids 3..7, 13..17, 23..27) and 2 prompts (ids 1, 2).
-		const counts = await Promise.all(['c1', 'c2', 'c3'].map(async id => (await storedMessages(id)).length));
+		const counts = await Promise.all(
+			['c1', 'c2', 'c3'].map(async id => (await storedMessages(id)).length),
+		);
 		expect(counts).toEqual([7, 7, 7]);
 	});
 

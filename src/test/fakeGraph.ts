@@ -100,7 +100,9 @@ export function createFakeGraph(conversations: readonly FakeConversation[]): Fak
 	): T[] => {
 		const where = variables.where as Where;
 		const owner = conversations.find(c => c.id === where.conversation);
-		const rows = (owner ? pick(owner) : []).filter(r => withinBounds(r.createdAt, where, 'createdAt'));
+		const rows = (owner ? pick(owner) : []).filter(r =>
+			withinBounds(r.createdAt, where, 'createdAt'),
+		);
 		return page(rows, r => r.createdAt, Number(variables.first), Number(variables.skip ?? 0));
 	};
 

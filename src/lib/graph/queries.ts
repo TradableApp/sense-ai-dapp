@@ -1,52 +1,98 @@
 import { gql } from 'graphql-request';
 
+/** Conversations asked for per page of a sync. */
+export const CONVERSATION_PAGE_SIZE = 100;
+
 /**
- * @notice Fetches all conversations for a user that have been updated
- *         since the last sync timestamp.
- * @dev This is the primary query for the `syncService`. It retrieves a list of
- *      conversations, ordered by the most recently active, along with all the
- *      CIDs for their messages and search deltas. This provides all the "pointers"
- *      needed to hydrate the full data from Arweave.
+ * Rows asked for in a conversation's nested messages and prompt requests, and per follow-up
+ * page of either. 1000 is the most The Graph returns for one list; naming it also removes the
+ * dependency on the endpoint's default for a nested list (100 on graph-node).
+ */
+export const NESTED_LIST_PAGE_SIZE = 1000;
+
+const MESSAGE_FIELDS = `
+	id
+	messageCID
+	createdAt
+	searchDelta {
+		id
+		searchDeltaCID
+	}
+`;
+
+const PROMPT_REQUEST_FIELDS = `
+	id # answerMessageId
+	promptMessageId
+	encryptedPayload
+	isCancelled
+	isRefunded
+	createdAt
+`;
+
+/**
+ * One page of a user's conversations updated since the last sync, newest first, each with the
+ * CIDs of its messages and its unanswered prompt requests.
  *
- * @param {string} $owner - The user's wallet address (lowercase).
- * @param {number} $lastSync - The Unix timestamp (milliseconds) of the last successful sync.
- * @param {number} $limit - The maximum number of conversations to fetch.
- * @param {number} $offset - The number of conversations to skip (for pagination).
+ * `$where` holds the owner, the sync cursor (`lastMessageCreatedAt_gte`, seconds), the page's
+ * upper bound (`lastMessageCreatedAt_lte`, absent on the first page) and `isDeleted: false`
+ * (a permanent no-op: the subgraph never sets it; deletion is handled by the dApp). The nested
+ * lists are newest first and capped at `$listFirst`; one that comes back full is read on from
+ * `GET_CONVERSATION_MESSAGES_QUERY` or `GET_CONVERSATION_PROMPT_REQUESTS_QUERY`.
+ *
+ * Only unanswered prompt requests (pending, cancelled or refunded) are asked for: an answered
+ * one is already among the messages.
  */
 export const GET_USER_UPDATES_QUERY = gql`
-	query GetUserUpdates($owner: Bytes!, $lastSync: BigInt!, $limit: Int!, $offset: Int!) {
+	query GetUserUpdates($where: Conversation_filter!, $first: Int!, $skip: Int!, $listFirst: Int!) {
 		conversations(
-			# isDeleted: false is a permanent no-op — the subgraph never sets isDeleted=true
-		# (soft-delete is handled by the dApp via CID encoding, not an on-chain flag)
-		where: { owner: $owner, lastMessageCreatedAt_gte: $lastSync, isDeleted: false }
+			where: $where
 			orderBy: lastMessageCreatedAt
 			orderDirection: desc
-			first: $limit
-			skip: $offset
+			first: $first
+			skip: $skip
 		) {
 			id
 			conversationCID
 			conversationMetadataCID
 			lastMessageCreatedAt
-			messages(orderBy: createdAt, orderDirection: desc) {
-				id
-				messageCID
-				createdAt
-				searchDelta {
-					id
-					searchDeltaCID
-				}
+			messages(first: $listFirst, orderBy: createdAt, orderDirection: desc) {
+				${MESSAGE_FIELDS}
 			}
-			# Fetch "incomplete" requests (Cancelled, Refunded, or Pending)
-			# We only want those that are NOT answered, to avoid duplication with 'messages'
-			promptRequests(where: { isAnswered: false }) {
-				id # answerMessageId
-				promptMessageId
-				encryptedPayload
-				isCancelled
-				isRefunded
-				createdAt
+			promptRequests(
+				where: { isAnswered: false }
+				first: $listFirst
+				orderBy: createdAt
+				orderDirection: desc
+			) {
+				${PROMPT_REQUEST_FIELDS}
 			}
+		}
+	}
+`;
+
+/** A follow-up page of one conversation's messages (`$where`: `conversation`, `createdAt_lte`). */
+export const GET_CONVERSATION_MESSAGES_QUERY = gql`
+	query GetConversationMessages($where: Message_filter!, $first: Int!, $skip: Int!) {
+		messages(where: $where, orderBy: createdAt, orderDirection: desc, first: $first, skip: $skip) {
+			${MESSAGE_FIELDS}
+		}
+	}
+`;
+
+/**
+ * A follow-up page of one conversation's unanswered prompt requests (`$where`: `conversation`,
+ * `isAnswered: false`, `createdAt_lte`).
+ */
+export const GET_CONVERSATION_PROMPT_REQUESTS_QUERY = gql`
+	query GetConversationPromptRequests($where: PromptRequest_filter!, $first: Int!, $skip: Int!) {
+		promptRequests(
+			where: $where
+			orderBy: createdAt
+			orderDirection: desc
+			first: $first
+			skip: $skip
+		) {
+			${PROMPT_REQUEST_FIELDS}
 		}
 	}
 `;

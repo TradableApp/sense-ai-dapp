@@ -13,10 +13,11 @@ import * as Sentry from '@sentry/react';
 import { GraphQLClient } from 'graphql-request';
 import { hexToBytes } from 'viem';
 
+import GraphFetchFailed from '@/lib/graph/GraphFetchFailed';
+import fetchAllUserUpdates, { type GraphRequest } from '@/lib/graph/userUpdates';
+
 import { decryptData, encryptData } from './crypto';
 import db from './db';
-import { GET_USER_UPDATES_QUERY } from './graph/queries';
-import type { GetUserUpdatesQuery, GetUserUpdatesQueryVariables } from './graph/query-types';
 import mergeMessages from './mergeMessages';
 import { writeMessageCache } from './messageCacheStore';
 import { fetchPayload, type PayloadFetchDeps, type PayloadStorageConfig } from './payloadStorage';
@@ -26,6 +27,8 @@ import type { Message } from './types';
 // The Graph endpoint is configured via environment variables for flexibility between environments.
 const THE_GRAPH_API_URL = import.meta.env.VITE_THE_GRAPH_API_URL;
 const graphQLClient = new GraphQLClient(THE_GRAPH_API_URL);
+const requestGraph: GraphRequest = (document, variables) =>
+	graphQLClient.request(document, variables);
 
 // Where payload bytes come from — see payloadStorage.ts for the source order and
 // retry policy. VITE_PAYLOAD_MIRROR_URL is the public GCS mirror the oracle writes
@@ -260,12 +263,14 @@ interface ConversationUpdate {
 }
 
 /**
- * @notice Fetches a list of updated conversation entities from The Graph's API.
- * @dev This is the entry point for the sync process. It queries for all conversations
- *      owned by the user that have been updated since the last sync.
+ * @notice Fetches every conversation updated since the last sync from The Graph, with all of
+ *         its messages and unanswered prompt requests, however many pages that takes.
+ * @dev Throws `GraphFetchFailed` when any request fails (see graph/userUpdates.ts). It never
+ *      returns an empty list for a failure: the caller reads an empty list as "nothing new"
+ *      and moves the cursor up to the present.
  * @param {string} ownerAddress The user's wallet address.
  * @param {number} lastSync The timestamp of the last successful sync (Milliseconds).
- * @returns {Promise<Array>} A promise that resolves to a list of conversation entities from The Graph.
+ * @returns {Promise<Array>} The updated conversations, timestamps converted to milliseconds.
  */
 async function fetchUpdatesFromTheGraph(
 	ownerAddress: string,
@@ -275,49 +280,28 @@ async function fetchUpdatesFromTheGraph(
 		console.warn('[syncService] VITE_THE_GRAPH_API_URL is not set. Skipping remote sync.');
 		return [];
 	}
-	try {
-		// The Graph stores block timestamps in Seconds. We must convert our local MS timestamp.
-		const lastSyncSeconds = Math.floor(lastSync / 1000);
+	// The Graph stores block timestamps in Seconds. We must convert our local MS timestamp.
+	const lastSyncSeconds = Math.floor(lastSync / 1000);
+	const conversations = await fetchAllUserUpdates(
+		requestGraph,
+		ownerAddress.toLowerCase(),
+		lastSyncSeconds,
+	);
 
-		// The query variables are passed to the GraphQL client.
-		const variables: GetUserUpdatesQueryVariables = {
-			owner: ownerAddress.toLowerCase(),
-			lastSync: lastSyncSeconds.toString(), // Send SECONDS
-			limit: 250,
-			offset: 0,
-		};
-
-		const data = await graphQLClient.request<GetUserUpdatesQuery>(
-			GET_USER_UPDATES_QUERY,
-			variables,
-		);
-
-		// Convert BigInt strings from The Graph response into Numbers (MS) for frontend consistency.
-		const conversations = (data.conversations || []).map((conv: unknown) => {
-			const convObj = conv as Record<string, unknown>;
-			return {
-				...(convObj as unknown as ConversationUpdate),
-				lastMessageCreatedAt: Number(convObj.lastMessageCreatedAt as string | number) * 1000,
-				messages: ((convObj.messages as Array<Record<string, unknown>>) || []).map(
-					(msg: Record<string, unknown>) => ({
-						...msg,
-						createdAt: Number(msg.createdAt as string | number) * 1000,
-					}),
-				),
-				promptRequests: ((convObj.promptRequests as Array<Record<string, unknown>>) || []).map(
-					(req: Record<string, unknown>) => ({
-						...req,
-						createdAt: Number(req.createdAt as string | number) * 1000,
-					}),
-				),
-			};
-		}) as ConversationUpdate[];
-
-		return conversations;
-	} catch (error) {
-		console.error('[syncService] Failed to fetch updates from The Graph:', error);
-		return []; // Return an empty array to allow the app to continue functioning.
-	}
+	// Convert BigInt strings from The Graph response into Numbers (MS) for frontend consistency.
+	return conversations.map(conv => ({
+		...conv,
+		lastMessageCreatedAt: Number(conv.lastMessageCreatedAt) * 1000,
+		messages: conv.messages.map(msg => ({
+			...msg,
+			searchDelta: msg.searchDelta ?? undefined,
+			createdAt: Number(msg.createdAt) * 1000,
+		})),
+		promptRequests: conv.promptRequests.map(req => ({
+			...req,
+			createdAt: Number(req.createdAt) * 1000,
+		})),
+	}));
 }
 
 /**
@@ -343,8 +327,9 @@ export default async function syncWithRemote(
 		// 1. Get the last known sync timestamp from our local state (Milliseconds).
 		const lastSync = await getLastSyncedAt(sessionKey, ownerAddress);
 
-		// 2. Fetch all entity updates from The Graph since that timestamp.
-		// (fetchUpdatesFromTheGraph handles the MS -> S -> MS conversions)
+		// 2. Fetch all entity updates from The Graph since that timestamp, every page of them.
+		// (fetchUpdatesFromTheGraph handles the MS -> S -> MS conversions.) A failed request
+		// throws to the catch below, so the cursor is not moved and nothing is stored.
 		const graphUpdates = await fetchUpdatesFromTheGraph(ownerAddress, lastSync);
 
 		// 3. Determine the new timestamp cursor.
@@ -653,7 +638,12 @@ export default async function syncWithRemote(
 		}
 		return { unavailablePayloads };
 	} catch (error) {
-		console.error('[syncService] A critical error occurred during the sync process:', error);
+		if (error instanceof GraphFetchFailed) {
+			// Its message names the list and the reason only; see GraphFetchFailed.
+			console.error(`[syncService] ${error.name}: ${error.message} The sync cursor is held.`);
+		} else {
+			console.error('[syncService] A critical error occurred during the sync process:', error);
+		}
 		// We do not update the timestamp on failure, ensuring the process will be retried.
 		return { unavailablePayloads };
 	}

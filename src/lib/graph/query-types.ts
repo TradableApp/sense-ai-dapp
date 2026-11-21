@@ -9,22 +9,32 @@ import type {
 
 // --- GetUserUpdates ---
 
-export type GetUserUpdatesQueryVariables = {
+// The schema copy declares entities only; graph-node derives the filter inputs from them, so
+// the parts of each filter the sync uses are written out here.
+
+export type ConversationPageFilter = {
 	owner: string;
-	lastSync: string;
-	limit: number;
-	offset: number;
+	isDeleted: false;
+	lastMessageCreatedAt_gte: string;
+	lastMessageCreatedAt_lte?: string;
+};
+
+export type GetUserUpdatesQueryVariables = {
+	where: ConversationPageFilter;
+	first: number;
+	skip: number;
+	listFirst: number;
 };
 
 type SearchDeltaFields = Pick<SearchDelta, 'id' | 'searchDeltaCID'>;
-type MessageFields = Pick<Message, 'id' | 'messageCID' | 'createdAt'> & {
+export type MessageFields = Pick<Message, 'id' | 'messageCID' | 'createdAt'> & {
 	searchDelta: SearchDeltaFields | null;
 };
-type PromptRequestFields = Pick<
+export type PromptRequestFields = Pick<
 	PromptRequest,
 	'id' | 'promptMessageId' | 'encryptedPayload' | 'isCancelled' | 'isRefunded' | 'createdAt'
 >;
-type ConversationFields = Pick<
+export type ConversationFields = Pick<
 	Conversation,
 	'id' | 'conversationCID' | 'conversationMetadataCID' | 'lastMessageCreatedAt'
 > & {
@@ -34,6 +44,33 @@ type ConversationFields = Pick<
 
 export type GetUserUpdatesQuery = {
 	conversations: ConversationFields[];
+};
+
+// --- GetConversationMessages / GetConversationPromptRequests ---
+
+export type ConversationListPageVariables<Filter> = {
+	where: Filter;
+	first: number;
+	skip: number;
+};
+
+export type GetConversationMessagesQueryVariables = ConversationListPageVariables<{
+	conversation: string;
+	createdAt_lte?: string;
+}>;
+
+export type GetConversationMessagesQuery = {
+	messages: MessageFields[];
+};
+
+export type GetConversationPromptRequestsQueryVariables = ConversationListPageVariables<{
+	conversation: string;
+	isAnswered: false;
+	createdAt_lte?: string;
+}>;
+
+export type GetConversationPromptRequestsQuery = {
+	promptRequests: PromptRequestFields[];
 };
 
 // --- GetStuckPayments ---
