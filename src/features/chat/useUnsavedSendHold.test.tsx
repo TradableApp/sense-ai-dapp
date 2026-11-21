@@ -15,6 +15,7 @@ import {
 	HOLD_LASTS_MS,
 	holdUnsavedSend,
 	NEW_CONVERSATION_KEY,
+	notePendingCount,
 	type UnsavedSend,
 } from './unsavedSends';
 import useUnsavedSendHold from './useUnsavedSendHold';
@@ -234,6 +235,25 @@ describe('a hold an hour after its send was confirmed', () => {
 		});
 
 		expect(result.current.isComposerHeld).toBe(false);
+	});
+
+	// A reading that only raises the highest count seen changes nothing about when the hold
+	// ends, so the timer set for that moment is left running, not cleared and set again.
+	it('keeps its timer when a reading only raises the highest count seen', () => {
+		vi.useFakeTimers();
+		const queryClient = new QueryClient();
+		holdUnsavedSend(queryClient, { ...PROMPT_IN_5, confirmedAt: Date.now() });
+		const { result } = renderHold(queryClient);
+		const cleared = vi.spyOn(globalThis, 'clearTimeout');
+
+		act(() => {
+			notePendingCount(queryClient, OWNER, 1n, Date.now());
+			notePendingCount(queryClient, OWNER, 2n, Date.now());
+		});
+
+		expect(result.current.isComposerHeld).toBe(true);
+		expect(cleared).not.toHaveBeenCalled();
+		cleared.mockRestore();
 	});
 });
 

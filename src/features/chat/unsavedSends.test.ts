@@ -404,6 +404,8 @@ describe('a held send across a reload', () => {
 		['another wallet', JSON.stringify([{ ...promptIn('5'), owner: OTHER }])],
 		['an unknown kind', JSON.stringify([{ ...promptIn('5'), kind: 'transfer' }])],
 		['an id that is not a number', JSON.stringify([{ ...promptIn('5'), composerKeys: ['<b>'] }])],
+		// No conversation has the id 0, so a hold on it could never be ended by being shown.
+		['a conversation numbered 0', JSON.stringify([{ ...promptIn('5'), composerKeys: ['0'] }])],
 		['a time in the future', JSON.stringify([{ ...promptIn('5'), confirmedAt: CONFIRMED_AT * 9 }])],
 		['no time', JSON.stringify([{ ...promptIn('5'), confirmedAt: undefined }])],
 		[

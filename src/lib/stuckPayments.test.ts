@@ -7,6 +7,7 @@ import {
 	type PendingPayment,
 	STUCK_MAX_PAGES,
 	STUCK_PAGE_SIZE,
+	STUCK_VERIFY_BATCH,
 	verifyStuck,
 } from './stuckPayments';
 
@@ -90,5 +91,27 @@ describe('which pending payments are stuck', () => {
 		await expect(verifyStuck([payment(1), payment(2)], readStatus, NOW)).rejects.toThrow(
 			'rpc down',
 		);
+	});
+
+	// A heavy canceller's candidates are not all read at once: a public node answers a burst
+	// of calls with 429, and one refused read fails the whole answer.
+	it('reads the escrow a batch at a time, never more at once', async () => {
+		let inFlight = 0;
+		let mostAtOnce = 0;
+		const readStatus = vi.fn(async () => {
+			inFlight += 1;
+			mostAtOnce = Math.max(mostAtOnce, inFlight);
+			await Promise.resolve();
+			inFlight -= 1;
+			return 0;
+		});
+		// Two full batches and five more, so the last batch is a short one.
+		const count = 2 * STUCK_VERIFY_BATCH + 5;
+
+		const stuck = await verifyStuck(page(1, count), readStatus, NOW);
+
+		expect(stuck.map(({ id }) => id)).toEqual(page(1, count).map(({ id }) => id));
+		expect(readStatus).toHaveBeenCalledTimes(count);
+		expect(mostAtOnce).toBe(STUCK_VERIFY_BATCH);
 	});
 });
