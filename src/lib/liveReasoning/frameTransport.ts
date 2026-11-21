@@ -96,7 +96,7 @@ function createSseParser(
 	let name = '';
 	let data: string[] = [];
 
-	const dispatch = () => {
+	const emitEvent = () => {
 		if (name === SSE_EVENT_NAME && id !== null && data.length > 0) {
 			onEvent({ id, data: data.join('\n') });
 		}
@@ -106,7 +106,7 @@ function createSseParser(
 	};
 
 	const field = (line: string) => {
-		if (line === '') return dispatch();
+		if (line === '') return emitEvent();
 		if (line.startsWith(':')) return undefined;
 		const colon = line.indexOf(':');
 		const key = colon === -1 ? line : line.slice(0, colon);

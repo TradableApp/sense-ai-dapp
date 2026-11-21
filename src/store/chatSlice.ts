@@ -71,28 +71,6 @@ export const chatSlice = createSlice({
 			const added = action.payload.filter(m => m.id == null || !present.has(String(m.id)));
 			state.activeConversationMessages.push(...added);
 		},
-		addReasoningStepById: (state, action) => {
-			const { answerMessageId, reasoningStep } = action.payload;
-			const message = state.activeConversationMessages.find(
-				m => m.answerMessageId === answerMessageId,
-			);
-			if (message) {
-				if (!message.reasoning) message.reasoning = [];
-				message.reasoning.push(reasoningStep);
-			}
-		},
-		updateMessageContentById: (state, action) => {
-			const { answerMessageId, content, sources, reasoningDuration } = action.payload;
-			const message = state.activeConversationMessages.find(
-				m => m.answerMessageId === answerMessageId,
-			);
-			if (message) {
-				message.content = content;
-				message.sources = sources;
-				message.reasoningDuration = reasoningDuration;
-				delete message.answerMessageId;
-			}
-		},
 		openRenameModal: (state, action) => {
 			state.isRenameModalOpen = true;
 			state.conversationToRename = action.payload;
@@ -110,8 +88,6 @@ export const {
 	clearActiveConversation,
 	setActiveConversationMessages,
 	appendLiveMessages,
-	addReasoningStepById,
-	updateMessageContentById,
 	openRenameModal,
 	closeRenameModal,
 } = chatSlice.actions;
