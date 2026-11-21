@@ -33,6 +33,9 @@ const activityTypeMap = {
 	METADATA_UPDATE: { label: 'Conversation Updated', icon: FilePenLine }, // Catch-all for metadata
 	BRANCH: { label: 'Conversation Branched', icon: Split },
 	CANCEL: { label: 'Prompt Cancelled', icon: Ban },
+	// A cancel writes two rows in one transaction: CANCEL (minus the cancellation fee) and this one
+	// (plus the escrowed payment handed back). Their ids differ by a "-return" suffix.
+	CANCEL_RETURN: { label: 'Prompt Amount Returned', icon: RotateCcw },
 	REFUND: { label: 'Prompt Refunded', icon: RotateCcw },
 	PLAN_UPDATE: { label: 'Spending Limit Updated', icon: ShieldCheck },
 	PLAN_REVOKE: { label: 'Spending Limit Revoked', icon: ShieldOff },

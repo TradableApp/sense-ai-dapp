@@ -558,7 +558,9 @@ export async function getOracleChanges(oracle: string): Promise<IndexedOracleCha
 
 /** A row from the protocol-wide `Activity` log (immutable, id = txHash-logIndex), written by
  *  the escrow/agent handlers. `type` ∈ CONVERSATION/RENAME/DELETE/METADATA_UPDATE/BRANCH/CANCEL/
- *  REFUND/PLAN_UPDATE/PLAN_REVOKE; `amount` is wei-scale (0 for non-financial actions). */
+ *  CANCEL_RETURN/REFUND/PLAN_UPDATE/PLAN_REVOKE; `amount` is wei-scale, negative for a cost and
+ *  positive for money returned (0 for non-financial actions). A cancel writes CANCEL (minus the
+ *  fee) and CANCEL_RETURN (plus the payment handed back, id txHash-logIndex-return). */
 export interface IndexedActivity {
 	id: string;
 	type: string;

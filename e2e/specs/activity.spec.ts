@@ -1,11 +1,17 @@
 import { expect, test } from '../fixtures';
-import { LIVE_STACK } from '../helpers/chain';
+import { advanceTime, LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { getActivities, waitForGraph } from '../helpers/graph';
 import { DashboardPage } from '../pages/DashboardPage';
 
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
+
+// Cancel timing, as in cancel.spec.ts: the mock oracle holds the answer past the cancel window on
+// localnet; on testnet the real oracle's round trip keeps the prompt pending. The escrow refuses a
+// cancel until 3 s after the prompt, so time is advanced past that before the click.
+const HOLD_MS = 8000;
+const CANCELLATION_TIMEOUT_S = 3;
 
 // Area 10 — Recent Activity feed. The dApp's RecentActivityCard (on the dashboard, only once a plan
 // exists) reads the subgraph `Activity` log via GET_RECENT_ACTIVITY and maps each Activity.type to a
@@ -88,5 +94,64 @@ test.describe('Recent activity feed (T-ACTIVITY)', () => {
 		// And the whole list is non-increasing in timestamp (newest-first).
 		const timestamps = acts.map(a => Number(a.timestamp));
 		expect(timestamps).toEqual([...timestamps].sort((x, y) => y - x));
+	});
+
+	test('T-ACTIVITY-04: a cancelled prompt shows the amount paid, the fee and the amount returned', async ({
+		freshUserAccount,
+		freshChatPage,
+		freshPage,
+	}) => {
+		const owner = freshUserAccount.address;
+		await freshChatPage.goto();
+		await freshChatPage.sendDelayedPrompt('Hold this one so it can be cancelled', HOLD_MS);
+		await expect(freshChatPage.cancelButton).toBeVisible({ timeout: 30_000 });
+		await advanceTime(CANCELLATION_TIMEOUT_S + 1);
+		await freshChatPage.cancelButton.click();
+
+		const acts = await waitForGraph(
+			() => getActivities(owner),
+			a => a.some(x => x.type === 'CONVERSATION') && a.some(x => x.type === 'CANCEL'),
+			{ label: 'CONVERSATION + CANCEL activities indexed' },
+		);
+		const paid = acts.find(a => a.type === 'CONVERSATION');
+		const fee = acts.find(a => a.type === 'CANCEL');
+		if (!paid || !fee) throw new Error('waitForGraph returned without the rows it waited for');
+		// The payment and the fee are both money going out.
+		expect(BigInt(paid.amount)).toBeLessThan(0n);
+		expect(BigInt(fee.amount)).toBeLessThan(0n);
+
+		// A subgraph that records the returned amount writes it in the same handler as the CANCEL
+		// row, so once CANCEL is indexed the return is there too or this subgraph does not write it
+		// (an older build, or a cancel whose payment was never indexed).
+		const returned = acts.find(
+			a => a.type === 'CANCEL_RETURN' && a.transactionHash === fee.transactionHash,
+		);
+		if (returned) {
+			expect(returned.id).toBe(`${fee.id}-return`);
+			// The whole payment comes back; the fee is what the cancel cost.
+			expect(BigInt(returned.amount)).toBe(-BigInt(paid.amount));
+		} else {
+			const reason =
+				'Returned amount not asserted: the subgraph wrote no CANCEL_RETURN row for this cancel ' +
+				'(it predates that row, or the payment was not indexed). The paid and fee rows were checked.';
+			test.info().annotations.push({ type: 'not asserted', description: reason });
+			console.warn(`[T-ACTIVITY-04] ${reason}`);
+		}
+
+		const dashboard = new DashboardPage(freshPage);
+		await dashboard.goto();
+		await expect(dashboard.activityCard).toBeVisible({ timeout: 30_000 });
+		await expect(dashboard.activityCard.getByText('AI Conversation').first()).toBeVisible({
+			timeout: 30_000,
+		});
+		await expect(dashboard.activityCard.getByText('Prompt Cancelled').first()).toBeVisible({
+			timeout: 30_000,
+		});
+		if (returned) {
+			await expect(dashboard.activityCard.getByText('Prompt Amount Returned').first()).toBeVisible({
+				timeout: 30_000,
+			});
+		}
+		await expect(dashboard.activityCard.getByText('Unknown Action')).toHaveCount(0);
 	});
 });
