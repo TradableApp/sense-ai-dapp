@@ -205,18 +205,21 @@ describe('the chat sends one paid prompt at a time', () => {
 	});
 
 	// A prompt that was paid for but not saved on this device must not be sent again by
-	// reflex: the lock tells the user and asks for a sync, and each prompt call clears its own
-	// input. The call is known by what it saves.
+	// reflex: the lock tells the user, holds the conversation and asks for a sync, and each
+	// prompt call clears its own input. Each acts only while the conversation it was sent in
+	// is still the one open; past that check the composer cannot return early: it clears,
+	// shows the prompt from its receipt at the time it was confirmed and opens the cancel
+	// window from then. The call is known by what it saves.
 	it.each([
 		[
 			'the composer',
 			/\b(?:addMessageToConversation|createNewConversation)\(/,
-			/^onSaveFailed:\s*\(\)\s*=>\s*reset\(\),?$/,
+			/^onSaveFailed:\s*\(newIds,\s*confirmedAt\)\s*=>\s*\{\s*if \(!isStillActive\(activeConversationId\)\) return;\s*reset\(\);\s*showUnsavedPrompt\(dispatch,\s*\{[^{}]*\bids: newIds,[^{}]*\bat: confirmedAt,?[^{}]*\}\);\s*openCancelWindow\(confirmedAt\);\s*\},?$/,
 		],
 		[
 			'the edit box',
 			/\beditUserMessage\(/,
-			/^onSaveFailed:\s*\(\)\s*=>\s*setEditingMessageId\(null\),?$/,
+			/^onSaveFailed:\s*\(\)\s*=>\s*\{\s*if \(isStillActive\(activeConversationId\)\) setEditingMessageId\(null\);\s*\},?$/,
 		],
 	])('clears %s when its paid prompt could not be saved', (_input, saves, clears) => {
 		const calls = sendCalls().filter(
@@ -228,5 +231,46 @@ describe('the chat sends one paid prompt at a time', () => {
 
 	it.each(['EditPromptInput', 'MessageActions'])('passes the flag to %s', tag => {
 		expect(hasLine(element(chat, tag), 'isSending={isProcessing}')).toBe(true);
+	});
+
+	// A save that finishes after the user opened another conversation must not show its
+	// prompt there, navigate away from it or clear its draft.
+	it('acts on a finished save only while its conversation is still open', () => {
+		const calls = sendCalls();
+		expect(calls).toHaveLength(4);
+		calls.forEach(({ name, call }) => {
+			expect(handler(call, 'onSuccess'), name).toMatch(/\bif \(!isStillActive\(/);
+		});
+	});
+});
+
+/**
+ * A paid send confirmed and not saved here holds its conversation. Nothing renders the whole
+ * chat with the real hold, so these read the source: each wire dropped or changed leaves
+ * the hold's own tests green.
+ */
+describe('the chat holds a conversation whose paid send was not saved here', () => {
+	it.each([
+		['MessageActions', 'heldReason={unsavedSend.heldReasonFor(message.id)}'],
+		['UserMessageActions', 'heldReason={unsavedSend.editHeldReason}'],
+		['EditPromptInput', 'heldReason={unsavedSend.editHeldReason}'],
+	])('passes the hold to %s', (tag, line) => {
+		expect(hasLine(element(chat, tag), line)).toBe(true);
+	});
+
+	// What is shown includes a prompt shown from its receipt; reading that would end the hold
+	// the moment it began.
+	it('reads the stored messages, not the ones shown', () => {
+		const start = chat.indexOf('useUnsavedSendHold({');
+		expect(start).toBeGreaterThan(-1);
+		const call = callAt(chat, chat.indexOf('(', start));
+		expect(hasLine(call, 'storedMessages: messagesFromQuery,')).toBe(true);
+	});
+
+	it('gives every reading of the pending count to the hold', () => {
+		const live = read('src/hooks/useLiveResponse.ts');
+		expect(live).toMatch(
+			/\bonReading:\s*snapshot\s*=>\s*notePendingCount\(\s*queryClient,\s*ownerAddress,\s*snapshot\.pendingEscrowCount,?\s*\)/,
+		);
 	});
 });

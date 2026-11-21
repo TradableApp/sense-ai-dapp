@@ -13,6 +13,8 @@ import { toast } from 'sonner';
 import { useSession } from '@/features/auth/SessionProvider';
 import type useChatMutations from '@/hooks/useChatMutations';
 
+import { holdUnsavedSend, type SendKind, unsavedSendFor } from './unsavedSends';
+
 type ChatMutations = ReturnType<typeof useChatMutations>;
 
 /**
@@ -22,9 +24,6 @@ type ChatMutations = ReturnType<typeof useChatMutations>;
 export const PAID_SEND_KEY = ['paid-send'];
 const PAID_SENDS = { mutationKey: PAID_SEND_KEY };
 
-/** Which paid send it was, for the words the user is shown and the report's tag. */
-type SendKind = 'prompt' | 'regenerate' | 'branch';
-
 const SENT_WHAT: Record<SendKind, string> = {
 	prompt: 'Your prompt',
 	regenerate: 'Your request for a new answer',
@@ -32,16 +31,27 @@ const SENT_WHAT: Record<SendKind, string> = {
 };
 
 /**
- * What the chat passes to `mutate` besides the variables. `onSaveFailed` is called when the
- * send was confirmed but `onSuccess`'s work then failed: the chat clears what it shows (the
- * composer, the edit box), since the text has been paid for and a press would pay again.
+ * How long the chat's save after a confirmed send may run before it is given up on and
+ * handled as failed. A save that never settles (the store blocked by another tab) would
+ * otherwise refuse every paid send for the rest of the page load, with nothing said.
  */
+export const SAVE_GIVE_UP_MS = 30_000;
+
+/**
+ * Called, with the receipt's ids and the time the send was confirmed, when the send was
+ * confirmed but `onSuccess`'s work then failed: the chat clears what it shows (the composer,
+ * the edit box), since the text has been paid for and a press would pay again, and can show
+ * the prompt from those ids at that time.
+ */
+type SaveFailed<TData> = (_data: TData, _confirmedAt: number) => void;
+
+/** What the chat passes to `mutate` besides the variables. */
 type SendOptions<TData, TError, TVariables, TContext> = MutateOptions<
 	TData,
 	TError,
 	TVariables,
 	TContext
-> & { onSaveFailed?: () => void };
+> & { onSaveFailed?: SaveFailed<TData> };
 
 /** A sending mutation as the chat gets it: `mutate` refuses, and there is no `mutateAsync`. */
 type GuardedSend<TData, TError, TVariables, TContext> = Omit<
@@ -55,11 +65,16 @@ type GuardedSend<TData, TError, TVariables, TContext> = Omit<
 };
 
 /**
- * Called as a send starts, with which send it is and what clears the caller's input; gives
- * back what counts the caller's work once the send is confirmed. Called at the start so the
- * session the send was made in is the one a failed save asks to sync.
+ * Called as a send starts, with which send it is, its variables and what clears the caller's
+ * input; gives back what counts the caller's work, and the receipt's ids, once the send is
+ * confirmed. Called at the start so the session the send was made in is the one a failed save
+ * asks to sync.
  */
-type UntilFinished = (_kind: SendKind, _onSaveFailed?: () => void) => (_work: unknown) => void;
+type UntilFinished = <TData>(
+	_kind: SendKind,
+	_variables: unknown,
+	_onSaveFailed?: SaveFailed<TData>,
+) => (_work: unknown, _data: TData) => void;
 
 /**
  * `mutation`, whose `mutate` does nothing while `isSendUnderWay` says a send is. What the
@@ -79,11 +94,14 @@ function startedAlone<TData, TError, TVariables, TContext>(
 			if (isSendUnderWay()) return;
 			const { onSaveFailed, ...callbacks } = options ?? {};
 			const { onSuccess } = callbacks;
-			const finished = untilFinished(kind, onSaveFailed);
+			const finished = untilFinished(kind, variables, onSaveFailed);
 			mutation.mutate(
 				variables,
 				onSuccess
-					? { ...callbacks, onSuccess: (...result) => finished(onSuccess(...result)) }
+					? {
+							...callbacks,
+							onSuccess: (...result) => finished(onSuccess(...result), result[0]),
+					  }
 					: callbacks,
 			);
 		},
@@ -168,16 +186,88 @@ function reportSaveFailure(kind: SendKind, error: unknown): void {
 export const SAVE_FAILED_TOAST_ID = 'paid-send-not-saved';
 
 /**
- * What the user is told: it was sent and paid for, it will appear, and not to send it again.
- * It stays until closed: on regenerate and branch there is nothing to clear, so it is all
- * that stands between the user and a second press.
+ * When the send will appear. A prompt in a conversation, or an edit, is indexed as it is sent
+ * and comes with the next sync; a new conversation and a regenerate show nothing until the
+ * answer comes; a branch has no answer to wait for and is listed once it is indexed. None is
+ * promised on a device whose store is what failed.
  */
-function announceSaveFailure(kind: SendKind): void {
+function whenItAppears(kind: SendKind, isNewConversation: boolean): string {
+	if (kind === 'branch') return 'in your history once it is listed';
+	return kind === 'prompt' && !isNewConversation
+		? 'once your history syncs'
+		: 'when the answer arrives';
+}
+
+/**
+ * What the user is told: it was sent and paid for, when it will appear, and not to send it
+ * again. It stays until closed: on regenerate and branch there is nothing to clear, so it is
+ * all that stands between the user and a second press.
+ */
+function announceSaveFailure(kind: SendKind, isNewConversation: boolean): void {
 	toast.warning('Sent, Not Yet Shown', {
 		id: SAVE_FAILED_TOAST_ID,
 		duration: Infinity,
-		description: `${SENT_WHAT[kind]} was sent and paid for, but saving it on this device failed. It will appear once your history syncs, so there is no need to send it again.`,
+		description: `${
+			SENT_WHAT[kind]
+		} was sent and paid for, but saving it on this device failed. It will appear ${whenItAppears(
+			kind,
+			isNewConversation,
+		)}, unless saving on this device keeps failing. It is kept on the chain either way, so there is no need to send it again.`,
 	});
+}
+
+/** What a failed save is handled with: the send as it started, and what it confirmed. */
+interface FailedSave<TData> {
+	queryClient: QueryClient;
+	kind: SendKind;
+	variables: unknown;
+	data: TData;
+	confirmedAt: number;
+	session: { sessionKey: CryptoKey | null | undefined; ownerAddress: string | null | undefined };
+	onSaveFailed?: SaveFailed<TData>;
+}
+
+/** A prompt sent with no conversation id starts one. */
+const startsConversation = (kind: SendKind, variables: unknown) =>
+	kind === 'prompt' && !(variables as { conversationId?: unknown } | null)?.conversationId;
+
+/**
+ * The send was confirmed and paid for: what is left is to show it. The sync brings it from
+ * the chain; until then its conversation is held (see `UnsavedSend`), so the chat neither
+ * offers the same text for a second payment nor threads a new prompt off the message before.
+ */
+function handleSaveFailure<TData>(
+	{ queryClient, kind, variables, data, confirmedAt, session, onSaveFailed }: FailedSave<TData>,
+	error: unknown,
+): void {
+	const { sessionKey: key, ownerAddress: owner } = session;
+	const held = owner ? unsavedSendFor(kind, variables, data, owner) : null;
+	logError('A prompt was sent, but saving it on this device failed:', errorName(error));
+	attempt('the warning', () => announceSaveFailure(kind, startsConversation(kind, variables)));
+	attempt('holding the conversation', () => held && holdUnsavedSend(queryClient, held));
+	attempt('clearing the input', () => onSaveFailed?.(data, confirmedAt));
+	attempt('the report', () => reportSaveFailure(kind, error));
+	attempt('asking for a sync', () =>
+		queryClient.invalidateQueries({ queryKey: ['conversations', key, owner] }),
+	);
+	// The messages query is keyed without the session key (see Chat.tsx).
+	const shownIn = held?.shownAs?.conversationKey ?? held?.listedAs;
+	attempt('reading the messages again', () =>
+		shownIn ? queryClient.invalidateQueries({ queryKey: ['messages', shownIn, owner] }) : null,
+	);
+}
+
+/** `work`, or a rejection once it has run `SAVE_GIVE_UP_MS` without settling. */
+function withinGiveUp(work: Promise<unknown>): Promise<unknown> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const givenUp = new Promise((_resolve, reject) => {
+		timer = setTimeout(() => {
+			const error = new Error('The save did not finish in time.');
+			error.name = 'SaveTimeoutError';
+			reject(error);
+		}, SAVE_GIVE_UP_MS);
+	});
+	return Promise.race([work, givenUp]).finally(() => clearTimeout(timer));
 }
 
 /**
@@ -195,9 +285,12 @@ function announceSaveFailure(kind: SendKind): void {
  * the chat is left before the transaction is confirmed, its save and the warning below do not
  * run, and the prompt comes back through the sync.
  *
- * When that work fails after the send was confirmed, the user is warned, the caller's
- * `onSaveFailed` clears its input, it is reported once per page load and a sync is asked for.
- * Each step runs even if another throws, and the lock is released whatever happens.
+ * When that work fails after the send was confirmed, or has not settled after
+ * `SAVE_GIVE_UP_MS`, the user is warned (worded by when it will appear), its conversation is
+ * held (`holdUnsavedSend`), the caller's `onSaveFailed` is given the receipt's ids and the
+ * time the send was confirmed and clears its input, it is reported once per page load, a sync is asked for and the messages of the
+ * conversation it shows in are read again. Each step runs even if another throws, and the
+ * lock is released whatever happens.
  */
 export default function useOneSendAtATime(mutations: ChatMutations) {
 	const queryClient = useQueryClient();
@@ -218,24 +311,30 @@ export default function useOneSendAtATime(mutations: ChatMutations) {
 	const session = useRef({ sessionKey, ownerAddress });
 	session.current = { sessionKey, ownerAddress };
 	const untilFinished = useCallback<UntilFinished>(
-		(kind, onSaveFailed) => {
-			const { sessionKey: key, ownerAddress: owner } = session.current;
-			return work => {
+		(kind, variables, onSaveFailed) => {
+			const startedIn = session.current;
+			return (work, data) => {
 				if (!(work instanceof Promise)) return;
+				// Called from the caller's onSuccess, so now is when the send was confirmed.
+				const confirmedAt = Date.now();
 				changeFinishing(store, 1);
-				work.then(
+				// A save that finishes after it was given up on changes nothing here: the hold it
+				// left ends once the stored messages show the prompt.
+				withinGiveUp(work).then(
 					() => changeFinishing(store, -1),
 					(error: unknown) => {
-						// The send was confirmed and paid for: what is left is to show it. The sync
-						// brings it from the chain; until then the chat must not offer the same text
-						// for a second payment.
 						try {
-							logError('A prompt was sent, but saving it on this device failed:', errorName(error));
-							attempt('the warning', () => announceSaveFailure(kind));
-							attempt('clearing the input', () => onSaveFailed?.());
-							attempt('the report', () => reportSaveFailure(kind, error));
-							attempt('asking for a sync', () =>
-								queryClient.invalidateQueries({ queryKey: ['conversations', key, owner] }),
+							handleSaveFailure(
+								{
+									queryClient,
+									kind,
+									variables,
+									data,
+									confirmedAt,
+									session: startedIn,
+									onSaveFailed,
+								},
+								error,
 							);
 						} finally {
 							changeFinishing(store, -1);

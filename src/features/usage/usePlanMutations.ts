@@ -13,7 +13,11 @@ import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
 import { PaymentSwitchedOffError } from '@/lib/paymentGate';
 import { wait } from '@/lib/utils';
 
-import LimitNotSetError from './LimitNotSetError';
+import LimitNotSetError, { isReceiptNotFound } from './LimitNotSetError';
+
+/** An approval whose receipt did not come within thirdweb's wait. */
+const APPROVAL_UNCONFIRMED =
+	'The approval was sent but is not confirmed yet and may still be mined. No limit was sent. Check your wallet, then set the plan again once the approval shows there.';
 
 /**
  * Setting and revoking a spending plan: the only transactions the plan dialog sends.
@@ -193,6 +197,13 @@ function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 				} else {
 					toast.error('Limit Not Set', { description: error.message });
 				}
+				await refreshPlanQueries(queryClient, activeWallet);
+				return;
+			}
+			// No receipt came for the approval: it was sent and may still be mined, so it is not
+			// called a failure, and what the dialog shows is read again.
+			if (isReceiptNotFound(error)) {
+				toast.warning('Approval Not Confirmed', { description: APPROVAL_UNCONFIRMED });
 				await refreshPlanQueries(queryClient, activeWallet);
 				return;
 			}

@@ -4,6 +4,7 @@ import { decryptData, encryptData } from './crypto';
 import db from './db';
 import inheritedHistory, { reachesFirstMessage } from './inheritedHistory';
 import { writeMessageCache } from './messageCacheStore';
+import promptPair from './promptPair';
 // import simulateOracleProcess from './mockApi';
 import {
 	addDeltaToLiveIndex,
@@ -342,24 +343,13 @@ export const addMessageToConversation = async (
 	answerMessageId: string,
 	queryClient: QueryClient,
 ): Promise<{ finalUserMessage: Message; finalAiMessage: Message }> => {
-	const now = Date.now();
-	const finalUserMessage: Message = {
-		id: promptMessageId,
+	const { finalUserMessage, finalAiMessage } = promptPair({
 		conversationId,
-		parentId: parentId ?? undefined,
-		role: 'user',
+		parentId,
 		content: messageContent,
-		createdAt: now,
-	};
-	const finalAiMessage: Message = {
-		id: answerMessageId,
-		conversationId,
-		parentId: finalUserMessage.id,
-		role: 'assistant',
-		content: null,
-		createdAt: now + 1,
-		reasoning: [],
-	};
+		promptMessageId,
+		answerMessageId,
+	});
 
 	const existingMessages = await getMessagesForConversation(
 		sessionKey,

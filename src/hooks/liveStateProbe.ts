@@ -56,6 +56,8 @@ export interface StatePollerDeps {
 	/** One batched read of the escrow state for the current user. May reject. */
 	read: () => Promise<EscrowSnapshot>;
 	onChange: (_change: SnapshotChange) => void;
+	/** Every successful reading, the first and the unchanged ones included. */
+	onReading?: (_snapshot: EscrowSnapshot) => void;
 	/** Telemetry sink (Sentry breadcrumb in production). */
 	report: (_message: string, _data: Record<string, unknown>) => void;
 	/** `true` while the tab is in the background; polling pauses. */
@@ -118,6 +120,15 @@ export function createStatePoller(deps: StatePollerDeps): StatePoller {
 		}
 	}
 
+	/** As `notify`, for every reading. */
+	function noteReading(snapshot: EscrowSnapshot) {
+		try {
+			deps.onReading?.(snapshot);
+		} catch (error) {
+			deps.report('live poll: reading handler failed', { reason: describeError(error) });
+		}
+	}
+
 	async function probe() {
 		const myGeneration = generation;
 		inFlight = true;
@@ -131,6 +142,7 @@ export function createStatePoller(deps: StatePollerDeps): StatePoller {
 			}
 			const prev = baseline;
 			baseline = next;
+			noteReading(next);
 			if (prev !== null && serializeSnapshot(prev) !== serializeSnapshot(next)) {
 				notify({ prev, next });
 			}
