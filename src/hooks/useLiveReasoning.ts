@@ -23,7 +23,11 @@ import {
 import { reconcileWithStored, type StoredAnswer } from '@/lib/liveReasoning/reconcile';
 
 /** Ends after which nothing is kept on screen: the run was dropped, or the stream refused us. */
-const CLEARING_ENDS: ReadonlySet<SessionEnd> = new Set(['abandoned', 'bad-request', 'proof-refused']);
+const CLEARING_ENDS: ReadonlySet<SessionEnd> = new Set([
+	'abandoned',
+	'bad-request',
+	'proof-refused',
+]);
 
 /** `performance` names read by the e2e suite (no telemetry is sent). */
 const liveAnswerMark = (id: string) => `live-answer:${id}`;

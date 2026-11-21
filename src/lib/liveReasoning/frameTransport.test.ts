@@ -98,7 +98,9 @@ afterEach(() => {
 describe('the frame transport', () => {
 	it('reads frame events split at any point, a line included, and skips comments', async () => {
 		const whole = `retry: 2000\n\n: ping\n\n${event(0)}${event(1)}`;
-		const h = start([ok([whole.slice(0, 20), whole.slice(20, 37), whole.slice(37, 61), whole.slice(61)])]);
+		const h = start([
+			ok([whole.slice(0, 20), whole.slice(20, 37), whole.slice(37, 61), whole.slice(61)]),
+		]);
 
 		await vi.advanceTimersByTimeAsync(0);
 

@@ -134,10 +134,11 @@ describe('useLiveReasoning', () => {
 	});
 
 	it('drops and counts a frame that fails decryption or the schema, and never shows it', async () => {
-		const otherKey = await window.crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, [
-			'encrypt',
-			'decrypt',
-		]);
+		const otherKey = await window.crypto.subtle.generateKey(
+			{ name: 'AES-GCM', length: 256 },
+			true,
+			['encrypt', 'decrypt'],
+		);
 		const { result } = mount([user('41'), placeholder('42')]);
 		await waitFor(() => expect(streams.started).toHaveLength(1));
 		const stream = streamFor('42');
@@ -215,7 +216,11 @@ describe('useLiveReasoning', () => {
 
 		expect(mark).toHaveBeenCalledWith('live-answer:42');
 		expect(mark).toHaveBeenCalledWith('stored-answer:42');
-		expect(measure).toHaveBeenCalledWith('live-answer-lead:42', 'live-answer:42', 'stored-answer:42');
+		expect(measure).toHaveBeenCalledWith(
+			'live-answer-lead:42',
+			'live-answer:42',
+			'stored-answer:42',
+		);
 	});
 
 	it('stops and clears when the placeholder disappears (cancelled or refunded)', async () => {
@@ -271,7 +276,11 @@ describe('useLiveReasoning', () => {
 			'decrypt',
 		]);
 
-		rerender({ messages: [user('41'), placeholder('42')], sessionKey: nextKey, ownerAddress: OWNER });
+		rerender({
+			messages: [user('41'), placeholder('42')],
+			sessionKey: nextKey,
+			ownerAddress: OWNER,
+		});
 
 		expect(streams.started[0].stop).toHaveBeenCalled();
 		expect(result.current.viewFor('42')).toBeUndefined();
@@ -280,7 +289,11 @@ describe('useLiveReasoning', () => {
 	});
 
 	it('gives a second pending answer in the same conversation its own stream', async () => {
-		mount([user('41'), placeholder('42', { parentId: '41' }), placeholder('44', { parentId: '41' })]);
+		mount([
+			user('41'),
+			placeholder('42', { parentId: '41' }),
+			placeholder('44', { parentId: '41' }),
+		]);
 
 		await waitFor(() => expect(streams.started).toHaveLength(2));
 		expect(streams.started.map(s => s.options.url).sort()).toEqual([

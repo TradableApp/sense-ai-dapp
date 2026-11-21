@@ -435,3 +435,39 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 		expect(mockDb.userMetadata.put).not.toHaveBeenCalled();
 	});
 });
+
+describe('messageFromPromptRequest', () => {
+	const request = {
+		id: '42',
+		promptMessageId: '41',
+		createdAt: 1_700_000,
+		encryptedPayload: '0x',
+	};
+
+	// A second device learns of a prompt only from the sync: the answer id it carries is what
+	// lets that device follow the answer's live reasoning before it is stored.
+	it('carries the answer id on a pending prompt', async () => {
+		const { messageFromPromptRequest } = await import('./syncService');
+
+		const message = messageFromPromptRequest(request, { promptText: 'q' }, CONV_ID);
+
+		expect(message).toMatchObject({
+			id: '41',
+			role: 'user',
+			status: 'pending',
+			content: 'q',
+			answerMessageId: '42',
+		});
+	});
+
+	it('marks a cancelled or refunded prompt as such', async () => {
+		const { messageFromPromptRequest } = await import('./syncService');
+
+		expect(messageFromPromptRequest({ ...request, isCancelled: true }, {}, CONV_ID).status).toBe(
+			'cancelled',
+		);
+		expect(messageFromPromptRequest({ ...request, isRefunded: true }, {}, CONV_ID).status).toBe(
+			'refunded',
+		);
+	});
+});
