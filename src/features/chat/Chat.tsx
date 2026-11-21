@@ -949,13 +949,23 @@ export default function Chat() {
 									className="space-y-3"
 								>
 									<AssistantReasoning message={message} live={liveView} isThinking={isThinking} />
-									{isThinking && liveView?.answer && <ProvisionalAnswer text={liveView.answer.text} />}
+									{isThinking && liveView?.answer && (
+										<ProvisionalAnswer text={liveView.answer.text} />
+									)}
 									{!isThinking && (
 										<>
-											<Message from={message.role} className="items-start" status={message.status}>
+											<Message
+												from={message.role}
+												answerState="stored"
+												className="items-start"
+												status={message.status}
+											>
 												<MessageContent>
 													<div className="prose inherit-color prose-sm dark:prose-invert max-w-none">
-														<ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
+														<ReactMarkdown
+															remarkPlugins={remarkPlugins}
+															components={markdownComponents}
+														>
 															{isTyping ? `${animatedContent}▍` : message.content}
 														</ReactMarkdown>
 													</div>
@@ -998,9 +1008,7 @@ export default function Chat() {
 								<Message from={message.role} className="items-start">
 									<MessageContent>
 										<div className="prose inherit-color prose-sm dark:prose-invert max-w-none">
-											<ReactMarkdown remarkPlugins={remarkPlugins}>
-												{message.content}
-											</ReactMarkdown>
+											<ReactMarkdown remarkPlugins={remarkPlugins}>{message.content}</ReactMarkdown>
 										</div>
 									</MessageContent>
 									<MessageAvatar address={ownerAddress ?? ''} name="ME" />
