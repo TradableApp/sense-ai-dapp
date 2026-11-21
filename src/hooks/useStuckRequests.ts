@@ -1,20 +1,83 @@
+import * as Sentry from '@sentry/react';
 import { useQuery } from '@tanstack/react-query';
 import { GraphQLClient } from 'graphql-request';
-import { getContract, readContract } from 'thirdweb';
+import { type Chain, getContract, readContract } from 'thirdweb';
 import { useActiveWallet } from 'thirdweb/react';
 
 import { CONTRACTS } from '@/config/contracts';
 import { client } from '@/config/thirdweb';
-import { REFUND_TIMEOUT_MS } from '@/lib/constants';
 import { GET_STUCK_PAYMENTS_QUERY } from '@/lib/graph/queries';
 import type {
 	GetStuckPaymentsQuery,
 	GetStuckPaymentsQueryVariables,
 } from '@/lib/graph/query-types';
+import {
+	fetchPendingPayments,
+	STUCK_PAGE_SIZE,
+	type StuckPayment,
+	verifyStuck,
+} from '@/lib/stuckPayments';
 
 const THE_GRAPH_API_URL = import.meta.env.VITE_THE_GRAPH_API_URL;
 const graphQLClient = new GraphQLClient(THE_GRAPH_API_URL);
 
+// The escrow's `escrows(id)` tuple: the status is its fourth field.
+const ESCROW_STATUS_FIELD = 3;
+
+let hasReportedFailure = false;
+
+/**
+ * Reports a failed read once per page load, by the error's name only: thirdweb's and the
+ * GraphQL client's messages carry the endpoint URL and the call data.
+ */
+function reportFailure(error: unknown): void {
+	if (hasReportedFailure) return;
+	hasReportedFailure = true;
+	try {
+		Sentry.captureException(new Error('Reading the stuck requests failed.'), {
+			tags: { check: 'stuck-requests' },
+			extra: { errorName: error instanceof Error ? error.name : typeof error },
+			fingerprint: ['stuck-requests-failed'],
+		});
+	} catch {
+		// The query still fails and is retried; a failed report changes nothing.
+	}
+}
+
+function pageRequester(user: string) {
+	return async (skip: number) => {
+		const variables: GetStuckPaymentsQueryVariables = { user, first: STUCK_PAGE_SIZE, skip };
+		const data = await graphQLClient.request<GetStuckPaymentsQuery>(
+			GET_STUCK_PAYMENTS_QUERY,
+			variables,
+		);
+		return data.payments ?? [];
+	};
+}
+
+function statusReader(chain: Chain, escrow: { address: string; abi: unknown }) {
+	const contract = getContract({
+		client,
+		chain,
+		address: escrow.address,
+		abi: escrow.abi as Parameters<typeof getContract>[0]['abi'],
+	});
+	return async (id: string) => {
+		const escrowInfo = await readContract({
+			contract,
+			method: 'escrows' as any,
+			params: [id],
+		});
+		return Number((escrowInfo as readonly unknown[])[ESCROW_STATUS_FIELD]);
+	};
+}
+
+/**
+ * The wallet's prompts whose payment the escrow still holds, and whether each can be refunded.
+ * A failed read (the subgraph or the escrow) fails the query, so it is retried and its last
+ * answer kept, and is reported once per page load: answering "nothing stuck" would hide a
+ * payment the user can get back.
+ */
 export default function useStuckRequests() {
 	const activeWallet = useActiveWallet();
 	const ownerAddress = activeWallet?.getAccount()?.address;
@@ -23,80 +86,17 @@ export default function useStuckRequests() {
 
 	return useQuery({
 		queryKey: ['stuckRequests', chainId, ownerAddress],
-		queryFn: async () => {
-			if (!THE_GRAPH_API_URL || !ownerAddress) {
-				return [];
-			}
-
+		queryFn: async (): Promise<StuckPayment[]> => {
+			const escrow = chainId ? CONTRACTS[chainId]?.escrow : undefined;
+			if (!THE_GRAPH_API_URL || !ownerAddress || !chain || !escrow) return [];
 			try {
-				const variables: GetStuckPaymentsQueryVariables = { user: ownerAddress.toLowerCase() };
-				const data = await graphQLClient.request<GetStuckPaymentsQuery>(
-					GET_STUCK_PAYMENTS_QUERY,
-					variables,
-				);
-				const candidates = data.payments || [];
-				console.log('candidates', candidates);
-
-				if (candidates.length === 0) {
-					return [];
-				}
-
-				// 2. Verify against Contract State (Double Check)
-				// This filters out "Zombie" graph entities that are actually complete on-chain
-				if (!chainId) {
-					return [];
-				}
-				const contractConfig = CONTRACTS[chainId];
-
-				if (!contractConfig?.escrow || !chain) {
-					return [];
-				}
-
-				const escrowContract = getContract({
-					client,
-					chain,
-					address: contractConfig.escrow.address,
-					abi: contractConfig.escrow.abi as Parameters<typeof getContract>[0]['abi'],
-				});
-
-				// Fetch status for all candidates in parallel
-				const verifiedRequests = await Promise.all(
-					candidates.map(async p => {
-						try {
-							const escrowInfo = await readContract({
-								contract: escrowContract,
-								method: 'escrows' as any,
-								params: [p.id],
-							});
-							console.log('escrowInfo', escrowInfo);
-
-							// EscrowStatus: 0=PENDING, 1=COMPLETE, 2=REFUNDED
-							// We only want status 0 (PENDING)
-							if (Number(escrowInfo[3]) !== 0) {
-								return null;
-							}
-
-							const createdAtMs = Number(p.createdAt) * 1000;
-							const isRefundable = Date.now() > createdAtMs + REFUND_TIMEOUT_MS;
-
-							return {
-								...p,
-								id: p.id,
-								createdAt: createdAtMs,
-								isRefundable,
-							};
-						} catch (e) {
-							console.log('e', e);
-
-							return null;
-						}
-					}),
-				);
-
-				return verifiedRequests.filter(Boolean);
+				const candidates = await fetchPendingPayments(pageRequester(ownerAddress.toLowerCase()));
+				if (candidates.length === 0) return [];
+				// The subgraph can list a payment the escrow has settled: the escrow has the last word.
+				return await verifyStuck(candidates, statusReader(chain, escrow), Date.now());
 			} catch (error) {
-				console.error('[useStuckRequests] Failed to fetch:', error);
-				return [];
+				reportFailure(error);
+				throw error;
 			}
 		},
 		enabled: !!ownerAddress && !!THE_GRAPH_API_URL,

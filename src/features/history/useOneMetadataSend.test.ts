@@ -9,7 +9,8 @@ function setup() {
 	const mutate = vi.fn<(_variables: string, _options: MetadataMutateOptions) => void>();
 	const { result } = renderHook(() => useOneMetadataSend(mutate));
 	const calls = () => mutate.mock.calls as Call[];
-	return { mutate, send: (v: string, onSaved = vi.fn(async () => undefined)) => result.current(v, onSaved), calls };
+	return { mutate, send: (v: string, onSaved: () => Promise<undefined> = vi.fn(async () => undefined)) =>
+			result.current(v, onSaved), calls };
 }
 
 // A rename or delete is paid: a second press before the first is saved must not pay again.

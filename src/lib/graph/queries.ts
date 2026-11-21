@@ -52,8 +52,14 @@ export const GET_USER_UPDATES_QUERY = gql`
 `;
 
 export const GET_STUCK_PAYMENTS_QUERY = gql`
-	query GetStuckPayments($user: Bytes!) {
-		payments(where: { user: $user, status: "PENDING" }, orderBy: createdAt, orderDirection: desc) {
+	query GetStuckPayments($user: Bytes!, $first: Int!, $skip: Int!) {
+		payments(
+			where: { user: $user, status: "PENDING" }
+			orderBy: createdAt
+			orderDirection: desc
+			first: $first
+			skip: $skip
+		) {
 			id
 			amount
 			createdAt
