@@ -198,10 +198,14 @@ export const ReasoningContent = memo(
 		const { isStreaming } = useReasoning();
 		const [animatedDescriptions, setAnimatedDescriptions] = useState<Record<string, string>>({});
 		const typingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+		// The tick that starts a step's typing. Cleared on unmount with the interval: left pending,
+		// it would start an interval on a component that is gone.
+		const typingStartRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 		const prevReasoningRef = useRef<ReasoningStep[]>([]);
 
 		useEffect(
 			() => () => {
+				if (typingStartRef.current !== null) clearTimeout(typingStartRef.current);
 				if (typingTimerRef.current !== null) clearInterval(typingTimerRef.current);
 			},
 			[],
@@ -213,9 +217,11 @@ export const ReasoningContent = memo(
 			// Keyed by position: two steps may share a title.
 			const simulateReasoningTyping = (step: ReasoningStep, key: string) => {
 				const targetDescription = step.description || '';
-				if (!targetDescription) return undefined;
+				if (!targetDescription) return;
 				setAnimatedDescriptions(prev => ({ ...prev, [key]: '' }));
-				const timerId = setTimeout(() => {
+				if (typingStartRef.current !== null) clearTimeout(typingStartRef.current);
+				typingStartRef.current = setTimeout(() => {
+					typingStartRef.current = null;
 					let index = 0;
 					if (typingTimerRef.current !== null) clearInterval(typingTimerRef.current);
 					typingTimerRef.current = setInterval(() => {
@@ -227,7 +233,6 @@ export const ReasoningContent = memo(
 						}
 					}, TYPING_INTERVAL);
 				}, 0);
-				return () => clearTimeout(timerId);
 			};
 			// Only a step arriving while the answer is awaited is typed out; stored steps are shown
 			// as they are, so the stored record landing after the live steps types nothing again.
@@ -245,6 +250,7 @@ export const ReasoningContent = memo(
 				}
 			}
 			if (!isStreaming && prevReasoningRef.current?.length > 0) {
+				if (typingStartRef.current !== null) clearTimeout(typingStartRef.current);
 				if (typingTimerRef.current !== null) clearInterval(typingTimerRef.current);
 				const lastStep = prevReasoningRef.current.at(-1);
 				if (lastStep) {
