@@ -97,7 +97,7 @@ function retryAfterMs(response: StreamResponse): number | null {
 	return value !== null && /^\d{1,5}$/.test(value.trim()) ? Number(value.trim()) * 1000 : null;
 }
 
-/** The body is not a stream of events this reader takes (a line too long to be a frame). */
+/** The body is not a stream of events this reader takes (a line or an event too long to be a frame). */
 class MalformedStreamError extends Error {}
 
 interface SseParser {
@@ -113,6 +113,7 @@ function createSseParser(
 	let id: string | null = null;
 	let name = '';
 	let data: string[] = [];
+	let dataChars = 0;
 
 	const emitEvent = () => {
 		if (name === SSE_EVENT_NAME && id !== null && data.length > 0) {
@@ -121,6 +122,13 @@ function createSseParser(
 		id = null;
 		name = '';
 		data = [];
+		dataChars = 0;
+	};
+
+	const addData = (value: string) => {
+		dataChars += value.length + 1;
+		if (dataChars > MAX_EVENT_CHARS) throw new MalformedStreamError();
+		data = [...data, value];
 	};
 
 	const field = (line: string) => {
@@ -132,7 +140,7 @@ function createSseParser(
 		const value = raw.startsWith(' ') ? raw.slice(1) : raw;
 		if (key === 'id') id = value;
 		else if (key === 'event') name = value;
-		else if (key === 'data') data = [...data, value];
+		else if (key === 'data') addData(value);
 		else if (key === 'retry' && /^\d+$/.test(value)) onRetry(Number(value));
 		return undefined;
 	};
@@ -205,6 +213,8 @@ async function readConnection(options: ReadOptions): Promise<ConnectionOutcome> 
 			credentials: 'omit',
 			mode: 'cors',
 			referrerPolicy: 'no-referrer',
+			// A redirect would carry the proof header to wherever it points.
+			redirect: 'error',
 		});
 		if (response.status !== 200) discardBody(response);
 		if (STOPS[response.status]) return { kind: 'stop', reason: STOPS[response.status] };
