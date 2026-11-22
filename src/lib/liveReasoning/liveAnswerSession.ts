@@ -49,6 +49,8 @@ export interface LiveAnswerSessionOptions {
 
 export interface LiveAnswerSession {
 	stop(): void;
+	/** The tab is shown again: the stream resumes from the cursor if it paused while hidden. */
+	wake(): void;
 }
 
 async function readFrame(sessionKey: CryptoKey, event: StreamEvent) {
@@ -136,5 +138,5 @@ export function startLiveAnswerSession(options: LiveAnswerSessionOptions): LiveA
 		() => end('bad-request'),
 	);
 
-	return { stop };
+	return { stop, wake: () => handle?.wake() };
 }

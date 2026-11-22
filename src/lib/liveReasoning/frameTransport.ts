@@ -14,7 +14,8 @@
  * Progress is the cursor moving, never a frame merely arriving: a frame that cannot be applied
  * is replayed by the server on every connection. A response is judged once every frame it
  * delivered has been applied or dropped (decryption is asynchronous). It gives up when the
- * cursor has not moved for `IDLE_GIVE_UP_MS`. The proof is put in the header and nowhere else:
+ * cursor has not moved for `IDLE_GIVE_UP_MS`. While the tab is hidden (`isHidden`) no connection
+ * is opened and the idle wait is paused; `wake` resumes from the cursor. The proof is put in the header and nowhere else:
  * not in the URL, a log line or a report. Only `useLiveReasoning` starts it (the
  * `live-reasoning-ephemeral` guard).
  */
@@ -65,12 +66,16 @@ export interface FrameStreamOptions {
 	onStop: (_reason: StopReason) => void;
 	fetchImpl?: StreamFetch;
 	random?: () => number;
+	/** Whether the tab is hidden: no connection is opened then, and the idle wait is paused. */
+	isHidden?: () => boolean;
 }
 
 export interface FrameStreamHandle {
 	stop(): void;
 	/** Drops the open connection and opens another, with no cursor when `fresh`. */
 	reconnect(_fresh: boolean): void;
+	/** The tab is shown again: connects from the cursor if a connection was skipped while hidden. */
+	wake(): void;
 }
 
 type ConnectionOutcome =
@@ -241,7 +246,9 @@ async function readConnection(options: ReadOptions): Promise<ConnectionOutcome> 
 export function startFrameStream(options: FrameStreamOptions): FrameStreamHandle {
 	const fetchImpl: StreamFetch = options.fetchImpl ?? ((url, init) => fetch(url, init));
 	const random = options.random ?? Math.random;
+	const isHidden = options.isHidden ?? (() => false);
 	let stopped = false;
+	let pausedWhileHidden = false;
 	let generation = 0;
 	let failures = 0;
 	let stalled = 0;
@@ -294,11 +301,22 @@ export function startFrameStream(options: FrameStreamOptions): FrameStreamHandle
 	// Declared before use by `schedule`; `connect` and `schedule` call each other.
 	let connect: () => Promise<void> = async () => undefined;
 
+	/** Connects, unless the tab is hidden: then nothing is asked and nothing goes idle. */
+	const connectUnlessHidden = () => {
+		if (!isHidden()) {
+			connect();
+			return;
+		}
+		pausedWhileHidden = true;
+		if (idleTimer) clearTimeout(idleTimer);
+		idleTimer = null;
+	};
+
 	const schedule = (delayMs: number) => {
 		if (stopped) return;
 		reconnectTimer = setTimeout(() => {
 			reconnectTimer = null;
-			connect();
+			connectUnlessHidden();
 		}, delayMs);
 	};
 
@@ -365,7 +383,7 @@ export function startFrameStream(options: FrameStreamOptions): FrameStreamHandle
 	};
 
 	armIdle();
-	connect();
+	connectUnlessHidden();
 
 	return {
 		stop,
@@ -375,6 +393,12 @@ export function startFrameStream(options: FrameStreamOptions): FrameStreamHandle
 			if (reconnectTimer) clearTimeout(reconnectTimer);
 			reconnectTimer = null;
 			controller?.abort();
+			connect();
+		},
+		wake() {
+			if (stopped || !pausedWhileHidden || isHidden()) return;
+			pausedWhileHidden = false;
+			armIdle();
 			connect();
 		},
 	};

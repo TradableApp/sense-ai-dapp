@@ -605,7 +605,7 @@ describe('the frame transport', () => {
 
 			expect(h.fetchImpl).toHaveBeenCalledTimes(2);
 			const init = h.fetchImpl.mock.calls[1] as unknown as [string, StreamRequestInit];
-			expect(new Headers(init[1].headers as HeadersInit).get('Last-Event-ID')).toBe(`${RUN}.0`);
+			expect(new Headers(init[1].headers as ConstructorParameters<typeof Headers>[0]).get('Last-Event-ID')).toBe(`${RUN}.0`);
 			h.handle.stop();
 		});
 
