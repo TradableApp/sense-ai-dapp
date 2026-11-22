@@ -41,7 +41,7 @@ import useConversations from '@/hooks/useConversations';
 import useFirestoreCollectionListener from '@/hooks/useFirestoreCollectionListener';
 import usePaymentGate from '@/hooks/usePaymentGate';
 import useUsagePlan from '@/hooks/useUsagePlan';
-import { CANCELLATION_TIMEOUT_MS, REFUND_TIMEOUT_MS } from '@/lib/constants';
+import { CANCELLATION_TIMEOUT_MS } from '@/lib/constants';
 import {
 	addMessageToConversation,
 	branchConversation,
@@ -52,6 +52,7 @@ import {
 	getMessagesForConversation,
 	regenerateAssistantResponse,
 } from '@/lib/dataService';
+import { secondsUntilRefund } from '@/lib/refund';
 import {
 	type ActiveMessage,
 	appendLiveMessages,
@@ -693,11 +694,7 @@ export default function Chat() {
 			return undefined;
 		}
 		const tick = () => {
-			const remaining = Math.max(
-				0,
-				Math.ceil((submittedAt + REFUND_TIMEOUT_MS - Date.now()) / 1000),
-			);
-			setRefundSecondsLeft(remaining);
+			setRefundSecondsLeft(secondsUntilRefund(submittedAt, Date.now()));
 		};
 		tick();
 		const id = setInterval(tick, 1000);

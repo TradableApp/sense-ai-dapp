@@ -242,7 +242,10 @@ export function buildErrorHandler(
 		}
 		if (isError(EVMAIAgentEscrowABI.abi, 'PromptNotRefundableYet')) {
 			toast.error('Too Soon to Refund', {
-				description: 'You must wait 1 hour after the request was created before refunding.',
+				// The button is offered only after the hour (and a margin) on this device's clock, so
+				// a refusal means the network's clock has not yet reached it.
+				description:
+					'The hour since the request was sent has not yet passed on the network, though it may have on this device. Try again in a moment.',
 			});
 			return;
 		}

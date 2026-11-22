@@ -120,15 +120,12 @@ export default function useStuckRequests() {
 	const chainId = chain?.id;
 
 	// The hour is checked against a clock of its own, so the Refund button unlocks when the hour
-	// passes and not at the next read of the list.
+	// (and the margin after it, `REFUND_UNLOCK_MARGIN_MS`) passes and not at the next read of the
+	// list. The clock runs only while a listed request is still waiting for that time.
 	const [now, setNow] = useState(() => Date.now());
-	useEffect(() => {
-		const timer = setInterval(() => setNow(Date.now()), REFUND_CLOCK_MS);
-		return () => clearInterval(timer);
-	}, []);
 	const select = useCallback((answer: StuckAnswer) => refundableAt(answer.stuck, now), [now]);
 
-	return useQuery({
+	const stuckQuery = useQuery({
 		queryKey: ['stuckRequests', chainId, ownerAddress],
 		queryFn: async (): Promise<StuckAnswer> => {
 			const escrow = chainId ? CONTRACTS[chainId]?.escrow : undefined;
@@ -152,4 +149,13 @@ export default function useStuckRequests() {
 		enabled: !!ownerAddress && !!THE_GRAPH_API_URL,
 		refetchInterval: query => (tookManyPages(query) ? STUCK_POLL_MANY_PAGES_MS : STUCK_POLL_MS),
 	});
+
+	const isWaitingForHour = stuckQuery.data?.some(payment => !payment.isRefundable) ?? false;
+	useEffect(() => {
+		if (!isWaitingForHour) return undefined;
+		const timer = setInterval(() => setNow(Date.now()), REFUND_CLOCK_MS);
+		return () => clearInterval(timer);
+	}, [isWaitingForHour]);
+
+	return stuckQuery;
 }

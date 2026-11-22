@@ -136,6 +136,8 @@ export interface RefundReadinessInput {
 	nowMs: number;
 	/** The dApp's REFUND_TIMEOUT_MS. Must agree with refundTimeoutS, or the UI gate is wrong. */
 	uiTimeoutMs: number;
+	/** The dApp's REFUND_UNLOCK_MARGIN_MS: the button waits this long past the hour. */
+	uiMarginMs: number;
 }
 
 export interface RefundReadiness {
@@ -148,8 +150,9 @@ export interface RefundReadiness {
 }
 
 /**
- * The two gates a refund needs open: the contract's (chain time) and the dApp's (wall clock).
- * Both are measured from the escrow's createdAt, so the arithmetic is shared.
+ * The two gates a refund needs open: the contract's (chain time) and the dApp's (wall clock, a
+ * margin past the hour). Both are measured from the escrow's createdAt, so the arithmetic is
+ * shared.
  */
 export function refundReadiness({
 	chainTimeS,
@@ -157,6 +160,7 @@ export function refundReadiness({
 	refundTimeoutS,
 	nowMs,
 	uiTimeoutMs,
+	uiMarginMs,
 }: RefundReadinessInput): RefundReadiness {
 	if (uiTimeoutMs !== refundTimeoutS * 1000) {
 		throw new Error(
@@ -165,16 +169,16 @@ export function refundReadiness({
 		);
 	}
 	const refundableAtS = createdAtS + refundTimeoutS;
-	const refundableAtMs = refundableAtS * 1000;
 	const chainReady = chainTimeS >= refundableAtS;
-	const uiReady = nowMs > createdAtS * 1000 + uiTimeoutMs;
+	const uiOpensAtMs = createdAtS * 1000 + uiTimeoutMs + uiMarginMs;
+	const uiReady = nowMs > uiOpensAtMs;
 	return {
 		chainReady,
 		uiReady,
 		ready: chainReady && uiReady,
 		chainRemainingS: Math.max(0, refundableAtS - chainTimeS),
 		// The UI gate is strict (>), so it is still shut at the exact boundary: never report 0 then.
-		uiRemainingMs: uiReady ? 0 : Math.max(1, refundableAtMs - nowMs),
+		uiRemainingMs: uiReady ? 0 : Math.max(1, uiOpensAtMs - nowMs),
 		refundableAtS,
 	};
 }

@@ -1,3 +1,5 @@
+import { REFUND_UNLOCK_MARGIN_MS } from '@/lib/refund';
+
 import { expect, test } from '../fixtures';
 import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
@@ -27,7 +29,7 @@ const isPending = (r: {
 //
 // The dApp's in-app refund affordance (the "Refund" button in PlanStatusCard's "Action Required"
 // panel) is wall-clock-gated: useStuckRequests sets isRefundable = Date.now() > createdAt +
-// REFUND_TIMEOUT_MS, which evm_increaseTime can't move. T-REFUND-01/02 drive the on-chain claim
+// REFUND_TIMEOUT_MS + REFUND_UNLOCK_MARGIN_MS, which evm_increaseTime can't move. T-REFUND-01/02 drive the on-chain claim
 // directly (the contract gate IS block-time based); T-REFUND-03 covers the *button* end-to-end by
 // advancing the browser clock with Playwright's page.clock (UI gate) AND EVM time (contract gate).
 //
@@ -141,11 +143,13 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		// prompt's on-chain createdAt (block time) + REFUND_TIMEOUT — and the serial suite's prior
 		// increaseTime jumps have pushed EVM time well ahead of the real wall clock, so the browser
 		// clock must be set relative to EVM time, not Date.now(). Pin it to the latest block timestamp
-		// (already past createdAt + 1h after increaseTime). setFixedTime overrides Date.now() without
-		// freezing timers, so the hook's 15 s clock check still fires and reads the new time.
+		// (already past createdAt + 1h after increaseTime) plus the dApp's unlock margin past the hour
+		// (REFUND_UNLOCK_MARGIN_MS) and a minute of headroom, so the browser clock is past the
+		// button's time whatever the margin is. setFixedTime overrides Date.now() without freezing
+		// timers, so the hook's 15 s clock check still fires and reads the new time.
 		await increaseTime(REFUND_TIMEOUT_S + 60);
 		const evmNowMs = (await getLatestBlockTimestamp()) * 1000;
-		await freshPage.clock.setFixedTime(new Date(evmNowMs + 60_000));
+		await freshPage.clock.setFixedTime(new Date(evmNowMs + REFUND_UNLOCK_MARGIN_MS + 60_000));
 
 		// The gate opens: "Wait 1h" is replaced by an enabled "Refund" button (on the next check).
 		await expect(dashboard.refundButton.first()).toBeVisible({ timeout: 30_000 });
