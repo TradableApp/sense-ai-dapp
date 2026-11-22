@@ -4,11 +4,12 @@
 // the setting, and stop as the build does when the setting is not exactly one of the names: a
 // suite that guessed would assert the wrong symbol and the wrong transfer rule. No token is named
 // here; the names come from the list the build chooses from.
-import { describe, expect, it } from 'vitest';
+import { encodeFunctionResult, parseAbi } from 'viem';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { FEE_TOKEN_BASICS, FEE_TOKEN_NAMES, FeeTokenConfigError } from '@/config/feeTokenConfig';
 
-import { feeToken, feeTokenSymbolPattern } from './feeToken';
+import { assertChainTokenMatchesSetting, feeToken, feeTokenSymbolPattern } from './feeToken';
 
 describe('feeToken', () => {
 	it.each(FEE_TOKEN_NAMES)('answers with the profile the setting names (%s)', name => {
@@ -63,5 +64,55 @@ describe('feeTokenSymbolPattern', () => {
 			if (previous === undefined) delete process.env.VITE_FEE_TOKEN;
 			else process.env.VITE_FEE_TOKEN = previous;
 		}
+	});
+});
+
+describe('assertChainTokenMatchesSetting', () => {
+	const TOKEN = '0x00000000000000000000000000000000000000aa';
+	const [named, other] = FEE_TOKEN_NAMES;
+
+	/** The token answers `symbol()` with `symbol`. */
+	function tokenReports(symbol: string) {
+		const result = encodeFunctionResult({
+			abi: parseAbi(['function symbol() view returns (string)']),
+			functionName: 'symbol',
+			result: symbol,
+		});
+		const fetchMock = vi.fn(
+			async () => new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result })),
+		);
+		vi.stubGlobal('fetch', fetchMock);
+		return fetchMock;
+	}
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it('passes when the token on chain has the symbol of the token the setting names', async () => {
+		const fetchMock = tokenReports(FEE_TOKEN_BASICS[named].symbol);
+
+		await expect(
+			assertChainTokenMatchesSetting(TOKEN, { VITE_FEE_TOKEN: named }),
+		).resolves.toBeUndefined();
+		const [, init] = fetchMock.mock.calls[0] as unknown as [string, Parameters<typeof fetch>[1]];
+		const body = JSON.parse(String(init?.body));
+		expect(body.method).toBe('eth_call');
+		expect(body.params[0]).toMatchObject({ to: TOKEN });
+	});
+
+	it('fails, naming both symbols, when the chain holds the other token', async () => {
+		tokenReports(FEE_TOKEN_BASICS[other].symbol);
+
+		await expect(assertChainTokenMatchesSetting(TOKEN, { VITE_FEE_TOKEN: named })).rejects.toThrow(
+			new RegExp(`${FEE_TOKEN_BASICS[other].symbol}.*${FEE_TOKEN_BASICS[named].symbol}`),
+		);
+	});
+
+	it('fails when the setting itself is not a name, before asking the chain', async () => {
+		const fetchMock = tokenReports(FEE_TOKEN_BASICS[named].symbol);
+
+		await expect(assertChainTokenMatchesSetting(TOKEN, {})).rejects.toThrow(FeeTokenConfigError);
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 });
