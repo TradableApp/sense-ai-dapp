@@ -1,4 +1,10 @@
-import { type QueryClient, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+	type QueryClient,
+	useIsMutating,
+	useMutation,
+	type UseMutationResult,
+	useQueryClient,
+} from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { type Chain, getContract, prepareContractCall } from 'thirdweb';
 import { useActiveWallet, useSendAndConfirmTransaction } from 'thirdweb/react';
@@ -286,6 +292,50 @@ async function refreshPlanQueries(
 	]);
 }
 
+/**
+ * Starts reading the plan and balance again without waiting for it. Used where a notice with
+ * an action has just been shown: while the mutation waits, a press of that action would be
+ * refused as a transaction under way, and pressing closes the notice.
+ */
+function refreshPlanQueriesSoon(
+	queryClient: QueryClient,
+	wallet: ReturnType<typeof useActiveWallet>,
+): void {
+	refreshPlanQueries(queryClient, wallet).catch(error =>
+		console.error('refreshPlanQueries Error:', error instanceof Error ? error.name : typeof error),
+	);
+}
+
+/**
+ * The key every plan transaction (set, revoke, remove the approval) is declared with, so one
+ * under way is seen from the query client by every mounted dialog and notice.
+ */
+export const PLAN_SEND_KEY = ['plan-send'];
+
+type PlanSend<TVariables> = UseMutationResult<void, Error, TVariables>;
+
+/**
+ * `mutation`, whose `mutate` and `mutateAsync` do nothing while any plan transaction is under
+ * way. It is read from the query client's mutation cache, which marks a mutation pending the
+ * moment it starts, so a second press in the same moment is refused too, and so is one from
+ * a dialog opened again or from a notice.
+ */
+function startedAlone<TVariables>(
+	mutation: PlanSend<TVariables>,
+	queryClient: QueryClient,
+): PlanSend<TVariables> {
+	const isUnderWay = () => queryClient.isMutating({ mutationKey: PLAN_SEND_KEY }) > 0;
+	return {
+		...mutation,
+		mutate: (variables, options) => {
+			if (!isUnderWay()) mutation.mutate(variables, options);
+		},
+		mutateAsync: async (variables, options) => {
+			if (!isUnderWay()) await mutation.mutateAsync(variables, options);
+		},
+	} as PlanSend<TVariables>;
+}
+
 function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 	const activeWallet = useActiveWallet();
 	const { mutateAsync: send } = useSendAndConfirmTransaction();
@@ -297,7 +347,8 @@ function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 			throw new PaymentSwitchedOffError(paymentGate.stateNow(), 'plan', FEE_TOKEN.symbol);
 	};
 
-	return useMutation<void, Error, PlanRequest>({
+	const mutation = useMutation<void, Error, PlanRequest>({
+		mutationKey: PLAN_SEND_KEY,
 		mutationFn: async plan => {
 			// The form is disabled too; this is the refusal that holds whoever calls it.
 			if (paymentGate.blocks('plan'))
@@ -343,6 +394,7 @@ function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 			toast.error('Transaction Failed', { description: failureDescription(SET_FAILED, error) });
 		},
 	});
+	return startedAlone(mutation, queryClient);
 }
 
 function useRevokePlanMutation({
@@ -353,7 +405,8 @@ function useRevokePlanMutation({
 	const { mutateAsync: send } = useSendAndConfirmTransaction();
 	const queryClient = useQueryClient();
 
-	return useMutation<void, Error, void>({
+	const mutation = useMutation<void, Error, void>({
+		mutationKey: PLAN_SEND_KEY,
 		mutationFn: async () => {
 			const { chain, contracts } = connectedContracts(activeWallet);
 			await cancelLimitAndClearApproval(
@@ -375,7 +428,7 @@ function useRevokePlanMutation({
 				// The limit is cancelled: the plan is gone, so the dialog closes and the
 				// dashboard is read again, and the notice offers the step that is left.
 				showApprovalNotCleared(error, retryClear);
-				await refreshPlanQueries(queryClient, activeWallet);
+				refreshPlanQueriesSoon(queryClient, activeWallet);
 				onDone();
 				return;
 			}
@@ -389,6 +442,7 @@ function useRevokePlanMutation({
 			toast.error('Revoke Failed', { description: failureDescription(REVOKE_FAILED, error) });
 		},
 	});
+	return startedAlone(mutation, queryClient);
 }
 
 /**
@@ -422,6 +476,7 @@ function useClearApprovalMutation() {
 	const queryClient = useQueryClient();
 
 	const mutation = useMutation<void, Error, void>({
+		mutationKey: PLAN_SEND_KEY,
 		mutationFn: async () => {
 			try {
 				const { chain, contracts } = connectedContracts(activeWallet);
@@ -454,20 +509,28 @@ function useClearApprovalMutation() {
 		},
 		onError: async error => {
 			console.error('clearApprovalMutation Error:', error.name);
+			const retry = () => startedAlone(mutation, queryClient).mutate();
 			if (error instanceof ClearApprovalRefusedError) {
-				showClearRefused(error, () => mutation.mutate());
+				showClearRefused(error, retry);
 			} else if (error instanceof ApprovalNotClearedError) {
-				showApprovalNotCleared(error, () => mutation.mutate());
+				showApprovalNotCleared(error, retry);
 			}
-			await refreshPlanQueries(queryClient, activeWallet);
+			refreshPlanQueriesSoon(queryClient, activeWallet);
 		},
 	});
-	return mutation;
+	return startedAlone(mutation, queryClient);
+}
+
+/** Whether a plan transaction is under way anywhere in the app. */
+export function useIsPlanSendUnderWay(): boolean {
+	return useIsMutating({ mutationKey: PLAN_SEND_KEY }) > 0;
 }
 
 export default function usePlanMutations(options: PlanMutationOptions) {
 	const clearApprovalMutation = useClearApprovalMutation();
+	const isUnderWay = useIsPlanSendUnderWay();
 	return {
+		isUnderWay,
 		setPlanMutation: useSetPlanMutation(options),
 		revokeMutation: useRevokePlanMutation({
 			onDone: options.onDone,
