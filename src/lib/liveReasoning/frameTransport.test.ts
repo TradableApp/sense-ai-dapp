@@ -596,6 +596,22 @@ describe('the frame transport', () => {
 			refused.handle.stop();
 		});
 
+		it.each([
+			['a comment', `: ${'x'.repeat(MAX_LINE_CHARS)}`],
+			['an id', `id: ${'x'.repeat(MAX_LINE_CHARS)}`],
+		])(
+			'refuses %s line over the line cap that arrives whole in one chunk, as one split across chunks',
+			async (_case, line) => {
+				const h = start([], { repeat: () => ok([`${line}\n`]) });
+
+				await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+
+				expect(line.length).toBeGreaterThan(MAX_LINE_CHARS);
+				expect(h.fetchImpl).toHaveBeenCalledTimes(MAX_STALLED_CONNECTIONS);
+				expect(h.stops).toEqual(['finished']);
+			},
+		);
+
 		it('carries the largest frame when its CRLF is split across two chunks', async () => {
 			// The held CR ends the line; it is not a character of it.
 			const data = `${'A'.repeat(16)}.${'B'.repeat(MAX_SEALED_FRAME_CHARS - 17)}`;
