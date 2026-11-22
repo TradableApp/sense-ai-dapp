@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { decryptData, encryptData } from '@/lib/crypto';
+import { decryptBytes, decryptData, encryptData } from '@/lib/crypto';
 
 import {
 	DONE_OUTCOMES,
@@ -20,7 +20,14 @@ import {
 	STREAM_REFUSAL_STATUSES,
 	streamUrl,
 } from './contract';
-import { importVectorKey, VECTOR } from './vector.testdata';
+import {
+	bytesToHex,
+	canonicalJson,
+	hexBytes,
+	importVectorKey,
+	STREAM_VECTORS,
+	STREAM_VECTORS_SHA256,
+} from './vector.testdata';
 
 const frameOf = (overrides: Record<string, unknown>) => ({
 	v: 1,
@@ -32,26 +39,76 @@ const frameOf = (overrides: Record<string, unknown>) => ({
 });
 
 describe('the live reasoning contract (version 1)', () => {
-	describe('the shared test vector', () => {
-		it("decrypts the vector's frame with the vector's key to the vector's plaintext", async () => {
-			const key = await importVectorKey();
+	describe('the shared test vectors', () => {
+		const vectorOf = (type: string) => STREAM_VECTORS.frames.find(v => v.type === type);
 
-			const plain = await decryptData(key, VECTOR.frame);
+		it('holds one vector for every frame type the contract defines, each with its own IV', () => {
+			const types = STREAM_VECTORS.frames.map(v => v.type);
+			const ivs = STREAM_VECTORS.frames.map(v => v.ivHex);
 
-			expect(JSON.stringify(plain)).toBe(VECTOR.plaintext);
+			expect([...types].sort()).toEqual(Object.values(FRAME_TYPES).sort());
+			expect(new Set(ivs).size).toBe(ivs.length);
 		});
 
-		it("accepts the vector's plaintext as a step frame", () => {
-			const frame = parseFramePlaintext(JSON.parse(VECTOR.plaintext));
+		it('pins the SHA-256 of the canonical vector data, the same hash the oracle pins', async () => {
+			const bytes = new TextEncoder().encode(canonicalJson(STREAM_VECTORS));
+			const digest = await window.crypto.subtle.digest('SHA-256', bytes);
 
-			expect(frame).toEqual(JSON.parse(VECTOR.plaintext));
-			expect(frame?.type).toBe('step');
+			expect(bytesToHex(new Uint8Array(digest))).toBe(STREAM_VECTORS_SHA256);
 		});
 
-		it("reads the vector's frame as one sealed SSE data line", () => {
-			expect(isSealedFrame(VECTOR.frame)).toBe(true);
+		it('serialises canonically: keys sorted at every level, arrays in order, no whitespace', () => {
+			expect(canonicalJson({ b: 1, a: [{ d: 2.5, c: 'é\n' }, null, true] })).toBe(
+				'{"a":[{"c":"é\\n","d":2.5},null,true],"b":1}',
+			);
+		});
+
+		describe.each(Object.values(FRAME_TYPES))('the %s vector', type => {
+			it('exists', () => {
+				expect(vectorOf(type)).toBeDefined();
+			});
+
+			it('decrypts to its plaintext, which the schema accepts as that frame type', async () => {
+				const vector = vectorOf(type);
+				const key = await importVectorKey();
+
+				const plain = await decryptData(key, vector?.frame ?? '');
+				const frame = parseFrameBytes(await decryptBytes(key, vector?.frame ?? ''));
+
+				expect(JSON.stringify(plain)).toBe(vector?.plaintext);
+				expect(frame).toEqual(JSON.parse(vector?.plaintext ?? 'null'));
+				expect(frame?.type).toBe(type);
+				expect(isSealedFrame(vector?.frame)).toBe(true);
+			});
+
+			it('encrypts its plaintext to its frame, byte for byte, with the fixed key and IV', async () => {
+				const vector = vectorOf(type);
+				const key = await importVectorKey();
+				const iv = hexBytes(vector?.ivHex ?? '');
+				// encryptData draws its IV from getRandomValues; the vector's IV is handed in there.
+				const spy = vi
+					.spyOn(window.crypto, 'getRandomValues')
+					.mockImplementation(<T extends ArrayBufferView | null>(array: T): T => {
+						(array as unknown as Uint8Array).set(iv);
+						return array;
+					});
+
+				try {
+					const sealed = await encryptData(key, JSON.parse(vector?.plaintext ?? 'null'));
+
+					expect(sealed).toBe(vector?.frame);
+				} finally {
+					spy.mockRestore();
+				}
+			});
+		});
+
+		it("reads each vector's frame as one sealed SSE data line", () => {
+			const { frame } = STREAM_VECTORS.frames[0];
+
+			expect(isSealedFrame(frame)).toBe(true);
 			expect(isSealedFrame('not sealed')).toBe(false);
-			expect(isSealedFrame(`${VECTOR.frame}\nid: x`)).toBe(false);
+			expect(isSealedFrame(`${frame}\nid: x`)).toBe(false);
 		});
 	});
 

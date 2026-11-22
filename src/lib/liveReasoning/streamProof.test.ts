@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import streamProof from './streamProof';
-import { bytesToHex, importVectorKey, VECTOR } from './vector.testdata';
+import { bytesToHex, importVectorKey, STREAM_VECTORS } from './vector.testdata';
+
+const VECTOR = STREAM_VECTORS.proof;
 
 const fromBase64Url = (text: string): Uint8Array => {
 	const padded = text.replace(/-/g, '+').replace(/_/g, '/');
