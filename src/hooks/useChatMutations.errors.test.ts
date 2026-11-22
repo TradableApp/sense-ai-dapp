@@ -427,6 +427,18 @@ describe('buildErrorHandler — Escrow errors', () => {
 		expect(toast.error).toHaveBeenCalledWith('Too Soon to Refund', expect.any(Object));
 	});
 
+	// The button is offered only after the hour on this device's clock (and a margin), so when
+	// the contract still refuses, the hour has not yet passed on the network's clock.
+	it('PromptNotRefundableYet says the hour has not yet passed on the network, and to retry', () => {
+		const handler = makeHandler();
+		handler({ message: 'PromptNotRefundableYet' }, 'process refund');
+		const [, options] = vi.mocked(toast.error).mock.calls[0];
+		const description = String((options as { description?: unknown }).description);
+		expect(description).toContain('not yet passed on the network');
+		expect(description).toContain('Try again in a moment');
+		expect(description).not.toContain('You must wait 1 hour');
+	});
+
 	it('NotPromptOwner → toast.error "Access Denied"', () => {
 		const handler = makeHandler();
 		handler({ message: 'NotPromptOwner' }, 'cancel prompt');
