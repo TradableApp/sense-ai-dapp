@@ -101,16 +101,16 @@ a state that lasts one render (a reset clearing the steps) is seen without a pol
 "No report" means no Sentry envelope carrying `check: live-reasoning`; without a DSN in the build
 that check cannot be made and the test says so in its annotations.
 
-| Test          | What it shows                                                                                                                                      |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `T-STREAM-01` | steps are shown while the answer is awaited; the steps shown live equal the stored steps after a reload; the proof is in no request URL; no report |
-| `T-STREAM-02` | a re-run: the first run's step disappears on its reset, "Retrying" is shown between, and the second run's steps are the stored ones                |
-| `T-STREAM-03` | a plain prompt: the stream is opened (a 200), no live step, no reasoning or sources disclosure                                                     |
-| `T-STREAM-04` | a second device on the same account, which learns of the prompt from the subgraph, shows the same live steps                                       |
-| `T-STREAM-05` | the stream refused at the network: the answer still lands through the sync, with its stored reasoning, and no error or "Retrying" is shown         |
-| `T-STREAM-06` | the provisional answer ("Not yet confirmed") shows before the stored one, the texts are identical, and the lead time is read from `performance`    |
-| `T-STREAM-07` | a source link in the live steps is an http(s) link with the source's URL                                                                           |
-| `T-STREAM-08` | leaving the conversation closes the stream request, and none is opened again while the answer completes                                            |
+| Test          | What it shows                                                                                                                                                                                                                    |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `T-STREAM-01` | steps are shown while the answer is awaited; the steps shown live equal the stored steps after a reload; the proof is in no request URL or body; no report                                                                       |
+| `T-STREAM-02` | a re-run: the first run's step disappears on its reset (nothing is marked "Earlier attempt", so it was not taken as an attempt), "Retrying" is shown between, and the second run's steps are the stored ones                     |
+| `T-STREAM-03` | a plain prompt: the stream is opened (a 200), no live step, no reasoning or sources disclosure                                                                                                                                   |
+| `T-STREAM-04` | a second device on the same account, which learns of the prompt from the subgraph, shows the same live steps                                                                                                                     |
+| `T-STREAM-05` | the stream refused at the network: the answer still lands through the sync, with its stored reasoning; the record of the awaited period holds no live step, no "Retrying", no provisional answer, and no error toast at any time |
+| `T-STREAM-06` | the provisional answer ("Not yet confirmed") is recorded while the answer is awaited and never beside the stored one, the texts are identical, and the lead time is read from `performance`                                      |
+| `T-STREAM-07` | a source link in the live steps is an http(s) link with the source's URL                                                                                                                                                         |
+| `T-STREAM-08` | leaving the conversation closes the stream request, and none is opened again while the answer completes (skipped in `poll` mode, where no request stays open)                                                                    |
 
 `T-LIVE-01` and `T-LIVE-02` in `live-sync.spec.ts` stay `fixme`: they are about dashboard usage
 and history on an idle device, which this stream does not carry.
@@ -159,7 +159,7 @@ never enters a page, a trace or a screenshot.
 (loaded by `playwright.config.ts` and the scripts, never overriding the runner's exports). A
 missing or malformed variable fails once, by name, before any request.
 
-### Included in the `testnet` project (18 files)
+### Included in the `testnet` project (165 tests, 18 files)
 
 `smoke`, `ui`, `auth`, `chat`, `history`, `branching`, `cancel`, `metadata`, `search`,
 `versions`, `multi-device`, `live-sync`, `activity`, `graph`, `reasoning`, `live-reasoning`,
