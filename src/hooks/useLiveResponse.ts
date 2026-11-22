@@ -238,8 +238,8 @@ export default function useLiveResponse() {
 			},
 			// Every reading, not only a change: a paid send held for a failed save ends on one
 			// (see UnsavedSend), and its answer may have come before it was held.
-			onReading: snapshot =>
-				notePendingCount(queryClient, ownerAddress, snapshot.pendingEscrowCount),
+			onReading: (snapshot, requestedAt) =>
+				notePendingCount(queryClient, ownerAddress, snapshot.pendingEscrowCount, requestedAt),
 			report: (message, data) =>
 				Sentry.addBreadcrumb({ category: 'rpc.poll', level: 'warning', message, data }),
 			isHidden: () => document.visibilityState === 'hidden',

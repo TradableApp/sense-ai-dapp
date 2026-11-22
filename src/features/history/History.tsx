@@ -29,6 +29,7 @@ import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import ConversationActionsMenu from './ConversationActionsMenu';
 import DeleteConversationDialog from './DeleteConversationDialog';
 import RenameConversationModal from './RenameConversationModal';
+import useOneMetadataSend from './useOneMetadataSend';
 
 export default function History() {
 	const navigate = useNavigate();
@@ -41,6 +42,8 @@ export default function History() {
 	const hasPendingPrompts = (plan?.pendingEscrowCount ?? 0) > 0;
 
 	const { metadataUpdateMutation } = useChatMutations();
+	// Rename and delete are paid: a second press while one is in flight sends nothing.
+	const sendMetadata = useOneMetadataSend(metadataUpdateMutation.mutate);
 	const { isRenameModalOpen, conversationToRename } = useAppSelector(state => state.chat);
 	const activeConversationId = useAppSelector(state => state.chat.activeConversationId);
 
@@ -74,53 +77,47 @@ export default function History() {
 			return;
 		}
 
-		metadataUpdateMutation.mutate(
+		sendMetadata(
 			{
 				conversationId: conversationToDelete,
 				isDeleted: true,
 				title: conversation.title,
 				sessionKey: sessionKey!,
 			},
-			{
-				onSuccess: async () => {
-					await deleteConversation(sessionKey!, ownerAddress!, conversationToDelete, queryClient);
+			async () => {
+				await deleteConversation(sessionKey!, ownerAddress!, conversationToDelete, queryClient);
 
-					toast.success('Conversation deleted.');
+				toast.success('Conversation deleted.');
 
-					if (activeConversationId === conversationToDelete) {
-						dispatch(clearActiveConversation());
-					}
+				if (activeConversationId === conversationToDelete) {
+					dispatch(clearActiveConversation());
+				}
 
-					setIsAlertOpen(false);
-					setConversationToDelete(null);
-				},
-				// onError: () => {},
+				setIsAlertOpen(false);
+				setConversationToDelete(null);
 			},
 		);
 	};
 
 	const handleRenameSubmit = (newTitle: string) => {
 		if (!conversationToRename) return;
-		metadataUpdateMutation.mutate(
+		// The modal shows the error itself, from the mutation's state.
+		sendMetadata(
 			{
 				conversationId: conversationToRename.id,
 				title: newTitle,
 				isDeleted: false,
 				sessionKey: sessionKey!,
 			},
-			{
-				onSuccess: async () => {
-					await renameConversation(
-						sessionKey!,
-						ownerAddress!,
-						{ id: conversationToRename.id, newTitle },
-						queryClient,
-					);
+			async () => {
+				await renameConversation(
+					sessionKey!,
+					ownerAddress!,
+					{ id: conversationToRename.id, newTitle },
+					queryClient,
+				);
 
-					dispatch(closeRenameModal());
-				},
-				// Let the modal itself display the error passed via props
-				// onError: () => {},
+				dispatch(closeRenameModal());
 			},
 		);
 	};
