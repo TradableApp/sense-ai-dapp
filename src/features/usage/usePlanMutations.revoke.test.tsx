@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FEE_TOKEN_PROFILES, type FeeTokenProfile } from '@/config/feeToken';
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
 import usePromptsSwitch, { readPromptsSwitchNow } from '@/hooks/usePromptsSwitch';
+import { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
 import { blocksAction, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
 import { type PromptsSwitchState, SWITCH_WORDINGS } from '@/lib/promptsSwitch';
 import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
@@ -99,10 +100,11 @@ function renderPlanMutations() {
 		<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 	);
 	const onDone = vi.fn();
+	const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
 	const { result } = renderHook(() => usePlanMutations({ onStatus: vi.fn(), onDone }), {
 		wrapper,
 	});
-	return { result, onDone };
+	return { result, onDone, invalidate };
 }
 
 async function revoke() {
@@ -391,6 +393,36 @@ describe('removing the approval while a plan is active', () => {
 		expect((options as Notice).description).toMatch(/could not be checked/);
 		expect((options as Notice).description).toMatch(/try again/i);
 		expect(toast.success).not.toHaveBeenCalled();
+	});
+});
+
+// The exact keys the plan and the wallet's balance are read again with.
+const PLAN_REFRESH = { queryKey: ['usagePlan'], refetchType: 'all' };
+const BALANCE_REFRESH = {
+	queryKey: getTokenBalanceQueryKey(31337, OWNER, TOKEN),
+	refetchType: 'all',
+};
+
+describe('a revoke whose cancel has no receipt within the wait', () => {
+	it('says it may still be mined, claims nothing and reads the plan and balance again', async () => {
+		sendAndConfirm.mockRejectedValueOnce(new Error(RECEIPT_NOT_FOUND));
+
+		const { onDone, invalidate } = await revoke();
+
+		expect(toast.error).not.toHaveBeenCalled();
+		const { title, options } = onlyNotice('warning');
+		expect(title).toBe('Revoke Not Confirmed');
+		expect(options.description).toMatch(/may still be mined/);
+		expect(options.description).not.toMatch(/is revoked|failed/i);
+		// Where the approval left behind is removed, once the cancel lands.
+		expect(options.description).toMatch(/dashboard/);
+		expect(options.description).not.toContain('0xabab');
+		expect(toast.success).not.toHaveBeenCalled();
+		expect(readContract).not.toHaveBeenCalled();
+		expect(methods()).toEqual([cancelCall]);
+		await waitFor(() => expect(invalidate).toHaveBeenCalledWith(PLAN_REFRESH));
+		expect(invalidate).toHaveBeenCalledWith(BALANCE_REFRESH);
+		expect(onDone).not.toHaveBeenCalled();
 	});
 });
 
