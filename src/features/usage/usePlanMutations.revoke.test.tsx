@@ -163,6 +163,10 @@ beforeEach(() => {
 	vi.spyOn(console, 'error').mockImplementation(() => undefined);
 	profile.current = undefined;
 	sendAndConfirm.mockResolvedValue({ status: 'success' });
+	// Set again for every test: one test leaves a wait that never settles, and clearing a mock
+	// keeps its implementation.
+	vi.mocked(wait).mockReset();
+	vi.mocked(wait).mockImplementation(async () => undefined);
 	account.address = OWNER;
 	onChain.allowance = 10n;
 	onChain.limit = [0n, 0n, 0n];
