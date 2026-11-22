@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
 	IDLE_GIVE_UP_MS,
+	MAX_EVENT_CHARS,
 	MAX_LINE_CHARS,
 	MAX_STALLED_CONNECTIONS,
 	MIN_RETRY_MS,
@@ -540,6 +541,29 @@ describe('the frame transport', () => {
 
 			expect(h.events).toEqual([{ id: `${RUN}.0`, data: 'iv.ct' }]);
 			h.handle.stop();
+		});
+	});
+
+	describe('what a response may hold', () => {
+		it('follows no redirect, so the proof header never reaches another origin', async () => {
+			const h = start([ok([], { hold: true })]);
+
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(h.fetchImpl.mock.calls[0][1]).toMatchObject({ redirect: 'error' });
+			h.handle.stop();
+		});
+
+		it('takes data lines that add up past the event cap as no frame, and stops after a few', async () => {
+			const line = `data: ${'x'.repeat(1024)}\n`;
+			const lines = Array.from({ length: Math.ceil(MAX_EVENT_CHARS / 1024) + 1 }, () => line);
+			const h = start([], { repeat: () => ok([`id: ${RUN}.0\nevent: frame\n`, ...lines]) });
+
+			await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+
+			expect(h.events).toEqual([]);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(MAX_STALLED_CONNECTIONS);
+			expect(h.stops).toEqual(['finished']);
 		});
 	});
 });

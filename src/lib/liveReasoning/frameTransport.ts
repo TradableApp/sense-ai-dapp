@@ -27,6 +27,8 @@ export const MIN_RETRY_MS = 1_000;
 export const IDLE_GIVE_UP_MS = 10 * 60 * 1000;
 /** A line longer than this is not a frame (an answer frame is under 100 KiB once sealed). */
 export const MAX_LINE_CHARS = 256 * 1024;
+/** The most `data:` an event may join before it is not a frame either. */
+export const MAX_EVENT_CHARS = MAX_LINE_CHARS;
 /**
  * Connections in a row that delivered something but moved the cursor nowhere (a frame that
  * cannot be applied, which the server replays each time, or a line too long to be a frame)
