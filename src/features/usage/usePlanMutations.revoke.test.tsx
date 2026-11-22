@@ -12,6 +12,7 @@ import usePromptsSwitch, { readPromptsSwitchNow } from '@/hooks/usePromptsSwitch
 import { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
 import { blocksAction, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
 import { type PromptsSwitchState, SWITCH_WORDINGS } from '@/lib/promptsSwitch';
+import { wait } from '@/lib/utils';
 import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
 
 import usePlanMutations from './usePlanMutations';
@@ -574,3 +575,118 @@ describe.each(Object.values(FEE_TOKEN_PROFILES))(
 		});
 	},
 );
+
+describe('one plan transaction at a time, from any mounted dialog or notice', () => {
+	const PLAN = { limitInWei: 100n, expiresAtTimestamp: 2_000_000_000n };
+
+	/** Two users of the plan mutations on one query client, as two mounted dialogs are. */
+	function renderTwo() {
+		const queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+		});
+		const wrapper = ({ children }: { children: ReactNode }) => (
+			<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		);
+		const options = { onStatus: vi.fn(), onDone: vi.fn() };
+		return renderHook(
+			() => ({ first: usePlanMutations(options), second: usePlanMutations(options) }),
+			{ wrapper },
+		).result;
+	}
+
+	/** A cancel the wallet has not confirmed yet; `confirm` lets it through. */
+	function holdTheCancel() {
+		let confirm: (_receipt: { status: string }) => void = () => undefined;
+		sendAndConfirm.mockImplementationOnce(
+			() =>
+				new Promise(resolve => {
+					confirm = resolve;
+				}),
+		);
+		return () => confirm({ status: 'success' });
+	}
+
+	const presses = {
+		set: (m: ReturnType<typeof usePlanMutations>) => m.setPlanMutation.mutate(PLAN),
+		revoke: (m: ReturnType<typeof usePlanMutations>) => m.revokeMutation.mutate(),
+		'remove approval': (m: ReturnType<typeof usePlanMutations>) => m.clearApprovalMutation.mutate(),
+	};
+
+	it.each(Object.entries(presses))(
+		'a press of %s elsewhere while a revoke is under way does nothing',
+		async (_, press) => {
+			onChain.allowance = 0n;
+			const confirm = holdTheCancel();
+			const result = renderTwo();
+
+			act(() => result.current.first.revokeMutation.mutate());
+			await waitFor(() => expect(sendAndConfirm).toHaveBeenCalledTimes(1));
+			expect(result.current.second.isUnderWay).toBe(true);
+
+			act(() => press(result.current.second));
+			await act(async () => undefined);
+
+			expect(methods()).toEqual([cancelCall]);
+			expect(readContract).not.toHaveBeenCalled();
+
+			await act(async () => confirm());
+			await waitFor(() => expect(result.current.second.isUnderWay).toBe(false));
+			expect(sendAndConfirm).toHaveBeenCalledTimes(1);
+		},
+	);
+
+	it('a second press in the same moment is refused', async () => {
+		onChain.allowance = 0n;
+		const result = renderTwo();
+
+		act(() => {
+			result.current.first.revokeMutation.mutate();
+			result.current.first.revokeMutation.mutate();
+		});
+		await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+
+		expect(sendAndConfirm).toHaveBeenCalledTimes(1);
+	});
+
+	it.each(Object.entries(presses))(
+		'%s can be pressed again once the last one is done',
+		async (_, press) => {
+			onChain.allowance = 0n;
+			const result = renderTwo();
+			await act(async () => {
+				await result.current.first.revokeMutation.mutateAsync();
+			});
+			vi.mocked(prepareContractCall).mockClear();
+
+			await act(async () => press(result.current.second));
+
+			await waitFor(() => expect(prepareContractCall).toHaveBeenCalled());
+		},
+	);
+
+	// The notice is shown while the plan is still being read again; its action must not be
+	// refused as a transaction under way, since pressing closes it.
+	it("the notice's action sends at once, while the plan is still being read again", async () => {
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockRejectedValueOnce(new Error('user rejected'));
+		// The wait before the second step passes; the one before the plan is read again does not.
+		vi.mocked(wait)
+			.mockImplementationOnce(async () => undefined)
+			.mockImplementation(
+				() =>
+					new Promise<void>(() => {
+						// Never settles.
+					}),
+			);
+		const { result } = renderPlanMutations();
+
+		act(() => result.current.revokeMutation.mutate());
+		await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+		const { options } = onlyNotice('error');
+		act(() => options.action?.onClick());
+
+		await waitFor(() => expect(sendAndConfirm).toHaveBeenCalledTimes(3));
+		expect(methods()).toEqual([cancelCall, clearCall, clearCall]);
+	});
+});
