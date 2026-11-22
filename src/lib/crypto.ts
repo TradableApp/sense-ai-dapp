@@ -61,12 +61,13 @@ export async function encryptData(key: CryptoKey, data: unknown) {
 }
 
 /**
- * Decrypts data from a base64 string using the derived session key.
+ * Decrypts a base64 "iv.encryptedData" string to its plaintext bytes, unparsed, so a reader can
+ * check their size before it parses them (the live reasoning frames).
  * @param {CryptoKey} key - The AES-GCM key.
- * @param {string} encryptedString - The string from the database.
- * @returns {Promise<object>} The decrypted JavaScript object.
+ * @param {string} encryptedString - The sealed string.
+ * @returns {Promise<Uint8Array>} The plaintext bytes.
  */
-export async function decryptData(key: CryptoKey, encryptedString: string) {
+export async function decryptBytes(key: CryptoKey, encryptedString: string) {
 	if (!encryptedString || !encryptedString.includes('.')) {
 		throw new Error('Invalid encrypted data format. Expected "iv.encryptedData".');
 	}
@@ -90,5 +91,15 @@ export async function decryptData(key: CryptoKey, encryptedString: string) {
 		encryptedData,
 	);
 
-	return JSON.parse(new TextDecoder().decode(decryptedContent));
+	return new Uint8Array(decryptedContent);
+}
+
+/**
+ * Decrypts data from a base64 string using the derived session key.
+ * @param {CryptoKey} key - The AES-GCM key.
+ * @param {string} encryptedString - The string from the database.
+ * @returns {Promise<object>} The decrypted JavaScript object.
+ */
+export async function decryptData(key: CryptoKey, encryptedString: string) {
+	return JSON.parse(new TextDecoder().decode(await decryptBytes(key, encryptedString)));
 }
