@@ -20,16 +20,24 @@
  * `live-reasoning-ephemeral` guard).
  */
 import { backoffDelayMs } from '@/lib/backoff';
-import { SSE_EVENT_NAME, STREAM_HTTP, STREAM_REFUSAL_STATUSES } from '@/lib/liveReasoning/contract';
+import {
+	MAX_SEALED_FRAME_CHARS,
+	SSE_EVENT_NAME,
+	STREAM_HTTP,
+	STREAM_REFUSAL_STATUSES,
+} from '@/lib/liveReasoning/contract';
 
 /** The shortest wait before any retry, whatever the server says. */
 export const MIN_RETRY_MS = 1_000;
 /** No progress for this long and the stream is given up; the stored answer still lands by sync. */
 export const IDLE_GIVE_UP_MS = 10 * 60 * 1000;
-/** A line longer than this is not a frame (an answer frame is under 100 KiB once sealed). */
-export const MAX_LINE_CHARS = 256 * 1024;
-/** The most `data:` an event may join before it is not a frame either. */
-export const MAX_EVENT_CHARS = MAX_LINE_CHARS;
+/**
+ * A line longer than this is not a frame: `data: ` and the longest sealed frame the contract
+ * allows (an answer frame at its plaintext limit, 525,693 characters).
+ */
+export const MAX_LINE_CHARS = 'data: '.length + MAX_SEALED_FRAME_CHARS;
+/** The most `data:` an event may join (each line counted with its joining newline). */
+export const MAX_EVENT_CHARS = MAX_SEALED_FRAME_CHARS + 1;
 /**
  * Connections in a row that delivered something but moved the cursor nowhere (a frame that
  * cannot be applied, which the server replays each time, or a line too long to be a frame)
