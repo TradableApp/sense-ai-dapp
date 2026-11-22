@@ -198,6 +198,10 @@ async function clearApproval(
 	}
 }
 
+function isSameAddress(one: string | undefined, other: string | undefined): boolean {
+	return !!one && !!other && one.toLowerCase() === other.toLowerCase();
+}
+
 /**
  * Cancels the escrow's limit, then removes the approval for the escrow when one is left.
  * The limit goes first: if the second step is declined, the plan is still gone. The other
@@ -208,6 +212,7 @@ async function cancelLimitAndClearApproval(
 	chain: Chain,
 	contracts: ContractConfig,
 	owner: string | undefined,
+	currentAccount: () => string | undefined,
 ): Promise<void> {
 	const revokeToastId = toast.info(
 		'Please confirm the transaction in your wallet to revoke access.',
@@ -227,9 +232,14 @@ async function cancelLimitAndClearApproval(
 	try {
 		allowance = await readEscrowAllowance(chain, contracts, owner);
 	} catch (error) {
-		throw new ApprovalNotClearedError(error, true);
+		throw new ApprovalNotClearedError(error, 'unchecked');
 	}
 	if (allowance === 0n) return;
+	// thirdweb sends from the account selected now: another one would remove its own approval
+	// and leave this one's in place.
+	if (!isSameAddress(currentAccount(), owner)) {
+		throw new ApprovalNotClearedError(new Error('The account changed'), 'account-changed');
+	}
 
 	await clearApproval(
 		send,
@@ -239,15 +249,20 @@ async function cancelLimitAndClearApproval(
 	);
 }
 
-/** What the user is told when the approval was not removed, with the step offered again. */
+/**
+ * What the user is told when the approval was not removed, with the step offered again,
+ * except after an account change: the step would go from the account selected now.
+ */
 function showApprovalNotCleared(error: ApprovalNotClearedError, retry: () => void): void {
 	const show = error.kind === 'failed' ? toast.error : toast.warning;
+	const isOffered = error.kind !== 'account-changed';
 	show(error.title, {
 		id: APPROVAL_NOT_CLEARED_TOAST_ID,
 		description: error.message,
-		// Kept until closed: the action is the only way to send the step again.
+		// Kept until closed: the action is the only way here to send the step again.
 		duration: Infinity,
-		action: { label: REMOVE_APPROVAL_LABEL, onClick: retry },
+		// Named even when absent: a notice shown under the same id keeps what it is not given.
+		action: isOffered ? { label: REMOVE_APPROVAL_LABEL, onClick: retry } : undefined,
 	});
 }
 
@@ -346,6 +361,7 @@ function useRevokePlanMutation({
 				chain,
 				contracts,
 				activeWallet?.getAccount()?.address,
+				() => activeWallet?.getAccount()?.address,
 			);
 		},
 		onSuccess: async () => {

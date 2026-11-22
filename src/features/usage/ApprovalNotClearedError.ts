@@ -8,14 +8,20 @@ export const REMOVE_APPROVAL_LABEL = 'Remove approval';
 /**
  * - `failed`: removing the approval was declined, failed or reverted, so it is still in place;
  * - `unconfirmed`: it was sent and no receipt came in time, so it may still be confirmed;
- * - `unchecked`: the approval left could not be read, so it may still be in place.
+ * - `unchecked`: the approval left could not be read, so it may still be in place;
+ * - `account-changed`: the wallet's account changed after the limit was cancelled, so the
+ *   removal was not sent (it would have gone from the other account).
  */
-export type ApprovalNotClearedKind = 'failed' | 'unconfirmed' | 'unchecked';
+export type ApprovalNotClearedKind = 'failed' | 'unconfirmed' | 'unchecked' | 'account-changed';
+
+/** The kinds a caller names itself; the others are told from the cause. */
+type NamedKind = Extract<ApprovalNotClearedKind, 'unchecked' | 'account-changed'>;
 
 const TITLES: Record<ApprovalNotClearedKind, string> = {
 	failed: 'Approval Not Removed',
 	unconfirmed: 'Removal Not Confirmed',
 	unchecked: 'Approval Not Checked',
+	'account-changed': 'Account Changed',
 };
 
 const REVOKED = 'The plan is revoked: its spending limit is cancelled.';
@@ -25,6 +31,8 @@ function messageFor(kind: ApprovalNotClearedKind, line: string | undefined): str
 	switch (kind) {
 		case 'unconfirmed':
 			return `${REVOKED} Removing the token approval for the AI agent was sent but is not confirmed yet and may still be confirmed. If your wallet still shows the approval, use ${REMOVE_APPROVAL_LABEL}.`;
+		case 'account-changed':
+			return `${REVOKED} The token approval for the AI agent was not removed, because the account changed in your wallet before the second step. Select that account again: the dashboard then offers to remove it.`;
 		case 'unchecked':
 			return `${REVOKED} The token approval for the AI agent could not be checked, so it may still be in place. Use ${REMOVE_APPROVAL_LABEL} to be sure.${reason}`;
 		default:
@@ -46,12 +54,9 @@ export default class ApprovalNotClearedError extends Error {
 
 	readonly title: string;
 
-	constructor(cause: unknown, isUnchecked = false) {
-		const kind: ApprovalNotClearedKind = isUnchecked
-			? 'unchecked'
-			: isReceiptNotFound(cause)
-			? 'unconfirmed'
-			: 'failed';
+	constructor(cause: unknown, named?: NamedKind) {
+		const kind: ApprovalNotClearedKind =
+			named ?? (isReceiptNotFound(cause) ? 'unconfirmed' : 'failed');
 		super(messageFor(kind, describeFailure(cause).line));
 		this.name = 'ApprovalNotClearedError';
 		this.kind = kind;
