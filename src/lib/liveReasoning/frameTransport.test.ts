@@ -450,6 +450,7 @@ describe('the frame transport', () => {
 
 			// A frame every five minutes for twenty minutes, each on a fresh connection.
 			for (let seq = 1; seq <= 4; seq += 1) {
+				// eslint-disable-next-line no-await-in-loop
 				await vi.advanceTimersByTimeAsync(fiveMinutes);
 				h.fetchImpl.mockResolvedValueOnce(ok([event(seq)], { hold: true }));
 				h.handle.reconnect(false);
@@ -484,6 +485,7 @@ describe('the frame transport', () => {
 
 			for (let minute = 1; minute < 10; minute += 1) {
 				push?.();
+				// eslint-disable-next-line no-await-in-loop
 				await vi.advanceTimersByTimeAsync(60_000);
 			}
 			expect(h.stops).toEqual([]);
