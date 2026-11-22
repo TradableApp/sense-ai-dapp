@@ -3,13 +3,19 @@
  * of key travels in a request header and native `EventSource` cannot send one. It parses the
  * server-sent events, reconnects with `Last-Event-ID`, and acts on the response status alone.
  *
- *   200          read `frame` events until the server ends the response, then reconnect
+ *   200          read `frame` events until the server ends the response, then reconnect: at
+ *                once when the cursor moved; after the server's `retry:` when nothing came;
+ *                with the backoff when something came and the cursor did not move, and after
+ *                `MAX_STALLED_CONNECTIONS` such connections in a row, stop as `finished`
  *   404/429/503  retry after `Retry-After` (never sooner than `MIN_RETRY_MS`)
  *   400/403/410  stop for good (`bad-request`, `proof-refused`, `finished`)
  *   other, or a network failure: retry with the shared jittered backoff from `MIN_RETRY_MS`
  *
- * It gives up when no frame has arrived for `IDLE_GIVE_UP_MS`. The proof is put in the header and
- * nowhere else: not in the URL, a log line or a report. Only `useLiveReasoning` starts it (the
+ * Progress is the cursor moving, never a frame merely arriving: a frame that cannot be applied
+ * is replayed by the server on every connection. A response is judged once every frame it
+ * delivered has been applied or dropped (decryption is asynchronous). It gives up when the
+ * cursor has not moved for `IDLE_GIVE_UP_MS`. The proof is put in the header and nowhere else:
+ * not in the URL, a log line or a report. Only `useLiveReasoning` starts it (the
  * `live-reasoning-ephemeral` guard).
  */
 import { backoffDelayMs } from '@/lib/backoff';
@@ -17,7 +23,7 @@ import { SSE_EVENT_NAME, STREAM_HTTP, STREAM_REFUSAL_STATUSES } from '@/lib/live
 
 /** The shortest wait before any retry, whatever the server says. */
 export const MIN_RETRY_MS = 1_000;
-/** No frame for this long and the stream is given up; the stored answer still lands by sync. */
+/** No progress for this long and the stream is given up; the stored answer still lands by sync. */
 export const IDLE_GIVE_UP_MS = 10 * 60 * 1000;
 /** A line longer than this is not a frame (an answer frame is under 100 KiB once sealed). */
 export const MAX_LINE_CHARS = 256 * 1024;
@@ -50,8 +56,9 @@ export type StreamFetch = (_url: string, _init: StreamRequestInit) => Promise<St
 export interface FrameStreamOptions {
 	url: string;
 	proof: string;
-	onEvent: (_event: StreamEvent) => void;
-	/** The last frame applied in order, read at each connection. */
+	/** Settles once the event has been applied or dropped, when that does not happen at once. */
+	onEvent: (_event: StreamEvent) => void | Promise<unknown>;
+	/** The last frame applied in order, read at each connection and to measure progress. */
 	getCursor: () => string | null;
 	onStop: (_reason: StopReason) => void;
 	fetchImpl?: StreamFetch;
@@ -65,7 +72,7 @@ export interface FrameStreamHandle {
 }
 
 type ConnectionOutcome =
-	| { kind: 'ended'; sawEvents: boolean }
+	| { kind: 'ended'; sawEvents: boolean; malformed: boolean }
 	| { kind: 'retry'; afterMs: number | null }
 	| { kind: 'stop'; reason: Exclude<StopReason, 'idle'> }
 	| { kind: 'aborted' };
@@ -87,6 +94,9 @@ function retryAfterMs(response: StreamResponse): number | null {
 	const value = response.headers.get('Retry-After');
 	return value !== null && /^\d{1,5}$/.test(value.trim()) ? Number(value.trim()) * 1000 : null;
 }
+
+/** The body is not a stream of events this reader takes (a line too long to be a frame). */
+class MalformedStreamError extends Error {}
 
 interface SseParser {
 	push(_text: string): void;
@@ -132,7 +142,7 @@ function createSseParser(
 			const end = buffer.endsWith('\r') ? buffer.length - 1 : buffer.length;
 			const lines = buffer.slice(0, end).split(/\r\n|\r|\n/);
 			buffer = (lines.pop() ?? '') + buffer.slice(end);
-			if (buffer.length > MAX_LINE_CHARS) throw new RangeError('An event line is too long.');
+			if (buffer.length > MAX_LINE_CHARS) throw new MalformedStreamError();
 			lines.forEach(field);
 		},
 	};
@@ -205,20 +215,25 @@ async function readConnection(options: ReadOptions): Promise<ConnectionOutcome> 
 			options.onEvent(event);
 		}, options.onRetry);
 		await readBody(response.body, parser);
-		return { kind: 'ended', sawEvents };
-	} catch {
+		return { kind: 'ended', sawEvents, malformed: false };
+	} catch (error) {
 		if (options.signal.aborted) return { kind: 'aborted' };
-		return sawEvents ? { kind: 'ended', sawEvents } : { kind: 'retry', afterMs: null };
+		const malformed = error instanceof MalformedStreamError;
+		return sawEvents || malformed
+			? { kind: 'ended', sawEvents, malformed }
+			: { kind: 'retry', afterMs: null };
 	}
 }
 
-/** Opens the stream and keeps it open until stopped, refused for good or idle. */
+/** Opens the stream and keeps it open until stopped, refused for good, stalled or idle. */
 export function startFrameStream(options: FrameStreamOptions): FrameStreamHandle {
 	const fetchImpl: StreamFetch = options.fetchImpl ?? ((url, init) => fetch(url, init));
 	const random = options.random ?? Math.random;
 	let stopped = false;
 	let generation = 0;
 	let failures = 0;
+	let stalled = 0;
+	let progressCursor: string | null = null;
 	let freshNext = false;
 	let retryMs: number = STREAM_HTTP.sseRetryMs;
 	let controller: AbortController | null = null;
@@ -250,6 +265,20 @@ export function startFrameStream(options: FrameStreamOptions): FrameStreamHandle
 		idleTimer = setTimeout(() => finish('idle'), IDLE_GIVE_UP_MS);
 	};
 
+	/** Starts the idle wait again when the cursor has moved since it last did. */
+	const noteProgress = () => {
+		if (stopped) return;
+		const cursor = options.getCursor();
+		if (cursor === null || cursor === progressCursor) return;
+		progressCursor = cursor;
+		armIdle();
+	};
+
+	const backoff = () => {
+		failures += 1;
+		return backoffDelayMs(failures - 1, MIN_RETRY_MS, random);
+	};
+
 	// Declared before use by `schedule`; `connect` and `schedule` call each other.
 	let connect: () => Promise<void> = async () => undefined;
 
@@ -261,15 +290,25 @@ export function startFrameStream(options: FrameStreamOptions): FrameStreamHandle
 		}, delayMs);
 	};
 
-	const delayAfter = (outcome: ConnectionOutcome): number | null => {
+	/** The wait before the next connection, null for none, or `give-up`. */
+	const delayAfter = (
+		outcome: ConnectionOutcome,
+		progressed: boolean,
+	): number | null | 'give-up' => {
 		switch (outcome.kind) {
 			case 'ended':
-				if (outcome.sawEvents) failures = 0;
-				return outcome.sawEvents ? 0 : retryMs;
+				if (progressed) {
+					failures = 0;
+					stalled = 0;
+					return 0;
+				}
+				// Nothing came (a quiet poll, a heartbeat-only response): the server sets the pace.
+				if (!outcome.sawEvents && !outcome.malformed) return retryMs;
+				stalled += 1;
+				return stalled >= MAX_STALLED_CONNECTIONS ? 'give-up' : backoff();
 			case 'retry':
 				if (outcome.afterMs !== null) return Math.max(outcome.afterMs, MIN_RETRY_MS);
-				failures += 1;
-				return backoffDelayMs(failures - 1, MIN_RETRY_MS, random);
+				return backoff();
 			default:
 				return null;
 		}
@@ -279,8 +318,10 @@ export function startFrameStream(options: FrameStreamOptions): FrameStreamHandle
 		generation += 1;
 		const mine = generation;
 		controller = new AbortController();
-		const lastEventId = freshNext ? null : options.getCursor();
+		const cursorAtStart = options.getCursor();
+		const lastEventId = freshNext ? null : cursorAtStart;
 		freshNext = false;
+		let applying: Promise<unknown> = Promise.resolve();
 		const outcome = await readConnection({
 			url: options.url,
 			proof: options.proof,
@@ -289,20 +330,26 @@ export function startFrameStream(options: FrameStreamOptions): FrameStreamHandle
 			fetchImpl,
 			onEvent: event => {
 				if (stopped || mine !== generation) return;
-				armIdle();
-				options.onEvent(event);
+				const applied = Promise.resolve()
+					.then(() => options.onEvent(event))
+					.catch(() => undefined)
+					.then(noteProgress);
+				applying = Promise.all([applying, applied]);
 			},
 			onRetry: ms => {
 				retryMs = Math.max(ms, MIN_RETRY_MS);
 			},
 		});
+		await applying;
 		if (stopped || mine !== generation) return;
 		if (outcome.kind === 'stop') {
 			finish(outcome.reason);
 			return;
 		}
-		const delay = delayAfter(outcome);
-		if (delay !== null) schedule(delay);
+		const cursorNow = options.getCursor();
+		const delay = delayAfter(outcome, cursorNow !== null && cursorNow !== cursorAtStart);
+		if (delay === 'give-up') finish('finished');
+		else if (delay !== null) schedule(delay);
 	};
 
 	armIdle();

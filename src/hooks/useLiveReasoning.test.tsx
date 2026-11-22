@@ -61,7 +61,9 @@ let sessionKey: CryptoKey;
 /** Seals a frame with the session key and hands it to the stream as the server would. */
 async function push(stream: StartedStream, value: ReturnType<typeof frame>, key = sessionKey) {
 	const data = await encryptData(key, value);
-	act(() => stream.options.onEvent({ id: `${value.run}.${value.seq}`, data }));
+	act(() => {
+		stream.options.onEvent({ id: `${value.run}.${value.seq}`, data });
+	});
 }
 
 interface Props {
@@ -146,8 +148,12 @@ describe('useLiveReasoning', () => {
 
 		await push(stream, frame(1, STEP), otherKey);
 		const badSchema = await encryptData(sessionKey, { ...frame(1, STEP), type: 'token' });
-		act(() => stream.options.onEvent({ id: `${RUN}.1`, data: badSchema }));
-		act(() => stream.options.onEvent({ id: `${RUN}.1`, data: 'not a sealed frame' }));
+		act(() => {
+			stream.options.onEvent({ id: `${RUN}.1`, data: badSchema });
+		});
+		act(() => {
+			stream.options.onEvent({ id: `${RUN}.1`, data: 'not a sealed frame' });
+		});
 
 		await waitFor(() => expect(result.current.viewFor('42')?.dropped).toBe(3));
 		expect(result.current.viewFor('42')?.steps).toEqual([]);
@@ -328,7 +334,9 @@ describe('useLiveReasoning', () => {
 		const { rerender } = mount([user('41'), placeholder('42')]);
 		await waitFor(() => expect(streams.started).toHaveLength(1));
 		const stream = streamFor('42');
-		act(() => stream.options.onEvent({ id: `${RUN}.0`, data: 'x.y' }));
+		act(() => {
+			stream.options.onEvent({ id: `${RUN}.0`, data: 'x.y' });
+		});
 		act(() => stream.options.onStop('proof-refused'));
 		rerender({ messages: [user('41')], sessionKey, ownerAddress: OWNER });
 

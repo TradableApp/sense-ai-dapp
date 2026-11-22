@@ -126,6 +126,8 @@ export function startLiveAnswerSession(options: LiveAnswerSessionOptions): LiveA
 				onEvent: event => {
 					// A frame that throws while folded is lost; the frames after it still apply.
 					queue = queue.then(() => fold(event)).catch(() => undefined);
+					// Settles once this frame is applied or dropped: the transport measures progress.
+					return queue;
 				},
 				getCursor: () => cursorOf(state),
 				onStop,
