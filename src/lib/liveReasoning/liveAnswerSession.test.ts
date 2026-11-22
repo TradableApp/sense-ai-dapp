@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { decryptData } from '@/lib/crypto';
 import {
+	type FrameStreamOptions,
 	MAX_STALLED_CONNECTIONS,
 	startFrameStream,
 	type StreamFetch,
@@ -151,5 +152,58 @@ describe('a live answer session over the real transport', () => {
 		expect(states.at(-1)?.nextSeq).toBe(6);
 		expect(states.at(-1)?.dropped).toBe(0);
 		session.stop();
+	});
+});
+
+describe('a live answer session', () => {
+	/** A session over a stub stream whose events the test hands in directly. */
+	function stubSession() {
+		let options: FrameStreamOptions | null = null;
+		const states: LiveAnswerState[] = [];
+		const session = startLiveAnswerSession({
+			answerMessageId: '42',
+			sessionKey: {} as CryptoKey,
+			endpoint: ENDPOINT,
+			startStream: given => {
+				options = given;
+				return { stop: vi.fn(), reconnect: vi.fn() };
+			},
+			onState: state => states.push(state),
+			onEnd: () => undefined,
+		});
+		const opened = async () => {
+			await vi.advanceTimersByTimeAsync(0);
+			if (!options) throw new Error('The stream was not started.');
+			return options;
+		};
+		return { session, states, opened };
+	}
+
+	it('publishes nothing for a frame whose decryption finishes after it was stopped', async () => {
+		let finishDecrypt: (_value: unknown) => void = () => undefined;
+		vi.mocked(decryptData).mockReturnValue(
+			new Promise(resolve => {
+				finishDecrypt = resolve;
+			}),
+		);
+		const h = stubSession();
+		const stream = await h.opened();
+
+		const applied = stream.onEvent({ id: `${RUN}.0`, data: sealed(0) });
+		h.session.stop();
+		finishDecrypt(frame(0, RESET));
+		await applied;
+
+		expect(h.states).toEqual([]);
+	});
+
+	it('drops data that is not a sealed frame without trying to decrypt it', async () => {
+		const h = stubSession();
+		const stream = await h.opened();
+
+		await stream.onEvent({ id: `${RUN}.0`, data: 'not a sealed frame' });
+
+		expect(decryptData).not.toHaveBeenCalled();
+		expect(h.states.at(-1)?.dropped).toBe(1);
 	});
 });

@@ -441,4 +441,103 @@ describe('the frame transport', () => {
 			h.handle.stop();
 		});
 	});
+
+	describe('timers and limits', () => {
+		it('starts the idle wait again on each applied frame, so a flowing stream is never idle', async () => {
+			const h = start([ok([event(0)], { hold: true })]);
+			await vi.advanceTimersByTimeAsync(0);
+			const fiveMinutes = 5 * 60 * 1000;
+
+			// A frame every five minutes for twenty minutes, each on a fresh connection.
+			for (let seq = 1; seq <= 4; seq += 1) {
+				await vi.advanceTimersByTimeAsync(fiveMinutes);
+				h.fetchImpl.mockResolvedValueOnce(ok([event(seq)], { hold: true }));
+				h.handle.reconnect(false);
+			}
+			await vi.advanceTimersByTimeAsync(fiveMinutes);
+
+			expect(h.stops).toEqual([]);
+			await vi.advanceTimersByTimeAsync(IDLE_GIVE_UP_MS);
+			expect(h.stops).toEqual(['idle']);
+		});
+
+		it('gives up when frames keep arriving but none is applied for 10 minutes', async () => {
+			// One held-open connection that receives an unappliable frame every minute.
+			const chunks = Array.from({ length: 12 }, () => event(1));
+			let push: (() => void) | null = null;
+			const encoder = new TextEncoder();
+			const trickle: StreamResponse = {
+				status: 200,
+				headers: new Headers(),
+				body: {
+					getReader: () => ({
+						read: () =>
+							new Promise(resolve => {
+								push = () => resolve({ done: false, value: encoder.encode(chunks.shift() ?? '') });
+							}),
+						cancel: async () => undefined,
+					}),
+				} as unknown as ReadableStream<Uint8Array>,
+			};
+			const h = start([trickle], { applies: false });
+			await vi.advanceTimersByTimeAsync(0);
+
+			for (let minute = 1; minute < 10; minute += 1) {
+				push?.();
+				await vi.advanceTimersByTimeAsync(60_000);
+			}
+			expect(h.stops).toEqual([]);
+			push?.();
+			await vi.advanceTimersByTimeAsync(60_000);
+
+			expect(h.events.length).toBeGreaterThanOrEqual(10);
+			expect(h.stops).toEqual(['idle']);
+		});
+
+		it('backs off from 1 s again after progress, not from where the failures left off', async () => {
+			const fail = () => new TypeError('Failed to fetch');
+			const h = start([fail(), fail(), ok([event(0)]), fail(), ok([], { hold: true })]);
+			await vi.advanceTimersByTimeAsync(0);
+			// Failures at 0 and 1 s; the response with a frame at 3 s; the next request at once.
+			await vi.advanceTimersByTimeAsync(3_000 + 1);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(4);
+
+			// That request failed: the next comes 1 s later, not 4 s.
+			await vi.advanceTimersByTimeAsync(MIN_RETRY_MS);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(5);
+			h.handle.stop();
+		});
+
+		it('never waits less than the 1 s floor, whatever the retry line says', async () => {
+			const h = start([ok(['retry: 0\n\n: ping\n\n']), ok([], { hold: true })]);
+			await vi.advanceTimersByTimeAsync(0);
+
+			await vi.advanceTimersByTimeAsync(MIN_RETRY_MS - 1);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(1);
+			await vi.advanceTimersByTimeAsync(1);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(2);
+			h.handle.stop();
+		});
+
+		it('uses the backoff when Retry-After is not a short whole number of seconds', async () => {
+			const h = start([refusal(503, '999999'), ok([], { hold: true })]);
+			await vi.advanceTimersByTimeAsync(0);
+
+			await vi.advanceTimersByTimeAsync(MIN_RETRY_MS);
+
+			expect(h.fetchImpl).toHaveBeenCalledTimes(2);
+			h.handle.stop();
+		});
+
+		it('takes a CRLF split across two chunks as one line end', async () => {
+			const h = start([
+				ok([`id: ${RUN}.0\r`, `\nevent: frame\r\ndata: iv.ct\r\n\r\n`], { hold: true }),
+			]);
+
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(h.events).toEqual([{ id: `${RUN}.0`, data: 'iv.ct' }]);
+			h.handle.stop();
+		});
+	});
 });
