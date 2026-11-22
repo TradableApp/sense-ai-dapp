@@ -25,6 +25,8 @@ import usePlanMutations from './usePlanMutations';
 const sendAndConfirm = vi.hoisted(() => vi.fn());
 // What the chain answers: the approval for the escrow, and the escrow's spending limit
 // (allowance, spent, expiresAt). An Error is thrown as the read's failure.
+// The wallet's selected account; a test switches it mid-revoke.
+const account = vi.hoisted(() => ({ address: '' as string | undefined }));
 const onChain = vi.hoisted(() => ({ allowance: 0n as unknown, limit: [0n, 0n, 0n] as unknown }));
 // The fee token profile the build selected; each profile is tried in turn below.
 const profile = vi.hoisted(() => ({ current: undefined as unknown }));
@@ -45,8 +47,7 @@ vi.mock('thirdweb', () => ({
 	readContract: vi.fn(),
 }));
 vi.mock('thirdweb/react', () => {
-	const account = { address: '0x00000000000000000000000000000000000000aa' };
-	const wallet = { getChain: () => ({ id: 31337 }), getAccount: () => account };
+	const wallet = { getChain: () => ({ id: 31337 }), getAccount: () => ({ ...account }) };
 	return {
 		useActiveWallet: () => wallet,
 		useSendAndConfirmTransaction: () => ({ mutateAsync: sendAndConfirm }),
@@ -149,6 +150,7 @@ beforeEach(() => {
 	vi.spyOn(console, 'error').mockImplementation(() => undefined);
 	profile.current = undefined;
 	sendAndConfirm.mockResolvedValue({ status: 'success' });
+	account.address = OWNER;
 	onChain.allowance = 10n;
 	onChain.limit = [0n, 0n, 0n];
 	vi.mocked(readContract).mockImplementation((async ({ method }: { method: unknown }) => {
@@ -423,6 +425,56 @@ describe('a revoke whose cancel has no receipt within the wait', () => {
 		await waitFor(() => expect(invalidate).toHaveBeenCalledWith(PLAN_REFRESH));
 		expect(invalidate).toHaveBeenCalledWith(BALANCE_REFRESH);
 		expect(onDone).not.toHaveBeenCalled();
+	});
+});
+
+describe('a revoke whose account changes before the second step', () => {
+	const OTHER = '0x00000000000000000000000000000000000000bb';
+
+	it('sends nothing more and says the approval was not removed because the account changed', async () => {
+		sendAndConfirm.mockImplementationOnce(async () => {
+			account.address = OTHER;
+			return { status: 'success' };
+		});
+
+		const { onDone, invalidate } = await revoke();
+
+		expect(sendAndConfirm).toHaveBeenCalledTimes(1);
+		expect(methods()).toEqual([cancelCall]);
+		const { title, options } = onlyNotice('warning');
+		expect(title).toBe('Account Changed');
+		expect(options.description).toMatch(/plan is revoked/);
+		expect(options.description).toMatch(/not removed/);
+		expect(options.description).toMatch(/account changed/);
+		// Its action would remove the approval of the account now selected, not this one.
+		expect(options.action).toBeUndefined();
+		expect(toast.success).not.toHaveBeenCalled();
+		expect(onDone).toHaveBeenCalledTimes(1);
+		await waitFor(() => expect(invalidate).toHaveBeenCalledWith(PLAN_REFRESH));
+	});
+
+	it('counts the same address in other letter case as the same account', async () => {
+		sendAndConfirm.mockImplementationOnce(async () => {
+			account.address = OWNER.toUpperCase().replace('0X', '0x');
+			return { status: 'success' };
+		});
+
+		await revoke();
+
+		expect(methods()).toEqual([cancelCall, clearCall]);
+		expect(toast.success).toHaveBeenCalledTimes(1);
+	});
+
+	it('when no account is selected any more, sends nothing more either', async () => {
+		sendAndConfirm.mockImplementationOnce(async () => {
+			account.address = undefined;
+			return { status: 'success' };
+		});
+
+		await revoke();
+
+		expect(methods()).toEqual([cancelCall]);
+		expect(onlyNotice('warning').title).toBe('Account Changed');
 	});
 });
 
