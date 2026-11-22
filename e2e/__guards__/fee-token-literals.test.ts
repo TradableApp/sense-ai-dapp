@@ -329,9 +329,14 @@ const isE2eSource = (file: string) =>
 	!/\.test\.(ts|tsx|js|mjs)$/.test(file) &&
 	!file.startsWith(`__guards__${path.sep}`);
 
-/** The `file:line` of every line of e2e code in `source` that names a token. */
+/**
+ * The `file:line` of every line of e2e code in `source` that names a token. The check reads one
+ * line at a time, so a `RegExp(` call that a formatter wrapped is first moved down onto the line
+ * that holds its first argument (the line count, and so every reported line, stays the same).
+ */
 function e2eOffenders(file: string, source: string): string[] {
-	return offendersIn(file, source, E2E_TOKEN_NAME);
+	const joined = source.replace(/RegExp\([ \t]*\n([ \t]*)/g, '\n$1RegExp(');
+	return offendersIn(file, joined, E2E_TOKEN_NAME);
 }
 
 /** Every e2e source file scanned, by its path from the repository root. The Playwright config
