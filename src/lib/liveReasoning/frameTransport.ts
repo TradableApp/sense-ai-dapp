@@ -398,6 +398,10 @@ export function startFrameStream(options: FrameStreamOptions): FrameStreamHandle
 		wake() {
 			if (stopped || !pausedWhileHidden || isHidden()) return;
 			pausedWhileHidden = false;
+			// A reconnect asked for while hidden may have opened a request: one open request at a time.
+			if (reconnectTimer) clearTimeout(reconnectTimer);
+			reconnectTimer = null;
+			controller?.abort();
 			armIdle();
 			connect();
 		},
