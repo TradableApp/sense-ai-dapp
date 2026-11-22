@@ -86,7 +86,13 @@ async function main() {
 		throw new Error(`VITE_TOKEN_CONTRACT_ADDRESS is not a valid address: ${tokenAddress}`);
 
 	const key = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
-	const account = privateKeyToAccount(key);
+	let account;
+	try {
+		account = privateKeyToAccount(key);
+	} catch {
+		// The library's message can quote part of the value; this one never does.
+		throw new Error('FUND_PRIVATE_KEY is not a valid private key.');
+	}
 
 	const transport = http(rpcUrl);
 	const publicClient = createPublicClient({ transport });
@@ -100,7 +106,7 @@ async function main() {
 	const symbol = await publicClient.readContract({ ...readArgs, functionName: 'symbol' });
 
 	console.log(`\n--- Fund ${symbol} ---`);
-	console.log(`  Network:   chainId ${chainId} (${rpcUrl})`);
+	console.log(`  Network:   chainId ${chainId}`);
 	console.log(`  Token:     ${tokenAddress}`);
 	console.log(`  Sender:    ${account.address}`);
 	console.log(`  Recipient: ${recipient}`);
@@ -156,7 +162,16 @@ async function main() {
 	console.log(`  Recipient balance after: ${formatUnits(recipientAfter, decimals)} ${symbol}`);
 }
 
+// A provider URL can carry an API key, and viem puts the request URL in its error messages: print
+// the short message with any URL and any key-length hex run replaced.
+function scrubbed(error) {
+	const text = String(error?.shortMessage ?? error?.message ?? error);
+	return text
+		.replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, '<url>')
+		.replace(/(?:0x)?[0-9a-f]{64,}/gi, '<hex>');
+}
+
 main().catch(e => {
-	console.error(`\n❌ ${e.message}`);
+	console.error(`\n❌ ${scrubbed(e)}`);
 	process.exit(1);
 });
