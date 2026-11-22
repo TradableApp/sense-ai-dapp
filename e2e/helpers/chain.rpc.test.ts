@@ -5,7 +5,7 @@
 // of holding `waitForReceipt` (and the fund/sweep stages built on it) for the OS TCP timeout.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { rpc } from './chain';
+import { isRpcResponseError, rpc } from './chain';
 
 describe('rpc', () => {
 	afterEach(() => {
@@ -62,5 +62,32 @@ describe('rpc', () => {
 			rpc('eth_getBalance', ['0x0', 'latest'], { sleep: async () => {} }),
 		).rejects.toThrow(/429/);
 		expect(fetchMock).toHaveBeenCalledTimes(3);
+	});
+
+	it('keeps the code and data the node put beside a JSON-RPC error, and is not retried', async () => {
+		const data = { message: 'reverted', data: '0x1234abcd' };
+		const fetchMock = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						jsonrpc: '2.0',
+						id: 1,
+						error: { code: 3, message: 'execution reverted', data },
+					}),
+				),
+		);
+		vi.stubGlobal('fetch', fetchMock);
+
+		const err = await rpc('eth_call', [{}, 'latest'], { sleep: async () => {} }).catch(
+			(e: unknown) => e,
+		);
+
+		expect(isRpcResponseError(err)).toBe(true);
+		expect(err).toMatchObject({
+			code: 3,
+			data,
+			message: expect.stringContaining('execution reverted'),
+		});
+		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 });
