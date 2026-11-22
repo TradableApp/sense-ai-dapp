@@ -319,7 +319,7 @@ const E2E_TOKEN_NAME = new RegExp(
 		'\\/(?:[^\\/\\\\\\n]|\\\\.)*(?<![A-Za-z])(?:able|sense)(?![A-Za-z])(?:[^\\/\\\\\\n]|\\\\.)*\\/[a-hj-z]*i',
 		// the same word inside a string handed to RegExp, in any quote style, on the line that
 		// calls it; a word boundary written as `\\b` (or any `\\` escape) before it counts as
-		// a boundary. A string on a later line of the call is not seen (one line at a time).
+		// a boundary. A wrapped call is first joined to its first argument (`e2eOffenders`).
 		'RegExp\\(.*[\'"`][^\'"`]*(?:(?<![A-Za-z])|(?<=\\\\[A-Za-z]))(?:able|sense)(?![A-Za-z])',
 	].join('|'),
 );
