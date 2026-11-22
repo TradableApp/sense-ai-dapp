@@ -60,10 +60,7 @@ export class PlanModal {
 		// Tokens…" while in flight); it only renders when the entered limit exceeds
 		// the wallet balance. The symbol is the build's fee token.
 		return this.modal.getByRole('button', {
-			name: new RegExp(
-				`get \\d+ (localnet|testnet) ${feeToken().symbol}|sending tokens`,
-				'i',
-			),
+			name: new RegExp(`get \\d+ (localnet|testnet) ${feeToken().symbol}|sending tokens`, 'i'),
 		});
 	}
 
