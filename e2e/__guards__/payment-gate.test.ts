@@ -200,6 +200,17 @@ describe('where the payment gate is asked', () => {
 			GATE_WORDS.forEach(word => expect(body, helper).not.toContain(word.toLowerCase()));
 		});
 		GATE_WORDS.forEach(word => expect(reads.toLowerCase()).not.toContain(word.toLowerCase()));
+		// The dashboard's notice of an approval left with no plan removes it through that same
+		// mutation, is mounted where no plan is shown, and neither it nor its read asks the gate.
+		const notice = code('src/features/usage/LeftoverApprovalNotice.tsx');
+		expect(notice).toMatch(/\buseClearApprovalMutation\(\)/);
+		expect(notice).not.toContain('prepareContractCall(');
+		expect(code('src/features/onboarding/OnboardingFlow.tsx')).toContain(
+			'<LeftoverApprovalNotice />',
+		);
+		[notice, code('src/features/usage/useLeftoverApproval.ts')].forEach(source =>
+			GATE_WORDS.forEach(word => expect(source.toLowerCase()).not.toContain(word.toLowerCase())),
+		);
 		// Prompts can close while the approval is confirmed: the gate's current state is asked
 		// again, and the limit is not built if it refuses now.
 		const recheck = statementAt(
