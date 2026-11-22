@@ -76,7 +76,8 @@ export default function useLiveReasoning({
 	const sessionsRef = useRef(new Map<string, LiveAnswerSession>());
 	const endedRef = useRef(new Set<string>());
 	const provisionalRef = useRef(new Set<string>());
-	const pendingKey = pendingAnswerIds(messages).join(',');
+	// Read at each render: an answer that ages past the bound stops being followed at the next.
+	const pendingKey = pendingAnswerIds(messages, Date.now()).join(',');
 
 	// A new wallet or session (or unmount) stops every stream and clears what was shown.
 	useEffect(() => {

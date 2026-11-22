@@ -20,23 +20,29 @@ export interface MessageLike {
 	content?: string | null;
 	status?: string;
 	answerMessageId?: string;
+	createdAt?: number;
 }
 
 const isClosed = (m: MessageLike) => m.status === 'cancelled' || m.status === 'refunded';
 const hasContent = (m: MessageLike) => m.content != null && m.content !== '';
+/** Whether the stream of this message's answer can still exist; an unknown time cannot tell. */
+const isRecent = (m: MessageLike, now: number) =>
+	typeof m.createdAt === 'number' &&
+	Number.isFinite(m.createdAt) &&
+	now - m.createdAt <= FOLLOW_MAX_AGE_MS;
 
 /**
  * The answers of a conversation that are still awaited, by answer id: each content-less answer
  * placeholder (this device sent the prompt), and each pending prompt known only from the sync
  * (another device sent it) whose answer is not in the list yet. Cancelled and refunded ones
- * are not awaited.
+ * are not awaited, and neither is one sent more than `FOLLOW_MAX_AGE_MS` before `now`.
  */
-export function pendingAnswerIds(messages: readonly MessageLike[]): string[] {
+export function pendingAnswerIds(messages: readonly MessageLike[], now: number): string[] {
 	const assistantIds = new Set(
 		messages.filter(m => m.role === 'assistant' && m.id != null).map(m => String(m.id)),
 	);
 	const placeholders = messages
-		.filter(m => m.role === 'assistant' && !hasContent(m) && !isClosed(m))
+		.filter(m => m.role === 'assistant' && !hasContent(m) && !isClosed(m) && isRecent(m, now))
 		.map(m => String(m.id ?? ''));
 	const synced = messages
 		.filter(
@@ -44,7 +50,8 @@ export function pendingAnswerIds(messages: readonly MessageLike[]): string[] {
 				m.role === 'user' &&
 				m.status === 'pending' &&
 				m.answerMessageId !== undefined &&
-				!assistantIds.has(String(m.answerMessageId)),
+				!assistantIds.has(String(m.answerMessageId)) &&
+				isRecent(m, now),
 		)
 		.map(m => String(m.answerMessageId));
 	return [...new Set([...placeholders, ...synced])].filter(isAnswerMessageId).sort();
