@@ -22,6 +22,10 @@ import LimitNotSetError, { isReceiptNotFound } from './LimitNotSetError';
 const APPROVAL_UNCONFIRMED =
 	'The approval was sent but is not confirmed yet and may still be mined. No limit was sent. Check your wallet, then set the plan again once the approval shows there.';
 
+/** A cancel whose receipt did not come within thirdweb's wait. */
+const REVOKE_UNCONFIRMED =
+	'The revoke was sent but is not confirmed yet and may still be mined. Check your wallet. The plan here updates once it is; if a token approval is left then, the dashboard offers to remove it.';
+
 /**
  * Setting and revoking a spending plan: the only transactions the plan dialog sends.
  *
@@ -341,6 +345,13 @@ function useRevokePlanMutation({
 				showApprovalNotCleared(error, retryClear);
 				await refreshPlanQueries(queryClient, activeWallet);
 				onDone();
+				return;
+			}
+			// No receipt came for the cancel: it may still be mined, so nothing is called revoked
+			// or failed, and what the dashboard shows is read again.
+			if (isReceiptNotFound(error)) {
+				toast.warning('Revoke Not Confirmed', { description: REVOKE_UNCONFIRMED });
+				await refreshPlanQueries(queryClient, activeWallet);
 				return;
 			}
 			toast.error('Revoke Failed', {
