@@ -138,8 +138,11 @@ never enters a page, a trace or a screenshot.
 **Env contract** (exported by the runner): `E2E_TESTNET=1`, `E2E_BASE_URL`, `E2E_TESTNET_SEED`,
 `E2E_TESTNET_ACCOUNT_COUNT`, `E2E_TESTNET_ACCOUNTS_FILE`, `E2E_TESTNET_RPC_URL`,
 `E2E_TESTNET_TREASURY_PRIVATE_KEY`, `E2E_TESTNET_TREASURY_ADDRESS`, `E2E_TESTNET_TOKEN_ADDRESS`,
-`E2E_TESTNET_CHAIN_ID`; escrow/agent addresses and the Graph URL come from `.env.testnet`
-(loaded by `playwright.config.ts` and the scripts, never overriding the runner's exports). A
+`E2E_TESTNET_CHAIN_ID`; escrow/agent addresses, the Graph URL and `VITE_FEE_TOKEN` come from
+`.env.testnet` (loaded by `playwright.config.ts` and the scripts, never overriding the runner's
+exports). `VITE_FEE_TOKEN` must name the token the hosted build was made for: `transfer-rule`
+reads it when the file is loaded, so a missing or misspelt value stops the whole project from
+loading, and a value naming the other token fails the file on the on-chain symbol check. A
 missing or malformed variable fails once, by name, before any request.
 
 ### Included in the `testnet` project (161 tests, 18 files)

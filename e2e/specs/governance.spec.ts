@@ -62,9 +62,12 @@ const NEW_ORACLE = '0x000000000000000000000000000000000000face';
 const OWNER = DEPLOYER_ADDRESS.toLowerCase();
 
 /**
- * A token that moves only to or from listed addresses refuses a payout to an unlisted treasury,
- * so on such a token NEW_TREASURY is listed before the escrow points at it and unlisted after the
- * treasury is restored (only if this spec listed it). Owner-global state, put back forward-only.
+ * On a token that moves only to or from listed addresses, NEW_TREASURY is listed before the
+ * escrow points at it and unlisted after the treasury is restored (only if this spec listed it).
+ * Escrow to treasury would go through anyway (the escrow is listed); the listing keeps the
+ * cancellation fee, which goes from the user straight to the treasury, payable, and keeps the
+ * dApp's fee token check from reporting `treasury-not-exempt`. Owner-global state, put back
+ * forward-only.
  */
 async function listNewTreasury(): Promise<boolean> {
 	if (feeToken().transferable) return false;
