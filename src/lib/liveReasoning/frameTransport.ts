@@ -158,6 +158,18 @@ async function readBody(stream: ReadableStream<Uint8Array>, parser: SseParser) {
 	}
 }
 
+/**
+ * A refusal is acted on by its status alone, but its body still has to be let go: left unread,
+ * the request stays open and holds its connection.
+ */
+function discardBody(response: StreamResponse): void {
+	try {
+		response.body?.cancel().catch(() => undefined);
+	} catch {
+		// A body that cannot be cancelled is dropped with the response.
+	}
+}
+
 /** One connection, from request to the end of the response. Never throws. */
 async function readConnection(options: ReadOptions): Promise<ConnectionOutcome> {
 	const headers: Record<string, string> = {
@@ -176,6 +188,7 @@ async function readConnection(options: ReadOptions): Promise<ConnectionOutcome> 
 			mode: 'cors',
 			referrerPolicy: 'no-referrer',
 		});
+		if (response.status !== 200) discardBody(response);
 		if (STOPS[response.status]) return { kind: 'stop', reason: STOPS[response.status] };
 		if (RETRY_AFTER_STATUSES.has(response.status)) {
 			return { kind: 'retry', afterMs: retryAfterMs(response) };
