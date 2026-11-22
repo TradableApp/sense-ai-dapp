@@ -329,6 +329,11 @@ const isE2eSource = (file: string) =>
 	!/\.test\.(ts|tsx|js|mjs)$/.test(file) &&
 	!file.startsWith(`__guards__${path.sep}`);
 
+/** The `file:line` of every line of e2e code in `source` that names a token. */
+function e2eOffenders(file: string, source: string): string[] {
+	return offendersIn(file, source, E2E_TOKEN_NAME);
+}
+
 /** Every e2e source file scanned, by its path from the repository root. The Playwright config
  *  is e2e code too: it holds the projects, their gates and the testnet spec list. */
 function scannedE2eFiles(): string[] {
@@ -341,7 +346,7 @@ function scannedE2eFiles(): string[] {
 describe('the e2e suite reads the fee token from its profile', () => {
 	it('names no token in a helper, a page object, a fixture or a spec', () => {
 		const offenders = scannedE2eFiles().flatMap(file =>
-			offendersIn(file, readFileSync(path.join(ROOT, file), 'utf8'), E2E_TOKEN_NAME),
+			e2eOffenders(file, readFileSync(path.join(ROOT, file), 'utf8')),
 		);
 
 		expect(offenders).toEqual([]);
@@ -401,5 +406,24 @@ describe('the e2e suite reads the fee token from its profile', () => {
 			expect(offendersIn('sample.ts', line, E2E_TOKEN_NAME), line).toEqual(['sample.ts:1']),
 		);
 		left.forEach(line => expect(offendersIn('sample.ts', line, E2E_TOKEN_NAME), line).toEqual([]));
+	});
+
+	it('reads a RegExp string that a formatter put on the line after the call', () => {
+		const wrapped = [
+			'\tget insufficientBalanceToast() {',
+			'\t\treturn this.page.getByText(',
+			'\t\t\tnew RegExp(',
+			"\t\t\t\t'insufficient able balance',",
+			"\t\t\t\t'i',",
+			'\t\t\t),',
+			'\t\t);',
+		].join('\n');
+		const fromProfile = wrapped.replace(
+			"'insufficient able balance'",
+			`\`insufficient \${symbol} balance\``,
+		);
+
+		expect(e2eOffenders('sample.ts', wrapped)).toEqual(['sample.ts:4']);
+		expect(e2eOffenders('sample.ts', fromProfile)).toEqual([]);
 	});
 });
