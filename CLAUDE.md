@@ -14,7 +14,7 @@ Frontend dApp for SenseAI — the AI Agent providing sentiment and fundamental o
 | `bun run dev:testnet`                  | Dev server against Base Sepolia testnet                                                  |
 | `bun run build`                        | Disabled (exits 1) — name the mode: `build:localnet` / `build:testnet` / `build:mainnet` |
 | `bun run build:testnet`                | Build against testnet                                                                    |
-| `bun run deploy:testnet`               | `build:testnet` + `firebase deploy --project local` (tradable-app-garrick)               |
+| `bun run deploy:testnet`               | `build:testnet` + `firebase deploy --project local` (the sandbox project in `.firebaserc`) |
 | `bun run deploy:mainnet`               | Guarded: needs `DEPLOY_MAINNET_CONFIRMED=1`; `build:mainnet` + deploy `--project prod`   |
 | `bun run lint` / `bun run lint:fix`    | ESLint                                                                                   |
 | `bun run format`                       | Prettier                                                                                 |
@@ -177,7 +177,7 @@ This dApp is the user-facing layer of the SenseAI stack. It depends on four sibl
 | `tokenized-ai-agent` | Provides `EVMAIAgent` and `EVMAIAgentEscrow` contracts that handle all writes                     |
 | `sense-ai-subgraph`  | Provides the GraphQL API for all read queries (conversations, messages, prompt status, activity)  |
 | `able-contracts`     | Provides `AbleToken` — the other fee token the code supports (`VITE_FEE_TOKEN=ABLE`)              |
-| `sense-contracts`    | Provides `SenseToken` — the launch fee token; moves only to or from addresses its owner lists     |
+| `sense-contracts`    | Provides `SenseToken` — the fee token (`VITE_FEE_TOKEN=SENSE`); moves only to or from addresses its owner lists |
 
 ### ABI Sync Process
 

@@ -74,8 +74,8 @@ This guide explains how to set up the complete local environment. This is requir
 
 ```text
 .
-├── sense-contracts/        # SenseToken, the launch fee token
-├── able-contracts/         # AbleToken, the other fee token the code supports
+├── sense-contracts/        # SenseToken, the fee token when VITE_FEE_TOKEN=SENSE
+├── able-contracts/         # AbleToken, the fee token when VITE_FEE_TOKEN=ABLE
 ├── tokenized-ai-agent/     # The Agent & Escrow logic
 └── sense-ai-dapp/          # This repository
 ```
@@ -113,13 +113,13 @@ For security, **never** import publicly-known private keys (like the ones from H
 **Deploy Agent:**
 
 1.  Navigate to `tokenized-ai-agent`.
-2.  Open `.env.base-localnet` (or create it). Set `TOKEN_CONTRACT_ADDRESS` to the address you just copied.
+2.  Open `.env.base-localnet` (or create it). Set `TOKEN_CONTRACT_ADDRESS` to the address you just copied and `DEPLOY_MODE=fresh`, with `AI_AGENT_CONTRACT_ADDRESS` and `AI_AGENT_ESCROW_CONTRACT_ADDRESS` empty (the deploy refuses any other mode, and `fresh` refuses either pair address). On a local network the fees default when unset; a fresh pair on a live network needs them set and has a dry run first, in the order of the agent repository's deploy runbook ("Fresh pair, in order").
 3.  Run: `bun run deploy:base-localnet`
-4.  **Copy** the `EVMAIAgent` and `EVMAIAgentEscrow` addresses from the output.
+4.  **Copy** the `EVMAIAgent` and `EVMAIAgentEscrow` addresses from the output, set them in `.env.base-localnet` and set `DEPLOY_MODE=upgrade`, so a second run upgrades this pair rather than deploying another.
 
 **List the escrow on the token:**
 
-`SenseToken` moves only to or from its owner or an address the owner has listed. From the owner's account, call `setTransferExempt(<EVMAIAgentEscrow address>, true)` on the token, and the same for the escrow's treasury (`TREASURY_ADDRESS`, or the deployer when it is unset) unless the treasury is the owner. Until they are listed, the dApp's fee token check shows a notice and switches off the paid actions it names.
+`SenseToken` moves only to or from its owner or an address the owner has listed. From `tokenized-ai-agent`, run `bun run list-fee-token-exempt:base-localnet`: it lists the escrow and the escrow's treasury (`TREASURY_ADDRESS`, or the deployer when it is unset) when the signer is the token's owner, and otherwise prints the calls for the owner to send. A treasury that is the token's owner counts as listed (the owner is exempt by being the owner), so it is not sent. Until both are listed, the dApp's fee token check shows a notice and switches off the paid actions it names.
 
 ### 5. Configure the dApp
 
@@ -159,10 +159,12 @@ For security, **never** import publicly-known private keys (like the ones from H
 
 Each build mode has exactly one Firebase project, and the deploy scripts pin it with `--project` so the `firebase use` state on your machine never decides where a bundle lands:
 
-| Script                   | Builds          | `--project` alias | Firebase project       | Hosting site           | URL                          |
-| ------------------------ | --------------- | ----------------- | ---------------------- | ---------------------- | ---------------------------- |
-| `bun run deploy:testnet` | `build:testnet` | `local`           | `tradable-app-garrick` | `sense-ai-app-garrick` | sense-ai-app-garrick.web.app |
-| `bun run deploy:mainnet` | `build:mainnet` | `prod`            | `tradable-app`         | `sense-ai-app`         | senseai.tradable.app         |
+| Script                   | Builds          | `--project` alias | Firebase project               | URL                                  |
+| ------------------------ | --------------- | ----------------- | ------------------------------ | ------------------------------------ |
+| `bun run deploy:testnet` | `build:testnet` | `local`           | the testnet (sandbox) project  | the sandbox project's hosting site   |
+| `bun run deploy:mainnet` | `build:mainnet` | `prod`            | the production project         | senseai.tradable.app                 |
+
+`.firebaserc` maps each alias to its project id and that project's `sense-ai` hosting target to its site.
 
 `deploy:mainnet` runs `scripts/deploy-guard.ts` first and refuses unless `DEPLOY_MAINNET_CONFIRMED=1` is exported (exactly `1`; `true`/`yes` do not count):
 

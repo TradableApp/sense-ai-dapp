@@ -2,9 +2,9 @@
  * Treasury operations for testnet mode — the network half of fund / key / sweep.
  *
  * One funded treasury (key from the runner's env, via Secret Manager) hands each ephemeral
- * account a small ETH float and a few ABLE just in time, and takes everything back when the
- * account is released. Amounts are deliberately small: a prompt costs 1 ABLE, a transaction a
- * few hundred thousand gas at ~0.005 gwei, so 0.0005 ETH + 5 ABLE covers any single spec with
+ * account a small ETH float and a few fee tokens just in time, and takes everything back when the
+ * account is released. Amounts are deliberately small: a prompt costs about 1 fee token, a
+ * transaction a few hundred thousand gas at ~0.005 gwei, so 0.0005 ETH + 5 fee tokens covers any single spec with
  * room to spare, and the per-test sweep keeps the float outstanding to one account's worth.
  */
 import { mkdirSync, readFileSync, renameSync, rmdirSync, writeFileSync } from 'node:fs';
@@ -26,7 +26,7 @@ import { registerKey } from './keyring';
 import { getChainConfig, rpc, sendFrom, type TestnetConfig } from '../helpers/chain';
 
 export const ETH_PER_ACCOUNT_WEI = 5n * 10n ** 14n; // 0.0005 ETH
-export const TOKEN_PER_ACCOUNT_WEI = 5n * 10n ** 18n; // 5 ABLE
+export const TOKEN_PER_ACCOUNT_WEI = 5n * 10n ** 18n; // 5 fee tokens
 /** ETH the treasury keeps back for its own transfers (funding now, nothing for the sweep —
  *  each account pays its own sweep gas). */
 export const TREASURY_GAS_RESERVE_WEI = 10n ** 15n; // 0.001 ETH
@@ -128,7 +128,7 @@ function tokenTransferData(to: string, amount: bigint): `0x${string}` {
 	});
 }
 
-/** ETH + ABLE from the treasury to one account. Two transactions, each waited for. */
+/** ETH + fee token from the treasury to one account. Two transactions, each waited for. */
 export async function fundAccount(
 	address: string,
 	amounts: { ethWei?: bigint; tokenWei?: bigint } = {},
@@ -147,7 +147,7 @@ export async function fundAccount(
 }
 
 /**
- * Return an account's ABLE and ETH to the treasury. The account pays its own gas, with fee
+ * Return an account's fee token and ETH to the treasury. The account pays its own gas, with fee
  * caps fixed up front so the plan's residue bound holds. Throws (does not skip) when the token
  * cannot be moved, because a stranded token balance is the failure the sweep exists to prevent.
  */
