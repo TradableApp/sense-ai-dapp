@@ -80,6 +80,27 @@ describe('useRecentActivity', () => {
 		expect(rows.map(r => r.formattedAmount)).toEqual(['-0.1', '1.0']);
 	});
 
+	it('shows a cancel before its returned amount whatever order the subgraph gave them in', async () => {
+		const rows = await rowsFor([
+			{
+				id: `${CANCEL_TX}-3-return`,
+				type: 'CANCEL_RETURN',
+				amount: '1000000000000000000',
+				timestamp: '1700000000',
+				transactionHash: CANCEL_TX,
+			},
+			{
+				id: `${CANCEL_TX}-3`,
+				type: 'CANCEL',
+				amount: '-100000000000000000',
+				timestamp: '1700000000',
+				transactionHash: CANCEL_TX,
+			},
+		]);
+
+		expect(rows.map(r => r.label)).toEqual(['Prompt Cancelled', 'Prompt Amount Returned']);
+	});
+
 	it('still labels a type it does not know as an unknown action', async () => {
 		const [row] = await rowsFor([
 			{
