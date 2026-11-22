@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MAX_SEALED_FRAME_CHARS } from '@/lib/liveReasoning/contract';
+import { LIMITS, MAX_SEALED_FRAME_CHARS } from '@/lib/liveReasoning/contract';
 
 import {
 	IDLE_GIVE_UP_MS,
@@ -578,9 +581,55 @@ describe('the frame transport', () => {
 			h.handle.stop();
 		});
 
+		it('holds a data line of exactly the line cap across chunks, and refuses one longer', async () => {
+			const largest = `${'A'.repeat(16)}.${'B'.repeat(MAX_SEALED_FRAME_CHARS - 17)}`;
+			const head = `id: ${RUN}.0\nevent: frame\n`;
+			const kept = start([ok([`${head}data: ${largest}`, '\n\n'], { hold: true })]);
+			const refused = start([ok([`${head}data: ${largest}B`, '\n\n'], { hold: true })]);
+
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(`data: ${largest}`).toHaveLength(MAX_LINE_CHARS);
+			expect(kept.events).toEqual([{ id: `${RUN}.0`, data: largest }]);
+			expect(refused.events).toEqual([]);
+			kept.handle.stop();
+			refused.handle.stop();
+		});
+
+		it('carries the largest frame when its CRLF is split across two chunks', async () => {
+			// The held CR ends the line; it is not a character of it.
+			const data = `${'A'.repeat(16)}.${'B'.repeat(MAX_SEALED_FRAME_CHARS - 17)}`;
+			const h = start([
+				ok([`id: ${RUN}.0\r\nevent: frame\r\ndata: ${data}\r`, '\n\r\n'], { hold: true }),
+			]);
+
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(h.events).toEqual([{ id: `${RUN}.0`, data }]);
+			h.handle.stop();
+		});
+
 		it('sizes its line and event caps from the largest sealed frame, and no larger', () => {
 			expect(MAX_LINE_CHARS).toBe('data: '.length + MAX_SEALED_FRAME_CHARS);
 			expect(MAX_EVENT_CHARS).toBe(MAX_SEALED_FRAME_CHARS + 1);
+		});
+
+		it("takes its caps from the contract's constant and holds no copy of the figure", () => {
+			const source = readFileSync(
+				resolve(process.cwd(), 'src/lib/liveReasoning/frameTransport.ts'),
+				'utf8',
+			).replace(/(\d)_(?=\d)/g, '$1');
+			const figures = [
+				MAX_SEALED_FRAME_CHARS,
+				MAX_LINE_CHARS,
+				MAX_EVENT_CHARS,
+				LIMITS.answerFramePlaintextBytes,
+			];
+
+			expect(source).toMatch(/MAX_LINE_CHARS = 'data: '\.length \+ MAX_SEALED_FRAME_CHARS;/);
+			expect(source).toMatch(/MAX_EVENT_CHARS = MAX_SEALED_FRAME_CHARS \+ 1;/);
+			figures.forEach(n => expect(source).not.toMatch(new RegExp(`\\b${n}\\b`)));
+			expect(source).not.toMatch(/\d\s*\*\s*1024/);
 		});
 
 		it('takes data lines that add up past the event cap as no frame, and stops after a few', async () => {
