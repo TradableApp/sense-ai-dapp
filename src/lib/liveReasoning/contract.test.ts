@@ -238,7 +238,9 @@ describe('the live reasoning contract (version 1)', () => {
 		it('holds every frame but the answer to the frame limit', () => {
 			expect(parseFrameBytes(padded(STEP, LIMITS.framePlaintextBytes))).toEqual(STEP);
 			expect(parseFrameBytes(padded(STEP, LIMITS.framePlaintextBytes + 1))).toBeNull();
-			expect(parseFrameBytes(padded(answer('bafy1'), LIMITS.framePlaintextBytes + 1))).not.toBeNull();
+			expect(
+				parseFrameBytes(padded(answer('bafy1'), LIMITS.framePlaintextBytes + 1)),
+			).not.toBeNull();
 		});
 
 		it('takes bytes that are not UTF-8 JSON as no frame, without throwing', () => {
@@ -287,7 +289,10 @@ describe('the live reasoning contract (version 1)', () => {
 				frameOf({ type: 'attempt', data: { attempt: 1 } }),
 				frameOf({
 					type: 'sources',
-					data: { attempt: 1, sources: [{ title: 'x', url: ['javascript', 'alert(1)'].join(':') }] },
+					data: {
+						attempt: 1,
+						sources: [{ title: 'x', url: ['javascript', 'alert(1)'].join(':') }],
+					},
 				}),
 				frameOf({
 					type: 'sources',
@@ -311,19 +316,19 @@ describe('the live reasoning contract (version 1)', () => {
 		});
 
 		it('refuses a source whose URL is not http or https, whatever its case', () => {
-		const withUrl = (url: string) =>
-			frameOf({ type: 'sources', data: { attempt: 1, sources: [{ title: 'x', url }] } });
+			const withUrl = (url: string) =>
+				frameOf({ type: 'sources', data: { attempt: 1, sources: [{ title: 'x', url }] } });
 
-		[
-			['JaVaScRiPt', 'alert(1)'].join(':'),
-			'data:text/html,hi',
-			'/relative/path',
-			'vbscript:msgbox(1)',
-		].forEach(url => expect(parseFramePlaintext(withUrl(url))).toBeNull());
-		expect(parseFramePlaintext(withUrl('https://news.example'))).not.toBeNull();
-	});
+			[
+				['JaVaScRiPt', 'alert(1)'].join(':'),
+				'data:text/html,hi',
+				'/relative/path',
+				'vbscript:msgbox(1)',
+			].forEach(url => expect(parseFramePlaintext(withUrl(url))).toBeNull());
+			expect(parseFramePlaintext(withUrl('https://news.example'))).not.toBeNull();
+		});
 
-	it('accepts a sources list shorter than the limit, as the oracle trims to fit a frame', () => {
+		it('accepts a sources list shorter than the limit, as the oracle trims to fit a frame', () => {
 			const frame = frameOf({ type: 'sources', data: { attempt: 3, sources: [] } });
 
 			expect(parseFramePlaintext(frame)).not.toBeNull();
