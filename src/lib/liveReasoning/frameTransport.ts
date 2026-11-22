@@ -165,7 +165,9 @@ function createSseParser(
 			const end = buffer.endsWith('\r') ? buffer.length - 1 : buffer.length;
 			const lines = buffer.slice(0, end).split(/\r\n|\r|\n/);
 			buffer = (lines.pop() ?? '') + buffer.slice(end);
-			if (buffer.length > MAX_LINE_CHARS) throw new MalformedStreamError();
+			// A held CR ends the line (the first half of a CRLF); it is not one of its characters.
+			const pending = buffer.endsWith('\r') ? buffer.length - 1 : buffer.length;
+			if (pending > MAX_LINE_CHARS) throw new MalformedStreamError();
 			lines.forEach(field);
 		},
 	};
