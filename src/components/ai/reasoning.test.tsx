@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Reasoning, ReasoningContent } from './reasoning';
 
+const motion = vi.hoisted(() => ({ reduced: false }));
+vi.mock('motion/react', () => ({ useReducedMotion: () => motion.reduced }));
+
 interface Step {
 	title: string;
 	description: string;
@@ -28,7 +31,10 @@ const stepTitles = (root: HTMLElement) =>
 		.queryAllByTestId('reasoning-step')
 		.map(el => el.querySelector('h4')?.textContent);
 
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	motion.reduced = false;
+});
 
 describe('ReasoningContent', () => {
 	it('shows two steps that share a title, each once (keyed by position, not title)', () => {
@@ -127,5 +133,60 @@ describe('ReasoningContent typing', () => {
 		unmount();
 
 		expect(vi.getTimerCount()).toBe(0);
+	});
+});
+
+describe('ReasoningContent while streaming', () => {
+	const streaming = (steps: Step[], sources: Array<{ title: string; url: string }> = []) => (
+		<Reasoning isStreaming defaultOpen reasoningSteps={steps}>
+			<ReasoningContent reasoningSteps={steps} sources={sources} />
+		</Reasoning>
+	);
+	const step = { title: 'Reading', description: 'Checked recent sentiment.' };
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('shows a new step whole, with no typing, under reduced motion', () => {
+		motion.reduced = true;
+		vi.useFakeTimers();
+		const { rerender } = render(streaming([]));
+
+		rerender(streaming([step]));
+		vi.advanceTimersByTime(0);
+
+		expect(screen.getByText('Checked recent sentiment.')).toBeTruthy();
+		expect(document.body.textContent).not.toContain('▍');
+	});
+
+	it('types a new step out when motion is not reduced', () => {
+		vi.useFakeTimers();
+		const { rerender } = render(streaming([]));
+
+		rerender(streaming([step]));
+		vi.advanceTimersByTime(0);
+
+		expect(document.body.textContent).toContain('▍');
+	});
+
+	it('is not announced as it changes: the stored answer is what is announced', () => {
+		render(streaming([step]));
+
+		const content = screen.getByTestId('reasoning-step').closest('[aria-live]');
+		expect(content?.getAttribute('aria-live')).toBe('off');
+	});
+
+	it('shows the same source sent twice twice, with no duplicate key', () => {
+		const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const source = { title: 'CoinDesk', url: 'https://coindesk.com/a' };
+
+		render(streaming([step], [source, source]));
+		fireEvent.click(screen.getByText(/Used 2 sources/));
+
+		expect(screen.getAllByText('CoinDesk')).toHaveLength(2);
+		const keyWarnings = errors.mock.calls.filter(call => String(call[0]).includes('same key'));
+		expect(keyWarnings).toEqual([]);
+		errors.mockRestore();
 	});
 });
