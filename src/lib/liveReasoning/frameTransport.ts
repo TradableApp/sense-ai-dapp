@@ -168,6 +168,8 @@ function createSseParser(
 			// A held CR ends the line (the first half of a CRLF); it is not one of its characters.
 			const pending = buffer.endsWith('\r') ? buffer.length - 1 : buffer.length;
 			if (pending > MAX_LINE_CHARS) throw new MalformedStreamError();
+			// A line that arrived whole is held to the same cap, so a chunk boundary changes nothing.
+			if (lines.some(line => line.length > MAX_LINE_CHARS)) throw new MalformedStreamError();
 			lines.forEach(field);
 		},
 	};
