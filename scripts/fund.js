@@ -1,7 +1,8 @@
 /**
- * Transfers fee tokens (any ERC-20 at VITE_TOKEN_CONTRACT_ADDRESS, read with its own decimals)
- * from a funded wallet to a recipient. SenseToken moves only when the sender or the recipient
- * is its owner or listed by it. The console lines label amounts ABLE whatever the token.
+ * Transfers the fee token (any ERC-20 at VITE_TOKEN_CONTRACT_ADDRESS, read with its own decimals
+ * and labelled with its own symbol) from a funded wallet to a recipient. A fee token that moves
+ * only to or from its owner or an address the owner has listed needs the sender or the
+ * recipient to be one of those.
  * Intended for localnet and testnet setup — funded test wallets for E2E testing.
  *
  * Run via:
@@ -34,7 +35,8 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
-// Minimal ABI — `decimals` is read so the script handles non-18-decimal tokens correctly.
+// Minimal ABI — `decimals` is read so the script handles non-18-decimal tokens correctly, and
+// `symbol` so the console lines name the token actually sent.
 const ERC20_ABI = [
 	{
 		name: 'transfer',
@@ -59,6 +61,13 @@ const ERC20_ABI = [
 		stateMutability: 'view',
 		inputs: [],
 		outputs: [{ name: '', type: 'uint8' }],
+	},
+	{
+		name: 'symbol',
+		type: 'function',
+		stateMutability: 'view',
+		inputs: [],
+		outputs: [{ name: '', type: 'string' }],
 	},
 ];
 
@@ -85,16 +94,17 @@ async function main() {
 
 	const chainId = await publicClient.getChainId();
 
-	console.log(`\n--- Fund ABLE tokens ---`);
+	const readArgs = { address: tokenAddress, abi: ERC20_ABI };
+
+	const decimals = await publicClient.readContract({ ...readArgs, functionName: 'decimals' });
+	const symbol = await publicClient.readContract({ ...readArgs, functionName: 'symbol' });
+
+	console.log(`\n--- Fund ${symbol} ---`);
 	console.log(`  Network:   chainId ${chainId} (${rpcUrl})`);
 	console.log(`  Token:     ${tokenAddress}`);
 	console.log(`  Sender:    ${account.address}`);
 	console.log(`  Recipient: ${recipient}`);
-	console.log(`  Amount:    ${amount} ABLE`);
-
-	const readArgs = { address: tokenAddress, abi: ERC20_ABI };
-
-	const decimals = await publicClient.readContract({ ...readArgs, functionName: 'decimals' });
+	console.log(`  Amount:    ${amount} ${symbol}`);
 
 	const senderBefore = await publicClient.readContract({
 		...readArgs,
@@ -107,13 +117,13 @@ async function main() {
 		args: [recipient],
 	});
 
-	console.log(`\n  Sender balance before:    ${formatUnits(senderBefore, decimals)} ABLE`);
-	console.log(`  Recipient balance before: ${formatUnits(recipientBefore, decimals)} ABLE`);
+	console.log(`\n  Sender balance before:    ${formatUnits(senderBefore, decimals)} ${symbol}`);
+	console.log(`  Recipient balance before: ${formatUnits(recipientBefore, decimals)} ${symbol}`);
 
 	const amountWei = parseUnits(amount, decimals);
 	if (senderBefore < amountWei) {
 		throw new Error(
-			`Insufficient balance. Sender has ${formatUnits(senderBefore, decimals)} ABLE, needs ${amount}.`,
+			`Insufficient balance. Sender has ${formatUnits(senderBefore, decimals)} ${symbol}, needs ${amount}.`,
 		);
 	}
 
@@ -140,7 +150,7 @@ async function main() {
 	});
 
 	console.log(`\n✅ Transfer complete.  tx: ${hash}`);
-	console.log(`  Recipient balance after: ${formatUnits(recipientAfter, decimals)} ABLE`);
+	console.log(`  Recipient balance after: ${formatUnits(recipientAfter, decimals)} ${symbol}`);
 }
 
 main().catch(e => {
