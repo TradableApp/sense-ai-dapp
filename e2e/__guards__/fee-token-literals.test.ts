@@ -315,6 +315,8 @@ const E2E_TOKEN_NAME = new RegExp(
 		TOKEN_NAME.source,
 		// a lower-case regular expression literal (`/able/i`), which a locator can carry
 		'\\/(?:able|sense)\\/[a-z]*',
+		// the same word inside a longer case-insensitive pattern (`/you have \d+ able/i`)
+		'\\/(?:[^\\/\\\\\\n]|\\\\.)*(?<![A-Za-z])(?:able|sense)(?![A-Za-z])(?:[^\\/\\\\\\n]|\\\\.)*\\/[a-hj-z]*i',
 	].join('|'),
 );
 
@@ -360,6 +362,8 @@ describe('the e2e suite reads the fee token from its profile', () => {
 			'return this.page.getByText(/insufficient ABLE balance/i).first();',
 			'.or(this.page.getByText(/able/i).filter({ hasText: /\\d/ }).first());',
 			'const fee = 3n * SENSE;',
+			'name: /get \\d+ (localnet|testnet) able|sending tokens/i,',
+			'const hint = modal.getByText(/you have [\\d.]+ sense/i);',
 		];
 		const left = [
 			'// funds the wallet with ABLE from the treasury',
@@ -368,6 +372,7 @@ describe('the e2e suite reads the fee token from its profile', () => {
 			'await expect(button).toBeEnabled();',
 			"test('T-XFER-01: a holder cannot send to another holder', async () => {});",
 			"await page.goto('https://senseai.tradable.app');",
+			'await expect(page.getByText(/unable to connect|disabled/i)).toBeVisible();',
 		];
 
 		flagged.forEach(line =>
