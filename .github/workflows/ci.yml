@@ -40,6 +40,11 @@ jobs:
       - name: Lint
         run: bun run lint
 
+      # src/ and vite.config.ts; `pretypecheck` generates src/lib/graph/generated.ts from the
+      # schema in the repo first (git-ignored, so a fresh checkout has none).
+      - name: Typecheck
+        run: bun run typecheck
+
       - name: Typecheck (e2e)
         run: bun run typecheck:e2e
 
