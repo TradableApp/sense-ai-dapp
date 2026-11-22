@@ -7,7 +7,7 @@ import { useSession } from '@/features/auth/SessionProvider';
 import { fetchAndCacheConversations } from '@/lib/dataService';
 import syncWithRemote from '@/lib/syncService';
 import { useAppDispatch } from '@/store/hooks';
-import { setStorageDegraded } from '@/store/uiSlice';
+import { setGraphUnavailable, setStorageDegraded } from '@/store/uiSlice';
 
 /**
  * A centralized hook to manage fetching, caching, and background polling
@@ -19,8 +19,8 @@ import { setStorageDegraded } from '@/store/uiSlice';
  * It first triggers a sync with the remote data source (The Graph, payload storage)
  * and then reads the consolidated, up-to-date data from the local IndexedDB cache.
  *
- * The sync's `unavailablePayloads` count travels with the query data and is turned into
- * the `storageDegraded` UI flag in an effect — never inside `queryFn`, which TanStack
+ * The sync's `unavailablePayloads` count and `graphUnavailable` flag travel with the query
+ * data and are turned into the `storageDegraded` and `graphUnavailable` UI flags in an effect — never inside `queryFn`, which TanStack
  * Query runs for background refetches outside React's render cycle. Callers still receive
  * `data` as the conversation list.
  *
@@ -38,12 +38,15 @@ export default function useConversations() {
 			if (!sessionKey) throw new Error('Session key is required');
 			if (!ownerAddress) throw new Error('Owner address is required');
 
-			const { unavailablePayloads } = await syncWithRemote(sessionKey, ownerAddress);
+			const { unavailablePayloads, graphUnavailable } = await syncWithRemote(
+				sessionKey,
+				ownerAddress,
+			);
 
 			// Step 2: Read the complete, up-to-date list from the local cache.
 			// This function remains the source of truth for the UI.
 			const conversations = await fetchAndCacheConversations(sessionKey, ownerAddress);
-			return { conversations, unavailablePayloads };
+			return { conversations, unavailablePayloads, graphUnavailable };
 		},
 		enabled: !!sessionKey && !!ownerAddress,
 		// Fetch every 5 minutes to catch updates from other devices.
@@ -58,6 +61,12 @@ export default function useConversations() {
 		// it. The refetch interval above is the retry.
 		if (unavailablePayloads !== undefined) dispatch(setStorageDegraded(unavailablePayloads > 0));
 	}, [unavailablePayloads, dispatch]);
+
+	const graphUnavailable = query.data?.graphUnavailable;
+	useEffect(() => {
+		// Drives the "history could not be refreshed" notice; a pass that read The Graph clears it.
+		if (graphUnavailable !== undefined) dispatch(setGraphUnavailable(graphUnavailable));
+	}, [graphUnavailable, dispatch]);
 
 	return { ...query, data: query.data?.conversations };
 }

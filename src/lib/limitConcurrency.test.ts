@@ -26,6 +26,41 @@ describe('createLimiter', () => {
 		expect(results).toEqual(Array.from({ length: 20 }, (_, n) => n));
 	});
 
+	// A slot freed by one task goes to the next one waiting: a task asked for in the moment
+	// between the two must queue behind it, not take the slot as well. That moment is a few
+	// microtasks long, so every offset into it is tried.
+	it('gives a freed slot to the task waiting, not to one asked for meanwhile', async () => {
+		for (let offset = 0; offset < 8; offset += 1) {
+			const limit = createLimiter(1);
+			let inFlight = 0;
+			let mostAtOnce = 0;
+			const tracked = async () => {
+				inFlight += 1;
+				mostAtOnce = Math.max(mostAtOnce, inFlight);
+				await tick();
+				inFlight -= 1;
+			};
+			let finishFirst = () => {};
+			const first = limit(
+				() =>
+					new Promise<void>(resolve => {
+						finishFirst = resolve;
+					}),
+			);
+			const waiting = limit(tracked);
+			finishFirst();
+			for (let i = 0; i < offset; i += 1) {
+				// eslint-disable-next-line no-await-in-loop -- each step is one microtask
+				await Promise.resolve();
+			}
+			const late = limit(tracked);
+			// eslint-disable-next-line no-await-in-loop -- one offset at a time
+			await Promise.all([first, waiting, late]);
+
+			expect({ offset, mostAtOnce }).toEqual({ offset, mostAtOnce: 1 });
+		}
+	});
+
 	it('passes a rejection to its caller and frees the slot for the rest', async () => {
 		const limit = createLimiter(1);
 		const failed = limit(async () => {

@@ -21,6 +21,12 @@ export const FIRST_WINDOW: KeysetWindow = Object.freeze({ upTo: null, skip: 0 })
  * a page whose keys differ holds fewer rows at its last key than a page holds. A page whose rows
  * all share one key would come back unchanged, so then the window stays on that key and skips
  * the rows read at it so far.
+ *
+ * One limit: inside such a run the pages are offsets again, so a row of the run that is updated
+ * while the run is read (it moves above the window) shifts the rows after it back by one, and
+ * one of them is not read. If the run is below the newest row read, the cursor passes it and
+ * this device does not read it again until that conversation changes. A run needs a whole
+ * page of conversations updated in one block second, which one wallet does not reach today.
  */
 export function nextWindow(window: KeysetWindow, keys: readonly string[]): KeysetWindow {
 	const last = keys[keys.length - 1];

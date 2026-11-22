@@ -124,6 +124,9 @@ export default function Chat() {
 	const navigate = useNavigate();
 	const { sessionKey, ownerAddress } = useSession();
 	const { activeConversationId, activeConversationMessages } = useAppSelector(state => state.chat);
+	// A held branch waits for a sync; while The Graph cannot be read its notice says so, even
+	// when the banner has been dismissed.
+	const isHistoryRefreshFailing = useAppSelector(state => state.ui.graphUnavailable);
 
 	const { data: plan, isLoading: isLoadingPlan } = useUsagePlan();
 	const hasActivePlan = !!plan;
@@ -1076,6 +1079,7 @@ export default function Chat() {
 						<ComposerHoldNotices
 							isHeldForBranchHistory={isHeldForBranchHistory}
 							unsavedSendReason={unsavedSend.composerHoldReason}
+							isHistoryRefreshFailing={isHistoryRefreshFailing}
 						/>
 						{isAiThinking && refundSecondsLeft !== null && (
 							<div className="flex items-center justify-end px-3 py-1.5 text-xs text-muted-foreground">

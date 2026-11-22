@@ -14,7 +14,9 @@ import { GraphQLClient } from 'graphql-request';
 import { hexToBytes } from 'viem';
 
 import GraphFetchFailed from '@/lib/graph/GraphFetchFailed';
+import { reportGraphFetchFailed } from '@/lib/graph/graphSyncReport';
 import fetchAllUserUpdates, { type GraphRequest } from '@/lib/graph/userUpdates';
+import createLimiter from '@/lib/limitConcurrency';
 
 import { decryptData, encryptData } from './crypto';
 import db from './db';
@@ -48,6 +50,17 @@ const getPayloadStorageConfig = (): PayloadStorageConfig => ({
  */
 const PAYLOAD_FETCH_TIMEOUT_MS = 10_000;
 
+/**
+ * How many payloads one sync pass fetches and decrypts at once. A first sync of a large wallet
+ * has a payload per message (and per search delta) of every conversation: started all at once,
+ * that is thousands of requests, which a gateway answers with 429 (each counted unavailable,
+ * so the cursor is held and the same burst comes back next pass) and which hold every body in
+ * memory together. Browsers open about 6 connections per host over HTTP/1.1, so 8 keeps every
+ * connection busy, with a couple queued, while one slow fetch (or one waiting out its retry
+ * backoff, which keeps its slot) does not stall the rest.
+ */
+export const PAYLOAD_FETCH_CONCURRENCY = 8;
+
 const payloadFetchDeps: PayloadFetchDeps = {
 	// Late-bound so the active global fetch is used, not the one at module load.
 	// `AbortSignal.timeout()` only arrived in Safari 17.4, so the timeout is an
@@ -77,14 +90,22 @@ const payloadFetchDeps: PayloadFetchDeps = {
 	random: Math.random,
 };
 
-/** Result of a sync pass; the UI uses the count to show the "history unavailable" state. */
+/** Result of a sync pass; the UI turns it into the history banner's two notices. */
 export interface SyncResult {
 	/** Payloads no storage source could serve this pass (transient — retried next pass). */
 	readonly unavailablePayloads: number;
+	/**
+	 * The Graph could not be read this pass (see GraphFetchFailed): nothing was stored and the
+	 * cursor was held, so what is shown is what was saved before. Retried next pass.
+	 */
+	readonly graphUnavailable: boolean;
 }
 
 // Returned by reference from several early exits, so it must be immune to mutation.
-const NOTHING_UNAVAILABLE: SyncResult = Object.freeze({ unavailablePayloads: 0 });
+const NOTHING_UNAVAILABLE: SyncResult = Object.freeze({
+	unavailablePayloads: 0,
+	graphUnavailable: false,
+});
 
 /** A decrypted storage file: an object of unknown shape, as stored by the oracle. */
 type StoredRecord = Record<string, unknown>;
@@ -265,9 +286,9 @@ interface ConversationUpdate {
 /**
  * @notice Fetches every conversation updated since the last sync from The Graph, with all of
  *         its messages and unanswered prompt requests, however many pages that takes.
- * @dev Throws `GraphFetchFailed` when any request fails (see graph/userUpdates.ts). It never
- *      returns an empty list for a failure: the caller reads an empty list as "nothing new"
- *      and moves the cursor up to the present.
+ * @dev Throws `GraphFetchFailed` when any request fails (see graph/userUpdates.ts), and when
+ *      no endpoint is configured. It never returns an empty list for a failure: the caller
+ *      reads an empty list as "nothing new" and moves the cursor up to the present.
  * @param {string} ownerAddress The user's wallet address.
  * @param {number} lastSync The timestamp of the last successful sync (Milliseconds).
  * @returns {Promise<Array>} The updated conversations, timestamps converted to milliseconds.
@@ -276,10 +297,7 @@ async function fetchUpdatesFromTheGraph(
 	ownerAddress: string,
 	lastSync: number,
 ): Promise<ConversationUpdate[]> {
-	if (!THE_GRAPH_API_URL) {
-		console.warn('[syncService] VITE_THE_GRAPH_API_URL is not set. Skipping remote sync.');
-		return [];
-	}
+	if (!THE_GRAPH_API_URL) throw new GraphFetchFailed('conversations', 'not-configured');
 	// The Graph stores block timestamps in Seconds. We must convert our local MS timestamp.
 	const lastSyncSeconds = Math.floor(lastSync / 1000);
 	const conversations = await fetchAllUserUpdates(
@@ -322,6 +340,9 @@ export default async function syncWithRemote(
 	// what hydration found — returning 0 there would clear the "unavailable" banner while
 	// storage is in fact down.
 	let unavailablePayloads = 0;
+	// One pool per pass: every payload fetch of the pass waits for a slot (see the constant).
+	const limit = createLimiter(PAYLOAD_FETCH_CONCURRENCY);
+	const hydrate = (cid: string | undefined) => limit(() => hydratePayload(cid, sessionKey));
 
 	try {
 		// 1. Get the last known sync timestamp from our local state (Milliseconds).
@@ -391,8 +412,8 @@ export default async function syncWithRemote(
 
 			// For each conversation, fetch its core data, metadata, and all its messages in parallel.
 			const [convPayload, metadataPayload] = await Promise.all([
-				hydratePayload(conv.conversationCID, sessionKey),
-				hydratePayload(conv.conversationMetadataCID, sessionKey),
+				hydrate(conv.conversationCID),
+				hydrate(conv.conversationMetadataCID),
 			]);
 			const convData = convPayload.value as StoredRecord | null;
 			const metadataData = metadataPayload.value as StoredRecord | null;
@@ -400,8 +421,8 @@ export default async function syncWithRemote(
 			const messageHydrationPromises = (conv.messages || []).map(
 				async (msg: ConversationUpdate['messages'][number]) => {
 					const [messagePayload, searchDeltaPayload] = await Promise.all([
-						hydratePayload(msg.messageCID, sessionKey),
-						hydratePayload(msg.searchDelta?.searchDeltaCID, sessionKey),
+						hydrate(msg.messageCID),
+						hydrate(msg.searchDelta?.searchDeltaCID),
 					]);
 					const messageData = messagePayload.value as StoredRecord | null;
 					// Return a structured object for clarity, associating the message with its search delta.
@@ -636,15 +657,17 @@ export default async function syncWithRemote(
 		if (unavailablePayloads === 0 && notStored.size === 0) {
 			await setLastSyncedAt(sessionKey, ownerAddress, newLastSync);
 		}
-		return { unavailablePayloads };
+		return { unavailablePayloads, graphUnavailable: false };
 	} catch (error) {
-		if (error instanceof GraphFetchFailed) {
-			// Its message names the list and the reason only; see GraphFetchFailed.
-			console.error(`[syncService] ${error.name}: ${error.message} The sync cursor is held.`);
-		} else {
-			console.error('[syncService] A critical error occurred during the sync process:', error);
-		}
 		// We do not update the timestamp on failure, ensuring the process will be retried.
-		return { unavailablePayloads };
+		if (error instanceof GraphFetchFailed) {
+			// Its message names the list and the reason only; see GraphFetchFailed. The user is
+			// told through the result, and Sentry once per page load per list and reason.
+			console.error(`[syncService] ${error.name}: ${error.message} The sync cursor is held.`);
+			reportGraphFetchFailed(error);
+			return { unavailablePayloads, graphUnavailable: true };
+		}
+		console.error('[syncService] A critical error occurred during the sync process:', error);
+		return { unavailablePayloads, graphUnavailable: false };
 	}
 }

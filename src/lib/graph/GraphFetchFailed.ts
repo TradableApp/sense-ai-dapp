@@ -3,10 +3,11 @@ export type GraphList = 'conversations' | 'messages' | 'prompt-requests';
 
 /**
  * Why it failed: the request itself (`request`), an answer without the list asked for
- * (`malformed`), or a full page with nothing not already read, which means the endpoint is not
- * honouring the page bounds and asking again would never end (`no-progress`).
+ * (`malformed`), a full page with nothing not already read, which means the endpoint is not
+ * honouring the page bounds and asking again would never end (`no-progress`), or a build with
+ * no Graph endpoint, which can never read the history (`not-configured`).
  */
-export type GraphFailureReason = 'request' | 'malformed' | 'no-progress';
+export type GraphFailureReason = 'request' | 'malformed' | 'no-progress' | 'not-configured';
 
 /**
  * A Graph request the sync could not use. It is thrown rather than read as "no updates", so

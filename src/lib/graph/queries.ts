@@ -7,6 +7,11 @@ export const CONVERSATION_PAGE_SIZE = 100;
  * Rows asked for in a conversation's nested messages and prompt requests, and per follow-up
  * page of either. 1000 is the most The Graph returns for one list; naming it also removes the
  * dependency on the endpoint's default for a nested list (100 on graph-node).
+ *
+ * The Graph documents no limit on a whole answer: graph-node's result size, complexity and
+ * query time limits are unlimited unless the operator sets them, and the gateway's are not
+ * published. A page of 100 conversations each with 1000 of both lists is the largest answer
+ * this asks for; it has not been measured against the deployed endpoint.
  */
 export const NESTED_LIST_PAGE_SIZE = 1000;
 
