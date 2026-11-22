@@ -591,6 +591,11 @@ export async function getActivities(userAddress: string, first = 20): Promise<In
 	return data.activities;
 }
 
+/** Not written yet. */
+export async function subgraphHasType(_name: string): Promise<boolean> {
+	return false;
+}
+
 /**
  * Polls `query()` until `predicate` is satisfied, returning the matching value.
  * The generic indexing-aware wait the assertion helpers above compose with —
