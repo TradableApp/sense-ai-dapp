@@ -1,6 +1,6 @@
 import { QueryClient } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
 	UNSAVED_BRANCH_REASON,
@@ -10,7 +10,14 @@ import {
 	UNSAVED_SEND_REASON,
 } from '@/components/ai/sendingReason';
 
-import { holdUnsavedSend, NEW_CONVERSATION_KEY, type UnsavedSend } from './unsavedSends';
+import {
+	attachShownPrompt,
+	HOLD_LASTS_MS,
+	holdUnsavedSend,
+	NEW_CONVERSATION_KEY,
+	notePendingCount,
+	type UnsavedSend,
+} from './unsavedSends';
 import useUnsavedSendHold from './useUnsavedSendHold';
 
 const OWNER = '0x00000000000000000000000000000000000000aa';
@@ -23,9 +30,13 @@ const PROMPT_IN_5: UnsavedSend = {
 	shownAs: { conversationKey: '5', messageId: '11' },
 	listedAs: null,
 	endsOnPendingFall: true,
+	confirmedAt: Date.now(),
 };
 
 type Input = Parameters<typeof useUnsavedSendHold>[0];
+
+// Holds are saved and restored into a new client: each test starts with none saved.
+beforeEach(() => localStorage.clear());
 
 function renderHold(queryClient: QueryClient, input: Partial<Input> = {}) {
 	return renderHook((props: Partial<Input>) =>
@@ -145,6 +156,7 @@ describe('an answer branched from, whose branch was not saved here', () => {
 		shownAs: null,
 		listedAs: '14',
 		endsOnPendingFall: false,
+		confirmedAt: Date.now(),
 	};
 
 	it('says the branch appears in the history once it is listed, not that an answer will come', () => {
@@ -173,13 +185,110 @@ describe('an answer branched from, whose branch was not saved here', () => {
 });
 
 describe('every reason a hold gives', () => {
-	it.each([
+	const PROMPT_REASONS = [
 		UNSAVED_SEND_REASON,
-		UNSAVED_BRANCH_REASON,
 		UNSAVED_EDIT_REASON,
 		UNSAVED_SEND_COMPOSER_REASON,
 		UNSAVED_NEW_CONVERSATION_REASON,
-	])('says to reload the page if it stays: %s', reason => {
-		expect(reason).toMatch(/reload the page/);
+	];
+
+	// A reload no longer clears a hold, so telling the user to reload would mislead.
+	it.each([...PROMPT_REASONS, UNSAVED_BRANCH_REASON])('does not say to reload: %s', reason => {
+		expect(reason).not.toMatch(/reload/i);
+	});
+
+	it.each(PROMPT_REASONS)(
+		'says when it ends, and that a refund can then be claimed: %s',
+		reason => {
+			expect(reason).toMatch(/back in your history/);
+			expect(reason).toMatch(
+				/at the latest, an hour after it was sent, when a refund can be claimed/,
+			);
+		},
+	);
+
+	// A branch's fee is paid directly: there is no refund to claim for it.
+	it('a branch says when it ends, and promises no refund', () => {
+		expect(UNSAVED_BRANCH_REASON).toMatch(/in your history/);
+		expect(UNSAVED_BRANCH_REASON).toMatch(/at the latest, an hour after it was sent/);
+		expect(UNSAVED_BRANCH_REASON).not.toMatch(/refund/);
+	});
+
+	// The composer's conversation may be showing the prompt from its receipt.
+	it.each([UNSAVED_SEND_COMPOSER_REASON, UNSAVED_EDIT_REASON, UNSAVED_SEND_REASON])(
+		'does not say the prompt is not shown: %s',
+		reason => {
+			expect(reason).not.toMatch(/not shown/);
+		},
+	);
+});
+
+describe('a hold an hour after its send was confirmed', () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('is let go, so the composer sends again', () => {
+		vi.useFakeTimers();
+		const queryClient = new QueryClient();
+		holdUnsavedSend(queryClient, { ...PROMPT_IN_5, confirmedAt: Date.now() });
+		const { result } = renderHold(queryClient);
+		expect(result.current.isComposerHeld).toBe(true);
+
+		act(() => {
+			vi.advanceTimersByTime(HOLD_LASTS_MS);
+		});
+
+		expect(result.current.isComposerHeld).toBe(false);
+	});
+
+	// A reading that only raises the highest count seen changes nothing about when the hold
+	// ends, so the timer set for that moment is left running, not cleared and set again.
+	it('keeps its timer when a reading only raises the highest count seen', () => {
+		vi.useFakeTimers();
+		const queryClient = new QueryClient();
+		holdUnsavedSend(queryClient, { ...PROMPT_IN_5, confirmedAt: Date.now() });
+		const { result } = renderHold(queryClient);
+		const cleared = vi.spyOn(globalThis, 'clearTimeout');
+
+		act(() => {
+			notePendingCount(queryClient, OWNER, 1n, Date.now());
+			notePendingCount(queryClient, OWNER, 2n, Date.now());
+		});
+
+		expect(result.current.isComposerHeld).toBe(true);
+		expect(cleared).not.toHaveBeenCalled();
+		cleared.mockRestore();
+	});
+});
+
+describe('the prompt shown from its receipt, kept with the hold', () => {
+	const SHOWN = [
+		{ id: '11', role: 'user', content: 'q', conversationId: '5' },
+		{ id: '12', role: 'assistant', content: null, conversationId: '5', parentId: '11' },
+	];
+
+	it('is given back for its conversation, and for no other', () => {
+		const queryClient = new QueryClient();
+		holdUnsavedSend(queryClient, PROMPT_IN_5);
+		attachShownPrompt(queryClient, OWNER, '11', SHOWN);
+
+		expect(renderHold(queryClient).result.current.shownPrompt).toEqual(SHOWN);
+		expect(
+			renderHold(queryClient, { activeConversationId: '6' }).result.current.shownPrompt,
+		).toBeNull();
+	});
+
+	it('is not given back once the hold has ended', async () => {
+		const queryClient = new QueryClient();
+		holdUnsavedSend(queryClient, PROMPT_IN_5);
+		attachShownPrompt(queryClient, OWNER, '11', SHOWN);
+		const { result, rerender } = renderHold(queryClient);
+
+		await act(async () => {
+			rerender({ storedMessages: [{ id: '11' }, { id: '12' }] });
+		});
+
+		expect(result.current.shownPrompt).toBeNull();
 	});
 });

@@ -633,6 +633,7 @@ export default function useChatMutations() {
 	 * It calls the `initiateMetadataUpdate` function on the smart contract.
 	 */
 	const metadataUpdateMutation = useMutation({
+		mutationKey: ['metadata-send'],
 		mutationFn: async ({
 			conversationId,
 			title,

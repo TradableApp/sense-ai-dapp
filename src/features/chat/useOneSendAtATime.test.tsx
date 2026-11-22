@@ -235,6 +235,8 @@ async function startAndWait(sends: { current: Sends }, start: (_m: Sends) => voi
 }
 
 beforeEach(() => {
+	// Holds are saved per wallet: each test starts with none.
+	localStorage.clear();
 	vi.clearAllMocks();
 	forgetSaveFailureReports();
 	currentSession.value = null;
@@ -573,6 +575,20 @@ describe('a confirmed send whose caller then fails to save it', () => {
 		expect(held.current).toEqual([expect.objectContaining(expected)]);
 	});
 
+	// The hold lasts an hour from the confirmation: any other time would end it at once, or
+	// keep it past the moment a refund can be claimed.
+	it.each(SENDS)('$name: the hold carries the time the send was confirmed', async c => {
+		const queryClient = newClient();
+		const before = Date.now();
+		await failedAfterConfirm(c, { queryClient });
+		const after = Date.now();
+
+		const held = renderHook(() => useUnsavedSends(queryClient, SESSION.ownerAddress)).result;
+		const [send] = held.current;
+		expect(send.confirmedAt).toBeGreaterThanOrEqual(before);
+		expect(send.confirmedAt).toBeLessThanOrEqual(after);
+	});
+
 	it.each(SENDS)('$name saved: nothing is held', async c => {
 		const queryClient = newClient();
 		const sends = renderSends(queryClient).result;
@@ -869,6 +885,13 @@ describe('a confirmed send whose caller never finishes saving it', () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+});
+
+describe('the time a save is given up on', () => {
+	// The tests above wait for the constant, so they would pass whatever it said.
+	it('is thirty seconds', () => {
+		expect(SAVE_GIVE_UP_MS).toBe(30_000);
 	});
 });
 
