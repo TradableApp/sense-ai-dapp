@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 import * as Sentry from '@sentry/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { readContract } from 'thirdweb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -206,5 +206,63 @@ describe('how often the stuck requests are read again', () => {
 
 		expect(STUCK_POLL_MANY_PAGES_MS).toBeGreaterThan(STUCK_POLL_MS);
 		expect(pollInterval(queryClient)).toBe(STUCK_POLL_MANY_PAGES_MS);
+	});
+});
+
+describe('a stuck request whose refund hour passes while the page is open', () => {
+	const HOUR_MS = 3_600_000;
+	const START = Date.UTC(2026, 0, 1, 12, 0, 0);
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(START);
+		vi.mocked(readContract).mockResolvedValue(escrowEntry(PENDING) as never);
+		// Sent ten seconds short of an hour ago.
+		const sentAt = Math.floor((START - HOUR_MS + 10_000) / 1000);
+		request.mockResolvedValue({ payments: [{ id: '7', amount: '1', createdAt: String(sentAt) }] });
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	/** Lets the first read finish under the fake clock. */
+	const settle = () =>
+		act(async () => {
+			await vi.advanceTimersByTimeAsync(50);
+		});
+
+	// The list is read from the subgraph once a minute at most; the hour does not wait for that.
+	it('becomes refundable on the next tick of the clock, with no new read', async () => {
+		const { default: useStuckRequests, REFUND_CLOCK_MS } = await loadModule();
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		const { result } = render(useStuckRequests, queryClient);
+		await waitFor(() =>
+			expect(result.current.data).toEqual([expect.objectContaining({ id: '7' })]),
+		);
+		expect(result.current.data).toEqual([expect.objectContaining({ isRefundable: false })]);
+
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(REFUND_CLOCK_MS);
+		});
+
+		expect(result.current.data).toEqual([expect.objectContaining({ isRefundable: true })]);
+		expect(request).toHaveBeenCalledTimes(1);
+	});
+
+	it('stays refundable once it is, whatever the clock says later', async () => {
+		const { default: useStuckRequests, REFUND_CLOCK_MS } = await loadModule();
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		vi.setSystemTime(START + 20_000);
+		const { result } = render(useStuckRequests, queryClient);
+		await settle();
+		expect(result.current.data).toEqual([expect.objectContaining({ isRefundable: true })]);
+
+		vi.setSystemTime(START - HOUR_MS);
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(REFUND_CLOCK_MS);
+		});
+
+		expect(result.current.data).toEqual([expect.objectContaining({ isRefundable: true })]);
 	});
 });
