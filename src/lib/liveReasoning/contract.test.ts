@@ -13,10 +13,10 @@ import {
 	parseFramePlaintext,
 	parseSseEventId,
 	RESET_REASONS,
+	sealedFrameChars,
 	SSE_EVENT_NAME,
 	STREAM_CONTRACT_VERSION,
 	STREAM_HTTP,
-	sealedFrameChars,
 	STREAM_REFUSAL_STATUSES,
 	streamUrl,
 } from './contract';
@@ -212,11 +212,10 @@ describe('the live reasoning contract (version 1)', () => {
 
 		it('counts a sealed frame as the oracle and the encryptor write it', async () => {
 			const key = await importVectorKey();
-			for (const n of [0, 1, 2, 3, 100, 16 * 1024]) {
-				const sealed = await encryptData(key, 'x'.repeat(n));
-				// JSON.stringify of a string adds its two quotes.
-				expect(sealed.length).toBe(sealedFrameChars(n + 2));
-			}
+			const sizes = [0, 1, 2, 3, 100, 16 * 1024];
+			const sealed = await Promise.all(sizes.map(n => encryptData(key, 'x'.repeat(n))));
+			// JSON.stringify of a string adds its two quotes.
+			expect(sealed.map(s => s.length)).toEqual(sizes.map(n => sealedFrameChars(n + 2)));
 			expect(MAX_SEALED_FRAME_CHARS).toBe(sealedFrameChars(LIMITS.answerFramePlaintextBytes));
 			expect(MAX_SEALED_FRAME_CHARS).toBe(525_693);
 		});

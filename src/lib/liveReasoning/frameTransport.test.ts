@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve as resolvePath } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -616,7 +616,7 @@ describe('the frame transport', () => {
 
 		it("takes its caps from the contract's constant and holds no copy of the figure", () => {
 			const source = readFileSync(
-				resolve(process.cwd(), 'src/lib/liveReasoning/frameTransport.ts'),
+				resolvePath(process.cwd(), 'src/lib/liveReasoning/frameTransport.ts'),
 				'utf8',
 			).replace(/(\d)_(?=\d)/g, '$1');
 			const figures = [
