@@ -142,13 +142,18 @@ never enters a page, a trace or a screenshot.
 (loaded by `playwright.config.ts` and the scripts, never overriding the runner's exports). A
 missing or malformed variable fails once, by name, before any request.
 
-### Included in the `testnet` project (160 tests, 18 files)
+### Included in the `testnet` project (161 tests, 18 files)
 
 `smoke`, `ui`, `auth`, `chat`, `history`, `branching`, `cancel`, `metadata`, `search`,
 `versions`, `multi-device`, `live-sync`, `activity`, `graph`, `reasoning`, `remaining-features`,
-`plan`, `transfer-rule`. `transfer-rule` runs only when the build's fee token profile is not
-`transferable`, and on testnet only `T-XFER-01`: a holder-to-holder transfer is refused with
-`TransferNotAllowed`, shown by `eth_call` (no gas), and the same wallet then pays for a prompt. `T-BRANCH-08` (regenerating an inherited answer inside a branch: the new answer renders in the branch, is indexed under the branch and leaves the original untouched) needs agent contracts that file a regeneration under the conversation it was asked in; against older contracts the answer is filed under the original and the test fails. It checks the stored state on a second device (a clean browser context): the original is unchanged and the regenerated answer is in the branch. `T-BRANCH-09` and `T-BRANCH-10` open a branch on a second device, which holds none of the copies the branching device made: the dApp rebuilds the inherited history from the original conversation's messages, up to the branch point and no further (a prompt sent in the original after the branch was made does not appear in the branch). `T-BRANCH-11` does the same for a branch made after an edit: the second device shows the edited path the branch inherited, not the prompt the edit replaced. Chain-aware adaptations: `T-INIT-SMOKE-01/02` check the configured RPC's chain id and the Graph
+`plan`, `transfer-rule`. `transfer-rule` first reads the token's `symbol()` on chain and fails
+the file if it is not the symbol of the profile `VITE_FEE_TOKEN` selects (the hosted build and the
+local env file could otherwise disagree and turn every test into a skip). On a `transferable`
+profile `T-XFER-00` runs: a holder-to-holder transfer goes through, shown by `eth_call` (no gas).
+On the other profile, on testnet only `T-XFER-01` runs: the same transfer is refused with
+`TransferNotAllowed` and the same wallet then pays for a prompt; a refusal that a public node
+names only in its message (no revert data, so no addresses to compare) is accepted there and
+recorded as an annotation. `T-BRANCH-08` (regenerating an inherited answer inside a branch: the new answer renders in the branch, is indexed under the branch and leaves the original untouched) needs agent contracts that file a regeneration under the conversation it was asked in; against older contracts the answer is filed under the original and the test fails. It checks the stored state on a second device (a clean browser context): the original is unchanged and the regenerated answer is in the branch. `T-BRANCH-09` and `T-BRANCH-10` open a branch on a second device, which holds none of the copies the branching device made: the dApp rebuilds the inherited history from the original conversation's messages, up to the branch point and no further (a prompt sent in the original after the branch was made does not appear in the branch). `T-BRANCH-11` does the same for a branch made after an edit: the second device shows the edited path the branch inherited, not the prompt the edit replaced. Chain-aware adaptations: `T-INIT-SMOKE-01/02` check the configured RPC's chain id and the Graph
 endpoint; `cancel` advances time by WAITING (`advanceTime`: Base's 2 s blocks move
 `block.timestamp` on their own) instead of `evm_increaseTime`; `T-REASON-01` asserts a real
 reasoning block with ≥ 1 step and ≥ 1 http(s) source (the mock sentinel is inert on a real
@@ -213,8 +218,11 @@ keeps the resilience specs out of the `testnet` project and the regular testnet 
 
 ### Transfer rule (`transfer-rule`, localnet)
 
-Gated on the build's profile (`feeToken().transferable === false`), never on a token's name; on a
-transferable token the whole file skips with that reason. `T-XFER-01` as on testnet. `T-XFER-02`: a
+Gated on the build's profile (`feeToken().transferable`), never on a token's name, after the
+token's on-chain symbol is shown to match the profile (`assertChainTokenMatchesSetting`, a failure
+rather than a skip). On a transferable token `T-XFER-00` runs and the rest skip with that reason;
+on the other, `T-XFER-00` skips and `T-XFER-01` runs as on testnet, except that on localnet the
+refusal must carry its `from` and `to` (the local node always returns the revert data). `T-XFER-02`: a
 dropped prompt is refunded after `increaseTime(1h)` and the wallet's balance is back to what it was
 (escrow to user). `T-XFER-03`: once the dApp's fee token check has read both listings, the owner
 unlists the escrow and a prompt is sent; the token refuses the payment, the composer shows "Payment
