@@ -186,12 +186,20 @@ describe('where the payment gate is asked', () => {
 		expect(clearAt, 'useClearApprovalMutation not found after the revoke').toBeGreaterThan(
 			revokeAt,
 		);
-		['async function clearApproval(', 'async function readEscrowAllowance('].forEach(helper => {
-			const at = plans.indexOf(helper);
+		// The reads it and the revoke make (the approval left, whether a limit stands) live in
+		// their own module, which never mentions the gate.
+		const reads = code('src/features/usage/escrowReads.ts');
+		[
+			[plans, 'async function clearApproval('],
+			[reads, 'export async function readEscrowAllowance('],
+			[reads, 'export async function readLimitStands('],
+		].forEach(([source, helper]) => {
+			const at = source.indexOf(helper);
 			expect(at, `${helper} not found`).toBeGreaterThan(-1);
-			const body = plans.slice(at, plans.indexOf('\n}\n', at)).toLowerCase();
+			const body = source.slice(at, source.indexOf('\n}\n', at)).toLowerCase();
 			GATE_WORDS.forEach(word => expect(body, helper).not.toContain(word.toLowerCase()));
 		});
+		GATE_WORDS.forEach(word => expect(reads.toLowerCase()).not.toContain(word.toLowerCase()));
 		// Prompts can close while the approval is confirmed: the gate's current state is asked
 		// again, and the limit is not built if it refuses now.
 		const recheck = statementAt(
