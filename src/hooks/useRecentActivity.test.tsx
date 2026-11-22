@@ -53,7 +53,7 @@ describe('useRecentActivity', () => {
 
 		expect(row.label).toBe('Prompt Amount Returned');
 		expect(row.icon).toBe(RotateCcw);
-		expect(row.formattedAmount).toBe('1');
+		expect(row.formattedAmount).toBe('1.0');
 	});
 
 	it('keeps the cancel row and its returned amount as two rows with their own ids', async () => {
@@ -77,7 +77,7 @@ describe('useRecentActivity', () => {
 		expect(rows.map(r => r.id)).toEqual([`${CANCEL_TX}-3`, `${CANCEL_TX}-3-return`]);
 		expect(rows.map(r => r.label)).toEqual(['Prompt Cancelled', 'Prompt Amount Returned']);
 		expect(rows[0].icon).toBe(Ban);
-		expect(rows.map(r => r.formattedAmount)).toEqual(['-0.1', '1']);
+		expect(rows.map(r => r.formattedAmount)).toEqual(['-0.1', '1.0']);
 	});
 
 	it('still labels a type it does not know as an unknown action', async () => {

@@ -102,4 +102,55 @@ describe('RecentActivityCard', () => {
 		const duplicateKey = consoleError.mock.calls.some(args => String(args[0]).includes('same key'));
 		expect(duplicateKey).toBe(false);
 	});
+
+	it('shows each amount exactly as the chain moved it, never rounded', async () => {
+		graphRequestMock.mockResolvedValue({
+			activities: [
+				{
+					id: `${CANCEL_TX}-7`,
+					type: 'CANCEL',
+					amount: '-250000000000000000',
+					timestamp: '1700000300',
+					transactionHash: CANCEL_TX,
+				},
+				{
+					id: `${PROMPT_TX}-8`,
+					type: 'BRANCH',
+					amount: '-40000000000000000',
+					timestamp: '1700000200',
+					transactionHash: PROMPT_TX,
+				},
+			],
+		});
+
+		renderCard();
+
+		await screen.findByText('Conversation Branched');
+		// 0.25 is not rounded up to 0.3, and 0.04 is not shown as 0.0.
+		expect(within(rowOf('Prompt Cancelled')).getByText(`-0.25 ${FEE_TOKEN.symbol}`)).toBeTruthy();
+		expect(
+			within(rowOf('Conversation Branched')).getByText(`-0.04 ${FEE_TOKEN.symbol}`),
+		).toBeTruthy();
+	});
+
+	it('shows no amount for an action that moved nothing', async () => {
+		graphRequestMock.mockResolvedValue({
+			activities: [
+				{
+					id: `${CANCEL_TX}-9`,
+					type: 'RENAME',
+					amount: '0',
+					timestamp: '1700000400',
+					transactionHash: CANCEL_TX,
+				},
+			],
+		});
+
+		renderCard();
+
+		await screen.findByText('Conversation Renamed');
+		expect(
+			within(rowOf('Conversation Renamed')).queryByText(FEE_TOKEN.symbol, { exact: false }),
+		).toBeNull();
+	});
 });
