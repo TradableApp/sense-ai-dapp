@@ -7,6 +7,7 @@ import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/c
 import { openDevice } from '../helpers/devices';
 import { freshAccountPool } from '../helpers/fresh-account';
 import { getConversations, getPromptRequests, waitForGraph } from '../helpers/graph';
+import { STORED_ANSWER } from '../pages/ChatPage';
 
 // Live reasoning: while an answer is awaited, the dApp reads the oracle's sealed frames for it
 // (GET <stream address>/stream/<answerMessageId>, proof of key in a request header) and shows the
@@ -66,6 +67,14 @@ interface LiveSnapshot {
 	earlier: string | null;
 	/** Whether the "Retrying" notice is shown. */
 	retrying: boolean;
+	/** The provisional answer's text when one is shown. */
+	provisional: string | null;
+	/** The provisional mark's visible name ("Not yet confirmed") when shown. */
+	mark: string | null;
+	/** Whether an error toast is shown. Toasts close by themselves, so only a record sees one. */
+	errorToast: boolean;
+	/** How many stored answers are shown: the moment this rises is the stored answer landing. */
+	stored: number;
 }
 
 declare global {
@@ -79,9 +88,11 @@ declare global {
  * Records every distinct state of the live view from now until the page is reloaded. A
  * MutationObserver sees each React commit, so a state that lasts one render (a reset that clears
  * the steps before the next run's first step) is recorded even if no assertion polls at that moment.
+ * Installed before the prompt is sent, it covers the whole time the answer is awaited, so a spec
+ * asserts on what was shown then rather than racing the stored answer with reads of its own.
  */
 async function watchLiveView(page: Page): Promise<void> {
-	await page.evaluate(() => {
+	await page.evaluate(storedAnswer => {
 		const read = () => {
 			const roots = [...document.querySelectorAll('[data-testid="live-reasoning"]')];
 			const titles = roots.flatMap(root =>
@@ -98,7 +109,17 @@ async function watchLiveView(page: Page): Promise<void> {
 					)
 					.find(Boolean) ?? null;
 			const retrying = document.querySelector('[data-testid="live-retrying"]') !== null;
-			return { titles, earlier, retrying };
+			// textContent, not innerText: read on every mutation, it must not force a layout.
+			const provisional =
+				document
+					.querySelector('[data-testid="live-provisional-answer"] .prose')
+					?.textContent?.trim() ?? null;
+			const mark =
+				document.querySelector('[data-testid="live-provisional-mark"]')?.textContent?.trim() ??
+				null;
+			const errorToast = document.querySelector('[data-sonner-toast][data-type="error"]') !== null;
+			const stored = document.querySelectorAll(storedAnswer).length;
+			return { titles, earlier, retrying, provisional, mark, errorToast, stored };
 		};
 		const snapshots: LiveSnapshot[] = [read()];
 		window.__liveSnapshots = snapshots;
@@ -113,7 +134,7 @@ async function watchLiveView(page: Page): Promise<void> {
 			characterData: true,
 			attributes: true,
 		});
-	});
+	}, STORED_ANSWER);
 }
 
 async function liveSnapshots(page: Page): Promise<LiveSnapshot[]> {
@@ -125,8 +146,20 @@ function lastShown(snapshots: LiveSnapshot[]): LiveSnapshot | undefined {
 	return snapshots.filter(s => s.titles.length > 0).at(-1);
 }
 
+/**
+ * The index of the first snapshot that shows the stored answer, after at least one that did not:
+ * proof that the record spans the stored answer landing, so "never shown while awaited" is a
+ * statement about the awaited period and not about a record that started too late.
+ */
+function landedAt(snapshots: LiveSnapshot[]): number {
+	const landed = snapshots.findIndex(s => s.stored > 0);
+	expect(snapshots[0]?.stored, 'the record began before the stored answer landed').toBe(0);
+	expect(landed, 'the record saw the stored answer land').toBeGreaterThan(0);
+	return landed;
+}
+
 /** The stored record as the page shows it: the open disclosure's step titles (no live view). */
-async function storedSteps(page: Page): Promise<Omit<LiveSnapshot, 'retrying'>> {
+async function storedSteps(page: Page): Promise<Pick<LiveSnapshot, 'titles' | 'earlier'>> {
 	return page.evaluate(() => {
 		const titles = [...document.querySelectorAll('[data-testid="reasoning-step"]')]
 			.filter(step => !step.closest('[data-testid="reasoning-earlier-attempt"]'))
@@ -152,6 +185,8 @@ interface Traffic {
 	statuses: number[];
 	/** Sentry envelopes that carry a live reasoning report. */
 	liveReports: string[];
+	/** Every request body the page sent (Sentry envelopes included). */
+	bodies: string[];
 }
 
 const isSentryPost = (req: Request) =>
@@ -166,10 +201,13 @@ function watchTraffic(page: Page): Traffic {
 		open: new Set(),
 		statuses: [],
 		liveReports: [],
+		bodies: [],
 	};
 	const isStream = (req: Request) => req.method() === 'GET' && STREAM_PATH.test(req.url());
 	page.on('request', req => {
 		traffic.urls.push(req.url());
+		const body = req.postData();
+		if (body) traffic.bodies.push(body);
 		if (isStream(req)) {
 			traffic.streams.push(req);
 			traffic.open.add(req);
@@ -194,7 +232,8 @@ async function proofsOf(traffic: Traffic): Promise<string[]> {
 
 /**
  * The proof is a bearer of access to the answer's frames: it travels in its header and nowhere
- * else. Checks every URL the page requested, the stream's own included.
+ * else. Checks every URL the page requested, the stream's own included, and every request body
+ * (a report or a log line reaches Sentry as a POST body).
  */
 async function expectProofOnlyInHeader(traffic: Traffic): Promise<void> {
 	const proofs = await proofsOf(traffic);
@@ -204,6 +243,8 @@ async function expectProofOnlyInHeader(traffic: Traffic): Promise<void> {
 		url => /senseai-stream-proof/i.test(url) || proofs.some(proof => url.includes(proof)),
 	);
 	expect(leaked, 'no request URL carries the proof or its header name').toEqual([]);
+	const inBodies = traffic.bodies.filter(body => proofs.some(proof => body.includes(proof)));
+	expect(inBodies.length, 'no request body carries the proof').toBe(0);
 }
 
 /**
@@ -281,7 +322,7 @@ test.describe('Live reasoning stream (T-STREAM)', () => {
 		await freshHistoryPage.clickConversation(0);
 		await expect(freshChatPage.assistantMessages).toHaveCount(1, { timeout: STORED_REOPEN_MS });
 		await expect(freshPage.getByTestId('live-reasoning')).toHaveCount(0);
-		await freshChatPage.reasoningTrigger.click();
+		await freshChatPage.expandReasoning();
 		await expect(freshPage.getByTestId('reasoning-step').first()).toBeVisible();
 
 		const stored = await storedSteps(freshPage);
@@ -318,13 +359,21 @@ test.describe('Live reasoning stream (T-STREAM)', () => {
 		expect(firstRun, "the first run's step was shown").toBeGreaterThanOrEqual(0);
 		const reset = snapshots.findIndex((s, i) => i > firstRun && s.titles.length === 0);
 		expect(reset, "the first run's step disappeared on the reset").toBeGreaterThan(firstRun);
+		// A reset clears the step; an attempt frame would move it under "Earlier attempt", which
+		// also takes the current titles to none. Only the reset leaves nothing marked earlier.
+		expect(
+			snapshots.slice(firstRun).map(s => s.earlier),
+			'the re-run was taken as a reset, not as an attempt',
+		).toEqual(snapshots.slice(firstRun).map(() => null));
 		const finalRun = snapshots.findIndex(
 			(s, i) => i > reset && s.titles.length === MOCK_STEP_TITLES.length,
 		);
 		expect(finalRun, "the second run's steps were shown").toBeGreaterThan(reset);
 		expect(snapshots[finalRun].titles).toEqual(MOCK_STEP_TITLES);
-		// To confirm on the first localnet run: the interrupted run is marked "Retrying" before the
-		// reset clears it (the done frame arrives on the first connection, the reset on the next).
+		// The interrupted run is marked "Retrying" before the reset clears it, even if both frames
+		// arrive in one network read: each frame is decrypted (Web Crypto, which resolves in a task
+		// of its own) and folded one after another (liveAnswerSession's queue), and each fold
+		// publishes its state, so the two land in separate renders and the observer records both.
 		expect(
 			snapshots.slice(firstRun, reset).some(s => s.retrying),
 			'"Retrying" was shown between the interrupted run and the reset',
@@ -335,7 +384,7 @@ test.describe('Live reasoning stream (T-STREAM)', () => {
 		await freshHistoryPage.assertConversationCount(1, { timeout: STORED_REOPEN_MS });
 		await freshHistoryPage.clickConversation(0);
 		await expect(freshChatPage.assistantMessages).toHaveCount(1, { timeout: STORED_REOPEN_MS });
-		await freshChatPage.reasoningTrigger.click();
+		await freshChatPage.expandReasoning();
 		await expect(freshPage.getByTestId('reasoning-step').first()).toBeVisible();
 		const stored = await storedSteps(freshPage);
 		expect(stored.titles, "the second run's steps are the stored ones").toEqual(
@@ -428,6 +477,7 @@ test.describe('Live reasoning stream (T-STREAM)', () => {
 
 			// Both pages end on the stored answer, so nothing is left awaited at teardown.
 			await expect(deviceA.chat.assistantMessages).toHaveCount(2, { timeout: BUDGET.answerMs });
+			await expect(deviceB.chat.assistantMessages).toHaveCount(2, { timeout: BUDGET.answerMs });
 		});
 	});
 
@@ -453,10 +503,27 @@ test.describe('Live reasoning stream (T-STREAM)', () => {
 		// The route really matched: without this the test would pass with the stream simply on.
 		expect(aborted, 'stream requests were refused').toBeGreaterThan(0);
 		expect(traffic.statuses).toEqual([]);
-		expect((await liveSnapshots(freshPage)).every(s => s.titles.length === 0)).toBe(true);
-		await expect(freshPage.getByTestId('live-provisional-answer')).toHaveCount(0);
-		await expect(freshPage.getByTestId('live-retrying')).toHaveCount(0);
-		await expect(freshPage.locator('[data-sonner-toast][data-type="error"]')).toHaveCount(0);
+		// Read from the record of the whole awaited period, not after the stored answer landed (by
+		// then the live view cannot exist and a toast may have closed by itself).
+		const snapshots = await liveSnapshots(freshPage);
+		const landed = landedAt(snapshots);
+		const awaited = snapshots.slice(0, landed);
+		expect(
+			awaited.filter(s => s.titles.length > 0),
+			'no live step',
+		).toEqual([]);
+		expect(
+			awaited.filter(s => s.retrying),
+			'no "Retrying"',
+		).toEqual([]);
+		expect(
+			awaited.filter(s => s.provisional !== null),
+			'no provisional answer',
+		).toEqual([]);
+		expect(
+			snapshots.filter(s => s.errorToast),
+			'no error toast, at any time',
+		).toEqual([]);
 		// The stored answer still carries its reasoning: the record does not depend on the stream.
 		await expect(freshChatPage.reasoningTrigger).toBeVisible({ timeout: 15_000 });
 	});
@@ -470,6 +537,7 @@ test.describe('Live reasoning stream (T-STREAM)', () => {
 		await freshChatPage.goto();
 		await freshChatPage.assertComposerReady();
 		const traffic = watchTraffic(freshPage);
+		await watchLiveView(freshPage);
 
 		await freshChatPage.sendPrompt(
 			CHAIN === 'testnet'
@@ -478,24 +546,32 @@ test.describe('Live reasoning stream (T-STREAM)', () => {
 		);
 
 		// The answer frame goes after the oracle's submitAnswer receipt; the stored answer needs that
-		// block indexed and its payload fetched, so the frame arrives first. The provisional bubble
-		// is shown only while the stored answer has no content.
+		// block indexed and its payload fetched, so the frame arrives first. How long the provisional
+		// answer stays up is the stack's to decide, so nothing is read from the page while it is up:
+		// the record holds what it showed, and when, against the stored answer's arrival.
 		const provisional = freshPage.getByTestId('live-provisional-answer');
-		await expect(provisional, 'a provisional answer: is the stream address set?').toBeVisible({
-			timeout: BUDGET.answerMs,
-		});
-		await expect(freshPage.getByTestId('live-provisional-mark')).toHaveAccessibleName(
-			'Not yet confirmed',
-		);
-		await expect(freshChatPage.regenerateButton, 'the stored answer has not landed').toHaveCount(0);
-		const provisionalText = (await provisional.locator('.prose').innerText()).trim();
-		expect(provisionalText.length).toBeGreaterThan(0);
-
-		await expect(provisional).toHaveCount(0, { timeout: BUDGET.answerMs });
+		await expect(freshChatPage.assistantMessages).toHaveCount(1, { timeout: BUDGET.answerMs });
+		await expect(provisional).toHaveCount(0);
 		await expect(freshChatPage.regenerateButton).toBeVisible();
+
+		const snapshots = await liveSnapshots(freshPage);
+		const landed = landedAt(snapshots);
+		const shownLive = snapshots
+			.slice(0, landed)
+			.filter(s => s.provisional !== null && s.provisional.length > 0);
+		expect(
+			shownLive.length,
+			'a provisional answer while awaited: is the stream address set?',
+		).toBeGreaterThan(0);
+		expect(shownLive.map(s => s.mark)).toEqual(shownLive.map(() => 'Not yet confirmed'));
+		// Never both at once: the provisional bubble is shown only while the stored answer is not.
+		expect(snapshots.filter(s => s.provisional !== null && s.stored > 0)).toEqual([]);
+		const provisionalText = shownLive.at(-1)?.provisional ?? '';
 		// Read once, at once: the stored answer replaces the provisional one already in full. Had it
 		// been typed again, this read would catch it part-way.
-		const storedText = (await freshChatPage.latestAiMessage.locator('.prose').innerText()).trim();
+		const storedText = (
+			(await freshChatPage.latestAiMessage.locator('.prose').textContent()) ?? ''
+		).trim();
 		expect(storedText, 'the stored answer equals the provisional one').toBe(provisionalText);
 
 		// The lead time: from the answer frame to the stored answer landing (useLiveReasoning).
@@ -567,6 +643,10 @@ test.describe('Live reasoning stream (T-STREAM)', () => {
 		freshChatPage,
 	}) => {
 		test.skip(CHAIN === 'testnet', TESTNET_ONLY_TWO);
+		test.skip(
+			process.env.VITE_REASONING_STREAM_MODE === 'poll',
+			'Skipped in poll mode: each request is short, so none is reliably open when the conversation is left',
+		);
 		await fundAndActivatePlan(freshUserAccount.address);
 		await freshChatPage.goto();
 		await freshChatPage.assertComposerReady();
