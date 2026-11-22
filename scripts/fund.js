@@ -123,7 +123,10 @@ async function main() {
 	const amountWei = parseUnits(amount, decimals);
 	if (senderBefore < amountWei) {
 		throw new Error(
-			`Insufficient balance. Sender has ${formatUnits(senderBefore, decimals)} ${symbol}, needs ${amount}.`,
+			`Insufficient balance. Sender has ${formatUnits(
+				senderBefore,
+				decimals,
+			)} ${symbol}, needs ${amount}.`,
 		);
 	}
 
