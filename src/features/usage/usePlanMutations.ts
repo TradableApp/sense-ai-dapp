@@ -9,6 +9,7 @@ import { client } from '@/config/thirdweb';
 import { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
 import usePaymentGate from '@/hooks/usePaymentGate';
 import { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
+import { describeFailure } from '@/lib/feeTokenCheckFailure';
 import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
 import { PaymentSwitchedOffError } from '@/lib/paymentGate';
 import { wait } from '@/lib/utils';
@@ -21,6 +22,19 @@ import LimitNotSetError, { isReceiptNotFound } from './LimitNotSetError';
 /** An approval whose receipt did not come within thirdweb's wait. */
 const APPROVAL_UNCONFIRMED =
 	'The approval was sent but is not confirmed yet and may still be mined. No limit was sent. Check your wallet, then set the plan again once the approval shows there.';
+
+/**
+ * What a failure says: a fixed sentence on what holds, then the first line of the error,
+ * scrubbed and capped (thirdweb's text runs on with the RPC URL, which can carry a key, and
+ * the call data, which holds the wallet address).
+ */
+function failureDescription(lead: string, error: unknown): string {
+	const { line } = describeFailure(error);
+	return line ? `${lead} Reason: ${line}` : lead;
+}
+
+const SET_FAILED = 'The plan was not set. Please try again.';
+const REVOKE_FAILED = 'The plan was not revoked and still stands. Please try again.';
 
 /** A cancel whose receipt did not come within thirdweb's wait. */
 const REVOKE_UNCONFIRMED =
@@ -306,10 +320,12 @@ function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 				return;
 			}
 			// Refused or held before anything was sent: not a failed transaction.
-			const wasNotSent = error instanceof PaymentSwitchedOffError || error instanceof PlanHeldError;
-			toast.error(wasNotSent ? 'Not sent' : 'Transaction Failed', {
-				description: error.message || 'An unexpected error occurred. Please try again.',
-			});
+			// Their words are the gate's own, with nothing from the chain in them.
+			if (error instanceof PaymentSwitchedOffError || error instanceof PlanHeldError) {
+				toast.error('Not sent', { description: error.message });
+				return;
+			}
+			toast.error('Transaction Failed', { description: failureDescription(SET_FAILED, error) });
 		},
 	});
 }
@@ -354,9 +370,7 @@ function useRevokePlanMutation({
 				await refreshPlanQueries(queryClient, activeWallet);
 				return;
 			}
-			toast.error('Revoke Failed', {
-				description: error.message || 'Could not revoke access. Please try again.',
-			});
+			toast.error('Revoke Failed', { description: failureDescription(REVOKE_FAILED, error) });
 		},
 	});
 }
