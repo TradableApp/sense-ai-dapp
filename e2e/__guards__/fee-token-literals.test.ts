@@ -352,6 +352,10 @@ describe('the e2e suite reads the fee token from its profile', () => {
 		expect(scanned.some(file => /\.test\.ts$/.test(file))).toBe(false);
 	});
 
+	it('scans the Playwright config, which holds the projects and their gates', () => {
+		expect(scannedE2eFiles()).toContain('playwright.config.ts');
+	});
+
 	it('recognises a token name in e2e code and leaves comments and ordinary words alone', () => {
 		const flagged = [
 			'export async function fundABLE(',
@@ -364,6 +368,12 @@ describe('the e2e suite reads the fee token from its profile', () => {
 			'const fee = 3n * SENSE;',
 			'name: /get \\d+ (localnet|testnet) able|sending tokens/i,',
 			'const hint = modal.getByText(/you have [\\d.]+ sense/i);',
+			// a lower-case name inside a string handed to RegExp, in any quote style
+			".getByText(new RegExp('insufficient able balance', 'i'))",
+			'return new RegExp("\\\\bable\\\\b", "i");',
+			'name: new RegExp("get \\\\d+ (localnet|testnet) sense|sending tokens", "i"),',
+			'new RegExp(`you have [\\\\d.]+ sense`, \'i\'),',
+			"export const TOKEN = 'ABLE';",
 		];
 		const left = [
 			'// funds the wallet with ABLE from the treasury',
@@ -373,6 +383,10 @@ describe('the e2e suite reads the fee token from its profile', () => {
 			"test('T-XFER-01: a holder cannot send to another holder', async () => {});",
 			"await page.goto('https://senseai.tradable.app');",
 			'await expect(page.getByText(/unable to connect|disabled/i)).toBeVisible();',
+			// the symbol read from the profile, and ordinary words, inside a RegExp string
+			".getByText(new RegExp(`insufficient ${feeToken().symbol} balance`, 'i'))",
+			'return new RegExp(`\\\\b${feeToken().symbol}\\\\b`);',
+			"new RegExp('unable to connect|disabled|sensible', 'i')",
 		];
 
 		flagged.forEach(line =>
