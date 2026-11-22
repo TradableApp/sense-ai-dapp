@@ -108,22 +108,26 @@ export const cursorOf = (state: LiveAnswerState): string | null =>
 const stepsInAttempt = (state: LiveAnswerState, attempt: number) =>
 	state.steps.filter(step => step.attempt === attempt).length;
 
+const sourcesInAttempt = (state: LiveAnswerState, attempt: number) =>
+	state.sources.filter(source => source.attempt === attempt).length;
+
 /** Applies the frame that is next in seq order. */
 function applyInOrder(state: LiveAnswerState, frame: Frame): LiveAnswerState {
 	const next = { ...state, nextSeq: state.nextSeq + 1, replica: frame.replica };
 	switch (frame.type) {
-		case FRAME_TYPES.SOURCES:
+		case FRAME_TYPES.SOURCES: {
+			const { attempt, sources } = frame.data;
+			const room = MAX_SOURCES_PER_ATTEMPT - sourcesInAttempt(state, attempt);
 			return {
 				...next,
 				sources: [
 					...state.sources,
-					...frame.data.sources.map(s => ({
-						title: s.title,
-						url: s.url,
-						attempt: frame.data.attempt,
-					})),
+					...sources
+						.slice(0, Math.max(room, 0))
+						.map(s => ({ title: s.title, url: s.url, attempt })),
 				],
 			};
+		}
 		case FRAME_TYPES.STEP: {
 			const { attempt, title, description } = frame.data;
 			if (stepsInAttempt(state, attempt) >= LIMITS.maxStepsPerAttempt) return next;
