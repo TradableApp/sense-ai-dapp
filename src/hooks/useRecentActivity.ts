@@ -12,14 +12,15 @@ import {
 	Split,
 	Trash2,
 } from 'lucide-react';
-import { formatEther } from 'viem';
 
+import { FEE_TOKEN } from '@/config/feeToken';
 import { useSession } from '@/features/auth/SessionProvider';
 import { GET_RECENT_ACTIVITY_QUERY } from '@/lib/graph/queries';
 import type {
 	GetRecentActivityQuery,
 	GetRecentActivityQueryVariables,
 } from '@/lib/graph/query-types';
+import formatTokenAmount from '@/lib/tokenAmount';
 
 const THE_GRAPH_API_URL = import.meta.env.VITE_THE_GRAPH_API_URL;
 const graphQLClient = new GraphQLClient(THE_GRAPH_API_URL);
@@ -67,8 +68,8 @@ export default function useRecentActivity(limit = 10) {
 				return {
 					...activity,
 					...details,
-					// Format amount from wei to human-readable string
-					formattedAmount: formatEther(BigInt(activity.amount)),
+					// The exact amount the chain moved, with the fee token's decimals: never rounded
+					formattedAmount: formatTokenAmount(BigInt(activity.amount), FEE_TOKEN.decimals),
 					// Format timestamp to "X hours ago"
 					formattedTimestamp: formatDistanceToNow(new Date(Number(activity.timestamp) * 1000), {
 						addSuffix: true,

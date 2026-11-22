@@ -50,12 +50,12 @@ export default function RecentActivityCard() {
 										</div>
 										<div
 											className={`font-medium whitespace-nowrap ${
-												Number(item.formattedAmount) > 0 ? 'text-green-500' : ''
+												BigInt(item.amount) > 0n ? 'text-green-500' : ''
 											}`}
 										>
-											{Number(item.formattedAmount) === 0
+											{BigInt(item.amount) === 0n
 												? ''
-												: `${Number(item.formattedAmount).toFixed(1)} ${FEE_TOKEN.symbol}`}
+												: `${item.formattedAmount} ${FEE_TOKEN.symbol}`}
 										</div>
 									</div>
 									{index < activities.length - 1 && <Separator className="mt-4" />}
