@@ -169,3 +169,25 @@ The interface contract (names, limits, refusals, the shared test vector) lives i
 `src/lib/liveReasoning/contract.ts`; a change to one is a change to both. What still rests on
 measurement on real ROFL (where TLS ends, proxy buffering and idle limits, which set
 `VITE_REASONING_STREAM_MODE` and the server's timings) is recorded with the Phase 0 findings.
+
+### Accepted limits of the live plane (2026-11-22)
+
+Known and accepted as they are; each is bounded, and the stored record is what is finally shown.
+
+- **An answer's state is answered before its proof is checked.** Whether an answer id is open,
+  finished, dropped or unknown shows in the status code without a proof. Answer ids and
+  submissions are already public on chain, so this adds only when the TEE started and finished
+  a job.
+- **A proof is fixed for each key and answer.** It works for the whole run from anywhere, and
+  what it yields is ciphertext. Reader places per answer are capped; closing the oldest reader
+  in place of refusing the newest is a possible later change.
+- **An interrupted run that no successful run follows.** Its steps are shown as retrying and are
+  stored nowhere. This is the one place something shown is not also stored, and it lasts only
+  while the page is open and the answer is still awaited.
+- **A frame's type is inside its ciphertext.** The reader refuses a frame over the answer frame
+  limit before decoding it; a smaller frame of another type that is over that type's own limit
+  is decrypted and parsed, then refused. The type stays encrypted so the wire shows nothing
+  about what a frame carries.
+- **The server holds at most 1 MiB of frames per answer**, below the largest run the contract
+  allows on paper. A run past it gets a 503 on the stream and the chat shows the stored answer
+  when it lands.
