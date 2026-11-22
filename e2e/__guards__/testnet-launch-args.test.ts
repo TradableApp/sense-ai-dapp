@@ -19,19 +19,47 @@ const DIRECT_DEVICE_FIX =
 	'Give it `use: DESKTOP_CHROME`, or `use: { ...DESKTOP_CHROME, <its own options> }` with no ' +
 	'launchOptions of its own.';
 
+const FLAG = /['"]--disable-gpu['"]/;
+
+/** Every project entry in `config`: from its `name:` (two tabs deep) to the brace closing it. */
+function projectBlocks(config: string): { name: string; block: string }[] {
+	return [...config.matchAll(/\n\t\tname: ['"]([^'"]+)['"]/g)].map(match => {
+		const start = match.index ?? 0;
+		const end = config.indexOf('\n\t},', start);
+		return { name: match[1], block: config.slice(start, end > start ? end : undefined) };
+	});
+}
+
+/** Why one project would launch without the flag, or null when it has it. */
+function projectProblem(block: string): string | null {
+	if (!/\buse:/.test(block)) {
+		return 'has no `use`, so it launches with no flag: give it `use: DESKTOP_CHROME`';
+	}
+	// Any launchOptions of its own replace the shared ones whole (a spread is shallow), so they
+	// must carry the flag themselves.
+	const ownLaunch = block.match(/launchOptions:\s*\{[^}]*\}/g) ?? [];
+	if (ownLaunch.some(options => !FLAG.test(options))) {
+		return 'sets launchOptions without --disable-gpu, which replace the shared ones: drop them';
+	}
+	const shared = /use:\s*DESKTOP_CHROME\b|\.\.\.DESKTOP_CHROME\b/.test(block);
+	if (!shared && ownLaunch.length === 0) {
+		return 'takes neither DESKTOP_CHROME nor a device with the flag: give it `use: DESKTOP_CHROME`';
+	}
+	return null;
+}
+
 /**
  * Why the projects in `config` would launch Chromium without the flag: one line per problem,
  * none when every project has it.
  */
 function launchFlagProblems(config: string): string[] {
 	const problems: string[] = [];
-	const uses = config.match(/devices\['Desktop Chrome'\]/g) ?? [];
+	// Either quote style: the shared setting is the one place the raw device may appear.
+	const uses = config.match(/devices\[['"]Desktop Chrome['"]\]/g) ?? [];
 	if (uses.length !== 1) problems.push(DIRECT_DEVICE_FIX);
-	const own = [
-		...config.matchAll(/use:\s*\{[^}]*devices\['(?!Desktop Chrome)[^']+'\][^}]*\}?[^}]*\}/g),
-	];
-	for (const [block] of own) {
-		if (!block.includes("'--disable-gpu'")) problems.push(`a device without the flag: ${block}`);
+	for (const { name, block } of projectBlocks(config)) {
+		const problem = projectProblem(block);
+		if (problem) problems.push(`project '${name}' ${problem}`);
 	}
 	return problems;
 }
@@ -76,6 +104,13 @@ describe('every project launch args', () => {
 	});
 
 	it('every project in the config launches with the flag', () => {
+		const names = projectBlocks(CONFIG).map(({ name }) => name);
+
+		// Every project is read, on every chain's list.
+		expect(names).toEqual(
+			expect.arrayContaining(['testnet', 'testnet-resilience', 'smoke', 'mobile']),
+		);
+		expect(names).toHaveLength((CONFIG.match(/\n\t\tname: /g) ?? []).length);
 		expect(launchFlagProblems(CONFIG)).toEqual([]);
 	});
 
