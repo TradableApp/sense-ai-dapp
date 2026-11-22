@@ -234,7 +234,9 @@ describe('useLiveReasoning', () => {
 		await waitFor(() => expect(streams.started).toHaveLength(1));
 		await push(streamFor('42'), frame(0, RESET));
 		await push(streamFor('42'), frame(1, ANSWER));
-		await waitFor(() => expect(result.current.viewFor('42')?.answer).not.toBeNull());
+		// Waits for the answer frame itself: with no view yet, `answer` is undefined, which is not
+		// null, so a looser check would pass before the frame is decrypted and applied.
+		await waitFor(() => expect(result.current.viewFor('42')?.answer?.text).toBe('Prices rose.'));
 
 		rerender({
 			messages: [user('41'), placeholder('42', { content: 'Prices rose.' })],
