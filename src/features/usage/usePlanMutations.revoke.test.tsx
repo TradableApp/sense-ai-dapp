@@ -41,10 +41,13 @@ vi.mock('sonner', () => ({
 }));
 vi.mock('thirdweb', () => ({
 	getContract: vi.fn((options: { address: string }) => ({ address: options.address })),
-	prepareContractCall: vi.fn((options: { method: string; params?: unknown[] }) => ({
-		method: options.method,
-		params: options.params,
-	})),
+	prepareContractCall: vi.fn(
+		(options: { contract: unknown; method: string; params?: unknown[] }) => ({
+			contract: options.contract,
+			method: options.method,
+			params: options.params,
+		}),
+	),
 	readContract: vi.fn(),
 }));
 vi.mock('thirdweb/react', () => {
@@ -118,8 +121,17 @@ async function revoke() {
 }
 
 const methods = () => vi.mocked(prepareContractCall).mock.calls.map(([call]) => call);
-const cancelCall = expect.objectContaining({ method: 'cancelSpendingLimit' });
-const clearCall = expect.objectContaining({ method: 'approve', params: [ESCROW, 0n] });
+// Each call is matched with the contract it is sent to: the cancel to the escrow, the
+// approval of zero to the token.
+const cancelCall = expect.objectContaining({
+	contract: { address: ESCROW },
+	method: 'cancelSpendingLimit',
+});
+const clearCall = expect.objectContaining({
+	contract: { address: TOKEN },
+	method: 'approve',
+	params: [ESCROW, 0n],
+});
 
 type Notice = { description?: string; action?: { label: string; onClick: () => void } };
 
@@ -688,5 +700,135 @@ describe('one plan transaction at a time, from any mounted dialog or notice', ()
 
 		await waitFor(() => expect(sendAndConfirm).toHaveBeenCalledTimes(3));
 		expect(methods()).toEqual([cancelCall, clearCall, clearCall]);
+	});
+});
+
+describe('the plan and the balance are read again after every revoke outcome', () => {
+	const isRefreshed = (invalidate: ReturnType<typeof renderPlanMutations>['invalidate']) =>
+		waitFor(() => {
+			expect(invalidate).toHaveBeenCalledWith(PLAN_REFRESH);
+			expect(invalidate).toHaveBeenCalledWith(BALANCE_REFRESH);
+		});
+
+	it('after a full revoke', async () => {
+		const { invalidate } = await revoke();
+
+		await isRefreshed(invalidate);
+	});
+
+	it('after a revoke whose second step was declined', async () => {
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockRejectedValueOnce(new Error('user rejected'));
+
+		const { invalidate } = await revoke();
+
+		await isRefreshed(invalidate);
+	});
+
+	it.each([
+		['succeeds', { status: 'success' }],
+		['is reverted', { status: 'reverted' }],
+	])('after a removal from the notice that %s', async (_, receipt) => {
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockRejectedValueOnce(new Error('user rejected'))
+			.mockResolvedValueOnce(receipt);
+		const { invalidate } = await revoke();
+		await isRefreshed(invalidate);
+		invalidate.mockClear();
+
+		await pressAction(onlyNotice('error').options, 2);
+
+		await isRefreshed(invalidate);
+	});
+});
+
+describe('the notice that offers to remove the approval', () => {
+	type Shown = Notice & { id?: string; duration?: number };
+
+	it('has one fixed id, so a second failure replaces it, and is kept until closed', async () => {
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockRejectedValueOnce(new Error('user rejected'));
+
+		await revoke();
+
+		const options = onlyNotice('error').options as Shown;
+		expect(options.id).toBe('plan-approval-not-cleared');
+		expect(options.duration).toBe(Infinity);
+	});
+
+	it("a second notice's action sends one more approval of zero", async () => {
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockRejectedValueOnce(new Error('user rejected'))
+			.mockResolvedValueOnce({ status: 'reverted' });
+		await revoke();
+		await pressAction(onlyNotice('error').options, 2);
+		const second = vi.mocked(toast.error).mock.calls[1][1] as Shown;
+		expect(second.id).toBe('plan-approval-not-cleared');
+		expect(second.duration).toBe(Infinity);
+
+		await act(async () => {
+			second.action?.onClick();
+		});
+		await waitFor(() => expect(sendAndConfirm).toHaveBeenCalledTimes(4));
+
+		expect(methods()).toEqual([cancelCall, clearCall, clearCall, clearCall]);
+	});
+
+	it('takes down the wallet notice of the second step, whether it succeeds or not', async () => {
+		vi.mocked(toast.info).mockReturnValueOnce('cancel-notice').mockReturnValueOnce('step-two');
+
+		await revoke();
+
+		expect(toast.dismiss).toHaveBeenCalledWith('step-two');
+	});
+
+	it('takes down the wallet notice of the second step when it is declined', async () => {
+		vi.mocked(toast.info).mockReturnValueOnce('cancel-notice').mockReturnValueOnce('step-two');
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockRejectedValueOnce(new Error('user rejected'));
+
+		await revoke();
+
+		expect(toast.dismiss).toHaveBeenCalledWith('step-two');
+	});
+});
+
+describe('never "Access Revoked" while an approval may stand', () => {
+	it('an approval of one wei is removed before success is said', async () => {
+		onChain.allowance = 1n;
+
+		await revoke();
+
+		expect(methods()).toEqual([cancelCall, clearCall]);
+		const lastSend = sendAndConfirm.mock.invocationCallOrder[1];
+		expect(vi.mocked(toast.success).mock.invocationCallOrder[0]).toBeGreaterThan(lastSend);
+	});
+
+	it.each([
+		['a read that gives no number', () => '0x'],
+		['a read that gives a plain number', () => 10],
+	])('%s is an approval not checked', async (_, answer) => {
+		onChain.allowance = answer();
+
+		await revoke();
+
+		expect(methods()).toEqual([cancelCall]);
+		expect(onlyNotice('warning').title).toBe('Approval Not Checked');
+		expect(toast.success).not.toHaveBeenCalled();
+	});
+
+	it('an account with no address is an approval not checked', async () => {
+		account.address = undefined;
+
+		await revoke();
+
+		expect(readContract).not.toHaveBeenCalled();
+		expect(onlyNotice('warning').title).toBe('Approval Not Checked');
+		expect(toast.success).not.toHaveBeenCalled();
 	});
 });
