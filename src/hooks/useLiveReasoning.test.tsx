@@ -22,11 +22,12 @@ interface StartedStream {
 	options: FrameStreamOptions;
 	stop: ReturnType<typeof vi.fn>;
 	reconnect: ReturnType<typeof vi.fn>;
+	wake: ReturnType<typeof vi.fn>;
 }
 const streams = vi.hoisted(() => ({ started: [] as StartedStream[] }));
 vi.mock('@/lib/liveReasoning/frameTransport', () => ({
 	startFrameStream: (options: FrameStreamOptions) => {
-		const stream = { options, stop: vi.fn(), reconnect: vi.fn() };
+		const stream = { options, stop: vi.fn(), reconnect: vi.fn(), wake: vi.fn() };
 		streams.started.push(stream);
 		return stream;
 	},
@@ -369,5 +370,27 @@ describe('useLiveReasoning', () => {
 		expect(everything).not.toContain(proof);
 		expect(Sentry.captureException).toHaveBeenCalledTimes(1);
 		spies.forEach(spy => spy.mockRestore());
+	});
+
+	it('tells the stream when the tab is hidden, and wakes it when the tab is shown again', async () => {
+		const visibility = vi.spyOn(document, 'visibilityState', 'get');
+		mount([user('41'), placeholder('42')]);
+		await waitFor(() => expect(streams.started).toHaveLength(1));
+		const stream = streamFor('42');
+
+		visibility.mockReturnValue('hidden');
+		expect(stream.options.isHidden?.()).toBe(true);
+		act(() => {
+			document.dispatchEvent(new Event('visibilitychange'));
+		});
+		expect(stream.wake).not.toHaveBeenCalled();
+
+		visibility.mockReturnValue('visible');
+		expect(stream.options.isHidden?.()).toBe(false);
+		act(() => {
+			document.dispatchEvent(new Event('visibilitychange'));
+		});
+		expect(stream.wake).toHaveBeenCalledTimes(1);
+		visibility.mockRestore();
 	});
 });

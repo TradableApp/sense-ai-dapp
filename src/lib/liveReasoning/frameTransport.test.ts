@@ -566,4 +566,58 @@ describe('the frame transport', () => {
 			expect(h.stops).toEqual(['finished']);
 		});
 	});
+
+	describe('a hidden tab', () => {
+		function startWithVisibility(responses: StreamResponse[]) {
+			const visibility = { hidden: false };
+			const queue = [...responses];
+			const fetchImpl = vi.fn(async () => queue.shift() ?? ok([], { hold: true }));
+			const cursor = { value: null as string | null };
+			const stops: string[] = [];
+			const handle = startFrameStream({
+				url: URL_42,
+				proof: PROOF,
+				onEvent: e => {
+					cursor.value = e.id;
+				},
+				getCursor: () => cursor.value,
+				onStop: reason => stops.push(reason),
+				fetchImpl: fetchImpl as unknown as StreamFetch,
+				random: () => 0,
+				isHidden: () => visibility.hidden,
+			});
+			return { visibility, fetchImpl, stops, handle };
+		}
+
+		it('opens no connection while hidden, never goes idle for it, and resumes from the cursor when woken', async () => {
+			const h = startWithVisibility([ok([event(0)])]);
+			h.visibility.hidden = true;
+			await vi.advanceTimersByTimeAsync(0);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(1);
+
+			await vi.advanceTimersByTimeAsync(2 * IDLE_GIVE_UP_MS);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(1);
+			expect(h.stops).toEqual([]);
+
+			h.visibility.hidden = false;
+			h.handle.wake();
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(h.fetchImpl).toHaveBeenCalledTimes(2);
+			const init = h.fetchImpl.mock.calls[1] as unknown as [string, StreamRequestInit];
+			expect(new Headers(init[1].headers as HeadersInit).get('Last-Event-ID')).toBe(`${RUN}.0`);
+			h.handle.stop();
+		});
+
+		it('connects nothing on a wake when no connection was skipped', async () => {
+			const h = startWithVisibility([]);
+			await vi.advanceTimersByTimeAsync(0);
+
+			h.handle.wake();
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(h.fetchImpl).toHaveBeenCalledTimes(1);
+			h.handle.stop();
+		});
+	});
 });
