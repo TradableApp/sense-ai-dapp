@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MAX_SEALED_FRAME_CHARS } from '@/lib/liveReasoning/contract';
+
 import {
 	IDLE_GIVE_UP_MS,
 	MAX_EVENT_CHARS,
@@ -563,6 +565,22 @@ describe('the frame transport', () => {
 
 			expect(h.fetchImpl.mock.calls[0][1]).toMatchObject({ redirect: 'error' });
 			h.handle.stop();
+		});
+
+		it('carries the largest frame the contract allows, in one data line', async () => {
+			const data = `${'A'.repeat(16)}.${'B'.repeat(MAX_SEALED_FRAME_CHARS - 17)}`;
+			const h = start([ok([event(0, data)], { hold: true })]);
+
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(data).toHaveLength(MAX_SEALED_FRAME_CHARS);
+			expect(h.events).toEqual([{ id: `${RUN}.0`, data }]);
+			h.handle.stop();
+		});
+
+		it('sizes its line and event caps from the largest sealed frame, and no larger', () => {
+			expect(MAX_LINE_CHARS).toBe('data: '.length + MAX_SEALED_FRAME_CHARS);
+			expect(MAX_EVENT_CHARS).toBe(MAX_SEALED_FRAME_CHARS + 1);
 		});
 
 		it('takes data lines that add up past the event cap as no frame, and stops after a few', async () => {
