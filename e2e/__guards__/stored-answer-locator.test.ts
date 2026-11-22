@@ -19,9 +19,27 @@ const STORED_DEFINITION =
 
 const isSource = (file: string) => /\.tsx?$/.test(file) && !file.startsWith('__guards__');
 
-/** The `file:line` of every line in `source` that locates an answer bubble by hand. */
+/**
+ * Any spelling of an answer bubble selector: the class however it is matched (`.is-assistant`,
+ * `[class*="is-assistant"]`, an xpath on `@class`), and the state attribute with or without a
+ * value. Only STORED_ANSWER's definition may hold one.
+ */
+const ANY_BUBBLE = /is-assistant|data-answer-state/;
+
+/**
+ * The `file:line` of every line in `source` that locates an answer bubble by hand. Comments are
+ * dropped first, but not the shared way: that drops everything after any `//` not preceded by a
+ * colon, which would hide an xpath (`xpath=//div[...]`). Here a `//` starts a comment only at the
+ * start of a line or after a space.
+ */
 function bubbleOffenders(file: string, source: string): string[] {
-	return offendersIn(file, source, RAW_BUBBLE);
+	return source
+		.replace(/\/\*[\s\S]*?\*\//g, block => block.replace(/[^\n]/g, ''))
+		.split('\n')
+		.flatMap((line, i) => {
+			const code = line.replace(/(^|\s)\/\/.*$/, '');
+			return ANY_BUBBLE.test(code) ? [`${file}:${i + 1}`] : [];
+		});
 }
 
 describe('answer bubbles are located as stored answers only', () => {
