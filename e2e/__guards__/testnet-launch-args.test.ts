@@ -24,3 +24,27 @@ describe('testnet project launch args', () => {
 		expect(block).toMatch(/launchOptions:\s*\{[^}]*args:\s*\[[^\]]*'--disable-gpu'/);
 	});
 });
+
+// The same stall reached the localnet suite on 2026-11-21 (T-HIST-11: no frame painted for 23 s
+// under host load while the page's JavaScript kept running, so a click waited its full 15 s for
+// "stable"). So every project launches Chromium with the flag, through one shared setting.
+describe('every project launch args', () => {
+	it('the shared desktop setting passes --disable-gpu to Chromium', () => {
+		expect(CONFIG).toMatch(
+			/const DESKTOP_CHROME = \{\s*\.\.\.devices\['Desktop Chrome'\],\s*launchOptions:\s*\{[^}]*args:\s*\[[^\]]*'--disable-gpu'/,
+		);
+	});
+
+	it('no project takes the desktop device without the shared setting', () => {
+		const uses = CONFIG.match(/devices\['Desktop Chrome'\]/g) ?? [];
+		expect(uses).toHaveLength(1);
+	});
+
+	it('every project that names a device of its own passes the flag too', () => {
+		const own = [
+			...CONFIG.matchAll(/use:\s*\{[^}]*devices\['(?!Desktop Chrome)[^']+'\][^}]*\}?[^}]*\}/g),
+		];
+		expect(own.length).toBeGreaterThan(0);
+		for (const [block] of own) expect(block).toContain("'--disable-gpu'");
+	});
+});
