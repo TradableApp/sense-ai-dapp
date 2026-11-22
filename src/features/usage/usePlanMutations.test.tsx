@@ -62,6 +62,10 @@ vi.mock('@/lib/utils', async original => ({
 
 const PLAN = { limitInWei: 100n, expiresAtTimestamp: 2_000_000_000n };
 
+// The fixed sentence a failure starts with, before its reason.
+const SET_FAILED = 'The plan was not set. Please try again.';
+const REVOKE_FAILED = 'The plan was not revoked and still stands. Please try again.';
+
 function withVerdict(verdict: FeeTokenCheckState) {
 	vi.mocked(useFeeTokenCheck).mockReturnValue({
 		verdict,
@@ -317,7 +321,7 @@ describe('a plan that was sent and failed', () => {
 		await attempt(setPlan);
 
 		expect(toast.error).toHaveBeenCalledWith('Transaction Failed', {
-			description: 'user rejected',
+			description: `${SET_FAILED} Reason: user rejected`,
 		});
 	});
 
@@ -522,7 +526,7 @@ describe('a plan whose approval went through and whose limit then failed', () =>
 		const { invalidate } = await attempt(setPlan);
 
 		expect(toast.error).toHaveBeenCalledWith('Transaction Failed', {
-			description: 'user rejected',
+			description: `${SET_FAILED} Reason: user rejected`,
 		});
 		expect(invalidate).not.toHaveBeenCalled();
 	});
@@ -537,7 +541,38 @@ describe('a revoke that was sent and failed', () => {
 		await attempt(revoke);
 
 		expect(toast.dismiss).toHaveBeenCalledWith('revoke-notice');
-		expect(toast.error).toHaveBeenCalledWith('Revoke Failed', { description: 'user rejected' });
+		expect(toast.error).toHaveBeenCalledWith('Revoke Failed', {
+			description: `${REVOKE_FAILED} Reason: user rejected`,
+		});
+	});
+});
+
+// thirdweb's text runs on with the RPC URL (which can carry a key) and the call data.
+const LEAKY = new Error(
+	`HTTP request failed for 0x${'aa'.repeat(
+		20,
+	)} at https://rpc.example/v2/KEY123\nbody 0x${'bb'.repeat(20)}`,
+);
+
+describe.each([
+	['setting a plan', setPlan, 'Transaction Failed', SET_FAILED],
+	['revoking a plan', revoke, 'Revoke Failed', REVOKE_FAILED],
+])('a failure while %s', (_, run, expectedTitle, lead) => {
+	it('says what holds first, then the first line of the reason only, scrubbed', async () => {
+		withVerdict('ok');
+		sendAndConfirm.mockRejectedValueOnce(LEAKY);
+
+		await attempt(run);
+
+		const [title, options] = vi.mocked(toast.error).mock.calls[0];
+		const description = String((options as { description?: string }).description);
+		expect(title).toBe(expectedTitle);
+		expect(description.startsWith(`${lead} Reason: `)).toBe(true);
+		expect(description).not.toContain('KEY123');
+		expect(description).not.toContain('aa'.repeat(20));
+		expect(description).not.toContain('bb');
+		expect(description).not.toContain('\n');
+		expect(description).toMatch(/<url>$/);
 	});
 });
 
