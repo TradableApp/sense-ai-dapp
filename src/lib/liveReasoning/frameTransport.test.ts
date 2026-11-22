@@ -64,7 +64,7 @@ interface Harness {
 interface StartOptions {
 	/** False: frames arrive but never move the cursor (undecryptable, refused by the schema). */
 	applies?: boolean;
-	/** True: a frame is applied a few microtasks after it arrives, as a decrypt is. */
+	/** True: a frame is applied a few milliseconds after it arrives, as a decrypt is. */
 	appliesLater?: boolean;
 	/** The response given once the listed ones run out; a held-open empty stream by default. */
 	repeat?: () => StreamResponse;
@@ -72,6 +72,8 @@ interface StartOptions {
 
 /** The most requests a test answers before it stops responding (a storm shows as this count). */
 const STORM_CAP = 1_000;
+/** How long `appliesLater` takes to apply a frame: the response has ended by then. */
+const APPLY_DELAY_MS = 5;
 
 function start(responses: Array<StreamResponse | Error>, opts: StartOptions = {}): Harness {
 	const { applies = true, appliesLater = false, repeat = () => ok([], { hold: true }) } = opts;
@@ -97,9 +99,12 @@ function start(responses: Array<StreamResponse | Error>, opts: StartOptions = {}
 		onEvent: e => {
 			events.push(e);
 			if (!appliesLater) return apply(e);
-			return Promise.resolve()
-				.then(() => undefined)
-				.then(() => apply(e));
+			return new Promise<void>(resolve => {
+				setTimeout(() => {
+					apply(e);
+					resolve();
+				}, APPLY_DELAY_MS);
+			});
 		},
 		getCursor: () => cursor.value,
 		onStop: reason => stops.push(reason),
@@ -158,7 +163,12 @@ describe('the frame transport', () => {
 		expect(headersOf(h, 0).get('X-SenseAI-Stream-Proof')).toBe(PROOF);
 		expect(headersOf(h, 0).get('Accept')).toBe('text/event-stream');
 		expect(headersOf(h, 0).has('Last-Event-ID')).toBe(false);
-		expect(init).toMatchObject({ credentials: 'omit', cache: 'no-store' });
+		expect(init).toMatchObject({
+			credentials: 'omit',
+			cache: 'no-store',
+			mode: 'cors',
+			referrerPolicy: 'no-referrer',
+		});
 		h.handle.stop();
 	});
 
@@ -605,7 +615,11 @@ describe('the frame transport', () => {
 
 			expect(h.fetchImpl).toHaveBeenCalledTimes(2);
 			const init = h.fetchImpl.mock.calls[1] as unknown as [string, StreamRequestInit];
-			expect(new Headers(init[1].headers as ConstructorParameters<typeof Headers>[0]).get('Last-Event-ID')).toBe(`${RUN}.0`);
+			expect(
+				new Headers(init[1].headers as ConstructorParameters<typeof Headers>[0]).get(
+					'Last-Event-ID',
+				),
+			).toBe(`${RUN}.0`);
 			h.handle.stop();
 		});
 

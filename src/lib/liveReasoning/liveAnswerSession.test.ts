@@ -201,7 +201,8 @@ describe('a live answer session', () => {
 		const h = stubSession();
 		const stream = await h.opened();
 
-		await stream.onEvent({ id: `${RUN}.0`, data: 'not a sealed frame' });
+		// A dot, as a sealed frame has, but not base64 on either side of it.
+		await stream.onEvent({ id: `${RUN}.0`, data: 'not.a sealed frame!' });
 
 		expect(decryptData).not.toHaveBeenCalled();
 		expect(h.states.at(-1)?.dropped).toBe(1);
