@@ -10,6 +10,7 @@ import {
 	initialLiveState,
 	type LiveAnswerState,
 	MAX_HELD_FRAMES,
+	MAX_SOURCES_PER_ATTEMPT,
 } from './liveReducer';
 
 const ID = '42';
@@ -285,5 +286,33 @@ describe('the live reducer', () => {
 		expect(titles(state).at(63)).toBe('s64');
 		expect(titles(state).at(-1)).toBe('fallback');
 		expect(cursorOf(state)).toBe(`${RUN_A}.71`);
+	});
+
+	it('shows at most MAX_SOURCES_PER_ATTEMPT sources per attempt, however many frames carry them', () => {
+		const sourcesFrame = (seq: number, attemptNo: number, count: number) =>
+			frame(seq, {
+				type: 'sources',
+				data: {
+					attempt: attemptNo,
+					sources: Array.from({ length: count }, (_, i) => ({
+						title: `t${seq}-${i}`,
+						url: `https://example.com/${seq}/${i}`,
+					})),
+				},
+			});
+
+		const { state } = applyAll([
+			reset(),
+			sourcesFrame(1, 1, 15),
+			sourcesFrame(2, 1, 15),
+			sourcesFrame(3, 1, 15),
+			sourcesFrame(4, 2, 15),
+		]);
+
+		expect(state.sources.filter(s => s.attempt === 1)).toHaveLength(MAX_SOURCES_PER_ATTEMPT);
+		expect(state.sources.filter(s => s.attempt === 2)).toHaveLength(15);
+		expect(state.sources[0].title).toBe('t1-0');
+		expect(cursorOf(state)).toBe(`${RUN_A}.4`);
+		expect(MAX_SOURCES_PER_ATTEMPT).toBe(20);
 	});
 });

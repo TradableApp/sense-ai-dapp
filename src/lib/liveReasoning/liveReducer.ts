@@ -23,6 +23,11 @@ import {
 export const GAP_WAIT_MS = 5_000;
 /** The most frames held after a gap before the caller reconnects at once. */
 export const MAX_HELD_FRAMES = 64;
+/**
+ * The most sources shown for one attempt. The oracle sends one sources frame per attempt, of at
+ * most `LIMITS.maxSourcesPerFrame`; this keeps a stream that sends more from growing the list.
+ */
+export const MAX_SOURCES_PER_ATTEMPT = LIMITS.maxSourcesPerFrame;
 
 export interface LiveStep {
 	title: string;
