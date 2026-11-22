@@ -52,10 +52,14 @@ export function ProvisionalMark() {
 	);
 }
 
-/** The answer text from the live stream, before the stored answer lands. */
+/**
+ * The answer text from the live stream, before the stored answer lands. It is not announced as
+ * it arrives (`aria-live="off"` inside the conversation's log): the stored answer that replaces
+ * it is, so the answer is read out once.
+ */
 export function ProvisionalAnswer({ text }: { text: string }) {
 	return (
-		<div data-testid="live-provisional-answer" className="space-y-1.5">
+		<div data-testid="live-provisional-answer" aria-live="off" className="space-y-1.5">
 			<Message from="assistant" className="items-start">
 				<MessageContent className="border border-dashed border-amber-500/40">
 					<div className="prose inherit-color prose-sm dark:prose-invert max-w-none">

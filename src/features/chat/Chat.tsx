@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { collection, query, where } from 'firebase/firestore';
 import { Loader2, MicIcon, RotateCcwIcon, Split } from 'lucide-react';
+import { useReducedMotion } from 'motion/react';
 import { useForm } from 'react-hook-form';
 import ReactMarkdown from 'react-markdown';
 import { useNavigate } from 'react-router-dom';
@@ -310,6 +311,7 @@ export default function Chat() {
 		sessionKey: sessionKey ?? null,
 		ownerAddress: ownerAddress ?? null,
 	});
+	const reduceMotion = useReducedMotion();
 	const answerIds = useMemo(
 		() => new Set(activeConversationMessages.map(m => String(m.id ?? ''))),
 		[activeConversationMessages],
@@ -600,13 +602,15 @@ export default function Chat() {
 			lastMessage.id === prevLastMessage.id &&
 			!prevLastMessage.content &&
 			// Already shown in full as the provisional answer: the stored one is not typed again.
-			!live.hadProvisionalAnswer(lastMessage.id)
+			!live.hadProvisionalAnswer(lastMessage.id) &&
+			// Under reduced motion the answer is shown whole.
+			!reduceMotion
 		) {
 			simulateTyping(lastMessage);
 		}
 
 		prevMessagesRef.current = messagesToDisplay;
-	}, [messagesToDisplay, live]);
+	}, [messagesToDisplay, live, reduceMotion]);
 
 	useFirestoreCollectionListener({
 		queryFn: () => {
@@ -949,13 +953,18 @@ export default function Chat() {
 									className="space-y-3"
 								>
 									<AssistantReasoning message={message} live={liveView} isThinking={isThinking} />
-									{isThinking && liveView?.answer && <ProvisionalAnswer text={liveView.answer.text} />}
+									{isThinking && liveView?.answer && (
+										<ProvisionalAnswer text={liveView.answer.text} />
+									)}
 									{!isThinking && (
 										<>
 											<Message from={message.role} className="items-start" status={message.status}>
 												<MessageContent>
 													<div className="prose inherit-color prose-sm dark:prose-invert max-w-none">
-														<ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
+														<ReactMarkdown
+															remarkPlugins={remarkPlugins}
+															components={markdownComponents}
+														>
 															{isTyping ? `${animatedContent}▍` : message.content}
 														</ReactMarkdown>
 													</div>
@@ -998,9 +1007,7 @@ export default function Chat() {
 								<Message from={message.role} className="items-start">
 									<MessageContent>
 										<div className="prose inherit-color prose-sm dark:prose-invert max-w-none">
-											<ReactMarkdown remarkPlugins={remarkPlugins}>
-												{message.content}
-											</ReactMarkdown>
+											<ReactMarkdown remarkPlugins={remarkPlugins}>{message.content}</ReactMarkdown>
 										</div>
 									</MessageContent>
 									<MessageAvatar address={ownerAddress ?? ''} name="ME" />

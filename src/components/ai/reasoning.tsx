@@ -13,6 +13,7 @@ import {
 
 import { useControllableState } from '@radix-ui/react-use-controllable-state';
 import { BrainIcon, ChevronDownIcon } from 'lucide-react';
+import { useReducedMotion } from 'motion/react';
 
 import EarlierAttempt from '@/components/ai/earlier-attempt';
 import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai/source';
@@ -196,6 +197,7 @@ export const ReasoningContent = memo(
 		...props
 	}: ReasoningContentProps) => {
 		const { isStreaming } = useReasoning();
+		const reduceMotion = useReducedMotion();
 		const [animatedDescriptions, setAnimatedDescriptions] = useState<Record<string, string>>({});
 		const typingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 		// The tick that starts a step's typing. Cleared on unmount with the interval: left pending,
@@ -218,6 +220,11 @@ export const ReasoningContent = memo(
 			const simulateReasoningTyping = (step: ReasoningStep, key: string) => {
 				const targetDescription = step.description || '';
 				if (!targetDescription) return;
+				// Under reduced motion the step is shown whole, with no typing.
+				if (reduceMotion) {
+					setAnimatedDescriptions(prev => ({ ...prev, [key]: targetDescription }));
+					return;
+				}
 				setAnimatedDescriptions(prev => ({ ...prev, [key]: '' }));
 				if (typingStartRef.current !== null) clearTimeout(typingStartRef.current);
 				typingStartRef.current = setTimeout(() => {
@@ -261,7 +268,7 @@ export const ReasoningContent = memo(
 				}
 			}
 			prevReasoningRef.current = currentSteps;
-		}, [reasoningSteps, isStreaming]);
+		}, [reasoningSteps, isStreaming, reduceMotion]);
 
 		const steps = Array.isArray(reasoningSteps) ? reasoningSteps : [];
 		const allSources = Array.isArray(sources) ? sources : [];
@@ -278,6 +285,9 @@ export const ReasoningContent = memo(
 					'data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-popover-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in',
 					className ?? '',
 				)}
+				// Live steps change as they are typed; inside the conversation's log that would be
+				// read out character by character. The stored answer is what is announced.
+				aria-live={isStreaming ? 'off' : undefined}
 				{...props}
 			>
 				<div className="space-y-4 rounded-md border bg-muted/50 p-4">
@@ -309,9 +319,11 @@ export const ReasoningContent = memo(
 						<Sources>
 							<SourcesTrigger count={latestSources.length} />
 							<SourcesContent>
-								{latestSources.map((source: SourceItem) => (
+								{latestSources.map((source: SourceItem, index: number) => (
 									<Source
-										key={`${source.url}${source.title}`}
+										// The same source can come twice; sources are only ever appended.
+										// eslint-disable-next-line react/no-array-index-key
+										key={index}
 										href={source.url}
 										title={source.title}
 									/>
