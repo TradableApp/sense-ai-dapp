@@ -144,7 +144,7 @@ beforeEach(() => {
 	vi.spyOn(console, 'error').mockImplementation(() => undefined);
 	profile.current = undefined;
 	sendAndConfirm.mockResolvedValue({ status: 'success' });
-	vi.mocked(readContract).mockResolvedValue(10n);
+	vi.mocked(readContract).mockResolvedValue(10n as never);
 	withGate('ok', { status: 'open' });
 });
 
@@ -193,7 +193,7 @@ describe('revoking a plan with an approval in place', () => {
 
 describe('revoking a plan with no approval left', () => {
 	it('sends the cancel only', async () => {
-		vi.mocked(readContract).mockResolvedValue(0n);
+		vi.mocked(readContract).mockResolvedValue(0n as never);
 
 		const { onDone } = await revoke();
 
