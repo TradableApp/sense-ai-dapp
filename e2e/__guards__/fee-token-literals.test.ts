@@ -317,6 +317,10 @@ const E2E_TOKEN_NAME = new RegExp(
 		'\\/(?:able|sense)\\/[a-z]*',
 		// the same word inside a longer case-insensitive pattern (`/you have \d+ able/i`)
 		'\\/(?:[^\\/\\\\\\n]|\\\\.)*(?<![A-Za-z])(?:able|sense)(?![A-Za-z])(?:[^\\/\\\\\\n]|\\\\.)*\\/[a-hj-z]*i',
+		// the same word inside a string handed to RegExp, in any quote style, on the line that
+		// calls it; a word boundary written as `\\b` (or any `\\` escape) before it counts as
+		// a boundary. A string on a later line of the call is not seen (one line at a time).
+		'RegExp\\(.*[\'"`][^\'"`]*(?:(?<![A-Za-z])|(?<=\\\\[A-Za-z]))(?:able|sense)(?![A-Za-z])',
 	].join('|'),
 );
 
@@ -325,9 +329,13 @@ const isE2eSource = (file: string) =>
 	!/\.test\.(ts|tsx|js|mjs)$/.test(file) &&
 	!file.startsWith(`__guards__${path.sep}`);
 
-/** Every e2e source file scanned, by its path from the repository root. */
+/** Every e2e source file scanned, by its path from the repository root. The Playwright config
+ *  is e2e code too: it holds the projects, their gates and the testnet spec list. */
 function scannedE2eFiles(): string[] {
-	return sourceFiles(E2E_DIR, isE2eSource).map(file => path.join('e2e', file));
+	return [
+		...sourceFiles(E2E_DIR, isE2eSource).map(file => path.join('e2e', file)),
+		'playwright.config.ts',
+	];
 }
 
 describe('the e2e suite reads the fee token from its profile', () => {
