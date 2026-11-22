@@ -380,7 +380,7 @@ describe('the e2e suite reads the fee token from its profile', () => {
 			".getByText(new RegExp('insufficient able balance', 'i'))",
 			'return new RegExp("\\\\bable\\\\b", "i");',
 			'name: new RegExp("get \\\\d+ (localnet|testnet) sense|sending tokens", "i"),',
-			'new RegExp(`you have [\\\\d.]+ sense`, \'i\'),',
+			"new RegExp(`you have [\\\\d.]+ sense`, 'i'),",
 			"export const TOKEN = 'ABLE';",
 		];
 		const left = [
@@ -392,8 +392,8 @@ describe('the e2e suite reads the fee token from its profile', () => {
 			"await page.goto('https://senseai.tradable.app');",
 			'await expect(page.getByText(/unable to connect|disabled/i)).toBeVisible();',
 			// the symbol read from the profile, and ordinary words, inside a RegExp string
-			".getByText(new RegExp(`insufficient ${feeToken().symbol} balance`, 'i'))",
-			'return new RegExp(`\\\\b${feeToken().symbol}\\\\b`);',
+			`.getByText(new RegExp(\`insufficient \${feeToken().symbol} balance\`, 'i'))`,
+			`return new RegExp(\`\\\\b\${feeToken().symbol}\\\\b\`);`,
 			"new RegExp('unable to connect|disabled|sensible', 'i')",
 		];
 
