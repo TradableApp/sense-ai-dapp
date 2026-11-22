@@ -91,7 +91,8 @@ describe('RecentActivityCard', () => {
 			'text-green-500',
 		);
 
-		// The order the subgraph gave is kept, and two rows from one transaction are not merged.
+		// Newest first, the cancel before its returned amount, and two rows from one transaction are
+		// not merged.
 		const labels = screen
 			.getAllByText(/^(AI Conversation|Prompt Cancelled|Prompt Amount Returned)$/)
 			.map(el => el.textContent);

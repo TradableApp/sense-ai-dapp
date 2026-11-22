@@ -15,6 +15,7 @@ import {
 
 import { FEE_TOKEN } from '@/config/feeToken';
 import { useSession } from '@/features/auth/SessionProvider';
+import orderCancelPairs from '@/lib/activityOrder';
 import { GET_RECENT_ACTIVITY_QUERY } from '@/lib/graph/queries';
 import type {
 	GetRecentActivityQuery,
@@ -59,7 +60,8 @@ export default function useRecentActivity(limit = 10) {
 				variables,
 			);
 
-			return (data.activities || []).map(activity => {
+			// A cancel and its returned amount share a timestamp; show the cancel first.
+			return orderCancelPairs(data.activities || []).map(activity => {
 				// If type is not found, fallback to Activity icon
 				const details = activityTypeMap[activity.type as keyof typeof activityTypeMap] || {
 					label: 'Unknown Action',
