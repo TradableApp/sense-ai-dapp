@@ -235,6 +235,21 @@ describe('the live reasoning contract (version 1)', () => {
 			expect(parseFrameBytes(padded(ANSWER, LIMITS.answerFramePlaintextBytes + 1))).toBeNull();
 		});
 
+		it('neither decodes nor parses plaintext over the answer frame limit', () => {
+			const over = padded(answer('bafy1'), LIMITS.answerFramePlaintextBytes + 1);
+			const parse = vi.spyOn(JSON, 'parse');
+			const decode = vi.spyOn(TextDecoder.prototype, 'decode');
+
+			try {
+				expect(parseFrameBytes(over)).toBeNull();
+				expect(parse).not.toHaveBeenCalled();
+				expect(decode).not.toHaveBeenCalled();
+			} finally {
+				parse.mockRestore();
+				decode.mockRestore();
+			}
+		});
+
 		it('holds every frame but the answer to the frame limit', () => {
 			expect(parseFrameBytes(padded(STEP, LIMITS.framePlaintextBytes))).toEqual(STEP);
 			expect(parseFrameBytes(padded(STEP, LIMITS.framePlaintextBytes + 1))).toBeNull();
