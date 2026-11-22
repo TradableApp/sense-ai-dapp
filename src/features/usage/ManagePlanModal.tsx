@@ -157,7 +157,7 @@ export default function ManagePlanModal({
 	const holdReasonId = useId();
 	const fullBalanceId = useId();
 
-	const { setPlanMutation, revokeMutation, clearApprovalMutation } = usePlanMutations({
+	const { setPlanMutation, revokeMutation, clearApprovalMutation, isUnderWay } = usePlanMutations({
 		onStatus: setStatusText,
 		onDone: () => onOpenChange(false),
 	});
@@ -185,9 +185,13 @@ export default function ManagePlanModal({
 		}
 	};
 
-	// Removing an approval left by a revoke is a transaction too; nothing else is sent meanwhile.
+	// One plan transaction at a time, wherever it was started (another dialog, a notice that
+	// removes an approval): nothing else is sent meanwhile.
 	const isProcessing =
-		setPlanMutation.isPending || revokeMutation.isPending || clearApprovalMutation.isPending;
+		isUnderWay ||
+		setPlanMutation.isPending ||
+		revokeMutation.isPending ||
+		clearApprovalMutation.isPending;
 
 	return (
 		<Dialog open={open} onOpenChange={openState => !isProcessing && onOpenChange(openState)}>
