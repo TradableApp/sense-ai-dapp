@@ -319,9 +319,9 @@ export const ReasoningContent = memo(
 						<Sources>
 							<SourcesTrigger count={latestSources.length} />
 							<SourcesContent>
+								{/* The same source can come twice; sources are only ever appended. */}
 								{latestSources.map((source: SourceItem, index: number) => (
 									<Source
-										// The same source can come twice; sources are only ever appended.
 										// eslint-disable-next-line react/no-array-index-key
 										key={index}
 										href={source.url}
