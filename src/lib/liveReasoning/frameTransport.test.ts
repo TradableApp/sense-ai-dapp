@@ -476,7 +476,8 @@ describe('the frame transport', () => {
 		it('gives up when frames keep arriving but none is applied for 10 minutes', async () => {
 			// One held-open connection that receives an unappliable frame every minute.
 			const chunks = Array.from({ length: 12 }, () => event(1));
-			let push: (() => void) | null = null;
+			// Typed by assertion: it is set inside the reader below, which narrowing cannot see.
+			let push = null as (() => void) | null;
 			const encoder = new TextEncoder();
 			const trickle: StreamResponse = {
 				status: 200,

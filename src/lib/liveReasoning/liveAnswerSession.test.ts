@@ -166,7 +166,7 @@ describe('a live answer session', () => {
 			endpoint: ENDPOINT,
 			startStream: given => {
 				options = given;
-				return { stop: vi.fn(), reconnect: vi.fn() };
+				return { stop: vi.fn(), reconnect: vi.fn(), wake: vi.fn() };
 			},
 			onState: state => states.push(state),
 			onEnd: () => undefined,
