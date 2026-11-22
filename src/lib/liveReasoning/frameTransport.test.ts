@@ -177,6 +177,41 @@ describe('the frame transport', () => {
 		h.handle.stop();
 	});
 
+	it.each([
+		[404, 'a refusal that is retried'],
+		[403, 'a refusal that stops the stream'],
+		[500, 'a status the contract does not name'],
+	])('discards the body of a %i (%s), so the connection is released', async status => {
+		const cancel = vi.fn(async () => undefined);
+		const refused: StreamResponse = {
+			status,
+			headers: new Headers(),
+			body: { cancel } as unknown as ReadableStream<Uint8Array>,
+		};
+		const h = start([refused, ok([], { hold: true })]);
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(cancel).toHaveBeenCalledTimes(1);
+		h.handle.stop();
+	});
+
+	it('still retries when discarding a refused body fails', async () => {
+		const refused: StreamResponse = {
+			status: 404,
+			headers: new Headers({ 'Retry-After': '2' }),
+			body: {
+				cancel: async () => {
+					throw new Error('locked');
+				},
+			} as unknown as ReadableStream<Uint8Array>,
+		};
+		const h = start([refused, ok([], { hold: true })]);
+		await vi.advanceTimersByTimeAsync(2_000);
+
+		expect(h.fetchImpl).toHaveBeenCalledTimes(2);
+		h.handle.stop();
+	});
+
 	it('never retries sooner than the 1 s floor, whatever Retry-After says', async () => {
 		const h = start([refusal(503, '0'), ok([], { hold: true })]);
 		await vi.advanceTimersByTimeAsync(0);
