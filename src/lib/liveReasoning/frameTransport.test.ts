@@ -633,5 +633,25 @@ describe('the frame transport', () => {
 			expect(h.fetchImpl).toHaveBeenCalledTimes(1);
 			h.handle.stop();
 		});
+
+		it('keeps one open request when a reconnect made while hidden is followed by a wake', async () => {
+			const h = startWithVisibility([ok([event(0)])]);
+			h.visibility.hidden = true;
+			await vi.advanceTimersByTimeAsync(0);
+			// A gap's reconnect while hidden opens a request; the skipped one leaves the stream paused.
+			h.handle.reconnect(false);
+			await vi.advanceTimersByTimeAsync(0);
+
+			h.visibility.hidden = false;
+			h.handle.wake();
+			await vi.advanceTimersByTimeAsync(0);
+
+			const signals = h.fetchImpl.mock.calls.map(
+				call => (call as unknown as [string, StreamRequestInit])[1].signal,
+			);
+			expect(signals).toHaveLength(3);
+			expect(signals.filter(signal => !signal?.aborted)).toHaveLength(1);
+			h.handle.stop();
+		});
 	});
 });
