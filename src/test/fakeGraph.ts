@@ -4,7 +4,8 @@
  * It answers the sync's three queries from an in-memory list of conversations the way
  * graph-node does: rows filtered by `where`, sorted newest first on the ordering field with the
  * id breaking ties, then `skip` and `first` applied. A nested list without `first` returns
- * graph-node's default of 100 rows. Timestamps are BigInt strings in seconds, as served.
+ * graph-node's default of 100 rows. `owner` and `isAnswered` in `where` are honoured. Timestamps
+ * are BigInt strings in seconds, as served.
  */
 
 export interface FakeMessage {
@@ -20,11 +21,15 @@ export interface FakePromptRequest {
 	encryptedPayload: string;
 	isCancelled: boolean;
 	isRefunded: boolean;
+	/** Answered requests are never served: the sync asks only for unanswered ones. */
+	isAnswered?: boolean;
 	createdAt: string;
 }
 
 export interface FakeConversation {
 	id: string;
+	/** The wallet it belongs to; when set, only a request naming that owner is served it. */
+	owner?: string;
 	conversationCID: string;
 	conversationMetadataCID: string;
 	lastMessageCreatedAt: string;
@@ -82,26 +87,36 @@ export function createFakeGraph(conversations: readonly FakeConversation[]): Fak
 		const first = Number(variables.first ?? variables.limit);
 		const skip = Number(variables.skip ?? variables.offset ?? 0);
 		const listFirst = Number(variables.listFirst ?? GRAPH_DEFAULT_FIRST);
-		const matching = conversations.filter(c =>
-			withinBounds(c.lastMessageCreatedAt, where, 'lastMessageCreatedAt'),
+		const matching = conversations.filter(
+			c =>
+				withinBounds(c.lastMessageCreatedAt, where, 'lastMessageCreatedAt') &&
+				(where.owner === undefined || c.owner === undefined || c.owner === where.owner),
 		);
 		return {
 			conversations: page(matching, c => c.lastMessageCreatedAt, first, skip).map(c => ({
 				...c,
 				messages: page(c.messages, m => m.createdAt, listFirst, 0),
-				promptRequests: page(c.promptRequests, r => r.createdAt, listFirst, 0),
+				// The query's nested list asks for `isAnswered: false`.
+				promptRequests: page(
+					c.promptRequests.filter(r => !r.isAnswered),
+					r => r.createdAt,
+					listFirst,
+					0,
+				),
 			})),
 		};
 	};
 
-	const nestedPage = <T extends { id: string; createdAt: string }>(
+	const nestedPage = <T extends { id: string; createdAt: string; isAnswered?: boolean }>(
 		pick: (_conversation: FakeConversation) => readonly T[],
 		variables: Record<string, unknown>,
 	): T[] => {
 		const where = variables.where as Where;
 		const owner = conversations.find(c => c.id === where.conversation);
-		const rows = (owner ? pick(owner) : []).filter(r =>
-			withinBounds(r.createdAt, where, 'createdAt'),
+		const rows = (owner ? pick(owner) : []).filter(
+			r =>
+				withinBounds(r.createdAt, where, 'createdAt') &&
+				(where.isAnswered === undefined || Boolean(r.isAnswered) === where.isAnswered),
 		);
 		return page(rows, r => r.createdAt, Number(variables.first), Number(variables.skip ?? 0));
 	};

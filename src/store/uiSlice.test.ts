@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import uiReducer, {
 	closeModal,
+	dismissGraphUnavailable,
 	dismissStorageDegraded,
 	openModal,
+	setGraphUnavailable,
 	setStorageDegraded,
 	type UiState,
 } from './uiSlice';
@@ -14,6 +16,8 @@ const initialState: UiState = {
 	currentModal: { type: null, props: {} },
 	storageDegraded: false,
 	storageDegradedDismissed: false,
+	graphUnavailable: false,
+	graphUnavailableDismissed: false,
 };
 
 describe('uiSlice', () => {
@@ -88,6 +92,8 @@ describe('uiSlice', () => {
 				currentModal: { type: 'confirm', props: {} },
 				storageDegraded: false,
 				storageDegradedDismissed: false,
+				graphUnavailable: false,
+				graphUnavailableDismissed: false,
 			};
 			const state = uiReducer(allOpen, closeModal(undefined));
 			expect(state.priorityModal).toEqual(initialState.priorityModal);
@@ -153,6 +159,28 @@ describe('uiSlice', () => {
 			const recovered = uiReducer(dismissed, setStorageDegraded(false));
 			expect(recovered.storageDegradedDismissed).toBe(false);
 			expect(uiReducer(recovered, setStorageDegraded(true)).storageDegradedDismissed).toBe(false);
+		});
+	});
+
+	describe('setGraphUnavailable', () => {
+		// Set by useConversations after each sync pass when The Graph could not be read; read by
+		// StorageUnavailableBanner, which then says the history could not be refreshed.
+		it('flags the history as not refreshed, apart from the storage flag', () => {
+			const state = uiReducer(initialState, setGraphUnavailable(true));
+			expect(state.graphUnavailable).toBe(true);
+			expect(state.storageDegraded).toBe(false);
+		});
+
+		it('keeps its own dismissal while the failure lasts, and re-arms on a clean pass', () => {
+			const dismissed = uiReducer(
+				uiReducer(initialState, setGraphUnavailable(true)),
+				dismissGraphUnavailable(),
+			);
+			expect(dismissed.graphUnavailableDismissed).toBe(true);
+			expect(dismissed.storageDegradedDismissed).toBe(false);
+			expect(uiReducer(dismissed, setGraphUnavailable(true)).graphUnavailableDismissed).toBe(true);
+			const recovered = uiReducer(dismissed, setGraphUnavailable(false));
+			expect(recovered.graphUnavailableDismissed).toBe(false);
 		});
 	});
 });

@@ -15,8 +15,9 @@ import {
 // fake in src/test/fakeGraph.ts; the local store is an in-memory copy of the three tables the
 // sync and the message reader use, so what was stored can be read back.
 
-const { graphRequestMock, store } = vi.hoisted(() => ({
+const { graphRequestMock, captureExceptionMock, store } = vi.hoisted(() => ({
 	graphRequestMock: vi.fn(),
+	captureExceptionMock: vi.fn(),
 	store: {
 		conversations: new Map<string, { id: string; encryptedData: string }>(),
 		messageCache: new Map<string, { encryptedData: string }>(),
@@ -26,7 +27,11 @@ const { graphRequestMock, store } = vi.hoisted(() => ({
 	},
 }));
 
-vi.mock('@sentry/react', () => ({ addBreadcrumb: vi.fn(), captureMessage: vi.fn() }));
+vi.mock('@sentry/react', () => ({
+	addBreadcrumb: vi.fn(),
+	captureMessage: vi.fn(),
+	captureException: captureExceptionMock,
+}));
 
 vi.mock('graphql-request', () => ({
 	GraphQLClient: class {
@@ -169,6 +174,23 @@ async function storedMessages(conversationId: string): Promise<Array<{ id: strin
 
 const storedConversationIds = () => [...store.conversations.values()].map(row => row.id);
 
+/** The stored sync cursor (milliseconds), or undefined when none was ever stored. */
+async function storedCursor(): Promise<number | undefined> {
+	const row = store.userMetadata.get(OWNER);
+	if (!row) return undefined;
+	const metadata = await decryptData(sessionKey, row.encryptedData);
+	return metadata.conversationsLastSyncedAt;
+}
+
+/** Stores a cursor, as an earlier sync would have. */
+async function storeCursor(ms: number) {
+	const encryptedData = await encryptData(sessionKey, {
+		searchLastSyncedAt: 0,
+		conversationsLastSyncedAt: ms,
+	});
+	store.userMetadata.set(OWNER, { encryptedData });
+}
+
 async function sync() {
 	const { default: syncWithRemote } = await import('./syncService');
 	return syncWithRemote(sessionKey, OWNER);
@@ -178,6 +200,7 @@ describe('syncWithRemote — a full sync reads every page', () => {
 	beforeEach(async () => {
 		vi.resetModules();
 		graphRequestMock.mockReset();
+		captureExceptionMock.mockReset();
 		vi.stubEnv('VITE_THE_GRAPH_API_URL', GRAPH_URL);
 		vi.stubEnv('VITE_STORAGE_GATEWAY_URL', GATEWAY);
 		store.conversations.clear();
@@ -238,15 +261,26 @@ describe('syncWithRemote — a full sync reads every page', () => {
 	});
 
 	it('asks again for the prompt requests of a conversation that returned 1000, and stores all 1,200', async () => {
+		const unanswered = await promptRequestsOf(1200);
+		// An answered request, older than all of them: it is already among the messages, and the
+		// follow-up page must not bring it back as a prompt.
+		const answered = {
+			...unanswered[0],
+			id: '900000',
+			promptMessageId: '9000',
+			isAnswered: true,
+			createdAt: String(T0),
+		};
 		const graph = useGraph([
-			conversation('c1', T0 + 1200, { promptRequests: await promptRequestsOf(1200) }),
+			conversation('c1', T0 + 1200, { promptRequests: [...unanswered, answered] }),
 		]);
 
 		await sync();
 
 		const ids = (await storedMessages('c1')).map(m => m.id);
-		// One stored prompt per request, under its prompt id 1..1200.
+		// One stored prompt per unanswered request, under its prompt id 1..1200.
 		expect(new Set(ids).size).toBe(1200);
+		expect(ids).not.toContain('9000');
 		// As for messages: 1000 nested (1200..201), then 201..1 in one short follow-up page.
 		expect(graph.requests).toEqual(['GetUserUpdates', 'GetConversationPromptRequests']);
 	});
@@ -388,5 +422,289 @@ describe('syncWithRemote — a full sync reads every page', () => {
 			areMessagesSettled: true,
 		});
 		expect(state).toMatchObject({ kind: 'ready', parentId: 150 });
+	});
+
+	// The follow-up messages query pages inside one second by `skip`: a conversation with more
+	// than a page of messages in one second must still come back whole.
+	it('stores all 2,500 messages of a conversation when they share one second', async () => {
+		const messages = messagesOf('c1', 1, 2500).map(m => ({ ...m, createdAt: String(T0 + 5) }));
+		useGraph([conversation('c1', T0 + 5, { messages })]);
+
+		await sync();
+
+		const ids = (await storedMessages('c1')).map(m => m.id);
+		expect(new Set(ids).size).toBe(2500);
+		expect(ids).toHaveLength(2500);
+	});
+
+	it('serves another wallet nothing', async () => {
+		useGraph([
+			{ ...conversation('mine', T0 + 2), owner: OWNER.toLowerCase() },
+			{ ...conversation('theirs', T0 + 3), owner: '0x0000000000000000000000000000000000000001' },
+		]);
+
+		await sync();
+
+		expect(storedConversationIds()).toEqual(['mine']);
+	});
+});
+
+describe('syncWithRemote — the cursor', () => {
+	beforeEach(async () => {
+		vi.resetModules();
+		graphRequestMock.mockReset();
+		captureExceptionMock.mockReset();
+		vi.stubEnv('VITE_THE_GRAPH_API_URL', GRAPH_URL);
+		vi.stubEnv('VITE_STORAGE_GATEWAY_URL', GATEWAY);
+		store.conversations.clear();
+		store.messageCache.clear();
+		store.userMetadata.clear();
+		store.conversationBulkPuts.length = 0;
+		store.metadataPuts = 0;
+		sessionKey = await deriveKeyFromEntropy('test-sig-0xpaging', OWNER);
+		payloads = new Map([
+			[CONV_CID, { title: 'Conversation' }],
+			[META_CID, { metadata: true }],
+		]);
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string) => {
+				const encrypted = await encryptData(
+					sessionKey,
+					payloads.get(url.slice(GATEWAY.length)) ?? {},
+				);
+				return { ok: true, status: 200, text: async () => encrypted };
+			}),
+		);
+	});
+
+	afterEach(() => {
+		vi.unstubAllEnvs();
+		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
+	});
+
+	// The newest row read, not the time the pass ended: a conversation updated while the pages
+	// were read is above that row, and the next pass reads it from there.
+	it('is set to the newest conversation read, in milliseconds, after a paged sync', async () => {
+		useGraph(Array.from({ length: 251 }, (_, i) => conversation(`c${i}`, T0 + i)));
+
+		await sync();
+
+		expect(await storedCursor()).toBe((T0 + 250) * 1000);
+	});
+
+	// The cursor's own second is read again: another conversation can share it, and the
+	// Graph's bound is inclusive. The cursor here is mid-second, so the seconds asked for must be
+	// rounded down, not up.
+	it('reads again a conversation updated in the cursor second', async () => {
+		await storeCursor(T0 * 1000 + 500);
+		useGraph([conversation('same-second', T0), conversation('older', T0 - 1)]);
+
+		await sync();
+
+		expect(storedConversationIds()).toEqual(['same-second']);
+		expect(await storedCursor()).toBe(T0 * 1000);
+	});
+});
+
+describe('syncWithRemote — an answer it cannot use, or no answer', () => {
+	beforeEach(async () => {
+		vi.resetModules();
+		graphRequestMock.mockReset();
+		captureExceptionMock.mockReset();
+		vi.stubEnv('VITE_THE_GRAPH_API_URL', GRAPH_URL);
+		vi.stubEnv('VITE_STORAGE_GATEWAY_URL', GATEWAY);
+		store.conversations.clear();
+		store.messageCache.clear();
+		store.userMetadata.clear();
+		store.conversationBulkPuts.length = 0;
+		store.metadataPuts = 0;
+		sessionKey = await deriveKeyFromEntropy('test-sig-0xpaging', OWNER);
+		payloads = new Map([
+			[CONV_CID, { title: 'Conversation' }],
+			[META_CID, { metadata: true }],
+		]);
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string) => {
+				const encrypted = await encryptData(
+					sessionKey,
+					payloads.get(url.slice(GATEWAY.length)) ?? {},
+				);
+				return { ok: true, status: 200, text: async () => encrypted };
+			}),
+		);
+		await storeCursor(5_000);
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		vi.unstubAllEnvs();
+		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
+	});
+
+	const expectNothingStoredAndCursorHeld = async () => {
+		expect(store.conversationBulkPuts).toHaveLength(0);
+		expect(store.messageCache.size).toBe(0);
+		expect(store.metadataPuts).toBe(0);
+		expect(await storedCursor()).toBe(5_000);
+	};
+
+	// Read as an empty list, a missing list would move the cursor up to the present and skip
+	// everything not yet read.
+	it.each([
+		['no conversations list at all', {}],
+		['a null conversations list', { conversations: null }],
+	])('stores nothing and holds the cursor for %s', async (_label, answer) => {
+		graphRequestMock.mockResolvedValue(answer);
+
+		const result = await sync();
+
+		await expectNothingStoredAndCursorHeld();
+		expect(result).toMatchObject({ graphUnavailable: true });
+	});
+
+	it.each([
+		['messages', { promptRequests: [] }],
+		['prompt requests', { messages: [] }],
+	])(
+		'stores nothing and holds the cursor when a conversation comes without its %s',
+		async (_label, lists) => {
+			const { messages: _m, promptRequests: _p, ...bare } = conversation('c1', T0 + 1);
+			graphRequestMock.mockResolvedValue({ conversations: [{ ...bare, ...lists }] });
+
+			const result = await sync();
+
+			await expectNothingStoredAndCursorHeld();
+			expect(result).toMatchObject({ graphUnavailable: true });
+		},
+	);
+
+	// A build with no Graph endpoint can never read the history: that is a failure to tell, and
+	// the cursor must not move, or a later build that has one would skip what came before.
+	it('holds the cursor and says so when no Graph endpoint is configured', async () => {
+		vi.stubEnv('VITE_THE_GRAPH_API_URL', '');
+
+		const result = await sync();
+
+		expect(graphRequestMock).not.toHaveBeenCalled();
+		await expectNothingStoredAndCursorHeld();
+		expect(result).toMatchObject({ graphUnavailable: true });
+	});
+
+	it('says the Graph could not be read when a request fails, and that it could after a clean pass', async () => {
+		graphRequestMock.mockRejectedValueOnce(new Error('Failed to fetch'));
+		expect(await sync()).toMatchObject({ graphUnavailable: true, unavailablePayloads: 0 });
+
+		useGraph([conversation('c1', T0 + 1)]);
+		expect(await sync()).toMatchObject({ graphUnavailable: false });
+	});
+
+	it('reports a failed read to Sentry once per page load per list and reason, by name only', async () => {
+		graphRequestMock.mockRejectedValue(
+			new TypeError(`request to ${GRAPH_URL} failed for owner ${OWNER}`),
+		);
+		const { default: syncWithRemote } = await import('./syncService');
+
+		await syncWithRemote(sessionKey, OWNER);
+		await syncWithRemote(sessionKey, OWNER);
+
+		expect(captureExceptionMock).toHaveBeenCalledTimes(1);
+		const [error, context] = captureExceptionMock.mock.calls[0];
+		expect(context).toEqual(
+			expect.objectContaining({
+				tags: expect.objectContaining({
+					check: 'graph-sync',
+					list: 'conversations',
+					reason: 'request',
+				}),
+				extra: { errorName: 'TypeError' },
+			}),
+		);
+		const sent = JSON.stringify([String(error), (error as Error).stack ?? '', context]);
+		expect(sent).not.toContain('localhost');
+		expect(sent).not.toContain(OWNER);
+
+		// Another reason is a new report.
+		graphRequestMock.mockResolvedValue({});
+		await syncWithRemote(sessionKey, OWNER);
+		expect(captureExceptionMock).toHaveBeenCalledTimes(2);
+		expect(captureExceptionMock.mock.calls[1][1]).toEqual(
+			expect.objectContaining({
+				tags: expect.objectContaining({ list: 'conversations', reason: 'malformed' }),
+			}),
+		);
+	});
+});
+
+describe('syncWithRemote — fetching payloads', () => {
+	beforeEach(async () => {
+		vi.resetModules();
+		graphRequestMock.mockReset();
+		captureExceptionMock.mockReset();
+		vi.stubEnv('VITE_THE_GRAPH_API_URL', GRAPH_URL);
+		vi.stubEnv('VITE_STORAGE_GATEWAY_URL', GATEWAY);
+		store.conversations.clear();
+		store.messageCache.clear();
+		store.userMetadata.clear();
+		store.conversationBulkPuts.length = 0;
+		store.metadataPuts = 0;
+		sessionKey = await deriveKeyFromEntropy('test-sig-0xpaging', OWNER);
+		payloads = new Map([
+			[CONV_CID, { title: 'Conversation' }],
+			[META_CID, { metadata: true }],
+		]);
+	});
+
+	afterEach(() => {
+		vi.unstubAllEnvs();
+		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
+	});
+
+	// A first sync of a large wallet must not start every payload fetch at once: a gateway
+	// answers a burst with 429, which holds the cursor, and the same burst comes back next pass.
+	it('has no more than a few payload fetches out at once, and stores the same', async () => {
+		let inFlight = 0;
+		let mostAtOnce = 0;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string) => {
+				inFlight += 1;
+				mostAtOnce = Math.max(mostAtOnce, inFlight);
+				const encrypted = await encryptData(
+					sessionKey,
+					payloads.get(url.slice(GATEWAY.length)) ?? {},
+				);
+				await new Promise(resolve => {
+					setTimeout(resolve, 1);
+				});
+				inFlight -= 1;
+				return { ok: true, status: 200, text: async () => encrypted };
+			}),
+		);
+		useGraph(
+			Array.from({ length: 5 }, (_, i) =>
+				conversation(`c${i}`, T0 + 100 * (i + 1), {
+					messages: messagesOf(`c${i}`, 50 * i + 1, 50 * i + 50),
+				}),
+			),
+		);
+		const { PAYLOAD_FETCH_CONCURRENCY, default: syncWithRemote } = await import('./syncService');
+
+		await syncWithRemote(sessionKey, OWNER);
+
+		expect(PAYLOAD_FETCH_CONCURRENCY).toBeGreaterThan(1);
+		expect(mostAtOnce).toBeLessThanOrEqual(PAYLOAD_FETCH_CONCURRENCY);
+		expect(mostAtOnce).toBeGreaterThan(1);
+		const counts = await Promise.all(
+			[0, 1, 2, 3, 4].map(async i => (await storedMessages(`c${i}`)).map(m => m.id)),
+		);
+		counts.forEach((ids, i) =>
+			expect(ids).toEqual(Array.from({ length: 50 }, (_, j) => String(50 * i + j + 1))),
+		);
 	});
 });

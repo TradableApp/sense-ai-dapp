@@ -68,4 +68,24 @@ describe('useConversations', () => {
 
 		await waitFor(() => expect(store.getState().ui.storageDegraded).toBe(false));
 	});
+
+	it('flags the history as not refreshed when the sync could not read The Graph', async () => {
+		syncMock.mockResolvedValue({ unavailablePayloads: 0, graphUnavailable: true });
+		const { hook, store } = setup();
+
+		await waitFor(() => expect(store.getState().ui.graphUnavailable).toBe(true));
+		expect(store.getState().ui.storageDegraded).toBe(false);
+		expect(hook.result.current.data).toEqual(CONVERSATIONS);
+	});
+
+	it('clears that flag once a later pass read The Graph', async () => {
+		syncMock.mockResolvedValueOnce({ unavailablePayloads: 0, graphUnavailable: true });
+		const { hook, store } = setup();
+		await waitFor(() => expect(store.getState().ui.graphUnavailable).toBe(true));
+
+		syncMock.mockResolvedValueOnce({ unavailablePayloads: 0, graphUnavailable: false });
+		await hook.result.current.refetch();
+
+		await waitFor(() => expect(store.getState().ui.graphUnavailable).toBe(false));
+	});
 });
