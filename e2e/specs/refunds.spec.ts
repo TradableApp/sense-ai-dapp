@@ -142,12 +142,12 @@ test.describe('Refunds — stuck-prompt refund (T-REFUND)', () => {
 		// increaseTime jumps have pushed EVM time well ahead of the real wall clock, so the browser
 		// clock must be set relative to EVM time, not Date.now(). Pin it to the latest block timestamp
 		// (already past createdAt + 1h after increaseTime). setFixedTime overrides Date.now() without
-		// freezing timers, so the hook's 15s refetchInterval still fires and recomputes the gate.
+		// freezing timers, so the hook's 15 s clock check still fires and reads the new time.
 		await increaseTime(REFUND_TIMEOUT_S + 60);
 		const evmNowMs = (await getLatestBlockTimestamp()) * 1000;
 		await freshPage.clock.setFixedTime(new Date(evmNowMs + 60_000));
 
-		// The gate opens: "Wait 1h" is replaced by an enabled "Refund" button (on the next refetch).
+		// The gate opens: "Wait 1h" is replaced by an enabled "Refund" button (on the next check).
 		await expect(dashboard.refundButton.first()).toBeVisible({ timeout: 30_000 });
 		await expect(dashboard.refundWaitLabel).toHaveCount(0);
 

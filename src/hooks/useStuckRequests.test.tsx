@@ -214,8 +214,6 @@ describe('a stuck request whose refund hour passes while the page is open', () =
 	const START = Date.UTC(2026, 0, 1, 12, 0, 0);
 
 	beforeEach(() => {
-		vi.useFakeTimers();
-		vi.setSystemTime(START);
 		vi.mocked(readContract).mockResolvedValue(escrowEntry(PENDING) as never);
 		// Sent ten seconds short of an hour ago.
 		const sentAt = Math.floor((START - HOUR_MS + 10_000) / 1000);
@@ -235,11 +233,12 @@ describe('a stuck request whose refund hour passes while the page is open', () =
 	// The list is read from the subgraph once a minute at most; the hour does not wait for that.
 	it('becomes refundable on the next tick of the clock, with no new read', async () => {
 		const { default: useStuckRequests, REFUND_CLOCK_MS } = await loadModule();
+		// The clock is faked once the module is loaded: loading it needs real timers.
+		vi.useFakeTimers();
+		vi.setSystemTime(START);
 		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 		const { result } = render(useStuckRequests, queryClient);
-		await waitFor(() =>
-			expect(result.current.data).toEqual([expect.objectContaining({ id: '7' })]),
-		);
+		await settle();
 		expect(result.current.data).toEqual([expect.objectContaining({ isRefundable: false })]);
 
 		await act(async () => {
@@ -252,6 +251,9 @@ describe('a stuck request whose refund hour passes while the page is open', () =
 
 	it('stays refundable once it is, whatever the clock says later', async () => {
 		const { default: useStuckRequests, REFUND_CLOCK_MS } = await loadModule();
+		// The clock is faked once the module is loaded: loading it needs real timers.
+		vi.useFakeTimers();
+		vi.setSystemTime(START);
 		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 		vi.setSystemTime(START + 20_000);
 		const { result } = render(useStuckRequests, queryClient);
