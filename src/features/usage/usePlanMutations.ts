@@ -470,7 +470,7 @@ function showClearRefused(error: ClearApprovalRefusedError, retry: () => void): 
  * Revoke removes it. Started from the notice a half-finished revoke shows, or from the
  * dashboard's notice of an approval left with no plan.
  */
-function useClearApprovalMutation() {
+export function useClearApprovalMutation() {
 	const activeWallet = useActiveWallet();
 	const { mutateAsync: send } = useSendAndConfirmTransaction();
 	const queryClient = useQueryClient();
