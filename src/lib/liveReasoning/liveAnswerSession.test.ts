@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { decryptData } from '@/lib/crypto';
+import { decryptBytes } from '@/lib/crypto';
+import { LIMITS, MAX_SEALED_FRAME_CHARS } from '@/lib/liveReasoning/contract';
 import {
 	type FrameStreamOptions,
 	MAX_STALLED_CONNECTIONS,
@@ -12,11 +13,11 @@ import type { LiveAnswerState } from '@/lib/liveReasoning/liveReducer';
 
 import { type SessionEnd, startLiveAnswerSession } from './liveAnswerSession';
 
-vi.mock('@/lib/crypto', () => ({ decryptData: vi.fn() }));
+vi.mock('@/lib/crypto', () => ({ decryptBytes: vi.fn() }));
 vi.mock('@/lib/liveReasoning/streamProof', () => ({ default: async () => 'proof-42' }));
 
 const RUN = '0123456789abcdef';
-/** A well-formed sealed frame naming its seq; what it decrypts to is up to the mocked `decryptData`. */
+/** A well-formed sealed frame naming its seq; what it decrypts to is up to the mocked `decryptBytes`. */
 const sealed = (seq: number) => `aXY=.${btoa(`seq${seq}`)}`;
 const seqOfSealed = (data: string) => Number(atob(data.split('.')[1]).slice(3));
 const ENDPOINT = { url: 'https://stream.example', mode: 'poll' as const };
@@ -33,6 +34,8 @@ const frame = (seq: number, body: { type: string; data: unknown }) => ({
 	...body,
 });
 const RESET = { type: 'reset', data: { reason: 'start' } };
+/** What the mocked decryption gives: the frame's JSON as bytes. */
+const bytesOf = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
 const STEP = { type: 'step', data: { attempt: 1, title: 'Reading', description: 'Read it.' } };
 
 function onePoll(seq: number): StreamResponse {
@@ -91,7 +94,7 @@ function runSession(replayed: number) {
 
 beforeEach(() => {
 	vi.useFakeTimers();
-	vi.mocked(decryptData).mockReset();
+	vi.mocked(decryptBytes).mockReset();
 });
 
 afterEach(() => {
@@ -100,7 +103,7 @@ afterEach(() => {
 
 describe('a live answer session over the real transport', () => {
 	it('asks a bounded number of times for a frame it cannot decrypt, then stops as finished', async () => {
-		vi.mocked(decryptData).mockRejectedValue(new Error('OperationError'));
+		vi.mocked(decryptBytes).mockRejectedValue(new Error('OperationError'));
 		const h = runSession(0);
 
 		await vi.advanceTimersByTimeAsync(LONG_SPAN_MS);
@@ -111,7 +114,7 @@ describe('a live answer session over the real transport', () => {
 	});
 
 	it('asks a bounded number of times for a frame the schema refuses, then stops as finished', async () => {
-		vi.mocked(decryptData).mockResolvedValue({ ...frame(0, RESET), type: 'token' });
+		vi.mocked(decryptBytes).mockResolvedValue(bytesOf({ ...frame(0, RESET), type: 'token' }));
 		const h = runSession(0);
 
 		await vi.advanceTimersByTimeAsync(LONG_SPAN_MS);
@@ -121,9 +124,9 @@ describe('a live answer session over the real transport', () => {
 	});
 
 	it('polls again at once after each poll whose frame was applied', async () => {
-		vi.mocked(decryptData).mockImplementation(async (_key, data) => {
+		vi.mocked(decryptBytes).mockImplementation(async (_key, data) => {
 			const seq = seqOfSealed(data);
-			return frame(seq, seq === 0 ? RESET : STEP);
+			return bytesOf(frame(seq, seq === 0 ? RESET : STEP));
 		});
 		// The server sends the frame after the cursor: the n-th poll gets seq n while each applies.
 		const fetchImpl = vi.fn(async () => {
@@ -180,8 +183,8 @@ describe('a live answer session', () => {
 	}
 
 	it('publishes nothing for a frame whose decryption finishes after it was stopped', async () => {
-		let finishDecrypt: (_value: unknown) => void = () => undefined;
-		vi.mocked(decryptData).mockReturnValue(
+		let finishDecrypt: (_value: Uint8Array) => void = () => undefined;
+		vi.mocked(decryptBytes).mockReturnValue(
 			new Promise(resolve => {
 				finishDecrypt = resolve;
 			}),
@@ -191,7 +194,7 @@ describe('a live answer session', () => {
 
 		const applied = stream.onEvent({ id: `${RUN}.0`, data: sealed(0) });
 		h.session.stop();
-		finishDecrypt(frame(0, RESET));
+		finishDecrypt(bytesOf(frame(0, RESET)));
 		await applied;
 
 		expect(h.states).toEqual([]);
@@ -204,7 +207,30 @@ describe('a live answer session', () => {
 		// A dot, as a sealed frame has, but not base64 on either side of it.
 		await stream.onEvent({ id: `${RUN}.0`, data: 'not.a sealed frame!' });
 
-		expect(decryptData).not.toHaveBeenCalled();
+		expect(decryptBytes).not.toHaveBeenCalled();
 		expect(h.states.at(-1)?.dropped).toBe(1);
+	});
+
+	it('drops sealed text longer than the largest frame without trying to decrypt it', async () => {
+		const h = stubSession();
+		const stream = await h.opened();
+
+		const data = `${'A'.repeat(16)}.${'B'.repeat(MAX_SEALED_FRAME_CHARS - 16)}`;
+		await stream.onEvent({ id: `${RUN}.0`, data });
+
+		expect(decryptBytes).not.toHaveBeenCalled();
+		expect(h.states.at(-1)?.dropped).toBe(1);
+	});
+
+	it('drops and counts a frame whose plaintext is over the limit, shows nothing and throws nothing', async () => {
+		const over = bytesOf({ ...frame(0, RESET), pad: 'x'.repeat(LIMITS.answerFramePlaintextBytes) });
+		vi.mocked(decryptBytes).mockResolvedValue(over);
+		const h = stubSession();
+		const stream = await h.opened();
+
+		await expect(stream.onEvent({ id: `${RUN}.0`, data: sealed(0) })).resolves.toBeUndefined();
+
+		expect(h.states.at(-1)?.dropped).toBe(1);
+		expect(h.states.at(-1)?.nextSeq).toBe(0);
 	});
 });

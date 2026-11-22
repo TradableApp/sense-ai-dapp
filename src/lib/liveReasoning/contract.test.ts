@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { decryptData } from '@/lib/crypto';
+import { decryptData, encryptData } from '@/lib/crypto';
 
 import {
 	DONE_OUTCOMES,
@@ -8,12 +8,15 @@ import {
 	isAnswerMessageId,
 	isSealedFrame,
 	LIMITS,
+	MAX_SEALED_FRAME_CHARS,
+	parseFrameBytes,
 	parseFramePlaintext,
 	parseSseEventId,
 	RESET_REASONS,
 	SSE_EVENT_NAME,
 	STREAM_CONTRACT_VERSION,
 	STREAM_HTTP,
+	sealedFrameChars,
 	STREAM_REFUSAL_STATUSES,
 	streamUrl,
 } from './contract';
@@ -79,6 +82,8 @@ describe('the live reasoning contract (version 1)', () => {
 				maxAttempts: 4,
 				answerTextBytes: 64 * 1024,
 				framePlaintextBytes: 16 * 1024,
+				answerFramePlaintextBytes: 6 * 64 * 1024 + 1024,
+				answerCidChars: 128,
 			});
 		});
 
@@ -120,6 +125,70 @@ describe('the live reasoning contract (version 1)', () => {
 			expect(streamUrl({ url: 'https://s.example/live', mode: 'poll' }, '42')).toBe(
 				'https://s.example/live/stream/42?mode=poll',
 			);
+		});
+	});
+
+	describe('frame sizes and content ids', () => {
+		const utf8 = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
+		const answer = (cid: string) =>
+			frameOf({ type: 'answer', data: { text: 'Up.', answerMessageCID: cid } });
+		/** A frame of exactly `bytes` bytes of JSON, padded by a field the schema does not keep. */
+		const padded = (frame: Record<string, unknown>, bytes: number) => {
+			const bare = utf8({ ...frame, pad: '' }).length;
+			return utf8({ ...frame, pad: 'x'.repeat(bytes - bare) });
+		};
+		const STEP = frameOf({ type: 'step', data: { attempt: 1, title: 't', description: 'd' } });
+
+		it('accepts the content ids the storage paths produce, up to the limit, and nothing else', () => {
+			[
+				`bafkr6i${'a'.repeat(52)}`,
+				`bafybei${'b'.repeat(52)}`,
+				'A'.repeat(43),
+				`${'a_-'.repeat(14)}Zz`,
+				`mock_${'0'.repeat(20)}`,
+				'x'.repeat(128),
+			].forEach(cid => expect(parseFramePlaintext(answer(cid))).not.toBeNull());
+			['', 'x'.repeat(129), 'bafy.x', 'bafy/x', 'bafy x', 'bafyé', 'a+b', 'a=b'].forEach(cid =>
+				expect(parseFramePlaintext(answer(cid))).toBeNull(),
+			);
+		});
+
+		it('counts a sealed frame as the oracle and the encryptor write it', async () => {
+			const key = await importVectorKey();
+			for (const n of [0, 1, 2, 3, 100, 16 * 1024]) {
+				const sealed = await encryptData(key, 'x'.repeat(n));
+				// JSON.stringify of a string adds its two quotes.
+				expect(sealed.length).toBe(sealedFrameChars(n + 2));
+			}
+			expect(MAX_SEALED_FRAME_CHARS).toBe(sealedFrameChars(LIMITS.answerFramePlaintextBytes));
+			expect(MAX_SEALED_FRAME_CHARS).toBe(525_693);
+		});
+
+		it('refuses sealed text longer than the largest frame, before decrypting', () => {
+			const atLimit = `${'A'.repeat(16)}.${'B'.repeat(MAX_SEALED_FRAME_CHARS - 17)}`;
+
+			expect(atLimit).toHaveLength(MAX_SEALED_FRAME_CHARS);
+			expect(isSealedFrame(atLimit)).toBe(true);
+			expect(isSealedFrame(`${atLimit}B`)).toBe(false);
+		});
+
+		it('refuses plaintext over the answer frame limit before parsing it', () => {
+			const ANSWER = answer('bafy1');
+
+			expect(parseFrameBytes(padded(ANSWER, LIMITS.answerFramePlaintextBytes))).not.toBeNull();
+			expect(parseFrameBytes(padded(ANSWER, LIMITS.answerFramePlaintextBytes + 1))).toBeNull();
+		});
+
+		it('holds every frame but the answer to the frame limit', () => {
+			expect(parseFrameBytes(padded(STEP, LIMITS.framePlaintextBytes))).toEqual(STEP);
+			expect(parseFrameBytes(padded(STEP, LIMITS.framePlaintextBytes + 1))).toBeNull();
+			expect(parseFrameBytes(padded(answer('bafy1'), LIMITS.framePlaintextBytes + 1))).not.toBeNull();
+		});
+
+		it('takes bytes that are not UTF-8 JSON as no frame, without throwing', () => {
+			expect(parseFrameBytes(new Uint8Array([0xff, 0xfe]))).toBeNull();
+			expect(parseFrameBytes(new TextEncoder().encode('{"v":1'))).toBeNull();
+			expect(parseFrameBytes(new Uint8Array())).toBeNull();
 		});
 	});
 
