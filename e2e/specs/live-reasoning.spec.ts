@@ -604,6 +604,9 @@ test.describe('Live reasoning stream (T-STREAM)', () => {
 		expectNoLiveReport(traffic);
 	});
 
+	// The other half, a link that is not http(s) being refused, cannot be driven end to end: the
+	// oracle drops such a source before it sends or stores one. Unit tests hold it on both sides:
+	// the frame schema here, the oracle's source cleaning there.
 	test('T-STREAM-07: a source link in the live steps is a real http(s) link', async ({
 		freshUserAccount,
 		freshPage,
