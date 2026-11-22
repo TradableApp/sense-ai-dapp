@@ -14,7 +14,7 @@ Frontend dApp for SenseAI — the AI Agent providing sentiment and fundamental o
 | `bun run dev:testnet`                  | Dev server against Base Sepolia testnet                                                  |
 | `bun run build`                        | Disabled (exits 1) — name the mode: `build:localnet` / `build:testnet` / `build:mainnet` |
 | `bun run build:testnet`                | Build against testnet                                                                    |
-| `bun run deploy:testnet`               | `build:testnet` + `firebase deploy --project local` (the sandbox project in `.firebaserc`) |
+| `bun run deploy:testnet`               | `build:testnet` + `firebase deploy --project local` (the sandbox project)                |
 | `bun run deploy:mainnet`               | Guarded: needs `DEPLOY_MAINNET_CONFIRMED=1`; `build:mainnet` + deploy `--project prod`   |
 | `bun run lint` / `bun run lint:fix`    | ESLint                                                                                   |
 | `bun run format`                       | Prettier                                                                                 |
@@ -172,12 +172,12 @@ Production builds strip `console.log/info/debug` but keep `console.error/warn` f
 
 This dApp is the user-facing layer of the SenseAI stack. It depends on four sibling repos:
 
-| Sibling              | Role                                                                                              |
-| -------------------- | ------------------------------------------------------------------------------------------------- |
-| `tokenized-ai-agent` | Provides `EVMAIAgent` and `EVMAIAgentEscrow` contracts that handle all writes                     |
-| `sense-ai-subgraph`  | Provides the GraphQL API for all read queries (conversations, messages, prompt status, activity)  |
-| `able-contracts`     | Provides `AbleToken` — the other fee token the code supports (`VITE_FEE_TOKEN=ABLE`)              |
-| `sense-contracts`    | Provides `SenseToken` — the fee token (`VITE_FEE_TOKEN=SENSE`); moves only to or from addresses its owner lists |
+| Sibling              | Role                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------ |
+| `tokenized-ai-agent` | Provides `EVMAIAgent` and `EVMAIAgentEscrow` contracts that handle all writes                    |
+| `sense-ai-subgraph`  | Provides the GraphQL API for all read queries (conversations, messages, prompt status, activity) |
+| `able-contracts`     | Provides `AbleToken`, the fee token when `VITE_FEE_TOKEN=ABLE`; an ordinary ERC-20               |
+| `sense-contracts`    | Provides `SenseToken` (`VITE_FEE_TOKEN=SENSE`); moves only to or from addresses its owner lists  |
 
 ### ABI Sync Process
 

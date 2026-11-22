@@ -159,10 +159,10 @@ For security, **never** import publicly-known private keys (like the ones from H
 
 Each build mode has exactly one Firebase project, and the deploy scripts pin it with `--project` so the `firebase use` state on your machine never decides where a bundle lands:
 
-| Script                   | Builds          | `--project` alias | Firebase project               | URL                                  |
-| ------------------------ | --------------- | ----------------- | ------------------------------ | ------------------------------------ |
-| `bun run deploy:testnet` | `build:testnet` | `local`           | the testnet (sandbox) project  | the sandbox project's hosting site   |
-| `bun run deploy:mainnet` | `build:mainnet` | `prod`            | the production project         | senseai.tradable.app                 |
+| Script                   | Builds          | `--project` alias | Firebase project              | URL                                |
+| ------------------------ | --------------- | ----------------- | ----------------------------- | ---------------------------------- |
+| `bun run deploy:testnet` | `build:testnet` | `local`           | the testnet (sandbox) project | the sandbox project's hosting site |
+| `bun run deploy:mainnet` | `build:mainnet` | `prod`            | the production project        | senseai.tradable.app               |
 
 `.firebaserc` maps each alias to its project id and that project's `sense-ai` hosting target to its site.
 
