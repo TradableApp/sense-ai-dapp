@@ -119,7 +119,7 @@ For security, **never** import publicly-known private keys (like the ones from H
 
 **List the escrow on the token:**
 
-`SenseToken` moves only to or from its owner or an address the owner has listed. From `tokenized-ai-agent`, run `bun run list-fee-token-exempt:base-localnet`: it lists the escrow and the escrow's treasury (`TREASURY_ADDRESS`, or the deployer when it is unset) when the signer is the token's owner, and otherwise prints the calls for the owner to send. A treasury that is the token's owner counts as listed (the owner is exempt by being the owner), so it is not sent. Until both are listed, the dApp's fee token check shows a notice and switches off the paid actions it names.
+`SenseToken` moves only to or from its owner or an address the owner has listed. From `tokenized-ai-agent`, run `bun run list-fee-token-exempt:base-localnet`: it lists the escrow and the escrow's treasury (`TREASURY_ADDRESS`, or the deployer when it is unset) when the signer is the token's owner, and otherwise prints the calls for the owner to send. A treasury that is the token's owner is listed by name all the same, so it stays listed when ownership moves. Until both are listed, the dApp's fee token check shows a notice and switches off the paid actions it names.
 
 ### 5. Configure the dApp
 
