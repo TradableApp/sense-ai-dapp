@@ -591,9 +591,22 @@ export async function getActivities(userAddress: string, first = 20): Promise<In
 	return data.activities;
 }
 
-/** Not written yet. */
-export async function subgraphHasType(_name: string): Promise<boolean> {
-	return false;
+const GRAPHQL_NAME = /^[_A-Za-z][_0-9A-Za-z]*$/;
+
+/**
+ * Whether the deployed subgraph's schema declares the type `name`, asked by introspection. Lets a
+ * spec decide from the stack what a subgraph version records, instead of from whether the row it
+ * expects turned up (which would let a regression that stops writing the row pass). False only
+ * when the schema answers without the type; an endpoint that cannot be read throws, as every
+ * reader here does. The name is checked and written into the query, not passed as a variable.
+ */
+export async function subgraphHasType(name: string): Promise<boolean> {
+	if (!GRAPHQL_NAME.test(name))
+		throw new Error(`subgraphHasType: not a GraphQL type name: ${name}`);
+	const data = await graphQuery<{ __type: { name: string } | null }>(
+		`{ __type(name: "${name}") { name } }`,
+	);
+	return data.__type?.name === name;
 }
 
 /**

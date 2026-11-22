@@ -1,7 +1,9 @@
+import formatTokenAmount from '@/lib/tokenAmount';
+
 import { expect, test } from '../fixtures';
 import { advanceTime, LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
-import { getActivities, waitForGraph } from '../helpers/graph';
+import { getActivities, subgraphHasType, waitForGraph } from '../helpers/graph';
 import { DashboardPage } from '../pages/DashboardPage';
 
 const SKIP_REASON =
@@ -12,6 +14,23 @@ const SKIP_REASON =
 // cancel until 3 s after the prompt, so time is advanced past that before the click.
 const HOLD_MS = 8000;
 const CANCELLATION_TIMEOUT_S = 3;
+
+// The type the subgraph adds in the version that records a cancel's returned amount. Its presence
+// in the deployed schema is what says a CANCEL_RETURN row must exist; the row's own presence
+// cannot say so, or a regression that stops writing it would pass.
+const RETURN_RECORDING_TYPE = 'PendingDirectPayment';
+
+// Decimal places of the fee token. Both fee token profiles use 18, as do the amounts this suite
+// funds with (helpers/contracts ABLE()). The card formats with the profile's decimals, which this
+// spec cannot read from Node (the profile comes from the build's import.meta.env).
+const FEE_TOKEN_DECIMALS = 18;
+
+/** The amount cell's text as the card shows it, matched at the end of the row's text: the exact
+ *  amount, a space and the symbol, not preceded by a digit, point or sign. */
+function shownAmount(raw: string): RegExp {
+	const exact = formatTokenAmount(BigInt(raw), FEE_TOKEN_DECIMALS).replace('.', '\\.');
+	return new RegExp(`(?:^|[^0-9.-])${exact} \\S+$`);
+}
 
 // Area 10 — Recent Activity feed. The dApp's RecentActivityCard (on the dashboard, only once a plan
 // exists) reads the subgraph `Activity` log via GET_RECENT_ACTIVITY and maps each Activity.type to a
@@ -120,20 +139,27 @@ test.describe('Recent activity feed (T-ACTIVITY)', () => {
 		expect(BigInt(paid.amount)).toBeLessThan(0n);
 		expect(BigInt(fee.amount)).toBeLessThan(0n);
 
-		// A subgraph that records the returned amount writes it in the same handler as the CANCEL
-		// row, so once CANCEL is indexed the return is there too or this subgraph does not write it
-		// (an older build, or a cancel whose payment was never indexed).
+		// Decided from the stack: a subgraph whose schema declares the return-recording type writes
+		// CANCEL_RETURN in the same handler as CANCEL, so once CANCEL is indexed the return row must
+		// be there too. Only a subgraph without that type (an older build) leaves it out.
+		const recordsReturn = await subgraphHasType(RETURN_RECORDING_TYPE);
 		const returned = acts.find(
 			a => a.type === 'CANCEL_RETURN' && a.transactionHash === fee.transactionHash,
 		);
-		if (returned) {
+		if (recordsReturn) {
+			expect(
+				returned,
+				`the subgraph declares ${RETURN_RECORDING_TYPE}, so this cancel must have a CANCEL_RETURN row`,
+			).toBeDefined();
+			if (!returned) throw new Error('unreachable: asserted above');
 			expect(returned.id).toBe(`${fee.id}-return`);
 			// The whole payment comes back; the fee is what the cancel cost.
 			expect(BigInt(returned.amount)).toBe(-BigInt(paid.amount));
 		} else {
+			expect(returned, 'a subgraph without the type writes no return row').toBeUndefined();
 			const reason =
-				'Returned amount not asserted: the subgraph wrote no CANCEL_RETURN row for this cancel ' +
-				'(it predates that row, or the payment was not indexed). The paid and fee rows were checked.';
+				`Returned amount not asserted: the subgraph schema has no ${RETURN_RECORDING_TYPE} ` +
+				'(it predates the CANCEL_RETURN row). The paid and fee rows were checked.';
 			test.info().annotations.push({ type: 'not asserted', description: reason });
 			console.warn(`[T-ACTIVITY-04] ${reason}`);
 		}
@@ -144,13 +170,15 @@ test.describe('Recent activity feed (T-ACTIVITY)', () => {
 		await expect(dashboard.activityCard.getByText('AI Conversation').first()).toBeVisible({
 			timeout: 30_000,
 		});
-		await expect(dashboard.activityCard.getByText('Prompt Cancelled').first()).toBeVisible({
+		await expect(dashboard.activityRow('Prompt Cancelled')).toHaveText(shownAmount(fee.amount), {
 			timeout: 30_000,
 		});
 		if (returned) {
-			await expect(dashboard.activityCard.getByText('Prompt Amount Returned').first()).toBeVisible({
-				timeout: 30_000,
-			});
+			// The exact label and the exact amount handed back, as the chain moved it.
+			await expect(dashboard.activityRow('Prompt Amount Returned')).toHaveText(
+				shownAmount(returned.amount),
+				{ timeout: 30_000 },
+			);
 		}
 		await expect(dashboard.activityCard.getByText('Unknown Action')).toHaveCount(0);
 	});
