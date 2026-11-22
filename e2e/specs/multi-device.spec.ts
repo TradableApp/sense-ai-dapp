@@ -4,6 +4,7 @@ import { expect, test } from '../fixtures';
 import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { createWalletContext, openDevice, parseTokenAmount } from '../helpers/devices';
+import { feeToken } from '../helpers/feeToken';
 import { freshAccountPool } from '../helpers/fresh-account';
 import {
 	getConversation,
@@ -273,7 +274,9 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		await deviceB.dashboard.managePlanButton.click();
 		await expect(deviceB.planModal.modal).toBeVisible({ timeout: 10_000 });
 		await deviceB.planModal.limitInput.fill('100000');
-		const balanceHint = deviceB.planModal.modal.getByText(/you have [\d.]+ able/i);
+		const balanceHint = deviceB.planModal.modal.getByText(
+			new RegExp(`you have [\\d.]+ ${feeToken().symbol}`, 'i'),
+		);
 		await expect(balanceHint).toBeVisible({ timeout: 15_000 });
 		expect(
 			Math.abs(parseTokenAmount((await balanceHint.textContent()) ?? '') - onChainTokens),
