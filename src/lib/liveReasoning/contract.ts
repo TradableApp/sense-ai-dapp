@@ -2,8 +2,9 @@
  * Live reasoning stream: the dApp's half of the interface contract, version 1.
  *
  * The oracle keeps its own copy of these rules (`oracle/src/stream/streamContract.js`). The two
- * are held equal by the shared test vector (`vector.testdata.ts` here, `streamContract.test.js`
- * there), so a change here is a change to both repos at once.
+ * are held equal by the shared test vectors, one per frame type (`vector.testdata.ts` here,
+ * `streamContract.test.js` there), and both repos pin the same SHA-256 of their canonical form, so
+ * a change here is a change to both repos at once, to the vectors and to the pinned hash.
  *
  * A frame is a small JSON object sealed with the prompt's session key, exactly as the stored
  * answer file is. There is no associated data in the seal, so after decrypting, the reader must
