@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encryptData } from '@/lib/crypto';
 import type { FrameStreamOptions } from '@/lib/liveReasoning/frameTransport';
 import { forgetLiveReports } from '@/lib/liveReasoning/liveReport';
+import { FOLLOW_MAX_AGE_MS } from '@/lib/liveReasoning/pendingAnswers';
 import streamProof from '@/lib/liveReasoning/streamProof';
 import { importVectorKey } from '@/lib/liveReasoning/vector.testdata';
 
@@ -34,11 +35,18 @@ vi.mock('@/lib/liveReasoning/frameTransport', () => ({
 const RUN = '0123456789abcdef';
 const OWNER = '0x00000000000000000000000000000000000000aa';
 
-const user = (id: string, extra: object = {}) => ({ id, role: 'user', content: 'q', ...extra });
+const user = (id: string, extra: object = {}) => ({
+	id,
+	role: 'user',
+	content: 'q',
+	createdAt: Date.now(),
+	...extra,
+});
 const placeholder = (id: string, extra: object = {}) => ({
 	id,
 	role: 'assistant',
 	content: null,
+	createdAt: Date.now(),
 	...extra,
 });
 
@@ -110,6 +118,19 @@ describe('useLiveReasoning', () => {
 
 		expect(streams.started).toHaveLength(0);
 		expect(result.current.viewFor('42')).toBeUndefined();
+	});
+
+	it('opens no stream for an answer whose prompt is older than the stream can still exist', async () => {
+		const tooOld = Date.now() - FOLLOW_MAX_AGE_MS - 1_000;
+		mount([
+			user('41', { createdAt: tooOld }),
+			placeholder('42', { createdAt: tooOld }),
+			user('43', { status: 'pending', answerMessageId: '44', createdAt: tooOld }),
+		]);
+
+		await act(async () => {});
+
+		expect(streams.started).toHaveLength(0);
 	});
 
 	it('starts nothing without a session key', async () => {

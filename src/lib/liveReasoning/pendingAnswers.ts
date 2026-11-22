@@ -1,4 +1,17 @@
+import { REFUND_TIMEOUT_MS } from '@/lib/constants';
 import { isAnswerMessageId } from '@/lib/liveReasoning/contract';
+
+/** How long the stream server keeps a finished run's frames (its `STREAM_GRACE_MS` default). */
+const STREAM_GRACE_MS = 120_000;
+
+/**
+ * The oldest prompt whose answer is followed live. The oracle answers a prompt while it is
+ * pending, and after the refund window (`REFUND_TIMEOUT_MS`) the prompt is awaiting its refund;
+ * a run that closes is kept by the server for `STREAM_GRACE_MS` and then answers 404 or 410.
+ * Past both there is nothing left to read, and following would only ask again and again. An
+ * answer that still comes later lands from the sync, as every answer does.
+ */
+export const FOLLOW_MAX_AGE_MS = REFUND_TIMEOUT_MS + STREAM_GRACE_MS;
 
 /** The fields of a chat message this module reads. */
 export interface MessageLike {
