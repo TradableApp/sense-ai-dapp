@@ -35,8 +35,7 @@ test.describe('Reasoning & sources rendering (T-REASON)', () => {
 				'What drove Bitcoin price momentum this week? Cite your sources.',
 				240_000,
 			);
-			await expect(freshChatPage.reasoningTrigger).toBeVisible({ timeout: 15_000 });
-			await freshChatPage.reasoningTrigger.click();
+			await freshChatPage.expandReasoning();
 			await expect(freshChatPage.reasoningSteps.first()).toBeVisible();
 
 			await expect(freshChatPage.sourcesTrigger).toBeVisible();
@@ -53,8 +52,7 @@ test.describe('Reasoning & sources rendering (T-REASON)', () => {
 		// The reasoning disclosure appears on the answer — a reasoningDuration renders it as
 		// "Thought for N seconds". Its presence proves the data survived oracle → storage →
 		// syncService hydration → UI (it is NOT optimistic; only a delivered answer has it).
-		await expect(freshChatPage.reasoningTrigger).toBeVisible({ timeout: 15_000 });
-		await freshChatPage.reasoningTrigger.click();
+		await freshChatPage.expandReasoning();
 
 		// Expanded: the two deterministic reasoning steps render (their titles are <h4> headings).
 		await expect(freshChatPage.reasoningStep('Interpreting the request')).toBeVisible();

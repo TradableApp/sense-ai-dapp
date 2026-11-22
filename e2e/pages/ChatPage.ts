@@ -126,6 +126,19 @@ export class ChatPage {
 		return this.page.getByRole('button', { name: /thought for \d+ seconds?/i }).first();
 	}
 
+	/**
+	 * Opens the stored answer's reasoning block. With the live stream on, the block opens by itself
+	 * while steps arrive and closes a second after the stored answer lands; a click inside that
+	 * second would close it. So this waits for it to be closed, opens it, and checks it is open.
+	 */
+	async expandReasoning() {
+		await expect(this.reasoningTrigger).toHaveAttribute('aria-expanded', 'false', {
+			timeout: 15_000,
+		});
+		await this.reasoningTrigger.click();
+		await expect(this.reasoningTrigger).toHaveAttribute('aria-expanded', 'true');
+	}
+
 	/** The nested "Used N sources" disclosure inside an expanded reasoning block. */
 	get sourcesTrigger() {
 		return this.page.getByRole('button', { name: /used \d+ sources?/i }).first();
