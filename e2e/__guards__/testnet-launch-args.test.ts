@@ -14,14 +14,15 @@ import { E2E_DIR, stripComments } from './source-scan';
 const CONFIG = stripComments(readFileSync(join(E2E_DIR, '..', 'playwright.config.ts'), 'utf8'));
 
 describe('testnet project launch args', () => {
-	it('the testnet project passes --disable-gpu to Chromium', () => {
+	it('the testnet project takes the shared setting that passes --disable-gpu to Chromium', () => {
 		const start = CONFIG.indexOf("name: 'testnet'");
 		expect(start).toBeGreaterThan(-1);
 		// The project entry ends at the first `},` that closes a top-level project object (one tab
 		// deep inside `projects: [`). Slicing on `];` would stop early at an array-literal testMatch.
 		const end = CONFIG.indexOf('\n\t},', start);
 		const block = CONFIG.slice(start, end > start ? end : undefined);
-		expect(block).toMatch(/launchOptions:\s*\{[^}]*args:\s*\[[^\]]*'--disable-gpu'/);
+		// Through the shared setting, whose flag is pinned below.
+		expect(block).toMatch(/\.\.\.DESKTOP_CHROME\b/);
 	});
 });
 

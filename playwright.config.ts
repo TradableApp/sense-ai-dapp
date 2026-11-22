@@ -57,6 +57,19 @@ const TESTNET_SPECS = [
  */
 const RESILIENCE_SPECS = ['resilience-expiry', 'resilience-refund'];
 
+/**
+ * Software compositor, for every project. A page can stop scheduling animation frames while its
+ * JavaScript keeps running, so Playwright's actionability check waits its full 15 s on a page
+ * that is alive but not painting: once per Base Sepolia run in a fresh context (T-HIST-10
+ * 2026-11-09, T-PLAN-01 2026-11-10), and on the localnet under host load (T-HIST-11 2026-11-21).
+ * The GPU process is the usual culprit for that headless stall on macOS; the fixture's
+ * renderer-health probe is the second line of defence.
+ */
+const DESKTOP_CHROME = {
+	...devices['Desktop Chrome'],
+	launchOptions: { args: ['--disable-gpu'] },
+};
+
 const TESTNET_PROJECTS: Project[] = [
 	{
 		name: 'testnet',
@@ -64,15 +77,7 @@ const TESTNET_PROJECTS: Project[] = [
 		fullyParallel: false,
 		timeout: 300_000,
 		use: {
-			...devices['Desktop Chrome'],
-			/**
-			 * Software compositor. Once per Base Sepolia run a fresh context stopped scheduling
-			 * animation frames while its JS kept running (T-HIST-10 2026-11-09, T-PLAN-01 2026-11-10),
-			 * so Playwright's actionability check waited its full 15 s on a page that was alive but
-			 * not painting. The GPU process is the usual culprit for that headless stall on macOS
-			 * under load; the fixture's renderer-health probe is the second line of defence.
-			 */
-			launchOptions: { args: ['--disable-gpu'] },
+			...DESKTOP_CHROME,
 		},
 	},
 ];
@@ -89,9 +94,7 @@ const RESILIENCE_PROJECTS: Project[] = [
 		// counts a pass on retry as a failure anyway.
 		retries: 0,
 		use: {
-			...devices['Desktop Chrome'],
-			// Same software compositor as the testnet project (see the note there).
-			launchOptions: { args: ['--disable-gpu'] },
+			...DESKTOP_CHROME,
 		},
 	},
 ];
@@ -100,17 +103,17 @@ const LOCALNET_PROJECTS: Project[] = [
 	{
 		name: 'smoke',
 		testMatch: '**/smoke.spec.ts',
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'ui',
 		testMatch: '**/ui.spec.ts',
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'auth',
 		testMatch: '**/auth.spec.ts',
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'plan',
@@ -120,7 +123,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// through the modal before asserting — the 30 s default is too tight for the slower
 		// ones (T-PLAN-09/10 activate then revoke).
 		timeout: 120_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'faucet',
@@ -130,7 +133,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// (each mini-reorg unwind takes seconds; see revertToSnapshot) — the 30s
 		// default would abort the hook mid-wait.
 		timeout: 120_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'chat',
@@ -140,7 +143,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// subgraph → dApp render round-trip (the POMs wait up to 90s). The default
 		// 30s per-test timeout would abort mid-round-trip, so give them headroom.
 		timeout: 120_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'cost',
@@ -149,7 +152,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// T-COST-03 sends two prompts and waits for the first answer to render
 		// (thinking → hidden, up to 90s) before the second — same headroom need.
 		timeout: 120_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'cancel',
@@ -158,7 +161,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// Each test holds a prompt pending (8s mock-oracle delay) and T-CANCEL-03 then
 		// runs a full answer round-trip — give headroom over the 30s default.
 		timeout: 180_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'versions',
@@ -168,7 +171,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// round-trip (two oracle → IPFS → subgraph → dApp cycles, POMs wait up to 90s
 		// each), so it needs more headroom than the single-round-trip chat specs.
 		timeout: 240_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'history',
@@ -177,7 +180,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// Data tests do a full chat round-trip (fresh connect + prompt + answer) before
 		// touching history; the 30s default would abort mid-round-trip.
 		timeout: 120_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'refunds',
@@ -187,7 +190,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// 15s refetch to re-evaluate the wall-clock gate, then a refund round-trip + indexing —
 		// past the 30s default, so give it the same headroom as the other round-trip specs.
 		timeout: 120_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'search',
@@ -195,7 +198,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		fullyParallel: false,
 		// Creates conversations via full chat round-trips before searching; 30s default aborts.
 		timeout: 120_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'metadata',
@@ -205,7 +208,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// indexing waits and a re-sync — worst-case well past 120s, so match the versions
 		// project's headroom.
 		timeout: 240_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'reasoning',
@@ -214,7 +217,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// Each test does a full prompt → answer round-trip before asserting the reasoning/sources
 		// disclosure, so it needs the same headroom as the other answer-flow specs.
 		timeout: 120_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'live-reasoning',
@@ -225,7 +228,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// mock oracle holds ~26 s while device B syncs and streams, then waits for that answer to
 		// land: about 200 s at worst, so 240 s, as versions and branching.
 		timeout: 240_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'multi-device',
@@ -235,7 +238,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// answer round-trip and a cross-device sync, so it needs more headroom than the
 		// single-device answer specs.
 		timeout: 180_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'live-sync',
@@ -244,7 +247,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// Two devices (connect + session sign each) plus a full prompt → answer round-trip on
 		// device B, then a live-convergence window on device A — same headroom as multi-device.
 		timeout: 180_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'activity',
@@ -254,7 +257,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// Activity row + its dashboard label, plus a 60s indexing wait — same headroom as the
 		// other answer-flow projects.
 		timeout: 180_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'features',
@@ -265,7 +268,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// dashboard/history assertions (so it needs more than the single-round-trip headroom);
 		// T-ONBOARD/T-THEME are quick.
 		timeout: 180_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'governance',
@@ -276,7 +279,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// delay, then waits up to 60s for the orphaned PENDING state to index — so give extra
 		// headroom over the other answer-flow projects.
 		timeout: 180_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'security',
@@ -284,7 +287,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// T-SEC-06/08 drive a full prompt round-trip before inspecting storage —
 		// same headroom need as the other answer-flow projects.
 		timeout: 120_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'graph',
@@ -294,12 +297,12 @@ const LOCALNET_PROJECTS: Project[] = [
 		// (each mini-reorg unwind takes seconds; see revertToSnapshot) — the 30s
 		// default would abort the hook mid-wait.
 		timeout: 120_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'sentry',
 		testMatch: '**/sentry.spec.ts',
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'branching',
@@ -308,7 +311,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// Branch tests do multiple chat round-trips plus a branch op, then wait up to 60s for
 		// graph-node to index the branch before the follow-on assertions; generous headroom.
 		timeout: 240_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'brain',
@@ -318,7 +321,7 @@ const LOCALNET_PROJECTS: Project[] = [
 		// read, then polls Postgres for the write that follows escrow settlement -- same
 		// headroom as the other answer-flow projects.
 		timeout: 180_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'brain-real',
@@ -328,12 +331,12 @@ const LOCALNET_PROJECTS: Project[] = [
 		// calls. A real completion is slower and far more variable than the mock oracle's
 		// canned answer, so the headroom is the largest in the suite.
 		timeout: 300_000,
-		use: { ...devices['Desktop Chrome'] },
+		use: DESKTOP_CHROME,
 	},
 	{
 		name: 'mobile',
 		testMatch: '**/ui.spec.ts',
-		use: { ...devices['Pixel 5'] },
+		use: { ...devices['Pixel 5'], launchOptions: { args: ['--disable-gpu'] } },
 	},
 ];
 

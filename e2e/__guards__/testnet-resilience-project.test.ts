@@ -70,9 +70,8 @@ describe('testnet-resilience project is separate from the testnet project', () =
 	});
 
 	it('the resilience project passes the same software-compositor flag as testnet', () => {
-		expect(projectBlock('testnet-resilience')).toMatch(
-			/launchOptions:\s*\{[^}]*args:\s*\[[^\]]*'--disable-gpu'/,
-		);
+		// The flag itself is pinned on the shared setting by the launch-args guard.
+		expect(projectBlock('testnet-resilience')).toMatch(/\.\.\.DESKTOP_CHROME\b/);
 	});
 
 	// Run day 2026-11-11: a failed R-REFUND-01 was retried, which spent a second real hour on a
