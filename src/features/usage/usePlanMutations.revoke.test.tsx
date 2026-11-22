@@ -22,6 +22,9 @@ import usePlanMutations from './usePlanMutations';
  */
 
 const sendAndConfirm = vi.hoisted(() => vi.fn());
+// What the chain answers: the approval for the escrow, and the escrow's spending limit
+// (allowance, spent, expiresAt). An Error is thrown as the read's failure.
+const onChain = vi.hoisted(() => ({ allowance: 0n as unknown, limit: [0n, 0n, 0n] as unknown }));
 // The fee token profile the build selected; each profile is tried in turn below.
 const profile = vi.hoisted(() => ({ current: undefined as unknown }));
 
@@ -144,7 +147,13 @@ beforeEach(() => {
 	vi.spyOn(console, 'error').mockImplementation(() => undefined);
 	profile.current = undefined;
 	sendAndConfirm.mockResolvedValue({ status: 'success' });
-	vi.mocked(readContract).mockResolvedValue(10n as never);
+	onChain.allowance = 10n;
+	onChain.limit = [0n, 0n, 0n];
+	vi.mocked(readContract).mockImplementation((async ({ method }: { method: unknown }) => {
+		const answer = String(method).includes('spendingLimits') ? onChain.limit : onChain.allowance;
+		if (answer instanceof Error) throw answer;
+		return answer;
+	}) as never);
 	withGate('ok', { status: 'open' });
 });
 
@@ -193,7 +202,7 @@ describe('revoking a plan with an approval in place', () => {
 
 describe('revoking a plan with no approval left', () => {
 	it('sends the cancel only', async () => {
-		vi.mocked(readContract).mockResolvedValue(0n as never);
+		onChain.allowance = 0n;
 
 		const { onDone } = await revoke();
 
@@ -284,7 +293,18 @@ describe('removing the approval again from the notice', () => {
 
 		expect(methods()).toEqual([clearCall]);
 		expect(sendAndConfirm).toHaveBeenCalledTimes(3);
-		expect(readContract).not.toHaveBeenCalled();
+		// One read, of the account's spending limit on the escrow, before anything is sent.
+		expect(readContract).toHaveBeenCalledTimes(1);
+		expect(readContract).toHaveBeenCalledWith(
+			expect.objectContaining({
+				contract: { address: ESCROW },
+				method: expect.stringContaining('spendingLimits'),
+				params: [OWNER],
+			}),
+		);
+		expect(vi.mocked(readContract).mock.invocationCallOrder[0]).toBeLessThan(
+			sendAndConfirm.mock.invocationCallOrder[2],
+		);
 		expect(toast.success).toHaveBeenCalledWith('Access Revoked', {
 			description: 'The AI agent can no longer spend your tokens.',
 		});
@@ -304,6 +324,72 @@ describe('removing the approval again from the notice', () => {
 		const [title, again] = vi.mocked(toast.error).mock.calls[1];
 		expect(title).toBe('Approval Not Removed');
 		expect((again as Notice).action?.label).toBe('Remove approval');
+		expect(toast.success).not.toHaveBeenCalled();
+	});
+});
+
+describe('removing the approval while a plan is active', () => {
+	/** A revoke whose second step was declined, leaving the notice; returns its options. */
+	async function halfFinishedRevoke() {
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockRejectedValueOnce(new Error('user rejected'));
+		const rendered = await revoke();
+		return { ...rendered, notice: onlyNotice('error').options };
+	}
+
+	/** Presses the notice's action and waits for its notice to be shown. */
+	async function pressAndSettle(notice: Notice) {
+		await act(async () => {
+			notice.action?.onClick();
+		});
+		await waitFor(() => expect(toast.warning).toHaveBeenCalled());
+	}
+
+	it('sends nothing when a limit stands, and says Revoke is the way to remove it', async () => {
+		const { notice } = await halfFinishedRevoke();
+		// A new plan was set since, on this device or another.
+		onChain.limit = [100n, 0n, 2_000_000_000n];
+		vi.mocked(prepareContractCall).mockClear();
+
+		await pressAndSettle(notice);
+
+		expect(sendAndConfirm).toHaveBeenCalledTimes(2);
+		expect(prepareContractCall).not.toHaveBeenCalled();
+		const [title, options] = vi.mocked(toast.warning).mock.calls[0];
+		expect(title).toBe('Plan Is Active');
+		expect((options as Notice).description).toMatch(/plan is active/i);
+		expect((options as Notice).description).toMatch(/Revoke/);
+		expect((options as Notice).action).toBeUndefined();
+		expect(toast.success).not.toHaveBeenCalled();
+	});
+
+	it('takes down the old notice, whose action would undo the plan', async () => {
+		const { notice } = await halfFinishedRevoke();
+		onChain.limit = [100n, 0n, 2_000_000_000n];
+
+		await pressAndSettle(notice);
+
+		expect(toast.dismiss).toHaveBeenCalledWith('plan-approval-not-cleared');
+	});
+
+	it.each([
+		['fails', () => new Error('HTTP request failed')],
+		['gives no limit', () => '0x'],
+		['gives a limit with no expiry', () => [100n, 0n]],
+	])('sends nothing when the limit read %s, and says to try again', async (_, answer) => {
+		const { notice } = await halfFinishedRevoke();
+		onChain.limit = answer();
+		vi.mocked(prepareContractCall).mockClear();
+
+		await pressAndSettle(notice);
+
+		expect(sendAndConfirm).toHaveBeenCalledTimes(2);
+		expect(prepareContractCall).not.toHaveBeenCalled();
+		const [title, options] = vi.mocked(toast.warning).mock.calls[0];
+		expect(title).toBe('Plan Not Checked');
+		expect((options as Notice).description).toMatch(/could not be checked/);
+		expect((options as Notice).description).toMatch(/try again/i);
 		expect(toast.success).not.toHaveBeenCalled();
 	});
 });
@@ -328,7 +414,7 @@ describe('a revoke whose cancel does not go through', () => {
 
 describe('a revoke whose approval cannot be read', () => {
 	it('says the plan is revoked, the approval could not be checked, and offers to remove it', async () => {
-		vi.mocked(readContract).mockRejectedValue(new Error('HTTP request failed'));
+		onChain.allowance = new Error('HTTP request failed');
 
 		const { onDone } = await revoke();
 

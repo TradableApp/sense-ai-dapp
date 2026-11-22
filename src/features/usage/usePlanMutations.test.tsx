@@ -284,6 +284,31 @@ describe('setting a plan before the check has answered once', () => {
 	});
 });
 
+describe('setting a plan and the notice that offers to remove an approval', () => {
+	const NOTICE_ID = 'plan-approval-not-cleared';
+
+	// The notice's action sends an approval of zero: pressed after a new plan, it would undo it.
+	it('takes the notice down before the approval is sent', async () => {
+		withVerdict('ok');
+
+		await attempt(setPlan);
+
+		expect(toast.dismiss).toHaveBeenCalledWith(NOTICE_ID);
+		const dismissedAt = vi.mocked(toast.dismiss).mock.calls.findIndex(([id]) => id === NOTICE_ID);
+		expect(vi.mocked(toast.dismiss).mock.invocationCallOrder[dismissedAt]).toBeLessThan(
+			sendAndConfirm.mock.invocationCallOrder[0],
+		);
+	});
+
+	it.each(stopped)('leaves it up under %s, when nothing is sent', async verdict => {
+		withVerdict(verdict);
+
+		await attempt(setPlan);
+
+		expect(toast.dismiss).not.toHaveBeenCalledWith(NOTICE_ID);
+	});
+});
+
 describe('a plan that was sent and failed', () => {
 	it('is still called a failed transaction', async () => {
 		withVerdict('ok');
