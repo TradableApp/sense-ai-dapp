@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
 	IDLE_GIVE_UP_MS,
+	MAX_LINE_CHARS,
+	MAX_STALLED_CONNECTIONS,
 	MIN_RETRY_MS,
 	startFrameStream,
 	type StreamEvent,
@@ -13,6 +15,7 @@ import {
 const URL_42 = 'https://stream.example/stream/42';
 const PROOF = 'zmsj4OksK8D2N9JMs__j2qRCsgSGomdTiRR9Dl6UUb4';
 const RUN = '0123456789abcdef';
+const STREAM_RETRY_MS = 2_000;
 
 /** A response body that yields the given chunks, then ends (or stays open when `hold`). */
 function body(chunks: string[], { hold = false } = {}) {
@@ -57,10 +60,24 @@ interface Harness {
 	handle: ReturnType<typeof startFrameStream>;
 }
 
-function start(responses: Array<StreamResponse | Error>): Harness {
+interface StartOptions {
+	/** False: frames arrive but never move the cursor (undecryptable, refused by the schema). */
+	applies?: boolean;
+	/** True: a frame is applied a few microtasks after it arrives, as a decrypt is. */
+	appliesLater?: boolean;
+	/** The response given once the listed ones run out; a held-open empty stream by default. */
+	repeat?: () => StreamResponse;
+}
+
+/** The most requests a test answers before it stops responding (a storm shows as this count). */
+const STORM_CAP = 1_000;
+
+function start(responses: Array<StreamResponse | Error>, opts: StartOptions = {}): Harness {
+	const { applies = true, appliesLater = false, repeat = () => ok([], { hold: true }) } = opts;
 	const queue = [...responses];
 	const fetchImpl = vi.fn(async (_url: string, init: StreamRequestInit) => {
-		const next = queue.shift() ?? ok([], { hold: true });
+		const next =
+			fetchImpl.mock.calls.length > STORM_CAP ? ok([], { hold: true }) : queue.shift() ?? repeat();
 		if (next instanceof Error) throw next;
 		// The request is aborted through its signal, as a real fetch is.
 		if (init.signal?.aborted) throw new DOMException('aborted', 'AbortError');
@@ -69,13 +86,19 @@ function start(responses: Array<StreamResponse | Error>): Harness {
 	const events: StreamEvent[] = [];
 	const stops: string[] = [];
 	const cursor = { value: null as string | null };
+	const apply = (e: StreamEvent) => {
+		if (applies) cursor.value = e.id;
+	};
 	const handle = startFrameStream({
 		url: URL_42,
 		proof: PROOF,
-		// The cursor follows the frames received, as the reducer's does.
+		// The cursor follows the frames applied, as the reducer's does.
 		onEvent: e => {
 			events.push(e);
-			cursor.value = e.id;
+			if (!appliesLater) return apply(e);
+			return Promise.resolve()
+				.then(() => undefined)
+				.then(() => apply(e));
 		},
 		getCursor: () => cursor.value,
 		onStop: reason => stops.push(reason),
@@ -299,5 +322,123 @@ describe('the frame transport', () => {
 
 		expect(IDLE_GIVE_UP_MS).toBe(600_000);
 		expect(h.stops).toEqual(['idle']);
+	});
+
+	describe('progress is the cursor moving, not a frame arriving', () => {
+		const LONG_LINE = `data: ${'x'.repeat(MAX_LINE_CHARS + 1)}`;
+		const LONG_SPAN_MS = 30 * 60 * 1000;
+
+		it.each([
+			['a frame that is never applied, replayed on every connection', () => ok([event(1)])],
+			['an over-long line', () => ok([LONG_LINE])],
+			['a frame that is never applied, then an over-long line', () => ok([event(1), LONG_LINE])],
+		])('%s: a bounded number of requests, then it stops as finished', async (_case, respond) => {
+			const h = start([], { applies: false, repeat: respond });
+
+			await vi.advanceTimersByTimeAsync(LONG_SPAN_MS);
+
+			expect(h.fetchImpl).toHaveBeenCalledTimes(MAX_STALLED_CONNECTIONS);
+			expect(h.stops).toEqual(['finished']);
+		});
+
+		it('backs off between connections that made no progress, doubling from 1 s', async () => {
+			const h = start([], { applies: false, repeat: () => ok([event(1)]) });
+			await vi.advanceTimersByTimeAsync(0);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(1);
+
+			await vi.advanceTimersByTimeAsync(MIN_RETRY_MS - 1);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(1);
+			await vi.advanceTimersByTimeAsync(1);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(2);
+			await vi.advanceTimersByTimeAsync(2 * MIN_RETRY_MS - 1);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(2);
+			await vi.advanceTimersByTimeAsync(1);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(3);
+			h.handle.stop();
+		});
+
+		it('reconnects at once after each response that moved the cursor, a frame per poll', async () => {
+			const polls = [1, 2, 3, 4, 5, 6, 7, 8].map(seq => ok([event(seq)]));
+			const h = start(polls);
+
+			// Any wait after a response without progress is at least the 1 s floor.
+			await vi.advanceTimersByTimeAsync(MIN_RETRY_MS - 1);
+
+			expect(h.fetchImpl).toHaveBeenCalledTimes(polls.length + 1);
+			expect(headersOf(h, polls.length).get('Last-Event-ID')).toBe(`${RUN}.8`);
+			expect(h.stops).toEqual([]);
+			h.handle.stop();
+		});
+
+		it('waits for frames still being applied before judging the response', async () => {
+			const polls = [1, 2, 3, 4, 5, 6, 7, 8].map(seq => ok([event(seq)]));
+			const h = start(polls, { appliesLater: true });
+
+			await vi.advanceTimersByTimeAsync(MIN_RETRY_MS - 1);
+
+			expect(h.fetchImpl).toHaveBeenCalledTimes(polls.length + 1);
+			expect(headersOf(h, polls.length).get('Last-Event-ID')).toBe(`${RUN}.8`);
+			h.handle.stop();
+		});
+
+		it('reconnects at once after a response that ended once its frames were applied', async () => {
+			const h = start([ok([event(0), event(1), event(2)])], { appliesLater: true });
+
+			await vi.advanceTimersByTimeAsync(MIN_RETRY_MS - 1);
+
+			expect(h.fetchImpl).toHaveBeenCalledTimes(2);
+			h.handle.stop();
+		});
+
+		it('counts again from nothing after any progress', async () => {
+			const stuck = () => ok([event(1)]);
+			const responses = [
+				...Array.from({ length: MAX_STALLED_CONNECTIONS - 1 }, stuck),
+				ok([event(0)]),
+				...Array.from({ length: MAX_STALLED_CONNECTIONS - 1 }, stuck),
+			];
+			let applied = false;
+			// Only the frame with seq 0 is applied; the replayed seq 1 never is.
+			const fetchImpl = vi.fn(async () => responses.shift() ?? ok([], { hold: true }));
+			const cursor = { value: null as string | null };
+			const stops: string[] = [];
+			const handle = startFrameStream({
+				url: URL_42,
+				proof: PROOF,
+				onEvent: e => {
+					if (e.id === `${RUN}.0`) {
+						cursor.value = e.id;
+						applied = true;
+					}
+				},
+				getCursor: () => cursor.value,
+				onStop: reason => stops.push(reason),
+				fetchImpl: fetchImpl as unknown as StreamFetch,
+				random: () => 0,
+			});
+
+			// Shorter than the idle limit, which the held-open last connection would reach.
+			await vi.advanceTimersByTimeAsync(IDLE_GIVE_UP_MS / 2);
+
+			expect(applied).toBe(true);
+			expect(stops).toEqual([]);
+			// 2N - 1 connections answered as listed, then one held open: never stopped.
+			expect(fetchImpl).toHaveBeenCalledTimes(2 * MAX_STALLED_CONNECTIONS);
+			handle.stop();
+		});
+
+		it('keeps polling through quiet responses that carry no frame, at the server pace', async () => {
+			const quiet = () => ok([`retry: ${STREAM_RETRY_MS}\n\n: ping\n\n`]);
+			const responses = [...Array.from({ length: 25 }, quiet), ok([event(0)])];
+			const h = start(responses);
+
+			// Each quiet response is followed after the server's retry line, never stopped for it.
+			await vi.advanceTimersByTimeAsync(25 * STREAM_RETRY_MS + MIN_RETRY_MS - 1);
+
+			expect(h.stops).toEqual([]);
+			expect(h.events.map(e => e.id)).toEqual([`${RUN}.0`]);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(27);
+			h.handle.stop();
+		});
 	});
 });

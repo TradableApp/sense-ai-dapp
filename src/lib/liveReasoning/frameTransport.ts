@@ -20,7 +20,13 @@ export const MIN_RETRY_MS = 1_000;
 /** No frame for this long and the stream is given up; the stored answer still lands by sync. */
 export const IDLE_GIVE_UP_MS = 10 * 60 * 1000;
 /** A line longer than this is not a frame (an answer frame is under 100 KiB once sealed). */
-const MAX_LINE_CHARS = 256 * 1024;
+export const MAX_LINE_CHARS = 256 * 1024;
+/**
+ * Connections in a row that delivered something but moved the cursor nowhere (a frame that
+ * cannot be applied, which the server replays each time, or a line too long to be a frame)
+ * before the stream is given up as `finished`.
+ */
+export const MAX_STALLED_CONNECTIONS = 5;
 
 export interface StreamEvent {
 	id: string;
