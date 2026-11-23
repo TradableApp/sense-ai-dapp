@@ -80,7 +80,7 @@ export interface FrameStreamOptions {
 
 export interface FrameStreamHandle {
 	stop(): void;
-	/** Drops the open connection and opens another, with no cursor when `fresh`. */
+	/** Drops the open connection and opens another (on the wake, while hidden), with no cursor when `fresh`. */
 	reconnect(_fresh: boolean): void;
 	/** The tab is shown again: connects from the cursor if a connection was skipped while hidden. */
 	wake(): void;
@@ -406,12 +406,13 @@ export function startFrameStream(options: FrameStreamOptions): FrameStreamHandle
 			if (reconnectTimer) clearTimeout(reconnectTimer);
 			reconnectTimer = null;
 			controller?.abort();
-			connect();
+			// While hidden this is made on the wake, from the cursor (or fresh, as asked).
+			connectUnlessHidden();
 		},
 		wake() {
 			if (stopped || !pausedWhileHidden || isHidden()) return;
 			pausedWhileHidden = false;
-			// A reconnect asked for while hidden may have opened a request: one open request at a time.
+			// One open request at a time: whatever is scheduled or open is replaced by this one.
 			if (reconnectTimer) clearTimeout(reconnectTimer);
 			reconnectTimer = null;
 			controller?.abort();

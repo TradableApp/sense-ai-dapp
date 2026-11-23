@@ -751,7 +751,7 @@ describe('the frame transport', () => {
 			const h = startWithVisibility([ok([event(0)])]);
 			h.visibility.hidden = true;
 			await vi.advanceTimersByTimeAsync(0);
-			// A gap's reconnect while hidden opens a request; the skipped one leaves the stream paused.
+			// A gap's reconnect while hidden opens nothing; the wake makes the one request.
 			h.handle.reconnect(false);
 			await vi.advanceTimersByTimeAsync(0);
 
@@ -762,7 +762,7 @@ describe('the frame transport', () => {
 			const signals = h.fetchImpl.mock.calls.map(
 				call => (call as unknown as [string, StreamRequestInit])[1].signal,
 			);
-			expect(signals).toHaveLength(3);
+			expect(signals).toHaveLength(2);
 			expect(signals.filter(signal => !signal?.aborted)).toHaveLength(1);
 			h.handle.stop();
 		});
