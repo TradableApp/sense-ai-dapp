@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Reasoning, ReasoningContent } from './reasoning';
@@ -188,5 +188,106 @@ describe('ReasoningContent while streaming', () => {
 		const keyWarnings = errors.mock.calls.filter(call => String(call[0]).includes('same key'));
 		expect(keyWarnings).toEqual([]);
 		errors.mockRestore();
+	});
+});
+
+describe('ReasoningContent once the stored answer lands, or a run starts again', () => {
+	const view = (steps: Step[], isStreaming: boolean) => (
+		<Reasoning isStreaming={isStreaming} defaultOpen reasoningSteps={steps}>
+			<ReasoningContent reasoningSteps={steps} />
+		</Reasoning>
+	);
+	const descriptions = () =>
+		screen.queryAllByTestId('reasoning-step').map(el => el.querySelector('p')?.textContent);
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it.each([false, true])(
+		'shows the stored descriptions, not the ones typed live, when they differ (reduced motion: %s)',
+		reduced => {
+			motion.reduced = reduced;
+			vi.useFakeTimers();
+			const liveZero = { title: 'Read', description: 'LIVE zero' };
+			const liveOne = { title: 'Check', description: 'LIVE one' };
+			const { rerender } = render(view([], true));
+			rerender(view([liveZero], true));
+			act(() => {
+				vi.advanceTimersByTime(5_000);
+			});
+			rerender(view([liveZero, liveOne], true));
+			act(() => {
+				vi.advanceTimersByTime(5_000);
+			});
+
+			rerender(
+				view(
+					[
+						{ title: 'Read', description: 'STORED zero' },
+						{ title: 'Check', description: 'STORED one' },
+					],
+					false,
+				),
+			);
+			act(() => {
+				vi.advanceTimersByTime(5_000);
+			});
+
+			expect(descriptions()).toEqual(['STORED zero', 'STORED one']);
+		},
+	);
+
+	it.each([false, true])(
+		'shows nothing typed for an earlier run after a reset (reduced motion: %s)',
+		reduced => {
+			motion.reduced = reduced;
+			vi.useFakeTimers();
+			const { rerender } = render(view([], true));
+			rerender(view([{ title: 'Old', description: 'OLD RUN text' }], true));
+			act(() => {
+				vi.advanceTimersByTime(5_000);
+			});
+			rerender(view([], true));
+
+			rerender(
+				view(
+					[
+						{ title: 'New', description: 'NEW zero' },
+						{ title: 'Next', description: 'NEW one' },
+					],
+					true,
+				),
+			);
+			act(() => {
+				vi.advanceTimersByTime(5_000);
+			});
+
+			expect(descriptions()).toEqual(['NEW zero', 'NEW one']);
+		},
+	);
+
+	it('shows nothing typed for an earlier run when the reset and the new steps arrive together', () => {
+		vi.useFakeTimers();
+		const { rerender } = render(view([], true));
+		rerender(view([{ title: 'Old', description: 'OLD RUN text' }], true));
+		act(() => {
+			vi.advanceTimersByTime(5_000);
+		});
+
+		rerender(
+			view(
+				[
+					{ title: 'New', description: 'NEW zero' },
+					{ title: 'Next', description: 'NEW one' },
+				],
+				true,
+			),
+		);
+		act(() => {
+			vi.advanceTimersByTime(5_000);
+		});
+
+		expect(descriptions()).toEqual(['NEW zero', 'NEW one']);
 	});
 });
