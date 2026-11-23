@@ -157,6 +157,23 @@ export function buildErrorHandler(
 		const isError = (abi: readonly unknown[], name: string) =>
 			messageNamesError(errorMessage, abi, name);
 
+		// A cancel takes its fee from the user's wallet through the plan (cancelPrompt in
+		// EVMAIAgentEscrow), so it is refused when the plan's remaining limit, the token approval
+		// or the balance is below the fee. Raising the limit is switched off while a prompt is
+		// pending, so the message says what is left to the user.
+		if (
+			action === CANCEL_ACTION &&
+			(isError(EVMAIAgentEscrowABI.abi, 'InsufficientSpendingLimitAllowance') ||
+				isError(feeToken.abi, 'ERC20InsufficientAllowance') ||
+				isError(feeToken.abi, 'ERC20InsufficientBalance'))
+		) {
+			toast.error('Could Not Cancel', {
+				description:
+					"The cancellation fee could not be taken: your plan's remaining limit, the token approval or your balance is below it. Nothing was cancelled. The prompt can be refunded one hour after it was sent, unless it is answered first.",
+			});
+			return;
+		}
+
 		// --- Token Errors ---
 		if (isError(feeToken.abi, 'ERC20InsufficientBalance')) {
 			const faucetOffer =
