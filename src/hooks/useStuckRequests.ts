@@ -121,7 +121,8 @@ export default function useStuckRequests() {
 
 	// The hour is checked against a clock of its own, so the Refund button unlocks when the hour
 	// (and the margin after it, `REFUND_UNLOCK_MARGIN_MS`) passes and not at the next read of the
-	// list. The clock runs only while a listed request is still waiting for that time.
+	// list. The clock runs only while a listed request is still waiting for that time, and never
+	// goes back: a device clock set back does not lock a request it has unlocked.
 	const [now, setNow] = useState(() => Date.now());
 	const select = useCallback((answer: StuckAnswer) => refundableAt(answer.stuck, now), [now]);
 
@@ -153,7 +154,10 @@ export default function useStuckRequests() {
 	const isWaitingForHour = stuckQuery.data?.some(payment => !payment.isRefundable) ?? false;
 	useEffect(() => {
 		if (!isWaitingForHour) return undefined;
-		const timer = setInterval(() => setNow(Date.now()), REFUND_CLOCK_MS);
+		const timer = setInterval(
+			() => setNow(previous => Math.max(previous, Date.now())),
+			REFUND_CLOCK_MS,
+		);
 		return () => clearInterval(timer);
 	}, [isWaitingForHour]);
 

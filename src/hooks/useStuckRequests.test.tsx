@@ -356,4 +356,36 @@ describe('a stuck request whose refund hour passes while the page is open', () =
 
 		expect(result.current.data).toEqual([expect.objectContaining({ isRefundable: true })]);
 	});
+
+	// Unlocked by the clock rather than by a read, while another request keeps the clock
+	// running: a clock set back must not lock it again.
+	it('stays refundable once the clock unlocked it, when the clock is set back later', async () => {
+		const { default: useStuckRequests, REFUND_CLOCK_MS } = await startAt();
+		const sentAt = (msFromStart: number) =>
+			String(Math.floor((START + msFromStart - HOUR_MS - MARGIN_MS) / 1000));
+		request.mockResolvedValue({
+			payments: [
+				{ id: '7', amount: '1', createdAt: sentAt(REFUND_CLOCK_MS - 5_000) },
+				{ id: '8', amount: '1', createdAt: sentAt(40 * REFUND_CLOCK_MS) },
+			],
+		});
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		const { result } = render(useStuckRequests, queryClient);
+		await settle();
+		await tick(REFUND_CLOCK_MS);
+		expect(result.current.data).toEqual([
+			expect.objectContaining({ id: '7', isRefundable: true }),
+			expect.objectContaining({ id: '8', isRefundable: false }),
+		]);
+
+		// Set back so the next tick reads START, before the first one's time.
+		vi.setSystemTime(START - REFUND_CLOCK_MS);
+		await tick(REFUND_CLOCK_MS);
+		expect(Date.now()).toBeLessThan(START + REFUND_CLOCK_MS - 5_000);
+
+		expect(result.current.data).toEqual([
+			expect.objectContaining({ id: '7', isRefundable: true }),
+			expect.objectContaining({ id: '8', isRefundable: false }),
+		]);
+	});
 });

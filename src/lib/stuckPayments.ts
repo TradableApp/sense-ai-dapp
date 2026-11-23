@@ -70,7 +70,8 @@ export async function fetchPendingPayments(
 /**
  * The list as it stands at `now`: a payment whose hour (and the margin after it, see
  * `REFUND_UNLOCK_MARGIN_MS`) has passed since the list was read is refundable. One that was
- * refundable when read stays so.
+ * refundable when read stays so; one unlocked by `now` stays so only while `now` does not go
+ * back, which the caller's clock ensures.
  */
 export const refundableAt = (stuck: readonly StuckPayment[], now: number): StuckPayment[] =>
 	stuck.map(payment =>
