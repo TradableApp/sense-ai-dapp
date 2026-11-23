@@ -37,6 +37,16 @@ export function nextWindow(window: KeysetWindow, keys: readonly string[]): Keyse
 	return { upTo: last, skip: readBefore + keys.length };
 }
 
+/**
+ * The most pages one list is read in during a pass. At 100 conversations a page that is
+ * 100,000 conversations for one wallet, each opened by a paid prompt: one new conversation
+ * every ten minutes, day and night, takes almost two years to get there. At 1000 rows a page
+ * it is 1,000,000 messages or prompt requests in one conversation. A list still coming back in
+ * full pages after this is an endpoint serving new rows without end (broken, or a proxy in the
+ * way), and without a cap the pass would never finish, store nothing and say nothing.
+ */
+export const MAX_KEYSET_PAGES = 1000;
+
 interface KeysetPagesInput<Row> {
 	readonly list: GraphList;
 	readonly pageSize: number;
@@ -55,7 +65,8 @@ interface KeysetPagesInput<Row> {
  * above the window, so they do not shift the pages still to come; the next sync, which asks
  * from its cursor upwards, picks them up. Throws `GraphFetchFailed` (`no-progress`) when a full
  * page holds nothing new, which happens only when the endpoint ignores the window: asking again
- * would return the same page for ever.
+ * would return the same page for ever; and (`too-many-pages`) when the list is still coming back
+ * in full pages after `MAX_KEYSET_PAGES`, a page already in hand counted as one.
  */
 export async function collectKeysetPages<Row>({
 	list,
@@ -69,6 +80,7 @@ export async function collectKeysetPages<Row>({
 	const rows: Row[] = [];
 	let window = FIRST_WINDOW;
 	let page = firstPage ?? (await fetchPage(window));
+	let pagesRead = 1;
 
 	for (;;) {
 		const fresh = page.filter(row => !seen.has(idOf(row)));
@@ -77,9 +89,11 @@ export async function collectKeysetPages<Row>({
 
 		if (page.length < pageSize) return rows;
 		if (fresh.length === 0) throw new GraphFetchFailed(list, 'no-progress');
+		if (pagesRead >= MAX_KEYSET_PAGES) throw new GraphFetchFailed(list, 'too-many-pages');
 
 		window = nextWindow(window, page.map(keyOf));
 		// eslint-disable-next-line no-await-in-loop -- each page's window comes from the one before
 		page = await fetchPage(window);
+		pagesRead += 1;
 	}
 }

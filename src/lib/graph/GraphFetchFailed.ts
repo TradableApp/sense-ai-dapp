@@ -4,10 +4,17 @@ export type GraphList = 'conversations' | 'messages' | 'prompt-requests';
 /**
  * Why it failed: the request itself (`request`), an answer without the list asked for
  * (`malformed`), a full page with nothing not already read, which means the endpoint is not
- * honouring the page bounds and asking again would never end (`no-progress`), or a build with
- * no Graph endpoint, which can never read the history (`not-configured`).
+ * honouring the page bounds and asking again would never end (`no-progress`), a list still
+ * coming back in full pages after the page cap, which no real wallet reaches and which means
+ * the endpoint keeps serving new rows (`too-many-pages`), or a build with no Graph endpoint,
+ * which can never read the history (`not-configured`).
  */
-export type GraphFailureReason = 'request' | 'malformed' | 'no-progress' | 'not-configured';
+export type GraphFailureReason =
+	| 'request'
+	| 'malformed'
+	| 'no-progress'
+	| 'too-many-pages'
+	| 'not-configured';
 
 /**
  * A Graph request the sync could not use. It is thrown rather than read as "no updates", so
