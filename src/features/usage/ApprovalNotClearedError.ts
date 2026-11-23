@@ -88,12 +88,13 @@ export default class ApprovalNotClearedError extends Error {
 	constructor(
 		cause: unknown,
 		named?: NamedKind,
-		step: ApprovalNotClearedStep = 'revoke',
+		step?: ApprovalNotClearedStep,
 		owner?: string,
 	) {
 		const kind: ApprovalNotClearedKind =
 			named ?? (isReceiptNotFound(cause) ? 'unconfirmed' : 'failed');
-		super(messageFor(kind, describeFailure(cause).line, step));
+		// A revoke's second step unless named: the removal on its own names itself.
+		super(messageFor(kind, describeFailure(cause).line, step ?? 'revoke'));
 		this.name = 'ApprovalNotClearedError';
 		this.kind = kind;
 		this.title = TITLES[kind];
