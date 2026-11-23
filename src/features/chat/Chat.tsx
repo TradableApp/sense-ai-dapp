@@ -313,8 +313,13 @@ export default function Chat() {
 		ownerAddress: ownerAddress ?? null,
 	});
 	const reduceMotion = useReducedMotion();
+	// The stored answers' ids: another device's pending prompt shows its live answer until its
+	// answer is among them.
 	const answerIds = useMemo(
-		() => new Set(activeConversationMessages.map(m => String(m.id ?? ''))),
+		() =>
+			new Set(
+				activeConversationMessages.filter(m => m.role === 'assistant').map(m => String(m.id ?? '')),
+			),
 		[activeConversationMessages],
 	);
 	// Held while a paid send from here was confirmed but not saved on this device.

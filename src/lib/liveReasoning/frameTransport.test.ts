@@ -718,11 +718,40 @@ describe('the frame transport', () => {
 			h.handle.stop();
 		});
 
+		it.each([false, true])(
+			'opens no request for a reconnect asked for while hidden, and makes it when woken (fresh: %s)',
+			async fresh => {
+				const h = startWithVisibility([ok([event(0)])]);
+				h.visibility.hidden = true;
+				await vi.advanceTimersByTimeAsync(0);
+				expect(h.fetchImpl).toHaveBeenCalledTimes(1);
+
+				// A gap's reconnect, asked for by the session while the tab is hidden.
+				h.handle.reconnect(fresh);
+				await vi.advanceTimersByTimeAsync(2 * IDLE_GIVE_UP_MS);
+				expect(h.fetchImpl).toHaveBeenCalledTimes(1);
+				expect(h.stops).toEqual([]);
+
+				h.visibility.hidden = false;
+				h.handle.wake();
+				await vi.advanceTimersByTimeAsync(0);
+
+				expect(h.fetchImpl).toHaveBeenCalledTimes(2);
+				const init = h.fetchImpl.mock.calls[1] as unknown as [string, StreamRequestInit];
+				expect(
+					new Headers(init[1].headers as ConstructorParameters<typeof Headers>[0]).get(
+						'Last-Event-ID',
+					),
+				).toBe(fresh ? null : `${RUN}.0`);
+				h.handle.stop();
+			},
+		);
+
 		it('keeps one open request when a reconnect made while hidden is followed by a wake', async () => {
 			const h = startWithVisibility([ok([event(0)])]);
 			h.visibility.hidden = true;
 			await vi.advanceTimersByTimeAsync(0);
-			// A gap's reconnect while hidden opens a request; the skipped one leaves the stream paused.
+			// A gap's reconnect while hidden opens nothing; the wake makes the one request.
 			h.handle.reconnect(false);
 			await vi.advanceTimersByTimeAsync(0);
 
@@ -733,7 +762,7 @@ describe('the frame transport', () => {
 			const signals = h.fetchImpl.mock.calls.map(
 				call => (call as unknown as [string, StreamRequestInit])[1].signal,
 			);
-			expect(signals).toHaveLength(3);
+			expect(signals).toHaveLength(2);
 			expect(signals.filter(signal => !signal?.aborted)).toHaveLength(1);
 			h.handle.stop();
 		});

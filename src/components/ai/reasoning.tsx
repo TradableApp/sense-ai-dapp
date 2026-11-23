@@ -83,6 +83,13 @@ const useReasoning = () => {
 	return context;
 };
 
+interface TypedText {
+	/** The description being typed. */
+	target: string;
+	/** How much of it is shown so far. */
+	text: string;
+}
+
 const AUTO_CLOSE_DELAY = 1000;
 const TYPING_INTERVAL = 30;
 
@@ -198,7 +205,11 @@ export const ReasoningContent = memo(
 	}: ReasoningContentProps) => {
 		const { isStreaming } = useReasoning();
 		const reduceMotion = useReducedMotion();
-		const [animatedDescriptions, setAnimatedDescriptions] = useState<Record<string, string>>({});
+		// What is being typed at each position, with the description it is typing. It is shown only
+		// while the answer is awaited and only under a step with that same description: once the
+		// stored record has content it is what is rendered, and a new run's step at a position
+		// never shows what was typed for an earlier run there.
+		const [animatedDescriptions, setAnimatedDescriptions] = useState<Record<string, TypedText>>({});
 		const typingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 		// The tick that starts a step's typing. Cleared on unmount with the interval: left pending,
 		// it would start an interval on a component that is gone.
@@ -222,10 +233,16 @@ export const ReasoningContent = memo(
 				if (!targetDescription) return;
 				// Under reduced motion the step is shown whole, with no typing.
 				if (reduceMotion) {
-					setAnimatedDescriptions(prev => ({ ...prev, [key]: targetDescription }));
+					setAnimatedDescriptions(prev => ({
+						...prev,
+						[key]: { target: targetDescription, text: targetDescription },
+					}));
 					return;
 				}
-				setAnimatedDescriptions(prev => ({ ...prev, [key]: '' }));
+				setAnimatedDescriptions(prev => ({
+					...prev,
+					[key]: { target: targetDescription, text: '' },
+				}));
 				if (typingStartRef.current !== null) clearTimeout(typingStartRef.current);
 				typingStartRef.current = setTimeout(() => {
 					typingStartRef.current = null;
@@ -234,37 +251,39 @@ export const ReasoningContent = memo(
 					typingTimerRef.current = setInterval(() => {
 						index += 1;
 						const currentDescription = targetDescription.slice(0, index);
-						setAnimatedDescriptions(prev => ({ ...prev, [key]: currentDescription }));
+						setAnimatedDescriptions(prev => ({
+							...prev,
+							[key]: { target: targetDescription, text: currentDescription },
+						}));
 						if (currentDescription.length === targetDescription.length) {
 							if (typingTimerRef.current !== null) clearInterval(typingTimerRef.current);
 						}
 					}, TYPING_INTERVAL);
 				}, 0);
 			};
-			// Only a step arriving while the answer is awaited is typed out; stored steps are shown
-			// as they are, so the stored record landing after the live steps types nothing again.
-			if (isStreaming && currentSteps.length > prevSteps.length) {
-				const newStep = currentSteps.at(-1);
-				const previousStep = prevSteps.at(-1);
-				if (previousStep) {
-					setAnimatedDescriptions(prev => ({
-						...prev,
-						[String(prevSteps.length - 1)]: previousStep.description || '',
-					}));
-				}
-				if (newStep) {
-					simulateReasoningTyping(newStep, String(currentSteps.length - 1));
-				}
-			}
-			if (!isStreaming && prevReasoningRef.current?.length > 0) {
+			const stopTyping = () => {
 				if (typingStartRef.current !== null) clearTimeout(typingStartRef.current);
 				if (typingTimerRef.current !== null) clearInterval(typingTimerRef.current);
-				const lastStep = prevReasoningRef.current.at(-1);
-				if (lastStep) {
-					setAnimatedDescriptions(prev => ({
-						...prev,
-						[String(prevReasoningRef.current.length - 1)]: lastStep.description || '',
-					}));
+				typingStartRef.current = null;
+				typingTimerRef.current = null;
+			};
+			// Once the answer is no longer awaited nothing typed is kept: the stored steps are shown
+			// as they are, so the stored record landing after the live steps types nothing again.
+			if (!isStreaming) {
+				stopTyping();
+				setAnimatedDescriptions(prev => (Object.keys(prev).length === 0 ? prev : {}));
+			} else if (currentSteps.length < prevSteps.length) {
+				// A reset: the new run starts with nothing typed.
+				stopTyping();
+				setAnimatedDescriptions({});
+			} else if (currentSteps.length > prevSteps.length) {
+				// Only a step arriving while the answer is awaited is typed out; the steps before it
+				// are shown whole.
+				stopTyping();
+				setAnimatedDescriptions({});
+				const newStep = currentSteps.at(-1);
+				if (newStep) {
+					simulateReasoningTyping(newStep, String(currentSteps.length - 1));
 				}
 			}
 			prevReasoningRef.current = currentSteps;
@@ -299,10 +318,14 @@ export const ReasoningContent = memo(
 					)}
 					{stepGroups.latest.map(({ item: step, index }) => {
 						const isLastStep = index === steps.length - 1;
-						const animatedText = animatedDescriptions[String(index)];
 						const targetDescription = step.description || '';
+						const typed = animatedDescriptions[String(index)];
+						const animatedText =
+							isStreaming && typed?.target === targetDescription ? typed.text : undefined;
 						const isTyping =
-							isStreaming && isLastStep && (animatedText?.length ?? 0) < targetDescription.length;
+							isLastStep &&
+							animatedText !== undefined &&
+							animatedText.length < targetDescription.length;
 						return (
 							// Steps carry no id of their own and titles can repeat; the position is stable
 							// because steps are only ever appended.
