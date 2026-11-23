@@ -664,7 +664,15 @@ test.describe('Live reasoning stream (T-STREAM)', () => {
 		await expect(
 			freshPage.getByTestId('live-reasoning').getByTestId('reasoning-step').first(),
 		).toBeVisible({ timeout: BUDGET.answerMs });
-		expect(traffic.open.size, 'a stream request is open').toBeGreaterThan(0);
+		// Polled, not read once: between a response that ended and the reconnect it starts, no
+		// request is open for a moment.
+		await expect
+			.poll(() => traffic.open.size, {
+				message: 'a stream request is open',
+				timeout: 5_000,
+				intervals: [50],
+			})
+			.toBeGreaterThan(0);
 
 		// "Reset Chat" leaves the conversation in the page (no reload); the answer is still awaited.
 		await freshChatPage.startNewConversation();
