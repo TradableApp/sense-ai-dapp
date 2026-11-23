@@ -20,7 +20,10 @@ import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
 import { PaymentSwitchedOffError } from '@/lib/paymentGate';
 import { wait } from '@/lib/utils';
 
-import ApprovalNotClearedError, { REMOVE_APPROVAL_LABEL } from './ApprovalNotClearedError';
+import ApprovalNotClearedError, {
+	type ApprovalNotClearedStep,
+	REMOVE_APPROVAL_LABEL,
+} from './ApprovalNotClearedError';
 import ClearApprovalRefusedError from './ClearApprovalRefusedError';
 import { readEscrowAllowance, readLimitStands } from './escrowReads';
 import LimitNotSetError, { isReceiptNotFound } from './LimitNotSetError';
@@ -185,13 +188,14 @@ const APPROVAL_NOT_CLEARED_TOAST_ID = 'plan-approval-not-cleared';
 
 /**
  * Sets the approval for the escrow to zero: one signature. Anything short of a confirmed
- * success is an `ApprovalNotClearedError`, since the limit is already cancelled by then.
+ * success is an `ApprovalNotClearedError`, worded for the `step` it is part of.
  */
 async function clearApproval(
 	send: SendAndConfirm,
 	chain: Chain,
 	contracts: ContractConfig,
 	notice: string,
+	step: ApprovalNotClearedStep,
 ): Promise<void> {
 	const noticeId = toast.info(notice);
 	try {
@@ -202,7 +206,7 @@ async function clearApproval(
 			throw new Error('The approval of zero was reverted on chain, so the approval is unchanged.');
 		}
 	} catch (error) {
-		throw new ApprovalNotClearedError(error);
+		throw new ApprovalNotClearedError(error, undefined, step);
 	} finally {
 		toast.dismiss(noticeId);
 	}
@@ -231,7 +235,7 @@ async function cancelLimitAndClearApproval(
 		const cancel = await send(contractCall(chain, contracts.escrow, 'cancelSpendingLimit'));
 		// A mined transaction that reverted still resolves; only its status says it failed.
 		if (cancel.status !== 'success') {
-			throw new Error('The revoke was reverted on chain, so the plan still stands.');
+			throw new Error('the revoke transaction was reverted on chain');
 		}
 	} finally {
 		toast.dismiss(revokeToastId);
@@ -256,6 +260,7 @@ async function cancelLimitAndClearApproval(
 		chain,
 		contracts,
 		'Step 2/2: Please confirm removing the token approval in your wallet.',
+		'revoke',
 	);
 }
 
@@ -319,10 +324,10 @@ export const PLAN_SEND_KEY = ['plan-send'];
 type PlanSend<TVariables> = UseMutationResult<void, Error, TVariables>;
 
 /**
- * `mutation`, whose `mutate` and `mutateAsync` do nothing while any plan transaction is under
- * way. It is read from the query client's mutation cache, which marks a mutation pending the
- * moment it starts, so a second press in the same moment is refused too, and so is one from
- * a dialog opened again or from a notice.
+ * `mutation`, whose `mutate` does nothing and whose `mutateAsync` rejects, sending nothing,
+ * while any plan transaction is under way. It is read from the query client's mutation
+ * cache, which marks a mutation pending the moment it starts, so a second press in the same
+ * moment is refused too, and so is one from a dialog opened again or from a notice.
  */
 function startedAlone<TVariables>(
 	mutation: PlanSend<TVariables>,
@@ -334,8 +339,10 @@ function startedAlone<TVariables>(
 		mutate: (variables, options) => {
 			if (!isUnderWay()) mutation.mutate(variables, options);
 		},
+		// Rejects rather than resolving, so an awaited start never reads as one that ran.
 		mutateAsync: async (variables, options) => {
-			if (!isUnderWay()) await mutation.mutateAsync(variables, options);
+			if (isUnderWay()) throw new Error('A plan transaction is already under way');
+			await mutation.mutateAsync(variables, options);
 		},
 	} as PlanSend<TVariables>;
 }
@@ -470,8 +477,8 @@ function showClearRefused(error: ClearApprovalRefusedError, retry: () => void): 
 
 /**
  * Sends the approval of zero for the escrow, and nothing else, once the spending limit has
- * been read and none stands: under a standing limit the approval is the plan's, and only
- * Revoke removes it. Started from the notice a half-finished revoke shows, or from the
+ * been read and none stands (under a standing limit the approval is the plan's, and only
+ * Revoke removes it) and an approval is left. Started from the notice a half-finished revoke shows, or from the
  * dashboard's notice of an approval left with no plan.
  */
 export function useClearApprovalMutation() {
@@ -495,16 +502,32 @@ export function useClearApprovalMutation() {
 					throw new ClearApprovalRefusedError('plan-unchecked', error);
 				}
 				if (isLimitStanding) throw new ClearApprovalRefusedError('plan-active');
+				// Removed since (another device, or an earlier step confirmed late): nothing to
+				// sign. A read that fails sends it all the same: an approval of zero changes
+				// nothing else.
+				const allowance = await readEscrowAllowance(
+					chain,
+					contracts,
+					activeWallet?.getAccount()?.address,
+				).catch(error => {
+					console.error(
+						'clearApprovalMutation allowance read Error:',
+						error instanceof Error ? error.name : typeof error,
+					);
+					return undefined;
+				});
+				if (allowance === 0n) return;
 				await clearApproval(
 					send,
 					chain,
 					contracts,
 					'Please confirm removing the token approval in your wallet.',
+					'removal',
 				);
 			} catch (error) {
 				const isOwnError =
 					error instanceof ApprovalNotClearedError || error instanceof ClearApprovalRefusedError;
-				throw isOwnError ? error : new ApprovalNotClearedError(error);
+				throw isOwnError ? error : new ApprovalNotClearedError(error, undefined, 'removal');
 			}
 		},
 		onSuccess: async () => {

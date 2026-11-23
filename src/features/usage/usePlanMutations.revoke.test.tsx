@@ -314,16 +314,26 @@ describe('removing the approval again from the notice', () => {
 
 		expect(methods()).toEqual([clearCall]);
 		expect(sendAndConfirm).toHaveBeenCalledTimes(3);
-		// One read, of the account's spending limit on the escrow, before anything is sent.
-		expect(readContract).toHaveBeenCalledTimes(1);
-		expect(readContract).toHaveBeenCalledWith(
+		// Two reads before anything is sent: the account's spending limit on the escrow, then
+		// the approval left for it.
+		expect(readContract).toHaveBeenCalledTimes(2);
+		expect(readContract).toHaveBeenNthCalledWith(
+			1,
 			expect.objectContaining({
 				contract: { address: ESCROW },
 				method: expect.stringContaining('spendingLimits'),
 				params: [OWNER],
 			}),
 		);
-		expect(vi.mocked(readContract).mock.invocationCallOrder[0]).toBeLessThan(
+		expect(readContract).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({
+				contract: { address: TOKEN },
+				method: expect.stringContaining('allowance'),
+				params: [OWNER, ESCROW],
+			}),
+		);
+		expect(vi.mocked(readContract).mock.invocationCallOrder[1]).toBeLessThan(
 			sendAndConfirm.mock.invocationCallOrder[2],
 		);
 		// The removal says what it did, nothing more: the plan was already gone, so it did not
@@ -349,6 +359,63 @@ describe('removing the approval again from the notice', () => {
 		expect(title).toBe('Approval Not Removed');
 		expect((again as Notice).action?.label).toBe('Remove approval');
 		expect(toast.success).not.toHaveBeenCalled();
+		// The removal revoked no plan (it is also offered where no plan was active this visit),
+		// so its own failure says only what is left.
+		expect((again as Notice).description).toMatch(/approval .*is still in place/);
+		expect((again as Notice).description).not.toMatch(/plan|limit/i);
+	});
+
+	it('sends nothing when no approval is left by then, and says it is gone', async () => {
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockRejectedValueOnce(new Error('user rejected'));
+		await revoke();
+		const { options } = onlyNotice('error');
+		// Removed since, on another device or by the earlier step confirming late.
+		onChain.allowance = 0n;
+		vi.mocked(prepareContractCall).mockClear();
+
+		await act(async () => {
+			options.action?.onClick();
+		});
+		await waitFor(() => expect(toast.success).toHaveBeenCalled());
+
+		expect(sendAndConfirm).toHaveBeenCalledTimes(2);
+		expect(prepareContractCall).not.toHaveBeenCalled();
+		expect(toast.success).toHaveBeenCalledWith('Approval Removed', {
+			description: 'The AI agent is no longer approved to use your tokens.',
+		});
+	});
+
+	it('sends the approval of zero all the same when the approval cannot be read', async () => {
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockRejectedValueOnce(new Error('user rejected'));
+		await revoke();
+		const { options } = onlyNotice('error');
+		onChain.allowance = new Error('HTTP request failed');
+		vi.mocked(prepareContractCall).mockClear();
+
+		await pressAction(options, 2);
+
+		expect(methods()).toEqual([clearCall]);
+		expect(toast.success).toHaveBeenCalledWith('Approval Removed', expect.anything());
+	});
+
+	it('when its receipt has not come, says it may still be confirmed and claims no revoke', async () => {
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockRejectedValueOnce(new Error('user rejected'))
+			.mockRejectedValueOnce(new Error(RECEIPT_NOT_FOUND));
+		await revoke();
+		const { options } = onlyNotice('error');
+
+		await pressAction(options, 2);
+
+		const [title, again] = vi.mocked(toast.warning).mock.calls[0];
+		expect(title).toBe('Removal Not Confirmed');
+		expect((again as Notice).description).toMatch(/may still be confirmed/);
+		expect((again as Notice).description).not.toMatch(/plan|limit/i);
 	});
 });
 
@@ -510,6 +577,8 @@ describe('a revoke whose cancel does not go through', () => {
 		const { title, options } = onlyNotice('error');
 		expect(title).toBe('Revoke Failed');
 		expect(options.description).toMatch(/reverted/);
+		// The fixed sentence says what holds; the reason does not say it again.
+		expect(options.description?.match(/still stands/g)).toHaveLength(1);
 		expect(options.action).toBeUndefined();
 		expect(toast.success).not.toHaveBeenCalled();
 		expect(onDone).not.toHaveBeenCalled();
@@ -654,6 +723,23 @@ describe('one plan transaction at a time, from any mounted dialog or notice', ()
 		},
 	);
 
+	it('an awaited start while one is under way is refused, not resolved as if it ran', async () => {
+		onChain.allowance = 0n;
+		const confirm = holdTheCancel();
+		const result = renderTwo();
+
+		act(() => result.current.first.revokeMutation.mutate());
+		await waitFor(() => expect(sendAndConfirm).toHaveBeenCalledTimes(1));
+
+		await expect(result.current.second.revokeMutation.mutateAsync()).rejects.toThrow(
+			/already under way/,
+		);
+		expect(sendAndConfirm).toHaveBeenCalledTimes(1);
+
+		await act(async () => confirm());
+		await waitFor(() => expect(result.current.second.isUnderWay).toBe(false));
+	});
+
 	it('a second press in the same moment is refused', async () => {
 		onChain.allowance = 0n;
 		const result = renderTwo();
@@ -675,6 +761,8 @@ describe('one plan transaction at a time, from any mounted dialog or notice', ()
 			await act(async () => {
 				await result.current.first.revokeMutation.mutateAsync();
 			});
+			// An approval to remove, so the removal has something to send.
+			onChain.allowance = 10n;
 			vi.mocked(prepareContractCall).mockClear();
 
 			await act(async () => press(result.current.second));

@@ -17,6 +17,12 @@ export type ApprovalNotClearedKind = 'failed' | 'unconfirmed' | 'unchecked' | 'a
 /** The kinds a caller names itself; the others are told from the cause. */
 type NamedKind = Extract<ApprovalNotClearedKind, 'unchecked' | 'account-changed'>;
 
+/**
+ * - `revoke`: the second step of a revoke, whose limit was cancelled just before;
+ * - `removal`: the removal on its own (from a notice), which revoked no plan.
+ */
+export type ApprovalNotClearedStep = 'revoke' | 'removal';
+
 const TITLES: Record<ApprovalNotClearedKind, string> = {
 	failed: 'Approval Not Removed',
 	unconfirmed: 'Removal Not Confirmed',
@@ -24,26 +30,32 @@ const TITLES: Record<ApprovalNotClearedKind, string> = {
 	'account-changed': 'Account Changed',
 };
 
-const REVOKED = 'The plan is revoked: its spending limit is cancelled.';
+const REVOKED = 'The plan is revoked: its spending limit is cancelled. ';
 
-function messageFor(kind: ApprovalNotClearedKind, line: string | undefined): string {
+function messageFor(
+	kind: ApprovalNotClearedKind,
+	line: string | undefined,
+	step: ApprovalNotClearedStep,
+): string {
 	const reason = line ? ` Reason: ${line}` : '';
+	const opening = step === 'revoke' ? REVOKED : '';
 	switch (kind) {
 		case 'unconfirmed':
-			return `${REVOKED} Removing the token approval for the AI agent was sent but is not confirmed yet and may still be confirmed. If your wallet still shows the approval, use ${REMOVE_APPROVAL_LABEL}.`;
+			return `${opening}Removing the token approval for the AI agent was sent but is not confirmed yet and may still be confirmed. If your wallet still shows the approval, use ${REMOVE_APPROVAL_LABEL}.`;
 		case 'account-changed':
-			return `${REVOKED} The token approval for the AI agent was not removed, because the account changed in your wallet before the second step. Select that account again: the dashboard then offers to remove it.`;
+			return `${opening}The token approval for the AI agent was not removed, because the account changed in your wallet before the second step. Select that account again: the dashboard then offers to remove it.`;
 		case 'unchecked':
-			return `${REVOKED} The token approval for the AI agent could not be checked, so it may still be in place. Use ${REMOVE_APPROVAL_LABEL} to be sure.${reason}`;
+			return `${opening}The token approval for the AI agent could not be checked, so it may still be in place. Use ${REMOVE_APPROVAL_LABEL} to be sure.${reason}`;
 		default:
-			return `${REVOKED} The token approval for the AI agent is still in place. Use ${REMOVE_APPROVAL_LABEL} to remove it.${reason}`;
+			return `${opening}The token approval for the AI agent is still in place. Use ${REMOVE_APPROVAL_LABEL} to remove it.${reason}`;
 	}
 }
 
 /**
- * The limit was cancelled and the token approval for the escrow was then not removed, or
- * could not be checked. The plan is gone, so the user is told that, what is left, and is
- * offered the approval of zero again.
+ * The token approval for the escrow was not removed, or could not be checked. After a revoke
+ * the limit was cancelled first, so the user is told the plan is gone, what is left, and is
+ * offered the approval of zero again; the removal on its own revoked nothing and says only
+ * what is left.
  *
  * The guidance comes first and the reason last: the reason is the first line of the error,
  * scrubbed and capped (thirdweb's text runs on with the RPC URL and the call data). A
@@ -54,10 +66,10 @@ export default class ApprovalNotClearedError extends Error {
 
 	readonly title: string;
 
-	constructor(cause: unknown, named?: NamedKind) {
+	constructor(cause: unknown, named?: NamedKind, step: ApprovalNotClearedStep = 'revoke') {
 		const kind: ApprovalNotClearedKind =
 			named ?? (isReceiptNotFound(cause) ? 'unconfirmed' : 'failed');
-		super(messageFor(kind, describeFailure(cause).line));
+		super(messageFor(kind, describeFailure(cause).line, step));
 		this.name = 'ApprovalNotClearedError';
 		this.kind = kind;
 		this.title = TITLES[kind];
