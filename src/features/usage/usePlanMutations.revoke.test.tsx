@@ -171,6 +171,8 @@ beforeEach(() => {
 	onChain.allowance = 10n;
 	onChain.limit = [0n, 0n, 0n];
 	vi.mocked(readContract).mockImplementation((async ({ method }: { method: unknown }) => {
+		// No prompt pending, so setting a plan is not refused before it is sent.
+		if (String(method).includes('pendingEscrowCount')) return 0n;
 		const answer = String(method).includes('spendingLimits') ? onChain.limit : onChain.allowance;
 		if (answer instanceof Error) throw answer;
 		return answer;
@@ -192,15 +194,26 @@ describe('revoking a plan with an approval in place', () => {
 		expect(onDone).toHaveBeenCalledTimes(1);
 	});
 
-	it('reads the approval for the escrow only after the cancel is confirmed', async () => {
+	it('reads the approval, then the spending limit, only after the cancel is confirmed', async () => {
 		await revoke();
 
-		expect(readContract).toHaveBeenCalledTimes(1);
-		expect(readContract).toHaveBeenCalledWith(
+		expect(readContract).toHaveBeenCalledTimes(2);
+		expect(readContract).toHaveBeenNthCalledWith(
+			1,
 			expect.objectContaining({ contract: { address: TOKEN }, params: [OWNER, ESCROW] }),
 		);
-		const [firstSend] = sendAndConfirm.mock.invocationCallOrder;
-		expect(vi.mocked(readContract).mock.invocationCallOrder[0]).toBeGreaterThan(firstSend);
+		expect(readContract).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({
+				contract: { address: ESCROW },
+				method: expect.stringContaining('spendingLimits'),
+				params: [OWNER],
+			}),
+		);
+		const [firstSend, secondSend] = sendAndConfirm.mock.invocationCallOrder;
+		const [allowanceRead, limitRead] = vi.mocked(readContract).mock.invocationCallOrder;
+		expect(allowanceRead).toBeGreaterThan(firstSend);
+		expect(limitRead).toBeLessThan(secondSend);
 	});
 
 	it('says the agent can no longer spend once, after both are done', async () => {
@@ -563,6 +576,72 @@ describe('a revoke whose account changes before the second step', () => {
 		expect(methods()).toEqual([cancelCall]);
 		expect(onlyNotice('warning').title).toBe('Account Changed');
 	});
+});
+
+describe('a revoke whose second step finds a plan set meanwhile', () => {
+	it('sends nothing more and says the revoked plan is cancelled and a plan is active again', async () => {
+		// Another tab or device set a new plan while the cancel was being confirmed.
+		sendAndConfirm.mockImplementationOnce(async () => {
+			onChain.limit = [100n, 0n, 2_000_000_000n];
+			return { status: 'success' };
+		});
+
+		const { onDone, invalidate } = await revoke();
+
+		expect(methods()).toEqual([cancelCall]);
+		expect(sendAndConfirm).toHaveBeenCalledTimes(1);
+		const { title, options } = onlyNotice('warning');
+		expect(title).toBe('Plan Active Again');
+		expect(options.description).toBe(
+			'The plan you revoked is cancelled. A plan is active again on this account, set from another tab or device, so its token approval was left in place for it and nothing more was sent. To remove that plan too, use Revoke on the dashboard.',
+		);
+		// Its action would leave the new plan unable to pay for any prompt.
+		expect(options.action).toBeUndefined();
+		expect(toast.success).not.toHaveBeenCalled();
+		expect(onDone).toHaveBeenCalledTimes(1);
+		await waitFor(() => expect(invalidate).toHaveBeenCalledWith(PLAN_REFRESH));
+	});
+
+	it("takes down an older notice whose action would remove the new plan's approval", async () => {
+		sendAndConfirm.mockImplementationOnce(async () => {
+			onChain.limit = [100n, 0n, 2_000_000_000n];
+			return { status: 'success' };
+		});
+
+		await revoke();
+
+		expect(onlyNotice('warning').options).toEqual(
+			expect.objectContaining({ id: 'plan-approval-not-cleared' }),
+		);
+	});
+
+	it.each([
+		['fails', () => new Error('HTTP request failed')],
+		['gives no limit', () => '0x'],
+	])(
+		'sends nothing more when the limit read %s, and offers the removal, which reads it again',
+		async (_, answer) => {
+			sendAndConfirm.mockImplementationOnce(async () => {
+				onChain.limit = answer();
+				return { status: 'success' };
+			});
+
+			const { onDone } = await revoke();
+
+			expect(methods()).toEqual([cancelCall]);
+			const { title, options } = onlyNotice('warning');
+			expect(title).toBe('Plan Not Checked');
+			expect(options.description).toMatch(
+				/^The plan is revoked: its spending limit is cancelled\. /,
+			);
+			expect(options.description).toMatch(
+				/Whether a new plan was set meanwhile could not be checked, so the token approval for the AI agent was left in place\./,
+			);
+			expect(options.action?.label).toBe('Remove approval');
+			expect(toast.success).not.toHaveBeenCalled();
+			expect(onDone).toHaveBeenCalledTimes(1);
+		},
+	);
 });
 
 describe('a revoke whose cancel does not go through', () => {

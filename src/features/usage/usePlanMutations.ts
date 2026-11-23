@@ -25,8 +25,13 @@ import ApprovalNotClearedError, {
 	REMOVE_APPROVAL_LABEL,
 } from './ApprovalNotClearedError';
 import ClearApprovalRefusedError from './ClearApprovalRefusedError';
-import { readEscrowAllowance, readLimitStands } from './escrowReads';
+import { readEscrowAllowance, readLimitStands, readPendingCount } from './escrowReads';
 import LimitNotSetError, { isReceiptNotFound } from './LimitNotSetError';
+import PromptPendingError, {
+	isPendingPromptsRefusal,
+	PROMPT_PENDING_TITLE,
+	promptPendingMessage,
+} from './PromptPendingError';
 
 /** An approval whose receipt did not come within thirdweb's wait. */
 const APPROVAL_UNCONFIRMED =
@@ -254,6 +259,19 @@ async function cancelLimitAndClearApproval(
 	if (!isSameAddress(currentAccount(), owner)) {
 		throw new ApprovalNotClearedError(new Error('The account changed'), 'account-changed');
 	}
+	// A plan set meanwhile from another tab or device (one query client holds only its own
+	// plan transactions to one at a time): the approval is now that plan's, and an approval
+	// of zero would leave it unable to pay for any prompt. Read as the removal on its own
+	// reads it; a read that fails sends nothing.
+	let isLimitStanding: boolean;
+	try {
+		isLimitStanding = await readLimitStands(chain, contracts, owner);
+	} catch (error) {
+		throw new ApprovalNotClearedError(error, 'plan-unchecked');
+	}
+	if (isLimitStanding) {
+		throw new ApprovalNotClearedError(new Error('A limit stands again'), 'plan-active-again');
+	}
 
 	await clearApproval(
 		send,
@@ -270,7 +288,9 @@ async function cancelLimitAndClearApproval(
  */
 function showApprovalNotCleared(error: ApprovalNotClearedError, retry: () => void): void {
 	const show = error.kind === 'failed' ? toast.error : toast.warning;
-	const isOffered = error.kind !== 'account-changed';
+	// Not after an account change (it would go from the account selected now), nor under a
+	// plan set meanwhile (it would be refused, and the plan's approval is not to be removed).
+	const isOffered = error.kind !== 'account-changed' && error.kind !== 'plan-active-again';
 	show(error.title, {
 		id: APPROVAL_NOT_CLEARED_TOAST_ID,
 		description: error.message,
@@ -347,6 +367,32 @@ function startedAlone<TVariables>(
 	} as PlanSend<TVariables>;
 }
 
+/**
+ * Refuses, before anything is built, a plan while the escrow holds one of the wallet's prompts
+ * pending: the escrow refuses the limit then (`HasPendingPrompts`), and the approval sent
+ * before it would already have replaced the old one. The dialog is disabled too, but on the
+ * count it last read; a prompt sent from another tab since is seen only here. A read that
+ * fails refuses nothing: the escrow still refuses the limit itself, which is then a limit not
+ * set and says so.
+ */
+async function refuseIfPromptPending(
+	chain: Chain,
+	contracts: ContractConfig,
+	owner: string | undefined,
+): Promise<void> {
+	let pending: bigint;
+	try {
+		pending = await readPendingCount(chain, contracts, owner);
+	} catch (error) {
+		console.error(
+			'setPlanMutation pending count read Error:',
+			error instanceof Error ? error.name : typeof error,
+		);
+		return;
+	}
+	if (pending > 0n) throw new PromptPendingError();
+}
+
 function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 	const activeWallet = useActiveWallet();
 	const { mutateAsync: send } = useSendAndConfirmTransaction();
@@ -367,6 +413,7 @@ function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 			// Nothing has said yet that this is the right token to approve.
 			if (isAwaitingFirstAnswer) throw new PlanHeldError();
 			const { chain, contracts } = connectedContracts(activeWallet);
+			await refuseIfPromptPending(chain, contracts, activeWallet?.getAccount()?.address);
 			// The notice's action sends an approval of zero: pressed after this plan, it would
 			// leave the new limit with nothing to spend. Taken down only once a plan will be sent.
 			toast.dismiss(APPROVAL_NOT_CLEARED_TOAST_ID);
@@ -400,6 +447,10 @@ function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 			// Their words are the gate's own, with nothing from the chain in them.
 			if (error instanceof PaymentSwitchedOffError || error instanceof PlanHeldError) {
 				toast.error('Not sent', { description: error.message });
+				return;
+			}
+			if (error instanceof PromptPendingError) {
+				toast.error(PROMPT_PENDING_TITLE, { description: error.message });
 				return;
 			}
 			toast.error('Transaction Failed', { description: failureDescription(SET_FAILED, error) });
@@ -448,6 +499,12 @@ function useRevokePlanMutation({
 			if (isReceiptNotFound(error)) {
 				toast.warning('Revoke Not Confirmed', { description: REVOKE_UNCONFIRMED });
 				await refreshPlanQueries(queryClient, activeWallet);
+				return;
+			}
+			// The escrow refuses a revoke while a prompt is pending: trying again cannot help
+			// until that prompt is settled, so this says when it can.
+			if (isPendingPromptsRefusal(error)) {
+				toast.error(PROMPT_PENDING_TITLE, { description: promptPendingMessage('revoke') });
 				return;
 			}
 			toast.error('Revoke Failed', { description: failureDescription(REVOKE_FAILED, error) });
