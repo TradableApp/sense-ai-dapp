@@ -236,6 +236,25 @@ describe('a switch that closes between the approval and the limit', () => {
 		expect(description).toMatch(/approval went through and stands/);
 		expect(description).toMatch(/Revoke/);
 	});
+
+	// While the gate is closed the limit cannot be set again, so the words do not offer it:
+	// they say what closed it, in the gate's own words.
+	it("says why in the gate's words, and does not offer to set the limit again", async () => {
+		withVerdict('ok');
+		sendAndConfirm.mockImplementationOnce(async () => {
+			vi.mocked(readPromptsSwitchNow).mockReturnValue({ status: 'closed', wording: 'incident' });
+			return { status: 'success' };
+		});
+
+		await attempt(setPlan);
+
+		const description = String(
+			(vi.mocked(toast.error).mock.calls[0][1] as { description?: string }).description,
+		);
+		expect(description).toContain(switchCopy('incident').title);
+		expect(description).not.toMatch(/can be set again/);
+		expect(description).not.toMatch(/Reason:/);
+	});
 });
 
 describe('setting a plan before the check has answered once', () => {
