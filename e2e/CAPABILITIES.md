@@ -30,7 +30,8 @@ mini-reorgs age graph-node's indexing over a long single-chain run until answer 
 late-slot projects (see LOCALNET_SETUP troubleshooting). `revertToSnapshot` mines past the orphaned
 head and waits for subgraph re-sync (which is why snapshot-using projects carry 120s test budgets),
 but chains older than ~45-60 min remain unreliable — the sharded runner keeps every chain young
-while executing all 23 spec files.
+while executing every localnet spec file: 25 of the 28 under `e2e/specs/` (`brain-substance` makes
+real model calls and is kept out of every shard; the two `resilience-*` files are testnet only).
 
 ## Layers an e2e test can observe
 
