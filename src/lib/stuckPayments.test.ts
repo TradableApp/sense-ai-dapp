@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { REFUND_TIMEOUT_MS } from '@/lib/constants';
+import { REFUND_UNLOCK_MARGIN_MS } from '@/lib/refund';
 
 import {
 	fetchPendingPayments,
@@ -69,7 +70,7 @@ describe('the pending payments a wallet has', () => {
 });
 
 describe('which pending payments are stuck', () => {
-	const NOW = 100_000 + REFUND_TIMEOUT_MS + 1;
+	const NOW = 100_000 + REFUND_TIMEOUT_MS + REFUND_UNLOCK_MARGIN_MS + 1;
 
 	it('keeps only those the escrow still holds, refundable after the timeout', async () => {
 		const readStatus = vi.fn(async (id: string) => (id === '1' ? 0 : 1));
@@ -79,6 +80,15 @@ describe('which pending payments are stuck', () => {
 		expect(stuck).toEqual([
 			expect.objectContaining({ id: '1', createdAt: 100_000, isRefundable: true }),
 		]);
+	});
+
+	// The refunding block's time can trail this device's clock, so the hour alone is not enough.
+	it('is not refundable just after the hour, inside the margin', async () => {
+		const readStatus = vi.fn(async () => 0);
+
+		const stuck = await verifyStuck([payment(1)], readStatus, 100_000 + REFUND_TIMEOUT_MS + 1);
+
+		expect(stuck).toEqual([expect.objectContaining({ id: '1', isRefundable: false })]);
 	});
 
 	// A failed read is not "nothing stuck": that would hide a payment the user can get back.

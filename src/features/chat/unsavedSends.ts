@@ -44,8 +44,8 @@ export interface ShownMessage {
  *   neither ends the hold nor sets the count a later one is compared with. If the fall was
  *   another device's prompt, the hold ends early and the warning, which stays up until
  *   closed, is still what stands between the user and a second payment.
- * - `HOLD_LASTS_MS` (the refund timeout) after the send was confirmed: a refund can then be
- *   claimed and the stuck-request list shows the payment.
+ * - `HOLD_LASTS_MS` (the refund timeout and the refund unlock margin) after the send was
+ *   confirmed: a refund can then be claimed and the stuck-request list shows the payment.
  *
  * Kept per query client, as the lock's count is, so a chat left and opened again still holds,
  * and saved per wallet and agent store (`unsavedSendsStorage.ts`: ids, kind, keys and the

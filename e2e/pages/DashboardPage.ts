@@ -84,7 +84,8 @@ export class DashboardPage {
 	}
 
 	/** Per-request "Refund" button — only rendered once the request is refundable
-	 *  (Date.now() > createdAt + REFUND_TIMEOUT_MS). Base locator (see stuckRequestRow). */
+	 *  (Date.now() > createdAt + REFUND_TIMEOUT_MS + REFUND_UNLOCK_MARGIN_MS). Base locator (see
+	 *  stuckRequestRow). */
 	get refundButton() {
 		return this.page.getByRole('button', { name: /^refund$/i });
 	}

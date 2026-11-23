@@ -3,6 +3,7 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { REFUND_TIMEOUT_MS } from '@/lib/constants';
+import { refundOpensAt } from '@/lib/refund';
 
 import {
 	attachShownPrompt,
@@ -334,8 +335,9 @@ describe('a held send across a reload', () => {
 	const key = () => savedSendsKey(OWNER) as string;
 	const later = (queryClient: QueryClient) => held(queryClient);
 
-	it('lasts as long as a refund takes to become claimable', () => {
-		expect(HOLD_LASTS_MS).toBe(REFUND_TIMEOUT_MS);
+	it('lasts until the refund is offered, the hour and its margin, never less', () => {
+		expect(HOLD_LASTS_MS).toBe(refundOpensAt(0));
+		expect(HOLD_LASTS_MS).toBeGreaterThan(REFUND_TIMEOUT_MS);
 	});
 
 	it('is saved when it begins, with ids, kind, keys and times only', () => {
