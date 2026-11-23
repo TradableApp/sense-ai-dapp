@@ -67,11 +67,14 @@ export default function useRecentActivity(limit = 10) {
 					label: 'Unknown Action',
 					icon: Activity,
 				};
+				const amount = BigInt(activity.amount);
 				return {
 					...activity,
 					...details,
 					// The exact amount the chain moved, with the fee token's decimals: never rounded
-					formattedAmount: formatTokenAmount(BigInt(activity.amount), FEE_TOKEN.decimals),
+					formattedAmount: formatTokenAmount(amount, FEE_TOKEN.decimals),
+					// Money in (1), out (-1) or none (0), so the card never parses the raw amount
+					amountSign: amount > 0n ? 1 : amount < 0n ? -1 : 0,
 					// Format timestamp to "X hours ago"
 					formattedTimestamp: formatDistanceToNow(new Date(Number(activity.timestamp) * 1000), {
 						addSuffix: true,

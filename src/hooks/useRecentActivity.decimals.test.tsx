@@ -60,4 +60,36 @@ describe('useRecentActivity with a fee token of six decimals', () => {
 
 		expect(result.current.data?.map(r => r.formattedAmount)).toEqual(['-0.25', '1.0']);
 	});
+
+	it('gives each row the sign of its amount, read once from the chain value', async () => {
+		graphRequestMock.mockResolvedValue({
+			activities: [
+				{
+					id: `${TX}-2`,
+					type: 'CANCEL',
+					amount: '-1',
+					timestamp: '1700000002',
+					transactionHash: TX,
+				},
+				{
+					id: `${TX}-3`,
+					type: 'RENAME',
+					amount: '0',
+					timestamp: '1700000001',
+					transactionHash: TX,
+				},
+				{
+					id: `${TX}-4`,
+					type: 'REFUND',
+					amount: '1',
+					timestamp: '1700000000',
+					transactionHash: TX,
+				},
+			],
+		});
+		const { result } = renderHook(() => useRecentActivity(20), { wrapper });
+		await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+		expect(result.current.data?.map(r => r.amountSign)).toEqual([-1, 0, 1]);
+	});
 });
