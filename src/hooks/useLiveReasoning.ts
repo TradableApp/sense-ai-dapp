@@ -20,6 +20,12 @@ import {
 	pendingAnswerIds,
 	storedAnswerFor,
 } from '@/lib/liveReasoning/pendingAnswers';
+// `performance` names read by the e2e suite; Sentry is told to leave them out.
+import {
+	leadMeasure,
+	liveAnswerMark,
+	storedAnswerMark,
+} from '@/lib/liveReasoning/performanceMarks';
 import { reconcileWithStored, type StoredAnswer } from '@/lib/liveReasoning/reconcile';
 
 /** Ends after which nothing is kept on screen: the run was dropped, or the stream refused us. */
@@ -31,11 +37,6 @@ const CLEARING_ENDS: ReadonlySet<SessionEnd> = new Set([
 
 /** As the live state poller reads it: a hidden tab opens no stream connection. */
 const isHidden = () => document.visibilityState === 'hidden';
-
-/** `performance` names read by the e2e suite (no telemetry is sent). */
-const liveAnswerMark = (id: string) => `live-answer:${id}`;
-const storedAnswerMark = (id: string) => `stored-answer:${id}`;
-const leadMeasure = (id: string) => `live-answer-lead:${id}`;
 
 function tryPerformance(record: () => void) {
 	try {
