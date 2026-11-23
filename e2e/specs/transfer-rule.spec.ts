@@ -59,6 +59,9 @@ function feeTokenCheckFinished(page: Page): Promise<unknown> {
 	return page.waitForResponse(
 		response => {
 			const body = response.request().postData() ?? '';
+			// Only JSON-RPC calls are counted, so no other request that happens to carry the
+			// selector (an analytics or error report) can advance the count.
+			if (!/"method"\s*:\s*"eth_call"/.test(body)) return false;
 			asked += body.split(selector).length - 1;
 			return asked >= 2;
 		},
