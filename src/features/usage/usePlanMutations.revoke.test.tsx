@@ -349,6 +349,26 @@ describe('removing the approval again from the notice', () => {
 		expect(title).toBe('Approval Not Removed');
 		expect((again as Notice).action?.label).toBe('Remove approval');
 		expect(toast.success).not.toHaveBeenCalled();
+		// The removal revoked no plan (it is also offered where no plan was active this visit),
+		// so its own failure says only what is left.
+		expect((again as Notice).description).toMatch(/approval .*is still in place/);
+		expect((again as Notice).description).not.toMatch(/plan|limit/i);
+	});
+
+	it('when its receipt has not come, says it may still be confirmed and claims no revoke', async () => {
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockRejectedValueOnce(new Error('user rejected'))
+			.mockRejectedValueOnce(new Error(RECEIPT_NOT_FOUND));
+		await revoke();
+		const { options } = onlyNotice('error');
+
+		await pressAction(options, 2);
+
+		const [title, again] = vi.mocked(toast.warning).mock.calls[0];
+		expect(title).toBe('Removal Not Confirmed');
+		expect((again as Notice).description).toMatch(/may still be confirmed/);
+		expect((again as Notice).description).not.toMatch(/plan|limit/i);
 	});
 });
 

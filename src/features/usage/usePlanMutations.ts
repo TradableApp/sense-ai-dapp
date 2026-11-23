@@ -20,7 +20,10 @@ import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
 import { PaymentSwitchedOffError } from '@/lib/paymentGate';
 import { wait } from '@/lib/utils';
 
-import ApprovalNotClearedError, { REMOVE_APPROVAL_LABEL } from './ApprovalNotClearedError';
+import ApprovalNotClearedError, {
+	type ApprovalNotClearedStep,
+	REMOVE_APPROVAL_LABEL,
+} from './ApprovalNotClearedError';
 import ClearApprovalRefusedError from './ClearApprovalRefusedError';
 import { readEscrowAllowance, readLimitStands } from './escrowReads';
 import LimitNotSetError, { isReceiptNotFound } from './LimitNotSetError';
@@ -185,13 +188,14 @@ const APPROVAL_NOT_CLEARED_TOAST_ID = 'plan-approval-not-cleared';
 
 /**
  * Sets the approval for the escrow to zero: one signature. Anything short of a confirmed
- * success is an `ApprovalNotClearedError`, since the limit is already cancelled by then.
+ * success is an `ApprovalNotClearedError`, worded for the `step` it is part of.
  */
 async function clearApproval(
 	send: SendAndConfirm,
 	chain: Chain,
 	contracts: ContractConfig,
 	notice: string,
+	step: ApprovalNotClearedStep,
 ): Promise<void> {
 	const noticeId = toast.info(notice);
 	try {
@@ -202,7 +206,7 @@ async function clearApproval(
 			throw new Error('The approval of zero was reverted on chain, so the approval is unchanged.');
 		}
 	} catch (error) {
-		throw new ApprovalNotClearedError(error);
+		throw new ApprovalNotClearedError(error, undefined, step);
 	} finally {
 		toast.dismiss(noticeId);
 	}
@@ -256,6 +260,7 @@ async function cancelLimitAndClearApproval(
 		chain,
 		contracts,
 		'Step 2/2: Please confirm removing the token approval in your wallet.',
+		'revoke',
 	);
 }
 
@@ -500,11 +505,12 @@ export function useClearApprovalMutation() {
 					chain,
 					contracts,
 					'Please confirm removing the token approval in your wallet.',
+					'removal',
 				);
 			} catch (error) {
 				const isOwnError =
 					error instanceof ApprovalNotClearedError || error instanceof ClearApprovalRefusedError;
-				throw isOwnError ? error : new ApprovalNotClearedError(error);
+				throw isOwnError ? error : new ApprovalNotClearedError(error, undefined, 'removal');
 			}
 		},
 		onSuccess: async () => {
