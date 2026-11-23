@@ -92,8 +92,12 @@ const payloadFetchDeps: PayloadFetchDeps = {
 
 /** Result of a sync pass; the UI turns it into the history banner's two notices. */
 export interface SyncResult {
-	/** Payloads no storage source could serve this pass (transient — retried next pass). */
-	readonly unavailablePayloads: number;
+	/**
+	 * Payloads no storage source could serve this pass (transient — retried next pass).
+	 * Undefined when the pass failed before its payloads were read (at The Graph, for one): it
+	 * says nothing about storage, so a storage notice stays as it is.
+	 */
+	readonly unavailablePayloads: number | undefined;
 	/**
 	 * The Graph could not be read this pass (see GraphFetchFailed): nothing was stored and the
 	 * cursor was held, so what is shown is what was saved before. Retried next pass. Undefined
@@ -346,6 +350,8 @@ export default async function syncWithRemote(
 	const hydrate = (cid: string | undefined) => limit(() => hydratePayload(cid, sessionKey));
 	// Until The Graph has answered, a failure here says nothing about it (see SyncResult).
 	let graphRead = false;
+	// Likewise, until the payloads have been read a failure says nothing about storage.
+	let storageRead = false;
 
 	try {
 		// 1. Get the last known sync timestamp from our local state (Milliseconds).
@@ -549,6 +555,7 @@ export default async function syncWithRemote(
 
 		const hydratedData = await Promise.all(hydrationPromises);
 		unavailablePayloads = hydratedData.reduce((sum, item) => sum + item.unavailablePayloads, 0);
+		storageRead = true;
 		if (unavailablePayloads > 0) {
 			// One line per pass, not one per CID: the per-attempt detail is in the Sentry
 			// breadcrumbs that payloadStorage leaves.
@@ -669,9 +676,15 @@ export default async function syncWithRemote(
 			// told through the result, and Sentry once per page load per list and reason.
 			console.error(`[syncService] ${error.name}: ${error.message} The sync cursor is held.`);
 			reportGraphFetchFailed(error);
-			return { unavailablePayloads, graphUnavailable: true };
+			return {
+				unavailablePayloads: storageRead ? unavailablePayloads : undefined,
+				graphUnavailable: true,
+			};
 		}
 		console.error('[syncService] A critical error occurred during the sync process:', error);
-		return { unavailablePayloads, graphUnavailable: graphRead ? false : undefined };
+		return {
+			unavailablePayloads: storageRead ? unavailablePayloads : undefined,
+			graphUnavailable: graphRead ? false : undefined,
+		};
 	}
 }
