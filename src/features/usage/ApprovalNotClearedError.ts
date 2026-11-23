@@ -10,12 +10,22 @@ export const REMOVE_APPROVAL_LABEL = 'Remove approval';
  * - `unconfirmed`: it was sent and no receipt came in time, so it may still be confirmed;
  * - `unchecked`: the approval left could not be read, so it may still be in place;
  * - `account-changed`: the wallet's account changed after the limit was cancelled, so the
- *   removal was not sent (it would have gone from the other account).
+ *   removal was not sent (it would have gone from the other account);
+ * - `plan-active-again`: after the limit was cancelled, a limit stands again (a plan set from
+ *   another tab or device), so the approval is that plan's and the removal was not sent;
+ * - `plan-unchecked`: whether a limit stands again could not be read, so the removal was not
+ *   sent.
  */
-export type ApprovalNotClearedKind = 'failed' | 'unconfirmed' | 'unchecked' | 'account-changed';
+export type ApprovalNotClearedKind =
+	| 'failed'
+	| 'unconfirmed'
+	| 'unchecked'
+	| 'account-changed'
+	| 'plan-active-again'
+	| 'plan-unchecked';
 
 /** The kinds a caller names itself; the others are told from the cause. */
-type NamedKind = Extract<ApprovalNotClearedKind, 'unchecked' | 'account-changed'>;
+type NamedKind = Exclude<ApprovalNotClearedKind, 'failed' | 'unconfirmed'>;
 
 /**
  * - `revoke`: the second step of a revoke, whose limit was cancelled just before;
@@ -28,6 +38,8 @@ const TITLES: Record<ApprovalNotClearedKind, string> = {
 	unconfirmed: 'Removal Not Confirmed',
 	unchecked: 'Approval Not Checked',
 	'account-changed': 'Account Changed',
+	'plan-active-again': 'Plan Active Again',
+	'plan-unchecked': 'Plan Not Checked',
 };
 
 const REVOKED = 'The plan is revoked: its spending limit is cancelled. ';
@@ -44,6 +56,10 @@ function messageFor(
 			return `${opening}Removing the token approval for the AI agent was sent but is not confirmed yet and may still be confirmed. If your wallet still shows the approval, use ${REMOVE_APPROVAL_LABEL}.`;
 		case 'account-changed':
 			return `${opening}The token approval for the AI agent was not removed, because the account changed in your wallet before the second step. Select that account again: the dashboard then offers to remove it.`;
+		case 'plan-active-again':
+			return 'The plan you revoked is cancelled. A plan is active again on this account, set from another tab or device, so its token approval was left in place for it and nothing more was sent. To remove that plan too, use Revoke on the dashboard.';
+		case 'plan-unchecked':
+			return `${opening}Whether a new plan was set meanwhile could not be checked, so the token approval for the AI agent was left in place. Use ${REMOVE_APPROVAL_LABEL}: it checks again first and removes the approval only if no plan is active.${reason}`;
 		case 'unchecked':
 			return `${opening}The token approval for the AI agent could not be checked, so it may still be in place. Use ${REMOVE_APPROVAL_LABEL} to be sure.${reason}`;
 		default:

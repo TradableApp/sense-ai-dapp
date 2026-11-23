@@ -171,6 +171,8 @@ beforeEach(() => {
 	onChain.allowance = 10n;
 	onChain.limit = [0n, 0n, 0n];
 	vi.mocked(readContract).mockImplementation((async ({ method }: { method: unknown }) => {
+		// No prompt pending, so setting a plan is not refused before it is sent.
+		if (String(method).includes('pendingEscrowCount')) return 0n;
 		const answer = String(method).includes('spendingLimits') ? onChain.limit : onChain.allowance;
 		if (answer instanceof Error) throw answer;
 		return answer;
