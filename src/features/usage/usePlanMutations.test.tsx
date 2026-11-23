@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { toast } from 'sonner';
-import { getContract, prepareContractCall } from 'thirdweb';
+import { getContract, prepareContractCall, readContract } from 'thirdweb';
+import { keccak256, stringToBytes } from 'viem';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CONTRACTS } from '@/config/contracts';
@@ -28,6 +29,8 @@ vi.mock('sonner', () => ({
 vi.mock('thirdweb', () => ({
 	getContract: vi.fn((options: { address: string }) => ({ address: options.address })),
 	prepareContractCall: vi.fn((options: { method: string }) => ({ method: options.method })),
+	// The approval left for the escrow after a revoke; none, so a revoke is one transaction.
+	readContract: vi.fn(async () => 0n),
 }));
 vi.mock('thirdweb/react', () => {
 	const account = { address: '0x00000000000000000000000000000000000000aa' };
@@ -59,6 +62,10 @@ vi.mock('@/lib/utils', async original => ({
 }));
 
 const PLAN = { limitInWei: 100n, expiresAtTimestamp: 2_000_000_000n };
+
+// The fixed sentence a failure starts with, before its reason.
+const SET_FAILED = 'The plan was not set. Please try again.';
+const REVOKE_FAILED = 'The plan was not revoked and still stands. Please try again.';
 
 function withVerdict(verdict: FeeTokenCheckState) {
 	vi.mocked(useFeeTokenCheck).mockReturnValue({
@@ -282,6 +289,31 @@ describe('setting a plan before the check has answered once', () => {
 	});
 });
 
+describe('setting a plan and the notice that offers to remove an approval', () => {
+	const NOTICE_ID = 'plan-approval-not-cleared';
+
+	// The notice's action sends an approval of zero: pressed after a new plan, it would undo it.
+	it('takes the notice down before the approval is sent', async () => {
+		withVerdict('ok');
+
+		await attempt(setPlan);
+
+		expect(toast.dismiss).toHaveBeenCalledWith(NOTICE_ID);
+		const dismissedAt = vi.mocked(toast.dismiss).mock.calls.findIndex(([id]) => id === NOTICE_ID);
+		expect(vi.mocked(toast.dismiss).mock.invocationCallOrder[dismissedAt]).toBeLessThan(
+			sendAndConfirm.mock.invocationCallOrder[0],
+		);
+	});
+
+	it.each(stopped)('leaves it up under %s, when nothing is sent', async verdict => {
+		withVerdict(verdict);
+
+		await attempt(setPlan);
+
+		expect(toast.dismiss).not.toHaveBeenCalledWith(NOTICE_ID);
+	});
+});
+
 describe('a plan that was sent and failed', () => {
 	it('is still called a failed transaction', async () => {
 		withVerdict('ok');
@@ -290,7 +322,7 @@ describe('a plan that was sent and failed', () => {
 		await attempt(setPlan);
 
 		expect(toast.error).toHaveBeenCalledWith('Transaction Failed', {
-			description: 'user rejected',
+			description: `${SET_FAILED} Reason: user rejected`,
 		});
 	});
 
@@ -495,7 +527,7 @@ describe('a plan whose approval went through and whose limit then failed', () =>
 		const { invalidate } = await attempt(setPlan);
 
 		expect(toast.error).toHaveBeenCalledWith('Transaction Failed', {
-			description: 'user rejected',
+			description: `${SET_FAILED} Reason: user rejected`,
 		});
 		expect(invalidate).not.toHaveBeenCalled();
 	});
@@ -510,7 +542,38 @@ describe('a revoke that was sent and failed', () => {
 		await attempt(revoke);
 
 		expect(toast.dismiss).toHaveBeenCalledWith('revoke-notice');
-		expect(toast.error).toHaveBeenCalledWith('Revoke Failed', { description: 'user rejected' });
+		expect(toast.error).toHaveBeenCalledWith('Revoke Failed', {
+			description: `${REVOKE_FAILED} Reason: user rejected`,
+		});
+	});
+});
+
+// thirdweb's text runs on with the RPC URL (which can carry a key) and the call data.
+const LEAKY = new Error(
+	`HTTP request failed for 0x${'aa'.repeat(
+		20,
+	)} at https://rpc.example/v2/KEY123\nbody 0x${'bb'.repeat(20)}`,
+);
+
+describe.each([
+	['setting a plan', setPlan, 'Transaction Failed', SET_FAILED],
+	['revoking a plan', revoke, 'Revoke Failed', REVOKE_FAILED],
+])('a failure while %s', (_, run, expectedTitle, lead) => {
+	it('says what holds first, then the first line of the reason only, scrubbed', async () => {
+		withVerdict('ok');
+		sendAndConfirm.mockRejectedValueOnce(LEAKY);
+
+		await attempt(run);
+
+		const [title, options] = vi.mocked(toast.error).mock.calls[0];
+		const description = String((options as { description?: string }).description);
+		expect(title).toBe(expectedTitle);
+		expect(description.startsWith(`${lead} Reason: `)).toBe(true);
+		expect(description).not.toContain('KEY123');
+		expect(description).not.toContain('aa'.repeat(20));
+		expect(description).not.toContain('bb');
+		expect(description).not.toContain('\n');
+		expect(description).toMatch(/<url>$/);
 	});
 });
 
@@ -525,5 +588,103 @@ describe('the connected chain', () => {
 		expect(getContract).toHaveBeenCalledWith(
 			expect.objectContaining({ chain: { id: 31337 }, address: CONTRACTS[31337].escrow.address }),
 		);
+	});
+});
+
+// The selector a public node returns for the escrow's own refusal, worked out from the
+// canonical signature here rather than with the helper the code uses.
+const HAS_PENDING_SELECTOR = keccak256(stringToBytes('HasPendingPrompts()')).slice(0, 10);
+
+const OWNER = '0x00000000000000000000000000000000000000aa';
+const ESCROW = '0x00000000000000000000000000000000000000e5';
+
+describe('a plan change while a prompt is pending', () => {
+	// The wallet's pending count on the escrow; every other read answers 0.
+	function pendingCount(answer: () => Promise<unknown>) {
+		vi.mocked(readContract).mockImplementation((async ({ method }: { method: unknown }) =>
+			String(method).includes('pendingEscrowCount') ? answer() : 0n) as never);
+	}
+
+	afterEach(() => {
+		vi.mocked(readContract).mockImplementation((async () => 0n) as never);
+	});
+
+	it('reads the pending count on the escrow before anything is approved', async () => {
+		withVerdict('ok');
+		pendingCount(async () => 0n);
+
+		await attempt(setPlan);
+
+		expect(readContract).toHaveBeenCalledWith(
+			expect.objectContaining({
+				contract: { address: ESCROW },
+				method: expect.stringContaining('pendingEscrowCount'),
+				params: [OWNER],
+			}),
+		);
+		expect(vi.mocked(readContract).mock.invocationCallOrder[0]).toBeLessThan(
+			sendAndConfirm.mock.invocationCallOrder[0],
+		);
+	});
+
+	it('approves nothing and sends nothing when one is pending, and says when it can be changed', async () => {
+		withVerdict('ok');
+		pendingCount(async () => 1n);
+
+		const { onDone } = await attempt(setPlan);
+
+		expect(prepareContractCall).not.toHaveBeenCalled();
+		expect(sendAndConfirm).not.toHaveBeenCalled();
+		expect(onDone).not.toHaveBeenCalled();
+		expect(toast.error).toHaveBeenCalledTimes(1);
+		expect(toast.error).toHaveBeenCalledWith('Prompt Pending', {
+			description:
+				'A prompt is still pending, so nothing was sent. The plan can be changed once it is answered, cancelled or refunded.',
+		});
+	});
+
+	it('leaves the notice that offers to remove an approval up, since nothing is sent', async () => {
+		withVerdict('ok');
+		pendingCount(async () => 2n);
+
+		await attempt(setPlan);
+
+		expect(toast.dismiss).not.toHaveBeenCalledWith('plan-approval-not-cleared');
+	});
+
+	it.each([
+		['fails', async () => Promise.reject(new Error('HTTP request failed'))],
+		['gives no number', async () => '0x'],
+	])(
+		'sends the plan all the same when the read %s: the escrow refuses the limit itself',
+		async (_, answer) => {
+			withVerdict('ok');
+			pendingCount(answer);
+
+			const { onDone } = await attempt(setPlan);
+
+			expect(vi.mocked(prepareContractCall).mock.calls.map(([call]) => call)).toEqual([
+				expect.objectContaining({ method: 'approve' }),
+				expect.objectContaining({ method: 'setSpendingLimit' }),
+			]);
+			expect(onDone).toHaveBeenCalledTimes(1);
+		},
+	);
+
+	it.each([
+		['by name', 'execution reverted: HasPendingPrompts()'],
+		['by selector', `Encoded error signature "${HAS_PENDING_SELECTOR}" not found on ABI.`],
+	])('a revoke the escrow refuses for a pending prompt says so, %s', async (_, message) => {
+		withVerdict('ok');
+		sendAndConfirm.mockRejectedValueOnce(new Error(message));
+
+		const { onDone } = await attempt(revoke);
+
+		expect(toast.error).toHaveBeenCalledTimes(1);
+		expect(toast.error).toHaveBeenCalledWith('Prompt Pending', {
+			description:
+				'A prompt is still pending, so the plan was not revoked and still stands. It can be revoked once the prompt is answered, cancelled or refunded.',
+		});
+		expect(onDone).not.toHaveBeenCalled();
 	});
 });

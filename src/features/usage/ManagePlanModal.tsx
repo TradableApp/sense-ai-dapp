@@ -157,7 +157,7 @@ export default function ManagePlanModal({
 	const holdReasonId = useId();
 	const fullBalanceId = useId();
 
-	const { setPlanMutation, revokeMutation } = usePlanMutations({
+	const { setPlanMutation, revokeMutation, clearApprovalMutation, isUnderWay } = usePlanMutations({
 		onStatus: setStatusText,
 		onDone: () => onOpenChange(false),
 	});
@@ -185,7 +185,13 @@ export default function ManagePlanModal({
 		}
 	};
 
-	const isProcessing = setPlanMutation.isPending || revokeMutation.isPending;
+	// One plan transaction at a time, wherever it was started (another dialog, a notice that
+	// removes an approval): nothing else is sent meanwhile.
+	const isProcessing =
+		isUnderWay ||
+		setPlanMutation.isPending ||
+		revokeMutation.isPending ||
+		clearApprovalMutation.isPending;
 
 	return (
 		<Dialog open={open} onOpenChange={openState => !isProcessing && onOpenChange(openState)}>
@@ -317,9 +323,10 @@ export default function ManagePlanModal({
 										<AlertDialogHeader>
 											<AlertDialogTitle>Are you sure?</AlertDialogTitle>
 											<AlertDialogDescription>
-												This will revoke the AI agent's permission to spend your {FEE_TOKEN.symbol}.
-												You will need to set a new limit to continue using the service. This action
-												requires a transaction.
+												This will revoke the AI agent's permission to spend your {FEE_TOKEN.symbol}:
+												your spending limit is cancelled and the token approval is removed. You will
+												need to set a new limit to continue using the service. This action requires
+												up to two transactions.
 											</AlertDialogDescription>
 										</AlertDialogHeader>
 										<AlertDialogFooter>

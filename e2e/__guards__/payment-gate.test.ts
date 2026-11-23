@@ -179,6 +179,38 @@ describe('where the payment gate is asked', () => {
 		GATE_WORDS.forEach(word =>
 			expect(plans.slice(revokeAt).toLowerCase()).not.toContain(word.toLowerCase()),
 		);
+		// Removing the approval again, from the notice a half-finished revoke shows, is taking
+		// back a permission too: it stands after the revoke, so the check above covers it, and
+		// the helpers both send through never mention the gate either.
+		const clearAt = plans.indexOf('function useClearApprovalMutation(');
+		expect(clearAt, 'useClearApprovalMutation not found after the revoke').toBeGreaterThan(
+			revokeAt,
+		);
+		// The reads it and the revoke make (the approval left, whether a limit stands) live in
+		// their own module, which never mentions the gate.
+		const reads = code('src/features/usage/escrowReads.ts');
+		[
+			[plans, 'async function clearApproval('],
+			[reads, 'export async function readEscrowAllowance('],
+			[reads, 'export async function readLimitStands('],
+		].forEach(([source, helper]) => {
+			const at = source.indexOf(helper);
+			expect(at, `${helper} not found`).toBeGreaterThan(-1);
+			const body = source.slice(at, source.indexOf('\n}\n', at)).toLowerCase();
+			GATE_WORDS.forEach(word => expect(body, helper).not.toContain(word.toLowerCase()));
+		});
+		GATE_WORDS.forEach(word => expect(reads.toLowerCase()).not.toContain(word.toLowerCase()));
+		// The dashboard's notice of an approval left with no plan removes it through that same
+		// mutation, is mounted where no plan is shown, and neither it nor its read asks the gate.
+		const notice = code('src/features/usage/LeftoverApprovalNotice.tsx');
+		expect(notice).toMatch(/\buseClearApprovalMutation\(\)/);
+		expect(notice).not.toContain('prepareContractCall(');
+		expect(code('src/features/onboarding/OnboardingFlow.tsx')).toContain(
+			'<LeftoverApprovalNotice />',
+		);
+		[notice, code('src/features/usage/useLeftoverApproval.ts')].forEach(source =>
+			GATE_WORDS.forEach(word => expect(source.toLowerCase()).not.toContain(word.toLowerCase())),
+		);
 		// Prompts can close while the approval is confirmed: the gate's current state is asked
 		// again, and the limit is not built if it refuses now.
 		const recheck = statementAt(
