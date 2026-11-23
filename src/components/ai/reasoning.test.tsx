@@ -267,6 +267,20 @@ describe('ReasoningContent once the stored answer lands, or a run starts again',
 		},
 	);
 
+	it('shows a step whole once the next one arrives, though its typing had not finished', () => {
+		vi.useFakeTimers();
+		const { rerender } = render(view([], true));
+		const first = { title: 'Read', description: 'A long description still being typed.' };
+		rerender(view([first], true));
+		act(() => {
+			vi.advanceTimersByTime(100);
+		});
+
+		rerender(view([first, { title: 'Check', description: 'Next.' }], true));
+
+		expect(descriptions()[0]).toBe('A long description still being typed.');
+	});
+
 	it('shows nothing typed for an earlier run when the reset and the new steps arrive together', () => {
 		vi.useFakeTimers();
 		const { rerender } = render(view([], true));
