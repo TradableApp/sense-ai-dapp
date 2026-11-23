@@ -19,8 +19,9 @@ export const FEE_TOKEN_BASICS = {
 
 /**
  * The token a setting names, read the way the app reads it: trimmed, any letter case, and
- * anything but a known name is the first. That fallback is for the unit tests only;
- * `assertFeeTokenConfig` stops a build that relies on it.
+ * anything but a known name is the first. The app calls this too, but only the unit tests reach
+ * that fallback: `assertFeeTokenConfig` stops every build, dev server and e2e run whose setting
+ * would need it, before this runs.
  */
 export function feeTokenNameFor(value: string | undefined): FeeTokenName {
 	const name = (value ?? '').trim().toUpperCase();

@@ -57,7 +57,10 @@ export type TransferOutcome =
 	| { refused: false }
 	| { refused: true; error: string | undefined; args: readonly unknown[]; message: string };
 
-/** The revert data a node put beside the error: a hex string, or nested one level down. */
+/**
+ * The revert data a node put beside the error: a hex string, or one nested under `data` (a
+ * parsed JSON answer, so it has no cycle and its depth is bounded by its size).
+ */
 function revertData(data: unknown): `0x${string}` | undefined {
 	if (typeof data === 'string' && /^0x[0-9a-fA-F]*$/.test(data)) return data as `0x${string}`;
 	if (data && typeof data === 'object' && 'data' in data) {

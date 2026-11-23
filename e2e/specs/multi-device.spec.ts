@@ -25,7 +25,7 @@ declare global {
 	}
 }
 
-const FAUCET_CREDIT = 10n ** 18n * 50n; // +50 ABLE
+const FAUCET_CREDIT = 10n ** 18n * 50n; // +50 of the fee token
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node for the answer round-trip (set E2E_LOCAL_SERVICES=1)';
 
@@ -44,7 +44,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 	// Close every context opened during the test — even if it failed mid-body — so worker-scoped
 	// contexts never accumulate.
 	// Fresh accounts claimed in the body go back to the treasury here, after the contexts are
-	// closed — an unreleased account is real ETH + ABLE on testnet.
+	// closed — an unreleased account is real ETH and fee tokens on testnet.
 	const accounts = freshAccountPool();
 	test.afterEach(async () => {
 		await Promise.all(openContexts.splice(0).map(c => c.close().catch(() => {})));
@@ -237,7 +237,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		browser,
 	}) => {
 		const account = await accounts.claim();
-		await fundAndActivatePlan(account.address); // funds + authorises PLAN_ALLOWANCE (100 ABLE)
+		await fundAndActivatePlan(account.address); // funds + authorises PLAN_ALLOWANCE (100 tokens)
 
 		// Device A spends from the shared on-chain balance/allowance by sending a prompt.
 		const deviceA = await openDevice(browser, account, openContexts);
@@ -252,7 +252,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		);
 
 		// The wallet is then credited more tokens (e.g. via the faucet/treasury).
-		await fundFeeToken(TOKEN_ADDRESS, account.address, FAUCET_CREDIT); // +50 ABLE
+		await fundFeeToken(TOKEN_ADDRESS, account.address, FAUCET_CREDIT);
 
 		// The single on-chain balance now reflects BOTH the spend and the credit.
 		const onChainTokens = Number(await getFeeTokenBalance(TOKEN_ADDRESS, account.address)) / 1e18;
@@ -268,7 +268,7 @@ test.describe('Multi-device sync & wallet isolation (T-MULTI)', () => {
 		).toBeGreaterThan(0);
 
 		// And B sees the credited wallet balance. The balance is surfaced in the plan modal's
-		// insufficient-balance hint ("You have <X> ABLE …"), which appears once the requested limit
+		// insufficient-balance hint ("You have <X> <symbol> …"), which appears once the requested limit
 		// exceeds the balance — so enter a deliberately huge limit to reveal it, then assert <X>
 		// matches the on-chain truth (within the displayed 2-dp rounding).
 		await deviceB.dashboard.managePlanButton.click();
