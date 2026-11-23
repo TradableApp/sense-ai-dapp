@@ -10,7 +10,6 @@ import { useNavigate } from 'react-router-dom';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
-import { z } from 'zod';
 
 import senseaiLogo from '@/assets/logos/senseai-logo.svg';
 import {
@@ -66,6 +65,7 @@ import { cancelWindow } from './cancelWindow';
 import ComposerHoldNotices, { composerHoldDescription } from './ComposerHoldNotices';
 import isQueryAhead from './messageReconcile';
 import { composerStateFor } from './promptParent';
+import promptSchema from './promptSchema';
 import showUnsavedPrompt, { isActiveConversation, noWalletAddressError } from './unsavedPrompt';
 import useHeldBranchRefresh from './useHeldBranchRefresh';
 import useOneSendAtATime from './useOneSendAtATime';
@@ -107,11 +107,6 @@ function BranchInfo({ originalConversationId, onNavigate }: BranchInfoProps) {
 }
 
 const STREAM_BY_WORD = true;
-
-const promptSchema = z.object({
-	// Any changes to schema must be updated in tokenized-ai-agent/oracle/src/payloadValidator.js
-	prompt: z.string().trim().min(1, { message: 'Message cannot be empty.' }).max(5000),
-});
 
 export default function Chat() {
 	const dispatch = useAppDispatch();

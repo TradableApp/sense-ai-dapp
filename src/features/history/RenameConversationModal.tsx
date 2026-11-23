@@ -3,7 +3,6 @@ import { useEffect, useId } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { z } from 'zod';
 
 import PaymentsSwitchedOffBanner from '@/components/PaymentsSwitchedOffBanner';
 import { Button } from '@/components/ui/button';
@@ -18,16 +17,7 @@ import {
 import Input from '@/components/ui/input';
 import useSwitchedOffReason from '@/hooks/useSwitchedOffReason';
 
-const renameSchema = z.object({
-	// Any changes to schema must be updated in tokenized-ai-agent/oracle/src/payloadValidator.js
-	title: z
-		.string()
-		.trim()
-		.min(1, { message: 'Title cannot be empty.' })
-		.max(100, { message: 'Title cannot be longer than 100 characters.' }),
-});
-
-type RenameFormValues = z.infer<typeof renameSchema>;
+import renameSchema, { type RenameFormValues } from './renameSchema';
 
 interface RenameConversationModalProps {
 	open: boolean;

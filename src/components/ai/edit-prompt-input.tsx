@@ -3,8 +3,8 @@ import { type KeyboardEvent, useId } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { MicIcon } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { z } from 'zod';
 
+import editPromptSchema from '@/components/ai/editPromptSchema';
 import {
 	PromptInput,
 	PromptInputButton,
@@ -15,10 +15,6 @@ import {
 import SENDING_REASON from '@/components/ai/sendingReason';
 import { Button } from '@/components/ui/button';
 import useSwitchedOffReason from '@/hooks/useSwitchedOffReason';
-
-const editSchema = z.object({
-	content: z.string().trim().min(1, { message: 'Message cannot be empty.' }),
-});
 
 interface EditPromptInputProps {
 	originalContent: string;
@@ -42,7 +38,7 @@ export default function EditPromptInput({
 		handleSubmit,
 		formState: { errors, isValid, isSubmitting },
 	} = useForm({
-		resolver: zodResolver(editSchema),
+		resolver: zodResolver(editPromptSchema),
 		defaultValues: { content: originalContent },
 	});
 	// Saving an edit sends the prompt again, so it is off while prompts are.
