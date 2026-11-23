@@ -603,6 +603,22 @@ describe('syncWithRemote — an answer it cannot use, or no answer', () => {
 		expect(await sync()).toMatchObject({ graphUnavailable: false });
 	});
 
+	// A pass that fails on this device before The Graph is asked knows nothing about The Graph:
+	// saying it was read would take the notice down (and re-arm it) with nothing refreshed.
+	it('says nothing about The Graph when the pass fails before asking it', async () => {
+		graphRequestMock.mockRejectedValueOnce(new Error('Failed to fetch'));
+		expect(await sync()).toMatchObject({ graphUnavailable: true });
+
+		vi.spyOn(store.userMetadata, 'get').mockImplementationOnce(() => {
+			throw new Error('The database connection is closing.');
+		});
+		graphRequestMock.mockClear();
+		const result = await sync();
+
+		expect(graphRequestMock).not.toHaveBeenCalled();
+		expect(result.graphUnavailable).toBeUndefined();
+	});
+
 	it('reports a failed read to Sentry once per page load per list and reason, by name only', async () => {
 		graphRequestMock.mockRejectedValue(
 			new TypeError(`request to ${GRAPH_URL} failed for owner ${OWNER}`),

@@ -96,9 +96,10 @@ export interface SyncResult {
 	readonly unavailablePayloads: number;
 	/**
 	 * The Graph could not be read this pass (see GraphFetchFailed): nothing was stored and the
-	 * cursor was held, so what is shown is what was saved before. Retried next pass.
+	 * cursor was held, so what is shown is what was saved before. Retried next pass. Undefined
+	 * when the pass failed before The Graph had answered: it says nothing either way.
 	 */
-	readonly graphUnavailable: boolean;
+	readonly graphUnavailable: boolean | undefined;
 }
 
 // Returned by reference from several early exits, so it must be immune to mutation.
@@ -343,6 +344,8 @@ export default async function syncWithRemote(
 	// One pool per pass: every payload fetch of the pass waits for a slot (see the constant).
 	const limit = createLimiter(PAYLOAD_FETCH_CONCURRENCY);
 	const hydrate = (cid: string | undefined) => limit(() => hydratePayload(cid, sessionKey));
+	// Until The Graph has answered, a failure here says nothing about it (see SyncResult).
+	let graphRead = false;
 
 	try {
 		// 1. Get the last known sync timestamp from our local state (Milliseconds).
@@ -352,6 +355,7 @@ export default async function syncWithRemote(
 		// (fetchUpdatesFromTheGraph handles the MS -> S -> MS conversions.) A failed request
 		// throws to the catch below, so the cursor is not moved and nothing is stored.
 		const graphUpdates = await fetchUpdatesFromTheGraph(ownerAddress, lastSync);
+		graphRead = true;
 
 		// 3. Determine the new timestamp cursor.
 		let newLastSync = lastSync;
@@ -668,6 +672,6 @@ export default async function syncWithRemote(
 			return { unavailablePayloads, graphUnavailable: true };
 		}
 		console.error('[syncService] A critical error occurred during the sync process:', error);
-		return { unavailablePayloads, graphUnavailable: false };
+		return { unavailablePayloads, graphUnavailable: graphRead ? false : undefined };
 	}
 }
