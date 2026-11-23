@@ -12,14 +12,16 @@ import {
 	Split,
 	Trash2,
 } from 'lucide-react';
-import { formatEther } from 'viem';
 
+import { FEE_TOKEN } from '@/config/feeToken';
 import { useSession } from '@/features/auth/SessionProvider';
+import orderCancelPairs from '@/lib/activityOrder';
 import { GET_RECENT_ACTIVITY_QUERY } from '@/lib/graph/queries';
 import type {
 	GetRecentActivityQuery,
 	GetRecentActivityQueryVariables,
 } from '@/lib/graph/query-types';
+import formatTokenAmount from '@/lib/tokenAmount';
 
 const THE_GRAPH_API_URL = import.meta.env.VITE_THE_GRAPH_API_URL;
 const graphQLClient = new GraphQLClient(THE_GRAPH_API_URL);
@@ -33,6 +35,9 @@ const activityTypeMap = {
 	METADATA_UPDATE: { label: 'Conversation Updated', icon: FilePenLine }, // Catch-all for metadata
 	BRANCH: { label: 'Conversation Branched', icon: Split },
 	CANCEL: { label: 'Prompt Cancelled', icon: Ban },
+	// A cancel writes two rows in one transaction: CANCEL (minus the cancellation fee) and this one
+	// (plus the escrowed payment handed back). Their ids differ by a "-return" suffix.
+	CANCEL_RETURN: { label: 'Prompt Amount Returned', icon: RotateCcw },
 	REFUND: { label: 'Prompt Refunded', icon: RotateCcw },
 	PLAN_UPDATE: { label: 'Spending Limit Updated', icon: ShieldCheck },
 	PLAN_REVOKE: { label: 'Spending Limit Revoked', icon: ShieldOff },
@@ -55,17 +60,21 @@ export default function useRecentActivity(limit = 10) {
 				variables,
 			);
 
-			return (data.activities || []).map(activity => {
+			// A cancel and its returned amount share a timestamp; show the cancel first.
+			return orderCancelPairs(data.activities || []).map(activity => {
 				// If type is not found, fallback to Activity icon
 				const details = activityTypeMap[activity.type as keyof typeof activityTypeMap] || {
 					label: 'Unknown Action',
 					icon: Activity,
 				};
+				const amount = BigInt(activity.amount);
 				return {
 					...activity,
 					...details,
-					// Format amount from wei to human-readable string
-					formattedAmount: formatEther(BigInt(activity.amount)),
+					// The exact amount the chain moved, with the fee token's decimals: never rounded
+					formattedAmount: formatTokenAmount(amount, FEE_TOKEN.decimals),
+					// Money in (1), out (-1) or none (0), so the card never parses the raw amount
+					amountSign: amount > 0n ? 1 : amount < 0n ? -1 : 0,
 					// Format timestamp to "X hours ago"
 					formattedTimestamp: formatDistanceToNow(new Date(Number(activity.timestamp) * 1000), {
 						addSuffix: true,

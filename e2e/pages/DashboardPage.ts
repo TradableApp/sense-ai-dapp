@@ -54,6 +54,14 @@ export class DashboardPage {
 		return this.page.getByTestId('recent-activity-card');
 	}
 
+	/** The first feed row whose label is exactly `label`: the label's paragraph sits in the row's
+	 *  text column, beside the icon and the amount, so the row is two levels up. Its text is the
+	 *  label, the relative time and then the amount ("<amount> <symbol>"), or no amount when the
+	 *  action moved nothing. */
+	activityRow(label: string) {
+		return this.activityCard.getByText(label, { exact: true }).first().locator('../..');
+	}
+
 	/** PlanStatusCard's full-width allowance-gap warning panel, rendered whenever the on-chain
 	 *  ERC-20 allowance has fallen below the plan's remaining limit (e.g. after a cancellation/
 	 *  refund). The "Authorization Gap" heading itself lives in a hover tooltip; this always-rendered
