@@ -13,7 +13,13 @@
  *
  * Progress is the cursor moving, never a frame merely arriving: a frame that cannot be applied
  * is replayed by the server on every connection. A response is judged once every frame it
- * delivered has been applied or dropped (decryption is asynchronous). It gives up when the
+ * delivered has been applied or dropped (decryption is asynchronous). Frames are handed on one
+ * at a time, each once the one before has settled, and the next chunk is read only then, so a
+ * response cannot queue work faster than it is done. A response is also ended, and counted as
+ * stalled, while it is still open: after `MAX_REFUSED_FRAMES_PER_CONNECTION` refused frames, or
+ * once a frame it delivered moved the cursor nowhere and the cursor has then not moved for
+ * `STALLED_RESPONSE_MS`. Reading is linear in what arrives: each chunk is scanned once for line
+ * ends, and an event holds at most `MAX_DATA_LINES_PER_EVENT` data lines. It gives up when the
  * cursor has not moved for `IDLE_GIVE_UP_MS`. While the tab is hidden (`isHidden`) no connection
  * is opened and the idle wait is paused; `wake` resumes from the cursor. The proof is put in the header and nowhere else:
  * not in the URL, a log line or a report. Only `useLiveReasoning` starts it (the
@@ -38,6 +44,19 @@ export const IDLE_GIVE_UP_MS = 10 * 60 * 1000;
 export const MAX_LINE_CHARS = 'data: '.length + MAX_SEALED_FRAME_CHARS;
 /** The most `data:` an event may join (each line counted with its joining newline). */
 export const MAX_EVENT_CHARS = MAX_SEALED_FRAME_CHARS + 1;
+/** A sealed frame is one line (base64 and a dot): an event with a second data line is no frame. */
+export const MAX_DATA_LINES_PER_EVENT = 1;
+/**
+ * Frames one connection may deliver that are refused (undecryptable, outside the schema, or for
+ * another answer or run) before it is ended and counted as stalled. A genuine server sends none.
+ */
+export const MAX_REFUSED_FRAMES_PER_CONNECTION = 8;
+/**
+ * How long a response that is still open may go without moving the cursor, once a frame it
+ * delivered moved it nowhere, before it is ended and counted as stalled. A response that brings
+ * only heartbeats is not judged by it: the server sets that pace.
+ */
+export const STALLED_RESPONSE_MS = 60_000;
 /**
  * Connections in a row that delivered something but moved the cursor nowhere (a frame that
  * cannot be applied, which the server replays each time, or a line too long to be a frame)
@@ -49,6 +68,9 @@ export interface StreamEvent {
 	id: string;
 	data: string;
 }
+
+/** What became of a frame handed on: taken by the reducer (applied, held or a duplicate), or refused. */
+export type FrameVerdict = 'applied' | 'refused';
 
 export type StopReason = 'bad-request' | 'proof-refused' | 'finished' | 'idle';
 
@@ -67,8 +89,11 @@ export type StreamFetch = (_url: string, _init: StreamRequestInit) => Promise<St
 export interface FrameStreamOptions {
 	url: string;
 	proof: string;
-	/** Settles once the event has been applied or dropped, when that does not happen at once. */
-	onEvent: (_event: StreamEvent) => void | Promise<unknown>;
+	/**
+	 * Settles once the event has been applied or dropped, when that does not happen at once, with
+	 * `'refused'` for a frame that was dropped (counted against `MAX_REFUSED_FRAMES_PER_CONNECTION`).
+	 */
+	onEvent: (_event: StreamEvent) => void | FrameVerdict | Promise<unknown>;
 	/** The last frame applied in order, read at each connection and to measure progress. */
 	getCursor: () => string | null;
 	onStop: (_reason: StopReason) => void;
@@ -122,7 +147,11 @@ function createSseParser(
 	onEvent: (_e: StreamEvent) => void,
 	onRetry: (_ms: number) => void,
 ): SseParser {
-	let buffer = '';
+	// The line still arriving, in the pieces it came in: joined once, when its end arrives.
+	let pieces: string[] = [];
+	let pieceChars = 0;
+	// The last chunk ended on a CR: a LF at the start of the next is the rest of that line end.
+	let afterCr = false;
 	let id: string | null = null;
 	let name = '';
 	let data: string[] = [];
@@ -140,8 +169,10 @@ function createSseParser(
 
 	const addData = (value: string) => {
 		dataChars += value.length + 1;
-		if (dataChars > MAX_EVENT_CHARS) throw new MalformedStreamError();
-		data = [...data, value];
+		if (data.length >= MAX_DATA_LINES_PER_EVENT || dataChars > MAX_EVENT_CHARS) {
+			throw new MalformedStreamError();
+		}
+		data.push(value);
 	};
 
 	const field = (line: string) => {
@@ -159,18 +190,31 @@ function createSseParser(
 	};
 
 	return {
+		// Each chunk is scanned once, from where the last line end in it was found: what is
+		// pending is never scanned or copied again, so reading is linear in what arrives.
 		push(text) {
-			buffer += text;
-			// A trailing CR may be the first half of a CRLF still to come: keep it for the next chunk.
-			const end = buffer.endsWith('\r') ? buffer.length - 1 : buffer.length;
-			const lines = buffer.slice(0, end).split(/\r\n|\r|\n/);
-			buffer = (lines.pop() ?? '') + buffer.slice(end);
-			// A held CR ends the line (the first half of a CRLF); it is not one of its characters.
-			const pending = buffer.endsWith('\r') ? buffer.length - 1 : buffer.length;
-			if (pending > MAX_LINE_CHARS) throw new MalformedStreamError();
-			// A line that arrived whole is held to the same cap, so a chunk boundary changes nothing.
-			if (lines.some(line => line.length > MAX_LINE_CHARS)) throw new MalformedStreamError();
-			lines.forEach(field);
+			if (text === '') return;
+			let from = afterCr && text.startsWith('\n') ? 1 : 0;
+			afterCr = false;
+			const lineEnd = /\r\n|\r|\n/g;
+			lineEnd.lastIndex = from;
+			for (let match = lineEnd.exec(text); match !== null; match = lineEnd.exec(text)) {
+				const piece = text.slice(from, match.index);
+				// A line that arrived whole is held to the same cap, so a chunk boundary changes nothing.
+				if (pieceChars + piece.length > MAX_LINE_CHARS) throw new MalformedStreamError();
+				const line = pieces.length === 0 ? piece : pieces.join('') + piece;
+				pieces = [];
+				pieceChars = 0;
+				from = lineEnd.lastIndex;
+				// A CR that ends the chunk may be the first half of a CRLF still to come.
+				afterCr = match[0] === '\r' && from === text.length;
+				field(line);
+			}
+			if (from < text.length) {
+				pieceChars += text.length - from;
+				if (pieceChars > MAX_LINE_CHARS) throw new MalformedStreamError();
+				pieces.push(text.slice(from));
+			}
 		},
 	};
 }
@@ -183,9 +227,17 @@ interface ReadOptions {
 	fetchImpl: StreamFetch;
 	onEvent: (_e: StreamEvent) => void;
 	onRetry: (_ms: number) => void;
+	/** Settles once every frame handed on so far has been applied or dropped. */
+	settled: () => Promise<unknown>;
+	/** Rejects with `MalformedStreamError` when the connection is to be ended as stalled. */
+	stalled: Promise<never>;
 }
 
-async function readBody(stream: ReadableStream<Uint8Array>, parser: SseParser) {
+async function readBody(
+	stream: ReadableStream<Uint8Array>,
+	parser: SseParser,
+	{ settled, stalled }: Pick<ReadOptions, 'settled' | 'stalled'>,
+) {
 	const reader = stream.getReader();
 	const decoder = new TextDecoder();
 	try {
@@ -193,9 +245,12 @@ async function readBody(stream: ReadableStream<Uint8Array>, parser: SseParser) {
 		// ended, a chain of pending calls as long as the connection.
 		for (;;) {
 			// eslint-disable-next-line no-await-in-loop -- each read follows the one before
-			const { done, value } = await reader.read();
+			const { done, value } = await Promise.race([reader.read(), stalled]);
 			if (done) return;
 			parser.push(decoder.decode(value, { stream: true }));
+			// The next chunk is read once this one's frames are done with: no queue builds up.
+			// eslint-disable-next-line no-await-in-loop -- each chunk waits for the one before
+			await Promise.race([settled(), stalled]);
 		}
 	} finally {
 		reader.cancel().catch(() => undefined);
@@ -244,7 +299,7 @@ async function readConnection(options: ReadOptions): Promise<ConnectionOutcome> 
 			sawEvents = true;
 			options.onEvent(event);
 		}, options.onRetry);
-		await readBody(response.body, parser);
+		await readBody(response.body, parser, options);
 		return { kind: 'ended', sawEvents, malformed: false };
 	} catch (error) {
 		if (options.signal.aborted) return { kind: 'aborted' };
@@ -271,12 +326,20 @@ export function startFrameStream(options: FrameStreamOptions): FrameStreamHandle
 	let controller: AbortController | null = null;
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	let idleTimer: ReturnType<typeof setTimeout> | null = null;
+	// The open connection's stall wait (one connection at a time).
+	let stallTimer: ReturnType<typeof setTimeout> | null = null;
+
+	const clearStallTimer = () => {
+		if (stallTimer) clearTimeout(stallTimer);
+		stallTimer = null;
+	};
 
 	const clearTimers = () => {
 		if (reconnectTimer) clearTimeout(reconnectTimer);
 		if (idleTimer) clearTimeout(idleTimer);
 		reconnectTimer = null;
 		idleTimer = null;
+		clearStallTimer();
 	};
 
 	const stop = () => {
@@ -360,11 +423,39 @@ export function startFrameStream(options: FrameStreamOptions): FrameStreamHandle
 	connect = async () => {
 		generation += 1;
 		const mine = generation;
+		clearStallTimer();
 		controller = new AbortController();
 		const cursorAtStart = options.getCursor();
 		const lastEventId = freshNext ? null : cursorAtStart;
 		freshNext = false;
+		const current = () => !stopped && mine === generation;
 		let applying: Promise<unknown> = Promise.resolve();
+		let refused = 0;
+		let endAsStalled: () => void = () => undefined;
+		const endedAsStalled = new Promise<never>((_resolve, reject) => {
+			endAsStalled = () => reject(new MalformedStreamError());
+		});
+		// Rejected only to end the read; nothing else waits on it.
+		endedAsStalled.catch(() => undefined);
+
+		/** Hands one frame on and judges what it did, once the one before has settled. */
+		const handOn = async (event: StreamEvent) => {
+			// Past the cap the rest of the response is skipped: it is about to be ended.
+			if (!current() || refused >= MAX_REFUSED_FRAMES_PER_CONNECTION) return;
+			const before = options.getCursor();
+			const verdict = await Promise.resolve()
+				.then(() => options.onEvent(event))
+				.catch(() => undefined);
+			noteProgress();
+			if (!current()) return;
+			if (verdict === 'refused') {
+				refused += 1;
+				if (refused >= MAX_REFUSED_FRAMES_PER_CONNECTION) endAsStalled();
+			}
+			if (options.getCursor() !== before) clearStallTimer();
+			else if (!stallTimer) stallTimer = setTimeout(endAsStalled, STALLED_RESPONSE_MS);
+		};
+
 		const outcome = await readConnection({
 			url: options.url,
 			proof: options.proof,
@@ -372,19 +463,18 @@ export function startFrameStream(options: FrameStreamOptions): FrameStreamHandle
 			signal: controller.signal,
 			fetchImpl,
 			onEvent: event => {
-				if (stopped || mine !== generation) return;
-				const applied = Promise.resolve()
-					.then(() => options.onEvent(event))
-					.catch(() => undefined)
-					.then(noteProgress);
-				applying = Promise.all([applying, applied]);
+				if (!current()) return;
+				applying = applying.then(() => handOn(event)).catch(() => undefined);
 			},
 			onRetry: ms => {
 				retryMs = Math.max(ms, MIN_RETRY_MS);
 			},
+			settled: () => applying,
+			stalled: endedAsStalled,
 		});
 		await applying;
-		if (stopped || mine !== generation) return;
+		if (!current()) return;
+		clearStallTimer();
 		if (outcome.kind === 'stop') {
 			finish(outcome.reason);
 			return;

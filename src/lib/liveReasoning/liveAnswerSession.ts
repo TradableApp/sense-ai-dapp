@@ -6,6 +6,11 @@
  * is dropped and counted, and never shown. Nothing here logs: a failure is
  * counted in the state, and a refusal that can never pass is reported by kind only.
  *
+ * The state is published (`onState`) only when something shown changed: a dropped frame, a
+ * duplicate or a frame held after a gap re-renders nothing, so a stream of junk cannot make the
+ * chat render once per frame. The transport is told which frames were refused, and ends a
+ * connection that sends too many.
+ *
  * The connection is passed in (`startStream`) so that only `useLiveReasoning` names the
  * transport (the `live-reasoning-ephemeral` guard).
  */
@@ -20,6 +25,7 @@ import {
 import type {
 	FrameStreamHandle,
 	FrameStreamOptions,
+	FrameVerdict,
 	StopReason,
 	StreamEvent,
 } from '@/lib/liveReasoning/frameTransport';
@@ -54,6 +60,16 @@ export interface LiveAnswerSession {
 	wake(): void;
 }
 
+/** Whether anything the chat shows, or the comparison with the stored answer reads, changed. */
+const shownChanged = (before: LiveAnswerState, after: LiveAnswerState): boolean =>
+	before.run !== after.run ||
+	before.replica !== after.replica ||
+	before.attempt !== after.attempt ||
+	before.steps !== after.steps ||
+	before.sources !== after.sources ||
+	before.answer !== after.answer ||
+	before.outcome !== after.outcome;
+
 async function readFrame(sessionKey: CryptoKey, event: StreamEvent) {
 	const eventId = parseSseEventId(event.id);
 	if (!eventId || !isSealedFrame(event.data)) return null;
@@ -70,7 +86,7 @@ export function startLiveAnswerSession(options: LiveAnswerSessionOptions): LiveA
 	let state = initialLiveState(options.answerMessageId);
 	let handle: FrameStreamHandle | null = null;
 	let stopped = false;
-	let queue: Promise<void> = Promise.resolve();
+	let queue: Promise<FrameVerdict | undefined> = Promise.resolve(undefined);
 	let gapTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const stop = () => {
@@ -102,17 +118,19 @@ export function startLiveAnswerSession(options: LiveAnswerSessionOptions): LiveA
 		}, GAP_WAIT_MS);
 	};
 
-	const fold = async (event: StreamEvent) => {
+	const fold = async (event: StreamEvent): Promise<FrameVerdict | undefined> => {
 		const read = await readFrame(options.sessionKey, event);
-		if (stopped) return;
+		if (stopped) return undefined;
+		const before = state;
 		const result = read
 			? applyFrame(state, read.frame, read.eventId, now())
 			: { state: dropFrame(state), effect: 'none' as const };
 		state = result.state;
-		options.onState(state);
+		if (shownChanged(before, state)) options.onState(state);
 		carryOut(result.effect);
 		watchGap();
 		if (state.outcome === 'answered' || state.outcome === 'abandoned') end(state.outcome);
+		return state.dropped > before.dropped ? 'refused' : 'applied';
 	};
 
 	const onStop = (reason: StopReason) => {
@@ -129,7 +147,8 @@ export function startLiveAnswerSession(options: LiveAnswerSessionOptions): LiveA
 				onEvent: event => {
 					// A frame that throws while folded is lost; the frames after it still apply.
 					queue = queue.then(() => fold(event)).catch(() => undefined);
-					// Settles once this frame is applied or dropped: the transport measures progress.
+					// Settles once this frame is applied or dropped, saying which: the transport
+					// measures progress and counts what was refused.
 					return queue;
 				},
 				getCursor: () => cursorOf(state),
