@@ -259,6 +259,27 @@ describe('the live overlay in the chat', () => {
 		expect(screen.getByText('From the other device.')).toBeTruthy();
 	});
 
+	it("hides another device's live answer only for a stored answer, never for a prompt's id", () => {
+		const pending = { ...PROMPT, status: 'pending', answerMessageId: '42' };
+		live.views.set('42', liveView());
+		// A prompt carrying the id: not the answer, so the live turn stays.
+		chatState.value = {
+			activeConversationId: '5',
+			activeConversationMessages: [{ ...PROMPT, id: '42', parentId: null }, pending],
+		};
+		const { unmount } = renderChat();
+		expect(screen.getAllByTestId('live-reasoning')).toHaveLength(1);
+		unmount();
+
+		// The stored answer: its own turn shows what is live, and the extra turn goes.
+		chatState.value = {
+			activeConversationId: '5',
+			activeConversationMessages: [pending, PLACEHOLDER],
+		};
+		renderChat();
+		expect(screen.getAllByTestId('live-reasoning')).toHaveLength(1);
+	});
+
 	it('with the stream setting unset behaves as today: no request, no error', async () => {
 		live.useReal = true;
 		const fetchSpy = vi.fn();
