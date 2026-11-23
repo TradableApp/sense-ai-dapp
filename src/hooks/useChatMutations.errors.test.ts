@@ -330,6 +330,41 @@ describe('buildErrorHandler — every explained error is recognised by its selec
 		expect(toast.error).toHaveBeenCalledWith(title, expect.any(Object));
 	});
 
+	// A cancel takes its fee from the user's wallet through the plan, so a remaining limit, an
+	// approval or a balance below the fee refuses it. Raising the limit is switched off while a
+	// prompt is pending, so the message says what is left: the refund after the hour.
+	const cancelFeeRows = [FEE_TOKEN_PROFILES.ABLE, FEE_TOKEN_PROFILES.SENSE].flatMap(profile =>
+		[
+			['InsufficientSpendingLimitAllowance', EVMAIAgentEscrowABI.abi],
+			['ERC20InsufficientAllowance', profile.abi],
+			['ERC20InsufficientBalance', profile.abi],
+		].flatMap(([name, abi]) =>
+			[
+				['name', name as string],
+				['selector', undecoded(realSelector(abi as unknown[], name as string))],
+			].map(([by, message]) => ({ profile, name: name as string, by, message })),
+		),
+	);
+	it.each(cancelFeeRows)(
+		'$name by $by during a cancel says the fee could not be taken ($profile.symbol build)',
+		({ profile, message }) => {
+			buildErrorHandler(false, false, 100, vi.fn(), profile)({ message }, 'cancel prompt');
+
+			expect(toast.error).toHaveBeenCalledTimes(1);
+			const [title, options] = vi.mocked(toast.error).mock.calls[0];
+			const description = String((options as { description?: unknown }).description);
+			expect(title).toBe('Could Not Cancel');
+			expect(description).toMatch(/cancellation fee could not be taken/i);
+			expect(description).toMatch(/remaining limit, the token approval or your balance/i);
+			expect(description).toMatch(/Nothing was cancelled/);
+			expect(description).toMatch(
+				/refunded one hour after it was sent, unless it is answered first/i,
+			);
+			expect(description).not.toMatch(/increase your limit|used up/i);
+			expect(`${title} ${description}`).not.toMatch(/\b(SENSE|ABLE)\b/);
+		},
+	);
+
 	// A paused token has one message per action, whichever token the build is for.
 	const pausedRows = [
 		['send message', 'Payments Paused', /no tokens were taken/i],
