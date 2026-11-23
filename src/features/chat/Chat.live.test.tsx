@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -278,6 +278,67 @@ describe('the live overlay in the chat', () => {
 		};
 		renderChat();
 		expect(screen.getAllByTestId('live-reasoning')).toHaveLength(1);
+	});
+
+	describe('after a fallback answered', () => {
+		// The first attempt's step and source, then a fallback that answered with none of its own.
+		const firstAttempt = {
+			reasoning: [{ title: 'Reading the news', description: 'Read it.', attempt: 1 }],
+			sources: [{ title: 'News', url: 'https://news.example', attempt: 1 }],
+		};
+		const groupsShown = () => {
+			// Live steps open the reasoning by themselves; a stored answer's is opened by hand.
+			const trigger = screen.getByText(/^(Thinking\.\.\.|Reasoning)$/).closest('button');
+			if (trigger?.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger as Element);
+			const earlier = screen.queryByTestId('reasoning-earlier-attempt');
+			return {
+				earlier: earlier !== null,
+				latestSteps: screen
+					.queryAllByTestId('reasoning-step')
+					.filter(step => !earlier?.contains(step))
+					.map(step => step.querySelector('h4')?.textContent),
+			};
+		};
+		const storedAnswer = (extra: Record<string, unknown>) => {
+			chatState.value = {
+				activeConversationId: '5',
+				activeConversationMessages: [
+					PROMPT,
+					{ ...PLACEHOLDER, content: 'Prices rose.', ...firstAttempt, ...extra },
+				],
+			};
+		};
+
+		it('shows the stored record in the same groups the live view showed', () => {
+			live.views.set(
+				'42',
+				liveView({ attempt: 2, steps: firstAttempt.reasoning, sources: firstAttempt.sources }),
+			);
+			const { unmount } = renderChat();
+			const shownLive = groupsShown();
+			unmount();
+
+			live.views = new Map();
+			storedAnswer({ answerAttempt: 2 });
+			renderChat();
+
+			expect(shownLive).toEqual({ earlier: true, latestSteps: [] });
+			expect(groupsShown()).toEqual(shownLive);
+		});
+
+		it('with no answer attempt stored, takes the highest attempt among the items, as before', () => {
+			storedAnswer({});
+			renderChat();
+
+			expect(groupsShown()).toEqual({ earlier: false, latestSteps: ['Reading the news'] });
+		});
+
+		it('ignores a stored answer attempt that is not a positive safe integer', () => {
+			storedAnswer({ answerAttempt: '2' });
+			renderChat();
+
+			expect(groupsShown()).toEqual({ earlier: false, latestSteps: ['Reading the news'] });
+		});
 	});
 
 	it('with the stream setting unset behaves as today: no request, no error', async () => {
