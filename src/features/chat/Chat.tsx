@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { collection, query, where } from 'firebase/firestore';
 import { Loader2, MicIcon, RotateCcwIcon, Split } from 'lucide-react';
+import { useReducedMotion } from 'motion/react';
 import { useForm } from 'react-hook-form';
 import ReactMarkdown from 'react-markdown';
 import { useNavigate } from 'react-router-dom';
@@ -310,6 +311,7 @@ export default function Chat() {
 		sessionKey: sessionKey ?? null,
 		ownerAddress: ownerAddress ?? null,
 	});
+	const reduceMotion = useReducedMotion();
 	const answerIds = useMemo(
 		() => new Set(activeConversationMessages.map(m => String(m.id ?? ''))),
 		[activeConversationMessages],
@@ -600,13 +602,15 @@ export default function Chat() {
 			lastMessage.id === prevLastMessage.id &&
 			!prevLastMessage.content &&
 			// Already shown in full as the provisional answer: the stored one is not typed again.
-			!live.hadProvisionalAnswer(lastMessage.id)
+			!live.hadProvisionalAnswer(lastMessage.id) &&
+			// Under reduced motion the answer is shown whole.
+			!reduceMotion
 		) {
 			simulateTyping(lastMessage);
 		}
 
 		prevMessagesRef.current = messagesToDisplay;
-	}, [messagesToDisplay, live]);
+	}, [messagesToDisplay, live, reduceMotion]);
 
 	useFirestoreCollectionListener({
 		queryFn: () => {

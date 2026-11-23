@@ -2,8 +2,9 @@
  * Live reasoning stream: the dApp's half of the interface contract, version 1.
  *
  * The oracle keeps its own copy of these rules (`oracle/src/stream/streamContract.js`). The two
- * are held equal by the shared test vector (`vector.testdata.ts` here, `streamContract.test.js`
- * there), so a change here is a change to both repos at once.
+ * are held equal by the shared test vectors, one per frame type (`vector.testdata.ts` here,
+ * `streamContract.test.js` there), and both repos pin the same SHA-256 of their canonical form, so
+ * a change here is a change to both repos at once, to the vectors and to the pinned hash.
  *
  * A frame is a small JSON object sealed with the prompt's session key, exactly as the stored
  * answer file is. There is no associated data in the seal, so after decrypting, the reader must
@@ -33,6 +34,17 @@ export type DoneOutcome = (typeof DONE_OUTCOMES)[number];
 /** Every SSE event has this one name, so a proxy sees only lengths and timing. */
 export const SSE_EVENT_NAME = 'frame';
 
+/**
+ * The oracle applies every limit before it builds a frame. `framePlaintextBytes` holds for every
+ * frame but the `answer` frame, whose limit is `answerFramePlaintextBytes`: its text is up to
+ * 64 KiB of UTF-8, which JSON escaping can grow six times (a control character is `\u00XX`), and
+ * the rest of the frame is at most 429 bytes, so 6 x 64 KiB + 1 KiB bounds it. `answerCidChars`
+ * bounds the content id an answer frame carries (the longest storage id today is 59 characters;
+ * 128 also holds a base32 CIDv1 with a 512-bit hash), of the characters in `ANSWER_CID_PATTERN`.
+ * A frame over its limit is refused: before decrypting when its sealed text is longer than
+ * `MAX_SEALED_FRAME_CHARS` (`isSealedFrame`), and before parsing when its plaintext is over the
+ * limit (`parseFrameBytes`). Refused frames are dropped and counted like any malformed frame.
+ */
 export const LIMITS = Object.freeze({
 	maxSourcesPerFrame: 20,
 	sourceTitleChars: 300,
@@ -43,7 +55,23 @@ export const LIMITS = Object.freeze({
 	maxAttempts: 4,
 	answerTextBytes: 64 * 1024,
 	framePlaintextBytes: 16 * 1024,
+	answerFramePlaintextBytes: 6 * 64 * 1024 + 1024,
+	answerCidChars: 128,
 });
+
+const GCM_IV_BYTES = 12;
+const GCM_TAG_BYTES = 16;
+const base64Chars = (bytes: number): number => 4 * Math.ceil(bytes / 3);
+
+/**
+ * The characters of a sealed frame whose plaintext is `plaintextBytes` long: base64 of the IV, a
+ * dot, then base64 of the ciphertext with its tag appended (GCM adds no padding).
+ */
+export const sealedFrameChars = (plaintextBytes: number): number =>
+	base64Chars(GCM_IV_BYTES) + 1 + base64Chars(plaintextBytes + GCM_TAG_BYTES);
+
+/** The longest sealed frame the contract allows (an answer frame at its limit): 525,693. */
+export const MAX_SEALED_FRAME_CHARS = sealedFrameChars(LIMITS.answerFramePlaintextBytes);
 
 /** What a reader asks for and how. */
 export const STREAM_HTTP = Object.freeze({
@@ -69,6 +97,8 @@ const ANSWER_MESSAGE_ID_PATTERN = /^(0|[1-9][0-9]{0,77})$/;
 const RUN_PATTERN = /^[0-9a-f]{16}$/;
 const REPLICA_PATTERN = /^[a-z0-9-]{1,32}$/;
 const SSE_EVENT_ID_PATTERN = /^([0-9a-f]{16})\.(0|[1-9][0-9]{0,8})$/;
+/** A content id: the base32 and base64url characters the storage ids use. */
+const ANSWER_CID_PATTERN = new RegExp(`^[A-Za-z0-9_-]{1,${LIMITS.answerCidChars}}$`);
 /** A sealed frame: base64 IV, a dot, base64 ciphertext. Never a line break. */
 const SEALED_FRAME_PATTERN = /^[A-Za-z0-9+/]+={0,2}\.[A-Za-z0-9+/]+={0,2}$/;
 
@@ -78,8 +108,11 @@ export const isAnswerMessageId = (value: unknown): value is string =>
 export const isReplica = (value: unknown): value is string =>
 	typeof value === 'string' && REPLICA_PATTERN.test(value);
 
+/** Sealed text in the contract's shape and no longer than the largest frame. */
 export const isSealedFrame = (value: unknown): value is string =>
-	typeof value === 'string' && SEALED_FRAME_PATTERN.test(value);
+	typeof value === 'string' &&
+	value.length <= MAX_SEALED_FRAME_CHARS &&
+	SEALED_FRAME_PATTERN.test(value);
 
 export interface SseEventId {
 	run: string;
@@ -156,7 +189,7 @@ const frameSchema = z.discriminatedUnion('type', [
 		type: z.literal(FRAME_TYPES.ANSWER),
 		data: z.object({
 			text: z.string().refine(text => utf8Bytes(text) <= LIMITS.answerTextBytes),
-			answerMessageCID: z.string().min(1),
+			answerMessageCID: z.string().regex(ANSWER_CID_PATTERN),
 			reasoningDuration: z.number().finite().optional(),
 		}),
 	}),
@@ -174,4 +207,22 @@ export type StepFrame = Extract<Frame, { type: 'step' }>;
 export function parseFramePlaintext(value: unknown): Frame | null {
 	const result = frameSchema.safeParse(value);
 	return result.success ? result.data : null;
+}
+
+/**
+ * The frame, when the decrypted bytes are one within its size limit and in the contract's shape;
+ * otherwise null. Nothing over the answer frame limit is decoded or parsed. Never throws.
+ */
+export function parseFrameBytes(bytes: Uint8Array): Frame | null {
+	if (bytes.length > LIMITS.answerFramePlaintextBytes) return null;
+	let value: unknown;
+	try {
+		value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+	} catch {
+		return null;
+	}
+	const frame = parseFramePlaintext(value);
+	if (!frame) return null;
+	if (frame.type !== FRAME_TYPES.ANSWER && bytes.length > LIMITS.framePlaintextBytes) return null;
+	return frame;
 }

@@ -232,3 +232,40 @@ describe('a first offer that is the whole balance', () => {
 		expect(label()).toBeNull();
 	});
 });
+
+// The words the form shows, read from the dialog itself rather than from a schema: a schema
+// option the installed validation library no longer reads (it ignores unknown ones) would
+// change these to its own defaults while every schema-level test still passed.
+describe('the plan form says what is wrong in its own words', () => {
+	const daysField = () => document.getElementById('days') as HTMLInputElement;
+
+	async function type(field: HTMLInputElement, value: string) {
+		await act(async () => {
+			fireEvent.change(field, { target: { value } });
+		});
+	}
+
+	it.each([
+		['an empty limit', limitField, '', 'Limit must be a number.'],
+		['a limit of zero', limitField, '0', 'Limit must be greater than zero.'],
+		['a negative limit', limitField, '-5', 'Limit must be greater than zero.'],
+		['an empty duration', daysField, '', 'Days must be a number.'],
+		['a duration of zero days', daysField, '0', 'Duration must be at least one day.'],
+	])('for %s', async (_label, field, value, message) => {
+		await renderDialog();
+
+		await type(field(), value);
+
+		expect(screen.queryByText(message)).not.toBeNull();
+		expect(submitButton().hasAttribute('disabled')).toBe(true);
+	});
+
+	it('shows no message for a valid limit and duration', async () => {
+		await renderDialog();
+
+		await type(limitField(), '20');
+		await type(daysField(), '30');
+
+		expect(screen.queryByText(/must be/)).toBeNull();
+	});
+});

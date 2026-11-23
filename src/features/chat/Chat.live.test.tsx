@@ -25,6 +25,11 @@ const live = vi.hoisted(() => ({
 	provisional: new Set<string>(),
 }));
 const endpoint = vi.hoisted(() => ({ value: null as { url: string; mode: string } | null }));
+const motion = vi.hoisted(() => ({ reduced: false }));
+vi.mock('motion/react', async importOriginal => ({
+	...(await importOriginal<object>()),
+	useReducedMotion: () => motion.reduced,
+}));
 const mutation = () => ({ mutate: vi.fn(), isPending: false });
 
 vi.mock('@/hooks/useLiveReasoning', async importOriginal => {
@@ -215,6 +220,31 @@ describe('the live overlay in the chat', () => {
 		act(() => rerender(<Chat />));
 
 		expect(document.body.textContent).toContain('▍');
+	});
+
+	it('does not type the stored answer under reduced motion', () => {
+		motion.reduced = true;
+		const { rerender } = renderChat();
+
+		chatState.value = {
+			activeConversationId: '5',
+			activeConversationMessages: [PROMPT, { ...PLACEHOLDER, content: 'Prices rose a lot.' }],
+		};
+		act(() => rerender(<Chat />));
+
+		expect(screen.getByText('Prices rose a lot.')).toBeTruthy();
+		expect(document.body.textContent).not.toContain('▍');
+		motion.reduced = false;
+	});
+
+	it('keeps the provisional answer out of the announcements: the stored one is announced once', () => {
+		live.views.set('42', liveView({ answer: { text: 'Prices rose.', answerMessageCID: 'bafy1' } }));
+		live.provisional.add('42');
+
+		renderChat();
+
+		const answer = screen.getByTestId('live-provisional-answer');
+		expect(answer.getAttribute('aria-live')).toBe('off');
 	});
 
 	it('shows the live answer of a prompt sent from another device, after that prompt', () => {

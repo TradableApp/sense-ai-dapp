@@ -1,17 +1,18 @@
 /**
  * The live view of one awaited answer: proof, connection, decryption, schema, reducer. Each
  * frame is decrypted and folded in the order it arrived (a queue, since Web Crypto is
- * asynchronous). A frame that cannot be decrypted, is outside the schema, or names another
- * answer or run is dropped and counted, and never shown. Nothing here logs: a failure is
+ * asynchronous). A frame that is longer than the largest frame, cannot be decrypted, is over its
+ * plaintext limit (checked before parsing), is outside the schema, or names another answer or run
+ * is dropped and counted, and never shown. Nothing here logs: a failure is
  * counted in the state, and a refusal that can never pass is reported by kind only.
  *
  * The connection is passed in (`startStream`) so that only `useLiveReasoning` names the
  * transport (the `live-reasoning-ephemeral` guard).
  */
-import { decryptData } from '@/lib/crypto';
+import { decryptBytes } from '@/lib/crypto';
 import {
 	isSealedFrame,
-	parseFramePlaintext,
+	parseFrameBytes,
 	parseSseEventId,
 	type StreamEndpoint,
 	streamUrl,
@@ -49,13 +50,15 @@ export interface LiveAnswerSessionOptions {
 
 export interface LiveAnswerSession {
 	stop(): void;
+	/** The tab is shown again: the stream resumes from the cursor if it paused while hidden. */
+	wake(): void;
 }
 
 async function readFrame(sessionKey: CryptoKey, event: StreamEvent) {
 	const eventId = parseSseEventId(event.id);
 	if (!eventId || !isSealedFrame(event.data)) return null;
 	try {
-		const frame = parseFramePlaintext(await decryptData(sessionKey, event.data));
+		const frame = parseFrameBytes(await decryptBytes(sessionKey, event.data));
 		return frame ? { frame, eventId } : null;
 	} catch {
 		return null;
@@ -126,6 +129,8 @@ export function startLiveAnswerSession(options: LiveAnswerSessionOptions): LiveA
 				onEvent: event => {
 					// A frame that throws while folded is lost; the frames after it still apply.
 					queue = queue.then(() => fold(event)).catch(() => undefined);
+					// Settles once this frame is applied or dropped: the transport measures progress.
+					return queue;
 				},
 				getCursor: () => cursorOf(state),
 				onStop,
@@ -134,5 +139,5 @@ export function startLiveAnswerSession(options: LiveAnswerSessionOptions): LiveA
 		() => end('bad-request'),
 	);
 
-	return { stop };
+	return { stop, wake: () => handle?.wake() };
 }

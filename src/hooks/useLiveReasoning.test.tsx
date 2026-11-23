@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encryptData } from '@/lib/crypto';
 import type { FrameStreamOptions } from '@/lib/liveReasoning/frameTransport';
 import { forgetLiveReports } from '@/lib/liveReasoning/liveReport';
+import { FOLLOW_MAX_AGE_MS } from '@/lib/liveReasoning/pendingAnswers';
 import streamProof from '@/lib/liveReasoning/streamProof';
 import { importVectorKey } from '@/lib/liveReasoning/vector.testdata';
 
@@ -21,11 +22,12 @@ interface StartedStream {
 	options: FrameStreamOptions;
 	stop: ReturnType<typeof vi.fn>;
 	reconnect: ReturnType<typeof vi.fn>;
+	wake: ReturnType<typeof vi.fn>;
 }
 const streams = vi.hoisted(() => ({ started: [] as StartedStream[] }));
 vi.mock('@/lib/liveReasoning/frameTransport', () => ({
 	startFrameStream: (options: FrameStreamOptions) => {
-		const stream = { options, stop: vi.fn(), reconnect: vi.fn() };
+		const stream = { options, stop: vi.fn(), reconnect: vi.fn(), wake: vi.fn() };
 		streams.started.push(stream);
 		return stream;
 	},
@@ -34,11 +36,18 @@ vi.mock('@/lib/liveReasoning/frameTransport', () => ({
 const RUN = '0123456789abcdef';
 const OWNER = '0x00000000000000000000000000000000000000aa';
 
-const user = (id: string, extra: object = {}) => ({ id, role: 'user', content: 'q', ...extra });
+const user = (id: string, extra: object = {}) => ({
+	id,
+	role: 'user',
+	content: 'q',
+	createdAt: Date.now(),
+	...extra,
+});
 const placeholder = (id: string, extra: object = {}) => ({
 	id,
 	role: 'assistant',
 	content: null,
+	createdAt: Date.now(),
 	...extra,
 });
 
@@ -61,7 +70,9 @@ let sessionKey: CryptoKey;
 /** Seals a frame with the session key and hands it to the stream as the server would. */
 async function push(stream: StartedStream, value: ReturnType<typeof frame>, key = sessionKey) {
 	const data = await encryptData(key, value);
-	act(() => stream.options.onEvent({ id: `${value.run}.${value.seq}`, data }));
+	act(() => {
+		stream.options.onEvent({ id: `${value.run}.${value.seq}`, data });
+	});
 }
 
 interface Props {
@@ -110,6 +121,19 @@ describe('useLiveReasoning', () => {
 		expect(result.current.viewFor('42')).toBeUndefined();
 	});
 
+	it('opens no stream for an answer whose prompt is older than the stream can still exist', async () => {
+		const tooOld = Date.now() - FOLLOW_MAX_AGE_MS - 1_000;
+		mount([
+			user('41', { createdAt: tooOld }),
+			placeholder('42', { createdAt: tooOld }),
+			user('43', { status: 'pending', answerMessageId: '44', createdAt: tooOld }),
+		]);
+
+		await act(async () => {});
+
+		expect(streams.started).toHaveLength(0);
+	});
+
 	it('starts nothing without a session key', async () => {
 		mount([user('41'), placeholder('42')], null);
 
@@ -146,8 +170,12 @@ describe('useLiveReasoning', () => {
 
 		await push(stream, frame(1, STEP), otherKey);
 		const badSchema = await encryptData(sessionKey, { ...frame(1, STEP), type: 'token' });
-		act(() => stream.options.onEvent({ id: `${RUN}.1`, data: badSchema }));
-		act(() => stream.options.onEvent({ id: `${RUN}.1`, data: 'not a sealed frame' }));
+		act(() => {
+			stream.options.onEvent({ id: `${RUN}.1`, data: badSchema });
+		});
+		act(() => {
+			stream.options.onEvent({ id: `${RUN}.1`, data: 'not a sealed frame' });
+		});
 
 		await waitFor(() => expect(result.current.viewFor('42')?.dropped).toBe(3));
 		expect(result.current.viewFor('42')?.steps).toEqual([]);
@@ -206,7 +234,9 @@ describe('useLiveReasoning', () => {
 		await waitFor(() => expect(streams.started).toHaveLength(1));
 		await push(streamFor('42'), frame(0, RESET));
 		await push(streamFor('42'), frame(1, ANSWER));
-		await waitFor(() => expect(result.current.viewFor('42')?.answer).not.toBeNull());
+		// Waits for the answer frame itself: with no view yet, `answer` is undefined, which is not
+		// null, so a looser check would pass before the frame is decrypted and applied.
+		await waitFor(() => expect(result.current.viewFor('42')?.answer?.text).toBe('Prices rose.'));
 
 		rerender({
 			messages: [user('41'), placeholder('42', { content: 'Prices rose.' })],
@@ -328,7 +358,9 @@ describe('useLiveReasoning', () => {
 		const { rerender } = mount([user('41'), placeholder('42')]);
 		await waitFor(() => expect(streams.started).toHaveLength(1));
 		const stream = streamFor('42');
-		act(() => stream.options.onEvent({ id: `${RUN}.0`, data: 'x.y' }));
+		act(() => {
+			stream.options.onEvent({ id: `${RUN}.0`, data: 'x.y' });
+		});
 		act(() => stream.options.onStop('proof-refused'));
 		rerender({ messages: [user('41')], sessionKey, ownerAddress: OWNER });
 
@@ -340,5 +372,27 @@ describe('useLiveReasoning', () => {
 		expect(everything).not.toContain(proof);
 		expect(Sentry.captureException).toHaveBeenCalledTimes(1);
 		spies.forEach(spy => spy.mockRestore());
+	});
+
+	it('tells the stream when the tab is hidden, and wakes it when the tab is shown again', async () => {
+		const visibility = vi.spyOn(document, 'visibilityState', 'get');
+		mount([user('41'), placeholder('42')]);
+		await waitFor(() => expect(streams.started).toHaveLength(1));
+		const stream = streamFor('42');
+
+		visibility.mockReturnValue('hidden');
+		expect(stream.options.isHidden?.()).toBe(true);
+		act(() => {
+			document.dispatchEvent(new Event('visibilitychange'));
+		});
+		expect(stream.wake).not.toHaveBeenCalled();
+
+		visibility.mockReturnValue('visible');
+		expect(stream.options.isHidden?.()).toBe(false);
+		act(() => {
+			document.dispatchEvent(new Event('visibilitychange'));
+		});
+		expect(stream.wake).toHaveBeenCalledTimes(1);
+		visibility.mockRestore();
 	});
 });

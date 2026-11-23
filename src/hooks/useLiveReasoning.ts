@@ -29,6 +29,9 @@ const CLEARING_ENDS: ReadonlySet<SessionEnd> = new Set([
 	'proof-refused',
 ]);
 
+/** As the live state poller reads it: a hidden tab opens no stream connection. */
+const isHidden = () => document.visibilityState === 'hidden';
+
 /** `performance` names read by the e2e suite (no telemetry is sent). */
 const liveAnswerMark = (id: string) => `live-answer:${id}`;
 const storedAnswerMark = (id: string) => `stored-answer:${id}`;
@@ -76,7 +79,8 @@ export default function useLiveReasoning({
 	const sessionsRef = useRef(new Map<string, LiveAnswerSession>());
 	const endedRef = useRef(new Set<string>());
 	const provisionalRef = useRef(new Set<string>());
-	const pendingKey = pendingAnswerIds(messages).join(',');
+	// Read at each render: an answer that ages past the bound stops being followed at the next.
+	const pendingKey = pendingAnswerIds(messages, Date.now()).join(',');
 
 	// A new wallet or session (or unmount) stops every stream and clears what was shown.
 	useEffect(() => {
@@ -91,6 +95,15 @@ export default function useLiveReasoning({
 			provisional.clear();
 		};
 	}, [sessionKey, ownerAddress, endpoint]);
+
+	// A tab shown again resumes each stream that paused while it was hidden.
+	useEffect(() => {
+		const onVisibilityChange = () => {
+			if (!isHidden()) sessionsRef.current.forEach(session => session.wake());
+		};
+		document.addEventListener('visibilitychange', onVisibilityChange);
+		return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+	}, []);
 
 	useEffect(() => {
 		if (!endpoint || !sessionKey) return;
@@ -121,7 +134,7 @@ export default function useLiveReasoning({
 				answerMessageId: id,
 				sessionKey,
 				endpoint,
-				startStream: startFrameStream,
+				startStream: options => startFrameStream({ ...options, isHidden }),
 				onState: state => {
 					setLiveView(id, state);
 					if (state.answer && !provisionalRef.current.has(id)) {

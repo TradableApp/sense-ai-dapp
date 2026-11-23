@@ -10,6 +10,7 @@ import {
 	initialLiveState,
 	type LiveAnswerState,
 	MAX_HELD_FRAMES,
+	MAX_SOURCES_PER_ATTEMPT,
 } from './liveReducer';
 
 const ID = '42';
@@ -221,5 +222,97 @@ describe('the live reducer', () => {
 		applyFrame(started, step(3, 'three'), { run: RUN_A, seq: 3 }, 0);
 
 		expect(JSON.stringify(started)).toBe(snapshot);
+	});
+
+	it('takes a reset of another run only at seq 0: a later one is dropped and asks for a fresh connection', () => {
+		const first = applyAll([reset(), step(1, 'one')]).state;
+		const lateReset = frame(3, { type: 'reset', data: { reason: 'retry' } }, RUN_B);
+
+		const { state, effect } = applyFrame(first, lateReset, { run: RUN_B, seq: 3 }, 0);
+
+		expect(effect).toBe('reconnect-fresh');
+		expect(state.run).toBe(RUN_A);
+		expect(titles(state)).toEqual(['one']);
+		expect(state.dropped).toBe(1);
+	});
+
+	it('keeps the dropped count across a new run', () => {
+		const first = dropFrame(applyAll([reset()]).state);
+
+		const { state } = applyAll([reset(RUN_B)], first);
+
+		expect(state.run).toBe(RUN_B);
+		expect(state.dropped).toBe(1);
+	});
+
+	it('applies held frames in seq order, whatever order they arrived in', () => {
+		const started = applyAll([reset()]).state;
+
+		const { state } = applyAll([step(3, 'three'), step(2, 'two'), step(1, 'one')], started);
+
+		expect(titles(state)).toEqual(['one', 'two', 'three']);
+		expect(state.held).toEqual([]);
+		expect(state.gapSince).toBeNull();
+		expect(cursorOf(state)).toBe(`${RUN_A}.3`);
+	});
+
+	it('holds a frame received twice after a gap only once', () => {
+		const started = applyAll([reset()]).state;
+
+		const held = applyAll([step(2, 'two'), step(2, 'two')], started).state;
+		const { state } = applyFrame(held, step(1, 'one'), { run: RUN_A, seq: 1 }, 0);
+
+		expect(held.held).toHaveLength(1);
+		expect(titles(state)).toEqual(['one', 'two']);
+	});
+
+	it('never moves the attempt backwards', () => {
+		const attemptFrame = (seq: number, n: number) =>
+			frame(seq, { type: 'attempt', data: { attempt: n } });
+
+		const { state } = applyAll([reset(), attemptFrame(1, 3), attemptFrame(2, 2)]);
+
+		expect(state.attempt).toBe(3);
+		expect(state.nextSeq).toBe(3);
+	});
+
+	it("shows at most the contract's 64 steps per attempt, and still moves the cursor past the rest", () => {
+		const steps = Array.from({ length: 70 }, (_, i) => step(i + 1, `s${i + 1}`));
+		const fallback = step(71, 'fallback', 2);
+
+		const { state } = applyAll([reset(), ...steps, fallback]);
+
+		expect(state.steps.filter(s => s.attempt === 1)).toHaveLength(64);
+		expect(titles(state).at(63)).toBe('s64');
+		expect(titles(state).at(-1)).toBe('fallback');
+		expect(cursorOf(state)).toBe(`${RUN_A}.71`);
+	});
+
+	it('shows at most MAX_SOURCES_PER_ATTEMPT sources per attempt, however many frames carry them', () => {
+		const sourcesFrame = (seq: number, attemptNo: number, count: number) =>
+			frame(seq, {
+				type: 'sources',
+				data: {
+					attempt: attemptNo,
+					sources: Array.from({ length: count }, (_, i) => ({
+						title: `t${seq}-${i}`,
+						url: `https://example.com/${seq}/${i}`,
+					})),
+				},
+			});
+
+		const { state } = applyAll([
+			reset(),
+			sourcesFrame(1, 1, 15),
+			sourcesFrame(2, 1, 15),
+			sourcesFrame(3, 1, 15),
+			sourcesFrame(4, 2, 15),
+		]);
+
+		expect(state.sources.filter(s => s.attempt === 1)).toHaveLength(MAX_SOURCES_PER_ATTEMPT);
+		expect(state.sources.filter(s => s.attempt === 2)).toHaveLength(15);
+		expect(state.sources[0].title).toBe('t1-0');
+		expect(cursorOf(state)).toBe(`${RUN_A}.4`);
+		expect(MAX_SOURCES_PER_ATTEMPT).toBe(20);
 	});
 });
