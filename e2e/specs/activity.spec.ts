@@ -31,7 +31,11 @@ const FEE_TOKEN_DECIMALS = 18;
 /** The amount cell's text as the card shows it, matched at the end of the row's text: the exact
  *  amount, a space and the symbol, not preceded by a digit, point or sign. */
 function shownAmount(raw: string): RegExp {
-	const exact = formatTokenAmount(BigInt(raw), FEE_TOKEN_DECIMALS).replace(/\./g, '\\.');
+	// Every regex metacharacter is escaped, the backslash included, so the amount is matched as text.
+	const exact = formatTokenAmount(BigInt(raw), FEE_TOKEN_DECIMALS).replace(
+		/[.*+?^${}()|[\]\\]/g,
+		'\\$&',
+	);
 	return new RegExp(`(?:^|[^0-9.-])${exact} \\S+$`);
 }
 
