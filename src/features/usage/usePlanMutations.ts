@@ -201,6 +201,7 @@ async function clearApproval(
 	contracts: ContractConfig,
 	notice: string,
 	step: ApprovalNotClearedStep,
+	owner: string | undefined,
 ): Promise<void> {
 	const noticeId = toast.info(notice);
 	try {
@@ -211,7 +212,7 @@ async function clearApproval(
 			throw new Error('The approval of zero was reverted on chain, so the approval is unchanged.');
 		}
 	} catch (error) {
-		throw new ApprovalNotClearedError(error, undefined, step);
+		throw new ApprovalNotClearedError(error, undefined, step, owner);
 	} finally {
 		toast.dismiss(noticeId);
 	}
@@ -251,13 +252,18 @@ async function cancelLimitAndClearApproval(
 	try {
 		allowance = await readEscrowAllowance(chain, contracts, owner);
 	} catch (error) {
-		throw new ApprovalNotClearedError(error, 'unchecked');
+		throw new ApprovalNotClearedError(error, 'unchecked', 'revoke', owner);
 	}
 	if (allowance === 0n) return;
 	// thirdweb sends from the account selected now: another one would remove its own approval
 	// and leave this one's in place.
 	if (!isSameAddress(currentAccount(), owner)) {
-		throw new ApprovalNotClearedError(new Error('The account changed'), 'account-changed');
+		throw new ApprovalNotClearedError(
+			new Error('The account changed'),
+			'account-changed',
+			'revoke',
+			owner,
+		);
 	}
 	// A plan set meanwhile from another tab or device (one query client holds only its own
 	// plan transactions to one at a time): the approval is now that plan's, and an approval
@@ -267,10 +273,15 @@ async function cancelLimitAndClearApproval(
 	try {
 		isLimitStanding = await readLimitStands(chain, contracts, owner);
 	} catch (error) {
-		throw new ApprovalNotClearedError(error, 'plan-unchecked');
+		throw new ApprovalNotClearedError(error, 'plan-unchecked', 'revoke', owner);
 	}
 	if (isLimitStanding) {
-		throw new ApprovalNotClearedError(new Error('A limit stands again'), 'plan-active-again');
+		throw new ApprovalNotClearedError(
+			new Error('A limit stands again'),
+			'plan-active-again',
+			'revoke',
+			owner,
+		);
 	}
 
 	await clearApproval(
@@ -279,6 +290,7 @@ async function cancelLimitAndClearApproval(
 		contracts,
 		'Step 2/2: Please confirm removing the token approval in your wallet.',
 		'revoke',
+		owner,
 	);
 }
 
@@ -462,7 +474,7 @@ function useSetPlanMutation({ onStatus, onDone }: PlanMutationOptions) {
 function useRevokePlanMutation({
 	onDone,
 	retryClear,
-}: Pick<PlanMutationOptions, 'onDone'> & { retryClear: () => void }) {
+}: Pick<PlanMutationOptions, 'onDone'> & { retryClear: (_owner: string | undefined) => void }) {
 	const activeWallet = useActiveWallet();
 	const { mutateAsync: send } = useSendAndConfirmTransaction();
 	const queryClient = useQueryClient();
@@ -489,7 +501,7 @@ function useRevokePlanMutation({
 			if (error instanceof ApprovalNotClearedError) {
 				// The limit is cancelled: the plan is gone, so the dialog closes and the
 				// dashboard is read again, and the notice offers the step that is left.
-				showApprovalNotCleared(error, retryClear);
+				showApprovalNotCleared(error, () => retryClear(error.owner));
 				refreshPlanQueriesSoon(queryClient, activeWallet);
 				onDone();
 				return;
@@ -524,6 +536,17 @@ function showClearRefused(error: ClearApprovalRefusedError, retry: () => void): 
 		toast.warning(error.title, { description: error.message });
 		return;
 	}
+	if (error.kind === 'account-changed') {
+		// Replaces the notice whose action it was, and offers nothing: the removal would go
+		// from the account selected now.
+		toast.warning(error.title, {
+			id: APPROVAL_NOT_CLEARED_TOAST_ID,
+			description: error.message,
+			duration: Infinity,
+			action: undefined,
+		});
+		return;
+	}
 	toast.warning(error.title, {
 		id: APPROVAL_NOT_CLEARED_TOAST_ID,
 		description: error.message,
@@ -533,40 +556,48 @@ function showClearRefused(error: ClearApprovalRefusedError, retry: () => void): 
 }
 
 /**
+ * Who a removal is for. A notice that offers the removal again passes the account it was
+ * raised for, and the removal then refuses, sending nothing, while another account is
+ * selected: it would go from that one. Without it (the onboarding notice, which is read for
+ * the account selected now), the removal is for the account selected when it is pressed.
+ */
+export interface ClearRequest {
+	owner: string | undefined;
+}
+
+/**
  * Sends the approval of zero for the escrow, and nothing else, once the spending limit has
  * been read and none stands (under a standing limit the approval is the plan's, and only
- * Revoke removes it) and an approval is left. Started from the notice a half-finished revoke shows, or from the
- * dashboard's notice of an approval left with no plan.
+ * Revoke removes it) and an approval is left. Started from the notice a half-finished revoke
+ * shows, which passes the account it was for, or from the onboarding notice of an approval
+ * left with no plan.
  */
 export function useClearApprovalMutation() {
 	const activeWallet = useActiveWallet();
 	const { mutateAsync: send } = useSendAndConfirmTransaction();
 	const queryClient = useQueryClient();
 
-	const mutation = useMutation<void, Error, void>({
+	const mutation = useMutation<void, Error, ClearRequest | void>({
 		mutationKey: PLAN_SEND_KEY,
-		mutationFn: async () => {
+		mutationFn: async request => {
+			const selected = activeWallet?.getAccount()?.address;
+			const owner = request ? request.owner : selected;
 			try {
+				if (request && !isSameAddress(selected, request.owner)) {
+					throw new ClearApprovalRefusedError('account-changed', undefined, request.owner);
+				}
 				const { chain, contracts } = connectedContracts(activeWallet);
 				let isLimitStanding: boolean;
 				try {
-					isLimitStanding = await readLimitStands(
-						chain,
-						contracts,
-						activeWallet?.getAccount()?.address,
-					);
+					isLimitStanding = await readLimitStands(chain, contracts, owner);
 				} catch (error) {
-					throw new ClearApprovalRefusedError('plan-unchecked', error);
+					throw new ClearApprovalRefusedError('plan-unchecked', error, owner);
 				}
-				if (isLimitStanding) throw new ClearApprovalRefusedError('plan-active');
+				if (isLimitStanding) throw new ClearApprovalRefusedError('plan-active', undefined, owner);
 				// Removed since (another device, or an earlier step confirmed late): nothing to
 				// sign. A read that fails sends it all the same: an approval of zero changes
 				// nothing else.
-				const allowance = await readEscrowAllowance(
-					chain,
-					contracts,
-					activeWallet?.getAccount()?.address,
-				).catch(error => {
+				const allowance = await readEscrowAllowance(chain, contracts, owner).catch(error => {
 					console.error(
 						'clearApprovalMutation allowance read Error:',
 						error instanceof Error ? error.name : typeof error,
@@ -580,11 +611,12 @@ export function useClearApprovalMutation() {
 					contracts,
 					'Please confirm removing the token approval in your wallet.',
 					'removal',
+					owner,
 				);
 			} catch (error) {
 				const isOwnError =
 					error instanceof ApprovalNotClearedError || error instanceof ClearApprovalRefusedError;
-				throw isOwnError ? error : new ApprovalNotClearedError(error, undefined, 'removal');
+				throw isOwnError ? error : new ApprovalNotClearedError(error, undefined, 'removal', owner);
 			}
 		},
 		onSuccess: async () => {
@@ -593,10 +625,11 @@ export function useClearApprovalMutation() {
 		},
 		onError: async error => {
 			console.error('clearApprovalMutation Error:', error.name);
-			const retry = () => startedAlone(mutation, queryClient).mutate();
 			if (error instanceof ClearApprovalRefusedError) {
+				const retry = () => startedAlone(mutation, queryClient).mutate({ owner: error.owner });
 				showClearRefused(error, retry);
 			} else if (error instanceof ApprovalNotClearedError) {
+				const retry = () => startedAlone(mutation, queryClient).mutate({ owner: error.owner });
 				showApprovalNotCleared(error, retry);
 			}
 			refreshPlanQueriesSoon(queryClient, activeWallet);
@@ -618,7 +651,7 @@ export default function usePlanMutations(options: PlanMutationOptions) {
 		setPlanMutation: useSetPlanMutation(options),
 		revokeMutation: useRevokePlanMutation({
 			onDone: options.onDone,
-			retryClear: () => clearApprovalMutation.mutate(),
+			retryClear: owner => clearApprovalMutation.mutate({ owner }),
 		}),
 		clearApprovalMutation,
 	};
