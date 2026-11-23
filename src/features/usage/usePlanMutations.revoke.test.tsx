@@ -326,8 +326,11 @@ describe('removing the approval again from the notice', () => {
 		expect(vi.mocked(readContract).mock.invocationCallOrder[0]).toBeLessThan(
 			sendAndConfirm.mock.invocationCallOrder[2],
 		);
-		expect(toast.success).toHaveBeenCalledWith('Access Revoked', {
-			description: 'The AI agent can no longer spend your tokens.',
+		// The removal says what it did, nothing more: the plan was already gone, so it did not
+		// revoke a plan (the same notice is offered where no plan was active this visit).
+		expect(toast.success).toHaveBeenCalledTimes(1);
+		expect(toast.success).toHaveBeenCalledWith('Approval Removed', {
+			description: 'The AI agent is no longer approved to use your tokens.',
 		});
 	});
 
