@@ -34,6 +34,16 @@ import { STORED_ANSWER } from '../pages/ChatPage';
 
 /** The mock oracle's fixed step titles, in order (MOCK_E2E_REASONING). */
 const MOCK_STEP_TITLES = ['Interpreting the request', 'Synthesising the answer'];
+/** The mock oracle's fixed step descriptions, in the same order (MOCK_E2E_REASONING). */
+const MOCK_STEP_DESCRIPTIONS = [
+	"Identified the user's intent and the key entities to address.",
+	'Combined the relevant on-chain and market context into a concise response.',
+];
+/**
+ * Live steps are typed out (30 ms a character): the longer mock description takes about 2.2 s,
+ * well inside the 6 s the mock answer is held after its steps.
+ */
+const LIVE_TYPED_MS = 10_000;
 /** The mock oracle's first fixed source (MOCK_E2E_SOURCES). */
 const MOCK_SOURCE = { title: 'Tradable Documentation', href: 'https://tradable.app/docs' };
 
@@ -158,17 +168,24 @@ function landedAt(snapshots: LiveSnapshot[]): number {
 	return landed;
 }
 
-/** The stored record as the page shows it: the open disclosure's step titles (no live view). */
-async function storedSteps(page: Page): Promise<Pick<LiveSnapshot, 'titles' | 'earlier'>> {
+/**
+ * The stored record as the page shows it: the open disclosure's step titles and descriptions
+ * (no live view).
+ */
+async function storedSteps(
+	page: Page,
+): Promise<Pick<LiveSnapshot, 'titles' | 'earlier'> & { descriptions: string[] }> {
 	return page.evaluate(() => {
-		const titles = [...document.querySelectorAll('[data-testid="reasoning-step"]')]
-			.filter(step => !step.closest('[data-testid="reasoning-earlier-attempt"]'))
-			.map(step => step.querySelector('h4')?.textContent?.trim() ?? '');
+		const current = [...document.querySelectorAll('[data-testid="reasoning-step"]')].filter(
+			step => !step.closest('[data-testid="reasoning-earlier-attempt"]'),
+		);
+		const titles = current.map(step => step.querySelector('h4')?.textContent?.trim() ?? '');
+		const descriptions = current.map(step => step.querySelector('p')?.textContent?.trim() ?? '');
 		const earlier =
 			document
 				.querySelector('[data-testid="reasoning-earlier-attempt"] button')
 				?.textContent?.trim() ?? null;
-		return { titles, earlier };
+		return { titles, descriptions, earlier };
 	});
 }
 
@@ -303,6 +320,10 @@ test.describe('Live reasoning stream (T-STREAM)', () => {
 				'Explain recent BTC momentum __E2E_REASONING__ __E2E_STEP_MS__:2000 __E2E_DELAY_MS__:6000',
 			);
 			await expect(liveSteps).toHaveCount(MOCK_STEP_TITLES.length, { timeout: BUDGET.answerMs });
+			// Each live step typed out in full: the descriptions shown while the answer is awaited.
+			await expect(liveSteps.locator('p')).toHaveText(MOCK_STEP_DESCRIPTIONS, {
+				timeout: LIVE_TYPED_MS,
+			});
 		}
 
 		// The stored answer lands on the same page and the live view goes.
@@ -328,6 +349,13 @@ test.describe('Live reasoning stream (T-STREAM)', () => {
 		const stored = await storedSteps(freshPage);
 		expect(stored.titles, 'stored steps equal the steps shown live').toEqual(shown?.titles);
 		expect(stored.earlier, 'earlier attempts equal too').toEqual(shown?.earlier ?? null);
+		// The descriptions too, where the steps are known: the mock's, typed out live above. On
+		// testnet a real step can still be typing when its answer lands, so only titles compare.
+		if (CHAIN !== 'testnet') {
+			expect(stored.descriptions, 'stored descriptions equal the ones shown live').toEqual(
+				MOCK_STEP_DESCRIPTIONS,
+			);
+		}
 		expectNoLiveReport(traffic);
 	});
 
