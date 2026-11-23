@@ -1,15 +1,16 @@
 /**
  * The shared test vectors of the live reasoning contract, version 1: one per frame type, each
  * with the fixed key, its own fixed IV and a fixed plaintext. The oracle holds the same data in
- * `oracle/test/streamContract.test.js`, and both repos pin the same SHA-256 of it
- * (`STREAM_VECTORS_SHA256`), since no CI job checks one repo against the other.
+ * `oracle/test/fixtures/streamVectors.json`, which `oracle/test/streamContract.test.js` loads,
+ * and both repos pin the same SHA-256 of it (`STREAM_VECTORS_SHA256`, the oracle's in that test),
+ * since no CI job checks one repo against the other.
  *
  * The hash is of the canonical form: JSON with the keys of every object sorted (JavaScript's
  * default sort, by UTF-16 code unit), arrays kept in order, no whitespace, strings and numbers as
  * JSON.stringify writes them; SHA-256 of its UTF-8, in lower-case hex (`canonicalJson` below; the
  * oracle's is the same function). If a vector changes here, update the hash here, then copy the
- * vectors and the same hash into the oracle's test: a change on one side only fails that side's
- * pin, or leaves the two hashes different.
+ * vectors into the oracle's fixture and the same hash into its test: a change on one side only
+ * fails that side's pin, or leaves the two hashes different.
  */
 export interface FrameVector {
 	type: string;
