@@ -4,7 +4,7 @@ import { Provider } from 'react-redux';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import StorageUnavailableBanner from '@/components/StorageUnavailableBanner';
-import uiReducer, { setStorageDegraded } from '@/store/uiSlice';
+import uiReducer, { setGraphUnavailable, setStorageDegraded } from '@/store/uiSlice';
 
 function renderBanner(store = configureStore({ reducer: { ui: uiReducer } })) {
 	const view = render(
@@ -75,5 +75,33 @@ describe('StorageUnavailableBanner', () => {
 			store.dispatch(setStorageDegraded(true));
 		});
 		expect(banner()?.textContent).toMatch(/history temporarily unavailable/i);
+	});
+
+	// The Graph could not be read: what is shown is what was last saved here, and that must be
+	// said, or an old history passes for the current one.
+	it('tells the user the history could not be refreshed and will be tried again', () => {
+		const store = renderBanner();
+		act(() => {
+			store.dispatch(setGraphUnavailable(true));
+		});
+		expect(banner()?.textContent).toMatch(/history could not be refreshed/i);
+		expect(banner()?.textContent).toMatch(/tried again/i);
+		expect(banner()?.textContent).not.toMatch(/storage providers/i);
+	});
+
+	it('keeps a dismissal of one notice from hiding the other', () => {
+		const store = renderBanner();
+		act(() => {
+			store.dispatch(setStorageDegraded(true));
+		});
+		fireEvent.click(screen.getByRole('button', { name: /dismiss/i }));
+		act(() => {
+			store.dispatch(setStorageDegraded(false));
+			store.dispatch(setGraphUnavailable(true));
+		});
+		expect(banner()?.textContent).toMatch(/history could not be refreshed/i);
+		fireEvent.click(screen.getByRole('button', { name: /dismiss/i }));
+		expect(banner()).toBeNull();
+		expect(store.getState().ui.graphUnavailableDismissed).toBe(true);
 	});
 });

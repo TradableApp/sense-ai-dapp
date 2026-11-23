@@ -39,6 +39,21 @@ export async function deriveKeyFromEntropy(entropy: string, ownerAddress: string
 }
 
 /**
+ * Bytes handed to one `String.fromCharCode` call. Spreading a whole ciphertext into one call
+ * passes one argument per byte and overflows the stack once it is a few hundred kilobytes (a
+ * conversation of about a thousand messages), so the bytes are converted in slices this size.
+ */
+const CHAR_CODE_SLICE = 0x8000;
+
+/** Base64 of `bytes`, the same text `btoa(String.fromCharCode(...bytes))` gives, at any size. */
+function bytesToBase64(bytes: Uint8Array): string {
+	const slices = Array.from({ length: Math.ceil(bytes.length / CHAR_CODE_SLICE) }, (_, i) =>
+		String.fromCharCode(...bytes.subarray(i * CHAR_CODE_SLICE, (i + 1) * CHAR_CODE_SLICE)),
+	);
+	return btoa(slices.join(''));
+}
+
+/**
  * Encrypts a JavaScript object using the derived session key.
  * @param {CryptoKey} key - The AES-GCM key derived from the user's signature.
  * @param {object} data - The JavaScript object to encrypt.
@@ -54,8 +69,8 @@ export async function encryptData(key: CryptoKey, data: unknown) {
 		encodedData,
 	);
 
-	const ivString = btoa(String.fromCharCode(...iv));
-	const encryptedString = btoa(String.fromCharCode(...new Uint8Array(encryptedContent)));
+	const ivString = bytesToBase64(iv);
+	const encryptedString = bytesToBase64(new Uint8Array(encryptedContent));
 
 	return `${ivString}.${encryptedString}`;
 }
