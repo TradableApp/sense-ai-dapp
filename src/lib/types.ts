@@ -41,6 +41,8 @@ export interface Message {
 	reasoning?: Array<{ title: string; description: string; attempt?: number }>;
 	sources?: Array<{ title: string; url: string; attempt?: number }>;
 	reasoningDuration?: number;
+	// The attempt that produced the answer (lib/reasoningAttempts); absent from older files.
+	answerAttempt?: number;
 }
 
 // Search index types

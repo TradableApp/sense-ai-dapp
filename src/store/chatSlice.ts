@@ -20,6 +20,8 @@ export interface ActiveMessage {
 	sources?: Array<{ title: string; url: string; attempt?: number }>;
 	reasoning?: Array<{ title: string; description: string; attempt?: number }>;
 	reasoningDuration?: number;
+	// The attempt that produced the answer (lib/reasoningAttempts); absent from older files.
+	answerAttempt?: number;
 	[key: string]: unknown;
 }
 

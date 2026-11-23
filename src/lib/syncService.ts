@@ -20,6 +20,7 @@ import type { GetUserUpdatesQuery, GetUserUpdatesQueryVariables } from './graph/
 import mergeMessages from './mergeMessages';
 import { writeMessageCache } from './messageCacheStore';
 import { fetchPayload, type PayloadFetchDeps, type PayloadStorageConfig } from './payloadStorage';
+import { withCheckedAnswerAttempt } from './reasoningAttempts';
 import { mergeSearchIndexDeltas } from './searchService';
 import type { Message } from './types';
 
@@ -451,7 +452,8 @@ export default async function syncWithRemote(
 					return {
 						message: messageData
 							? {
-									...messageData,
+									// The answer attempt is kept only as a positive safe integer.
+									...withCheckedAnswerAttempt(messageData),
 									id: msg.id,
 									messageCID: msg.messageCID,
 							  }

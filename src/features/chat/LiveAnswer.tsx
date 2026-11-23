@@ -6,6 +6,7 @@ import senseaiLogo from '@/assets/logos/senseai-logo.svg';
 import { Message, MessageAvatar, MessageContent } from '@/components/ai/message';
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ai/reasoning';
 import type { LiveAnswerState } from '@/lib/liveReasoning/liveReducer';
+import { storedAnswerAttempt } from '@/lib/reasoningAttempts';
 import type { ActiveMessage } from '@/store/chatSlice';
 
 import { markdownComponents, remarkPlugins } from './markdown';
@@ -108,7 +109,9 @@ export function AssistantReasoning({ message, live, isThinking }: AssistantReaso
 					hidden={!hasReasoning}
 					reasoningSteps={steps}
 					sources={sources}
-					currentAttempt={shown?.attempt}
+					// Live: the attempt the stream is on. Stored: the attempt the record says answered
+					// (none, or one this build cannot use, means the highest among the items).
+					currentAttempt={shown ? shown.attempt : storedAnswerAttempt(message.answerAttempt)}
 					data-testid={shown ? 'live-reasoning' : undefined}
 				/>
 			</Reasoning>

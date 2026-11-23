@@ -8,6 +8,7 @@
  */
 import type { LiveAnswerState } from '@/lib/liveReasoning/liveReducer';
 import { type MismatchKind, reportMismatch } from '@/lib/liveReasoning/liveReport';
+import { currentAttemptOf, storedCurrentAttempt } from '@/lib/reasoningAttempts';
 
 export { forgetLiveReports } from '@/lib/liveReasoning/liveReport';
 
@@ -15,6 +16,8 @@ export interface StoredAnswer {
 	content?: string | null;
 	reasoning?: ReadonlyArray<{ title: string; description: string; attempt?: number }>;
 	sources?: ReadonlyArray<{ title: string; url: string; attempt?: number }>;
+	/** The attempt that answered, as the record says (checked here: anything else is none). */
+	answerAttempt?: unknown;
 }
 
 export type Comparison =
@@ -57,6 +60,16 @@ export function compareLiveWithStored(live: LiveAnswerState, stored: StoredAnswe
 	if (!sameSteps(live.steps, reasoning)) return mismatch('step-text');
 	if (live.sources.length !== sources.length) return mismatch('source-count');
 	if (!sameSources(live.sources, sources)) return mismatch('source-text');
+	// Which attempt is current decides what goes under "Earlier attempt"; with no items to
+	// group it shows nothing, and the record that has none is not told apart.
+	const items = [...reasoning, ...sources];
+	if (
+		items.length > 0 &&
+		currentAttemptOf([...live.steps, ...live.sources], live.attempt) !==
+			storedCurrentAttempt(items, stored.answerAttempt)
+	) {
+		return mismatch('answer-attempt');
+	}
 	if (live.answer && live.answer.text !== (stored.content ?? '')) return mismatch('answer-text');
 	return { kind: 'match' };
 }
