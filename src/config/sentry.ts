@@ -65,7 +65,9 @@ export function initSentry() {
 		integrations: [
 			// Every performance mark and measure would become a span named after it; the live
 			// reasoning timing marks carry an answer id and are left out.
-			Sentry.browserTracingIntegration({ ignorePerformanceApiSpans: [...LIVE_PERFORMANCE_ENTRIES] }),
+			Sentry.browserTracingIntegration({
+				ignorePerformanceApiSpans: [...LIVE_PERFORMANCE_ENTRIES],
+			}),
 		],
 		tracesSampleRate,
 		sampleRate,
