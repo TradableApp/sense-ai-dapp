@@ -363,28 +363,14 @@ export default async function syncWithRemote(
 		const graphUpdates = await fetchUpdatesFromTheGraph(ownerAddress, lastSync);
 		graphRead = true;
 
-		// 3. Determine the new timestamp cursor.
-		let newLastSync = lastSync;
-		if (graphUpdates.length > 0) {
-			// If we got updates, the new cursor is the timestamp of the newest item we received.
-			// Since graphUpdates is normalized to MS, this works directly.
-			newLastSync = Math.max(...graphUpdates.map(c => c.lastMessageCreatedAt));
-		} else {
-			// If no updates, we can safely advance the cursor towards the present time,
-			// leaving a buffer for indexing delays.
-			const syncTime = Date.now();
-			const buffer = 60 * 1000; // 1 minute buffer
+		// 3. A pass that read no conversation leaves the cursor where it was. Moving it to the
+		// device's clock would hide a first conversation whose block time is earlier than that
+		// clock (a device running ahead, or indexing running late), and costs nothing to skip:
+		// asking again from the same cursor returns nothing until something new is indexed.
+		if (graphUpdates.length === 0) return NOTHING_UNAVAILABLE;
 
-			if (syncTime - buffer > lastSync) {
-				newLastSync = syncTime - buffer;
-			}
-		}
-
-		// If there are no updates, we're done. Update the timestamp to prevent constant polling on an idle account.
-		if (graphUpdates.length === 0) {
-			await setLastSyncedAt(sessionKey, ownerAddress, newLastSync);
-			return NOTHING_UNAVAILABLE;
-		}
+		// The new cursor is the newest conversation read (graphUpdates is normalized to MS).
+		const newLastSync = Math.max(...graphUpdates.map(c => c.lastMessageCreatedAt));
 
 		// 3. "Hydrate" the Graph data by fetching and decrypting all associated CIDs from Arweave in parallel.
 		const hydrationPromises = graphUpdates.map(async (conv: ConversationUpdate) => {
