@@ -7,9 +7,9 @@
 
 ## Context
 
-Changing the contract pair or the fee token, and handling an incident, need every running
-copy of the dApp (open tabs, installed PWAs) to stop taking new payments before the oracle
-moves, without a reload and without a contract change. Until now the only way was a
+Changing the contract pair, maintenance and incidents need every running copy of the dApp
+(open tabs, installed PWAs) to stop taking new payments for one pair, without a reload and
+without a contract change. Until now the only way was a
 runbook: deploy a build and hope every copy reloads. A copy that kept running would go on
 paying into a pair that is being retired.
 
@@ -22,9 +22,9 @@ action may go ahead.
 
 ## Decision
 
-**a. Where it lives: a Firestore document**, read-only to the dApp, written only through the
-Admin SDK or the console under Google Cloud permissions, with audit logs on. The rule is
-`allow get: if true; allow list, write: if false;`.
+**a. Where it lives: a Firestore document**, read-only to the dApp, written only by the owner
+through the Firestore API with their own credentials (the client rule refuses every write).
+The rule is `allow get: if true; allow list, write: if false;`.
 
 **b. Scope: keyed by chain id and agent**, `senseai_prompts_switch/{chainId}_{agentLower}`.
 There is no global document.
@@ -56,11 +56,11 @@ first and any fee token notice after it. One `onSnapshot` per page feeds a store
 - **Negative:** a write by someone with the owner's permissions can close a pair (denial of
   service) or reopen it during a switch. Copies older than this change never hear the switch,
   nor does a copy that is offline from its start, has Firestore blocked or never had an
-  answer, so the runbook's drain step (no new prompt for some minutes before the oracle
-  moves) stays essential. A signature already in the wallet when the switch closes cannot be
+  answer, so the switch cannot be the only safeguard when a pair is retired. A signature already in the wallet when the switch closes cannot be
   recalled. App Check with Firestore reads in the PWA, how fast a backgrounded or installed
   app hears a change, and a mobile wallet's in-app browser keeping the listener can only be
-  proven in a deployed environment.
+  proven in a deployed environment. Writes to the document are recorded only if the owner
+  turns on Firestore's data access audit logging, which is the owner's choice.
 - **Negative (by decision c):** with nothing saved, a paid send can go through before the
   server's first answer; a browser that refuses storage and is reloaded while offline reads as
   unknown, which is open. Saved closures for a retired pair stay on the device (keyed by that

@@ -1,3 +1,5 @@
+import type { QueryClient } from '@tanstack/react-query';
+
 import promptPair from '@/lib/promptPair';
 import {
 	type ActiveMessage,
@@ -6,6 +8,8 @@ import {
 	setActiveConversationMessages,
 } from '@/store/chatSlice';
 import type { AppDispatch, RootState } from '@/store/store';
+
+import { attachShownPrompt } from './unsavedSends';
 
 /** The ids a confirmed prompt's receipt gave. */
 export interface PromptIds {
@@ -21,6 +25,9 @@ interface UnsavedPromptInput {
 	ids: PromptIds;
 	/** When the send was confirmed: the prompt's time, which the refund countdown runs from. */
 	at: number;
+	/** Where the send's hold is kept, so the prompt is kept with it (in memory only). */
+	queryClient: QueryClient;
+	ownerAddress: string | null | undefined;
 }
 
 /**
@@ -28,10 +35,12 @@ interface UnsavedPromptInput {
  * the conversation it was sent in, or in the new one it started. Only in memory: the stored
  * messages still lack it, which is what keeps the conversation held (`useUnsavedSendHold`).
  * Shown, it can be cancelled in the window the escrow allows, instead of waiting for a refund.
+ * It is kept with the hold, never saved, so the chat shows it again when the conversation is
+ * opened again, until the hold ends.
  */
 export default function showUnsavedPrompt(
 	dispatch: AppDispatch,
-	{ activeConversationId, parentId, content, ids, at }: UnsavedPromptInput,
+	{ activeConversationId, parentId, content, ids, at, queryClient, ownerAddress }: UnsavedPromptInput,
 ): void {
 	const conversationId = activeConversationId ? String(activeConversationId) : ids.conversationId;
 	const { finalUserMessage, finalAiMessage } = promptPair({
@@ -43,6 +52,7 @@ export default function showUnsavedPrompt(
 		now: at,
 	});
 	const messages = [finalUserMessage, finalAiMessage] as unknown as ActiveMessage[];
+	if (ownerAddress) attachShownPrompt(queryClient, ownerAddress, ids.promptMessageId, messages);
 	if (activeConversationId) {
 		dispatch(appendLiveMessages(messages));
 		return;
