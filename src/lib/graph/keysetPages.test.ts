@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import GraphFetchFailed from '@/lib/graph/GraphFetchFailed';
-import { collectKeysetPages, FIRST_WINDOW, nextWindow } from '@/lib/graph/keysetPages';
+import {
+	collectKeysetPages,
+	FIRST_WINDOW,
+	MAX_KEYSET_PAGES,
+	nextWindow,
+} from '@/lib/graph/keysetPages';
 
 describe('nextWindow', () => {
 	it('starts the next page at the last key, from its first row, when the keys differ', () => {
@@ -74,5 +79,79 @@ describe('collectKeysetPages', () => {
 		await expect(collecting).rejects.toBeInstanceOf(GraphFetchFailed);
 		await expect(collecting).rejects.toMatchObject({ reason: 'no-progress' });
 		expect(fetchPage).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('collectKeysetPages — the page cap', () => {
+	const row = (id: string, key: string) => ({ id, key });
+
+	// Where the fake endpoint gives in with a short page, so a missing cap fails the test
+	// rather than running until the test runner runs out of memory.
+	const TEST_STOP = 20_000;
+
+	/** Full pages of two, each with one row not read before (`next`) and one repeat. */
+	function endlessPages() {
+		let next = 0;
+		return vi.fn(async () => {
+			next += 1;
+			if (next > TEST_STOP) return [];
+			return [row(`new-${next}`, '5'), row('repeat', '5')];
+		});
+	}
+
+	it('stops a list whose pages never come back short, after the cap, with its own reason', async () => {
+		const fetchPage = endlessPages();
+
+		const collecting = collectKeysetPages({
+			list: 'conversations',
+			pageSize: 2,
+			keyOf: r => r.key,
+			idOf: r => r.id,
+			fetchPage,
+		});
+
+		await expect(collecting).rejects.toBeInstanceOf(GraphFetchFailed);
+		await expect(collecting).rejects.toMatchObject({
+			list: 'conversations',
+			reason: 'too-many-pages',
+		});
+		expect(fetchPage).toHaveBeenCalledTimes(MAX_KEYSET_PAGES);
+	});
+
+	it('counts a page already in hand as one of them', async () => {
+		const fetchPage = endlessPages();
+
+		const collecting = collectKeysetPages({
+			list: 'messages',
+			pageSize: 2,
+			keyOf: r => r.key,
+			idOf: r => r.id,
+			fetchPage,
+			firstPage: [row('first', '5'), row('repeat', '5')],
+		});
+
+		await expect(collecting).rejects.toMatchObject({ reason: 'too-many-pages' });
+		expect(fetchPage).toHaveBeenCalledTimes(MAX_KEYSET_PAGES - 1);
+	});
+
+	it('reads a list of exactly the cap in pages, the last one short', async () => {
+		let asked = 0;
+		const fetchPage = vi.fn(async () => {
+			asked += 1;
+			return asked < MAX_KEYSET_PAGES
+				? [row(`a-${asked}`, String(10_000 - asked)), row(`b-${asked}`, String(10_000 - asked))]
+				: [row('last', '1')];
+		});
+
+		const rows = await collectKeysetPages({
+			list: 'conversations',
+			pageSize: 2,
+			keyOf: r => r.key,
+			idOf: r => r.id,
+			fetchPage,
+		});
+
+		expect(fetchPage).toHaveBeenCalledTimes(MAX_KEYSET_PAGES);
+		expect(rows).toHaveLength(2 * (MAX_KEYSET_PAGES - 1) + 1);
 	});
 });

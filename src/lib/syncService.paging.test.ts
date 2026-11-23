@@ -350,6 +350,38 @@ describe('syncWithRemote — a full sync reads every page', () => {
 		expect(await storedCursor()).toBe((T0 + 10) * 1000);
 	});
 
+	it('stores nothing, holds the cursor and reports once when the pages never end', async () => {
+		await storeCursor(5_000);
+		const before = store.userMetadata.get(OWNER)?.encryptedData;
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		// A broken endpoint: every page is full and holds one conversation not read before.
+		let next = 0;
+		graphRequestMock.mockImplementation(async () => {
+			next += 1;
+			// Gives in after a while, so a missing cap fails the test rather than never ending.
+			if (next > 5_000) return { conversations: [] };
+			return {
+				conversations: [
+					conversation(`new-${next}`, T0),
+					...Array.from({ length: 99 }, (_, i) => conversation(`repeat-${i}`, T0)),
+				],
+			};
+		});
+
+		const result = await sync();
+
+		expect(result.graphUnavailable).toBe(true);
+		expect(store.conversationBulkPuts).toHaveLength(0);
+		expect(store.metadataPuts).toBe(0);
+		expect(store.userMetadata.get(OWNER)?.encryptedData).toBe(before);
+		expect(captureExceptionMock).toHaveBeenCalledTimes(1);
+		expect(captureExceptionMock.mock.calls[0][1]).toEqual(
+			expect.objectContaining({
+				tags: expect.objectContaining({ list: 'conversations', reason: 'too-many-pages' }),
+			}),
+		);
+	});
+
 	it('makes exactly one request for a wallet under both limits', async () => {
 		const prompts = await promptRequestsOf(2);
 		const graph = useGraph(
