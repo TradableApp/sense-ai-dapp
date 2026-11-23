@@ -428,14 +428,16 @@ describe('buildErrorHandler — Escrow errors', () => {
 	});
 
 	// The button is offered only after the hour on this device's clock (and a margin), so when
-	// the contract still refuses, the hour has not yet passed on the network's clock.
-	it('PromptNotRefundableYet says the hour has not yet passed on the network, and to retry', () => {
+	// the contract still refuses, the hour has not yet passed on the network's clock. A device
+	// clock that runs well ahead makes that wait as long as it is ahead, so no time is promised.
+	it('PromptNotRefundableYet says the hour has not yet passed on the network, and promises no time', () => {
 		const handler = makeHandler();
 		handler({ message: 'PromptNotRefundableYet' }, 'process refund');
 		const [, options] = vi.mocked(toast.error).mock.calls[0];
 		const description = String((options as { description?: unknown }).description);
 		expect(description).toContain('not yet passed on the network');
-		expect(description).toContain('Try again in a moment');
+		expect(description).toContain('The refund opens once it has.');
+		expect(description).not.toMatch(/in a moment|shortly|seconds|minute/i);
 		expect(description).not.toContain('You must wait 1 hour');
 	});
 
