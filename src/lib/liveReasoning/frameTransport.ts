@@ -188,14 +188,15 @@ interface ReadOptions {
 async function readBody(stream: ReadableStream<Uint8Array>, parser: SseParser) {
 	const reader = stream.getReader();
 	const decoder = new TextDecoder();
-	const pump = async (): Promise<void> => {
-		const { done, value } = await reader.read();
-		if (done) return;
-		parser.push(decoder.decode(value, { stream: true }));
-		await pump();
-	};
 	try {
-		await pump();
+		// A loop, not a recursive pump: each call of that waited on the next until the body
+		// ended, a chain of pending calls as long as the connection.
+		for (;;) {
+			// eslint-disable-next-line no-await-in-loop -- each read follows the one before
+			const { done, value } = await reader.read();
+			if (done) return;
+			parser.push(decoder.decode(value, { stream: true }));
+		}
 	} finally {
 		reader.cancel().catch(() => undefined);
 	}
