@@ -17,7 +17,10 @@ const CANCELLATION_TIMEOUT_S = 3;
 
 // The type the subgraph adds in the version that records a cancel's returned amount. Its presence
 // in the deployed schema is what says a CANCEL_RETURN row must exist; the row's own presence
-// cannot say so, or a regression that stops writing it would pass.
+// cannot say so, or a regression that stops writing it would pass. The type itself pairs paid
+// actions with their fees and has nothing to do with a cancel: it stands in only because both
+// arrive in the same subgraph version, so a subgraph that ships one without the other (or drops
+// or renames the type) needs this constant changed with it.
 const RETURN_RECORDING_TYPE = 'PendingDirectPayment';
 
 // Decimal places of the fee token. Both fee token profiles use 18, as do the amounts this suite
@@ -28,7 +31,7 @@ const FEE_TOKEN_DECIMALS = 18;
 /** The amount cell's text as the card shows it, matched at the end of the row's text: the exact
  *  amount, a space and the symbol, not preceded by a digit, point or sign. */
 function shownAmount(raw: string): RegExp {
-	const exact = formatTokenAmount(BigInt(raw), FEE_TOKEN_DECIMALS).replace('.', '\\.');
+	const exact = formatTokenAmount(BigInt(raw), FEE_TOKEN_DECIMALS).replace(/\./g, '\\.');
 	return new RegExp(`(?:^|[^0-9.-])${exact} \\S+$`);
 }
 
