@@ -110,7 +110,8 @@ describe('a live answer session over the real transport', () => {
 
 		expect(h.fetchImpl).toHaveBeenCalledTimes(MAX_STALLED_CONNECTIONS);
 		expect(h.ends).toEqual(['finished']);
-		expect(h.states.at(-1)?.dropped).toBe(MAX_STALLED_CONNECTIONS);
+		// A dropped frame changes nothing shown, so it re-renders nothing.
+		expect(h.states).toEqual([]);
 	});
 
 	it('asks a bounded number of times for a frame the schema refuses, then stops as finished', async () => {
@@ -205,10 +206,12 @@ describe('a live answer session', () => {
 		const stream = await h.opened();
 
 		// A dot, as a sealed frame has, but not base64 on either side of it.
-		await stream.onEvent({ id: `${RUN}.0`, data: 'not.a sealed frame!' });
+		await expect(stream.onEvent({ id: `${RUN}.0`, data: 'not.a sealed frame!' })).resolves.toBe(
+			'refused',
+		);
 
 		expect(decryptBytes).not.toHaveBeenCalled();
-		expect(h.states.at(-1)?.dropped).toBe(1);
+		expect(h.states).toEqual([]);
 	});
 
 	it('drops sealed text longer than the largest frame without trying to decrypt it', async () => {
@@ -216,10 +219,10 @@ describe('a live answer session', () => {
 		const stream = await h.opened();
 
 		const data = `${'A'.repeat(16)}.${'B'.repeat(MAX_SEALED_FRAME_CHARS - 16)}`;
-		await stream.onEvent({ id: `${RUN}.0`, data });
+		await expect(stream.onEvent({ id: `${RUN}.0`, data })).resolves.toBe('refused');
 
 		expect(decryptBytes).not.toHaveBeenCalled();
-		expect(h.states.at(-1)?.dropped).toBe(1);
+		expect(h.states).toEqual([]);
 	});
 
 	it('drops and counts a frame whose plaintext is over the limit, shows nothing and throws nothing', async () => {
@@ -228,9 +231,33 @@ describe('a live answer session', () => {
 		const h = stubSession();
 		const stream = await h.opened();
 
-		await expect(stream.onEvent({ id: `${RUN}.0`, data: sealed(0) })).resolves.toBeUndefined();
+		await expect(stream.onEvent({ id: `${RUN}.0`, data: sealed(0) })).resolves.toBe('refused');
 
-		expect(h.states.at(-1)?.dropped).toBe(1);
-		expect(h.states.at(-1)?.nextSeq).toBe(0);
+		expect(h.states).toEqual([]);
+	});
+
+	it('counts a dropped frame and shows the count with the next change, not on its own', async () => {
+		vi.mocked(decryptBytes)
+			.mockRejectedValueOnce(new Error('OperationError'))
+			.mockResolvedValueOnce(bytesOf(frame(0, RESET)));
+		const h = stubSession();
+		const stream = await h.opened();
+
+		await stream.onEvent({ id: `${RUN}.0`, data: sealed(0) });
+		await expect(stream.onEvent({ id: `${RUN}.0`, data: sealed(0) })).resolves.toBe('applied');
+
+		expect(h.states).toHaveLength(1);
+		expect(h.states[0]).toMatchObject({ dropped: 1, nextSeq: 1 });
+	});
+
+	it('re-renders nothing for a frame it already applied', async () => {
+		vi.mocked(decryptBytes).mockResolvedValue(bytesOf(frame(0, RESET)));
+		const h = stubSession();
+		const stream = await h.opened();
+
+		await stream.onEvent({ id: `${RUN}.0`, data: sealed(0) });
+		await expect(stream.onEvent({ id: `${RUN}.0`, data: sealed(0) })).resolves.toBe('applied');
+
+		expect(h.states).toHaveLength(1);
 	});
 });

@@ -7,10 +7,13 @@ import { LIMITS, MAX_SEALED_FRAME_CHARS } from '@/lib/liveReasoning/contract';
 
 import {
 	IDLE_GIVE_UP_MS,
+	MAX_DATA_LINES_PER_EVENT,
 	MAX_EVENT_CHARS,
 	MAX_LINE_CHARS,
+	MAX_REFUSED_FRAMES_PER_CONNECTION,
 	MAX_STALLED_CONNECTIONS,
 	MIN_RETRY_MS,
+	STALLED_RESPONSE_MS,
 	startFrameStream,
 	type StreamEvent,
 	type StreamFetch,
@@ -71,6 +74,8 @@ interface StartOptions {
 	applies?: boolean;
 	/** True: a frame is applied a few milliseconds after it arrives, as a decrypt is. */
 	appliesLater?: boolean;
+	/** True: every frame is refused (undecryptable, outside the schema), as a junk flood is. */
+	refuses?: boolean;
 	/** The response given once the listed ones run out; a held-open empty stream by default. */
 	repeat?: () => StreamResponse;
 }
@@ -81,7 +86,12 @@ const STORM_CAP = 1_000;
 const APPLY_DELAY_MS = 5;
 
 function start(responses: Array<StreamResponse | Error>, opts: StartOptions = {}): Harness {
-	const { applies = true, appliesLater = false, repeat = () => ok([], { hold: true }) } = opts;
+	const {
+		applies = true,
+		appliesLater = false,
+		refuses = false,
+		repeat = () => ok([], { hold: true }),
+	} = opts;
 	const queue = [...responses];
 	const fetchImpl = vi.fn(async (_url: string, init: StreamRequestInit) => {
 		const next =
@@ -103,6 +113,7 @@ function start(responses: Array<StreamResponse | Error>, opts: StartOptions = {}
 		// The cursor follows the frames applied, as the reducer's does.
 		onEvent: e => {
 			events.push(e);
+			if (refuses) return 'refused' as const;
 			if (!appliesLater) return apply(e);
 			return new Promise<void>(resolve => {
 				setTimeout(() => {
@@ -478,9 +489,9 @@ describe('the frame transport', () => {
 			expect(h.stops).toEqual(['idle']);
 		});
 
-		it('gives up when frames keep arriving but none is applied for 10 minutes', async () => {
-			// One held-open connection that receives an unappliable frame every minute.
-			const chunks = Array.from({ length: 12 }, () => event(1));
+		it('ends a response that never ends once what it delivers has moved the cursor nowhere for a while', async () => {
+			// One held-open connection that receives an unappliable frame every 10 s.
+			const chunks = Array.from({ length: 60 }, () => event(1));
 			// Typed by assertion: it is set inside the reader below, which narrowing cannot see.
 			let push = null as (() => void) | null;
 			const encoder = new TextEncoder();
@@ -500,16 +511,30 @@ describe('the frame transport', () => {
 			const h = start([trickle], { applies: false });
 			await vi.advanceTimersByTimeAsync(0);
 
-			for (let minute = 1; minute < 10; minute += 1) {
+			// Judged from the first frame that moved nothing, not from each one after it.
+			for (let s = 0; s < STALLED_RESPONSE_MS - 10_000; s += 10_000) {
 				push?.();
 				// eslint-disable-next-line no-await-in-loop
-				await vi.advanceTimersByTimeAsync(60_000);
+				await vi.advanceTimersByTimeAsync(10_000);
 			}
-			expect(h.stops).toEqual([]);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(1);
 			push?.();
-			await vi.advanceTimersByTimeAsync(60_000);
+			await vi.advanceTimersByTimeAsync(10_000 + MIN_RETRY_MS);
 
-			expect(h.events.length).toBeGreaterThanOrEqual(10);
+			// Judged stalled: the next connection comes after the backoff, not after 10 minutes.
+			expect(h.fetchImpl).toHaveBeenCalledTimes(2);
+			expect(h.stops).toEqual([]);
+			h.handle.stop();
+		});
+
+		it('keeps a held-open response that brings only heartbeats, at the server pace', async () => {
+			const h = start([ok([': ping\n\n'], { hold: true })]);
+
+			await vi.advanceTimersByTimeAsync(IDLE_GIVE_UP_MS - 1);
+
+			expect(h.fetchImpl).toHaveBeenCalledTimes(1);
+			expect(h.stops).toEqual([]);
+			await vi.advanceTimersByTimeAsync(1);
 			expect(h.stops).toEqual(['idle']);
 		});
 
@@ -658,6 +683,91 @@ describe('the frame transport', () => {
 			expect(h.events).toEqual([]);
 			expect(h.fetchImpl).toHaveBeenCalledTimes(MAX_STALLED_CONNECTIONS);
 			expect(h.stops).toEqual(['finished']);
+		});
+	});
+
+	describe('a hostile response', () => {
+		it('takes an event with more than one data line as no frame: a sealed frame is one line', async () => {
+			const twoLines = `id: ${RUN}.0\nevent: frame\ndata: aXY=\ndata: Y3Q=\n\n`;
+			const h = start([], { repeat: () => ok([twoLines]) });
+
+			await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+
+			expect(MAX_DATA_LINES_PER_EVENT).toBe(1);
+			expect(h.events).toEqual([]);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(MAX_STALLED_CONNECTIONS);
+			expect(h.stops).toEqual(['finished']);
+		});
+
+		it('refuses an event of many empty data lines at its second line', async () => {
+			const head = `id: ${RUN}.0\nevent: frame\n`;
+			const h = start([], { repeat: () => ok([head, 'data:\n'.repeat(200_000)]) });
+
+			await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+
+			expect(h.events).toEqual([]);
+			expect(h.stops).toEqual(['finished']);
+		});
+
+		it('reads a line that arrives a few characters at a time in time that grows with its length only', async () => {
+			// About the longest line allowed, in chunks of 64 characters: rescanning what is
+			// pending on each chunk would take minutes here.
+			const data = `${'A'.repeat(16)}.${'B'.repeat(MAX_SEALED_FRAME_CHARS - 17)}`;
+			const whole = event(0, data);
+			const chunks = Array.from({ length: Math.ceil(whole.length / 64) }, (_, i) =>
+				whole.slice(i * 64, (i + 1) * 64),
+			);
+			const began = process.hrtime.bigint();
+			const h = start([ok(chunks, { hold: true })]);
+
+			await vi.advanceTimersByTimeAsync(0);
+
+			const elapsedMs = Number(process.hrtime.bigint() - began) / 1e6;
+			expect(h.events).toEqual([{ id: `${RUN}.0`, data }]);
+			expect(elapsedMs).toBeLessThan(3_000);
+			h.handle.stop();
+		});
+
+		it('ends a connection that floods it with refused frames and counts it as stalled', async () => {
+			const flood = Array.from({ length: 2_000 }, (_, i) => event(i, 'aXY=.Y3Q=')).join('');
+			const h = start([], { refuses: true, repeat: () => ok([flood], { hold: true }) });
+
+			await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+
+			// Each connection hands on no frame past the cap, then is ended; a few such end it all.
+			expect(h.events.length).toBe(MAX_STALLED_CONNECTIONS * MAX_REFUSED_FRAMES_PER_CONNECTION);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(MAX_STALLED_CONNECTIONS);
+			expect(h.stops).toEqual(['finished']);
+		});
+
+		it('hands on the frames of a chunk one at a time, each once the one before has settled', async () => {
+			const two = `${event(0)}${event(1)}`;
+			let inFlight = 0;
+			let most = 0;
+			const fetchImpl = vi.fn(async () => ok([two], { hold: true }));
+			const handle = startFrameStream({
+				url: URL_42,
+				proof: PROOF,
+				onEvent: () => {
+					inFlight += 1;
+					most = Math.max(most, inFlight);
+					return new Promise<void>(resolve => {
+						setTimeout(() => {
+							inFlight -= 1;
+							resolve();
+						}, APPLY_DELAY_MS);
+					});
+				},
+				getCursor: () => null,
+				onStop: () => undefined,
+				fetchImpl: fetchImpl as unknown as StreamFetch,
+				random: () => 0,
+			});
+
+			await vi.advanceTimersByTimeAsync(APPLY_DELAY_MS * 4);
+
+			expect(most).toBe(1);
+			handle.stop();
 		});
 	});
 
