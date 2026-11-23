@@ -6,7 +6,6 @@ import { Loader2, Mail } from 'lucide-react';
 import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { getUserEmail } from 'thirdweb/wallets';
-import { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -32,25 +31,7 @@ import { sendSupportRequest } from '@/lib/contactService';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { closeModal } from '@/store/uiSlice';
 
-const supportSchema = z.object({
-	topic: z
-		.string({ required_error: 'Please select a topic.' })
-		.min(1, { message: 'Please select a topic.' }),
-	subject: z
-		.string()
-		.trim()
-		.min(5, { message: 'Subject must be at least 5 characters.' })
-		.max(150, { message: 'Subject cannot exceed 150 characters.' }),
-	request: z
-		.string()
-		.trim()
-		.min(20, { message: 'Request must be at least 20 characters.' })
-		.max(2000, { message: 'Request cannot exceed 2000 characters.' }),
-	email: z
-		.string()
-		.min(1, { message: 'Email address is required.' })
-		.email({ message: 'Please enter a valid email address.' }),
-});
+import supportSchema, { type SupportValues } from './supportSchema';
 
 const supportTopics = [
 	'General Inquiry',
@@ -94,7 +75,7 @@ export default function SupportModal() {
 	}, [isOpen, reset]);
 
 	interface SupportVariables {
-		data: z.infer<typeof supportSchema>;
+		data: SupportValues;
 		userAddress: string | null;
 		displayName?: string;
 	}
@@ -120,7 +101,7 @@ export default function SupportModal() {
 		},
 	});
 
-	const onSubmit = (data: z.infer<typeof supportSchema>) => {
+	const onSubmit = (data: SupportValues) => {
 		const displayName: string | undefined = undefined;
 		supportMutation.mutate({ data, userAddress: ownerAddress, displayName });
 	};

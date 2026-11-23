@@ -10,7 +10,6 @@ import { useNavigate } from 'react-router-dom';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
-import { z } from 'zod';
 
 import senseaiLogo from '@/assets/logos/senseai-logo.svg';
 import {
@@ -41,7 +40,7 @@ import useConversations from '@/hooks/useConversations';
 import useFirestoreCollectionListener from '@/hooks/useFirestoreCollectionListener';
 import usePaymentGate from '@/hooks/usePaymentGate';
 import useUsagePlan from '@/hooks/useUsagePlan';
-import { CANCELLATION_TIMEOUT_MS, REFUND_TIMEOUT_MS } from '@/lib/constants';
+import { CANCELLATION_TIMEOUT_MS } from '@/lib/constants';
 import {
 	addMessageToConversation,
 	branchConversation,
@@ -52,6 +51,7 @@ import {
 	getMessagesForConversation,
 	regenerateAssistantResponse,
 } from '@/lib/dataService';
+import { secondsUntilRefund } from '@/lib/refund';
 import {
 	type ActiveMessage,
 	appendLiveMessages,
@@ -66,6 +66,7 @@ import { cancelWindow } from './cancelWindow';
 import ComposerHoldNotices, { composerHoldDescription } from './ComposerHoldNotices';
 import isQueryAhead from './messageReconcile';
 import { composerStateFor } from './promptParent';
+import promptSchema from './promptSchema';
 import showUnsavedPrompt, { isActiveConversation, noWalletAddressError } from './unsavedPrompt';
 import useHeldBranchRefresh from './useHeldBranchRefresh';
 import useOneSendAtATime from './useOneSendAtATime';
@@ -108,11 +109,6 @@ function BranchInfo({ originalConversationId, onNavigate }: BranchInfoProps) {
 
 const STREAM_BY_WORD = true;
 
-const promptSchema = z.object({
-	// Any changes to schema must be updated in tokenized-ai-agent/oracle/src/payloadValidator.js
-	prompt: z.string().trim().min(1, { message: 'Message cannot be empty.' }).max(5000),
-});
-
 export default function Chat() {
 	const dispatch = useAppDispatch();
 	const store = useAppStore();
@@ -124,6 +120,9 @@ export default function Chat() {
 	const navigate = useNavigate();
 	const { sessionKey, ownerAddress } = useSession();
 	const { activeConversationId, activeConversationMessages } = useAppSelector(state => state.chat);
+	// A held branch waits for a sync; while The Graph cannot be read its notice says so, even
+	// when the banner has been dismissed.
+	const isHistoryRefreshFailing = useAppSelector(state => state.ui.graphUnavailable);
 
 	const { data: plan, isLoading: isLoadingPlan } = useUsagePlan();
 	const hasActivePlan = !!plan;
@@ -693,11 +692,7 @@ export default function Chat() {
 			return undefined;
 		}
 		const tick = () => {
-			const remaining = Math.max(
-				0,
-				Math.ceil((submittedAt + REFUND_TIMEOUT_MS - Date.now()) / 1000),
-			);
-			setRefundSecondsLeft(remaining);
+			setRefundSecondsLeft(secondsUntilRefund(submittedAt, Date.now()));
 		};
 		tick();
 		const id = setInterval(tick, 1000);
@@ -1099,6 +1094,7 @@ export default function Chat() {
 						<ComposerHoldNotices
 							isHeldForBranchHistory={isHeldForBranchHistory}
 							unsavedSendReason={unsavedSend.composerHoldReason}
+							isHistoryRefreshFailing={isHistoryRefreshFailing}
 						/>
 						{isAiThinking && refundSecondsLeft !== null && (
 							<div className="flex items-center justify-end px-3 py-1.5 text-xs text-muted-foreground">

@@ -98,4 +98,15 @@ describe('encryptData / decryptData round-trip', () => {
 
 		await expect(decryptData(key, corrupted)).rejects.toThrow();
 	});
+
+	it('round-trips a value too large to spread into one call', async () => {
+		// A conversation's stored messages can run to megabytes; 1,200 short messages are
+		// already about 150 KB. 2 MB is well past the argument limit of every engine.
+		const key = await deriveKeyFromEntropy(ENTROPY, OWNER);
+		const large = { text: 'x'.repeat(2 * 1024 * 1024) };
+
+		const encrypted = await encryptData(key, large);
+
+		expect(await decryptData(key, encrypted)).toEqual(large);
+	});
 });

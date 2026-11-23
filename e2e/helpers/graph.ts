@@ -557,8 +557,10 @@ export async function getOracleChanges(oracle: string): Promise<IndexedOracleCha
 }
 
 /** A row from the protocol-wide `Activity` log (immutable, id = txHash-logIndex), written by
- *  the escrow/agent handlers. `type` ∈ CONVERSATION/RENAME/DELETE/METADATA_UPDATE/BRANCH/CANCEL/
- *  REFUND/PLAN_UPDATE/PLAN_REVOKE; `amount` is wei-scale (0 for non-financial actions). */
+ *  the escrow/agent handlers. `type` ∈ CONVERSATION/METADATA_UPDATE/BRANCH/CANCEL/CANCEL_RETURN/
+ *  REFUND/PLAN_UPDATE/PLAN_REVOKE (a rename or a delete is a METADATA_UPDATE); `amount` is wei-scale, negative for a cost and
+ *  positive for money returned (0 for non-financial actions). A cancel writes CANCEL (minus the
+ *  fee) and CANCEL_RETURN (plus the payment handed back, id txHash-logIndex-return). */
 export interface IndexedActivity {
 	id: string;
 	type: string;
@@ -587,6 +589,24 @@ export async function getActivities(userAddress: string, first = 20): Promise<In
 		{ user: userAddress.toLowerCase(), first },
 	);
 	return data.activities;
+}
+
+const GRAPHQL_NAME = /^[_A-Za-z][_0-9A-Za-z]*$/;
+
+/**
+ * Whether the deployed subgraph's schema declares the type `name`, asked by introspection. Lets a
+ * spec decide from the stack what a subgraph version records, instead of from whether the row it
+ * expects turned up (which would let a regression that stops writing the row pass). False only
+ * when the schema answers without the type; an endpoint that cannot be read throws, as every
+ * reader here does. The name is checked and written into the query, not passed as a variable.
+ */
+export async function subgraphHasType(name: string): Promise<boolean> {
+	if (!GRAPHQL_NAME.test(name))
+		throw new Error(`subgraphHasType: not a GraphQL type name: ${name}`);
+	const data = await graphQuery<{ __type: { name: string } | null }>(
+		`{ __type(name: "${name}") { name } }`,
+	);
+	return data.__type?.name === name;
 }
 
 /**
