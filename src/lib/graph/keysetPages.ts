@@ -66,14 +66,14 @@ export async function collectKeysetPages<Row>({
 	firstPage,
 }: KeysetPagesInput<Row>): Promise<Row[]> {
 	const seen = new Set<string>();
-	let rows: Row[] = [];
+	const rows: Row[] = [];
 	let window = FIRST_WINDOW;
 	let page = firstPage ?? (await fetchPage(window));
 
 	for (;;) {
 		const fresh = page.filter(row => !seen.has(idOf(row)));
 		fresh.forEach(row => seen.add(idOf(row)));
-		rows = [...rows, ...fresh];
+		rows.push(...fresh);
 
 		if (page.length < pageSize) return rows;
 		if (fresh.length === 0) throw new GraphFetchFailed(list, 'no-progress');

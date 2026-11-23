@@ -167,11 +167,15 @@ export default async function fetchAllUserUpdates(
 		},
 	});
 
-	// One conversation's follow-up pages at a time, in order.
-	return conversations.reduce<Promise<ConversationFields[]>>(async (done, conversation) => {
-		const completed = await done;
+	// One request at a time, in order (no burst, and nothing more is sent after a failure).
+	const completed: ConversationFields[] = [];
+	for (let index = 0; index < conversations.length; index += 1) {
+		const conversation = conversations[index];
+		// eslint-disable-next-line no-await-in-loop -- serial on purpose, see above
 		const messages = await allMessagesOf(request, conversation);
+		// eslint-disable-next-line no-await-in-loop -- serial on purpose, see above
 		const promptRequests = await allPromptRequestsOf(request, conversation);
-		return [...completed, { ...conversation, messages, promptRequests }];
-	}, Promise.resolve([]));
+		completed.push({ ...conversation, messages, promptRequests });
+	}
+	return completed;
 }
