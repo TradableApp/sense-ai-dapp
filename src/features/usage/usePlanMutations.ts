@@ -175,6 +175,10 @@ async function approveAndSetLimit(
 const SUCCESS_TITLE = 'Access Revoked';
 const SUCCESS_DESCRIPTION = 'The AI agent can no longer spend your tokens.';
 
+/** The removal alone: no plan was standing when it was sent, so it did not revoke one. */
+const CLEARED_TITLE = 'Approval Removed';
+const CLEARED_DESCRIPTION = 'The AI agent is no longer approved to use your tokens.';
+
 // One id for the notice that offers the approval of zero again, so a second failure
 // replaces it rather than stacking a second one, and a new plan can take it down.
 const APPROVAL_NOT_CLEARED_TOAST_ID = 'plan-approval-not-cleared';
@@ -504,7 +508,7 @@ export function useClearApprovalMutation() {
 			}
 		},
 		onSuccess: async () => {
-			toast.success(SUCCESS_TITLE, { description: SUCCESS_DESCRIPTION });
+			toast.success(CLEARED_TITLE, { description: CLEARED_DESCRIPTION });
 			await refreshPlanQueries(queryClient, activeWallet);
 		},
 		onError: async error => {
