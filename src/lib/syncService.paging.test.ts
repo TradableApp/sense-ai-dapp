@@ -325,6 +325,31 @@ describe('syncWithRemote — a full sync reads every page', () => {
 		expect(store.userMetadata.get(OWNER)?.encryptedData).toBe(before);
 	});
 
+	it('leaves the cursor where it was after a pass that reads no conversation', async () => {
+		await storeCursor(5_000);
+		const before = store.userMetadata.get(OWNER)?.encryptedData;
+		useGraph([]);
+
+		await sync();
+
+		expect(store.metadataPuts).toBe(0);
+		expect(store.userMetadata.get(OWNER)?.encryptedData).toBe(before);
+	});
+
+	it("reads a new wallet's first conversation even when the device clock runs ahead", async () => {
+		// The device is an hour ahead of the chain; the wallet has no conversation yet.
+		vi.spyOn(Date, 'now').mockReturnValue((T0 + 3_600) * 1000);
+		useGraph([]);
+		await sync();
+		// Its first conversation lands at chain time, well before the device's clock.
+		useGraph([conversation('c1', T0 + 10)]);
+
+		await sync();
+
+		expect(storedConversationIds()).toEqual(['c1']);
+		expect(await storedCursor()).toBe((T0 + 10) * 1000);
+	});
+
 	it('makes exactly one request for a wallet under both limits', async () => {
 		const prompts = await promptRequestsOf(2);
 		const graph = useGraph(
