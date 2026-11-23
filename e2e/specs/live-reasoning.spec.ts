@@ -667,8 +667,8 @@ test.describe('Live reasoning stream (T-STREAM)', () => {
 
 		// "Reset Chat" leaves the conversation in the page (no reload); the answer is still awaited.
 		await freshChatPage.startNewConversation();
-		// To confirm on the first localnet run: Chromium reports a fetch aborted mid-body as a
-		// failed request, which is what empties `open`.
+		// Chromium reports a fetch aborted mid-body as a failed request, which is what empties
+		// `open` (seen on localnet runs with both fee tokens).
 		await expect
 			.poll(() => traffic.open.size, { timeout: STREAM_CLOSE_MS, intervals: [250] })
 			.toBe(0);
