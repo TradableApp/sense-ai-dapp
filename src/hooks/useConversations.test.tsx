@@ -6,7 +6,7 @@ import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import uiReducer from '@/store/uiSlice';
+import uiReducer, { dismissStorageDegraded } from '@/store/uiSlice';
 
 import useConversations from './useConversations';
 
@@ -67,6 +67,23 @@ describe('useConversations', () => {
 		await hook.result.current.refetch();
 
 		await waitFor(() => expect(store.getState().ui.storageDegraded).toBe(false));
+	});
+
+	it('keeps a dismissed storage notice dismissed through a pass that said nothing about storage', async () => {
+		syncMock.mockResolvedValueOnce({ unavailablePayloads: 3, graphUnavailable: false });
+		const { hook, store } = setup();
+		await waitFor(() => expect(store.getState().ui.storageDegraded).toBe(true));
+		store.dispatch(dismissStorageDegraded());
+
+		syncMock.mockResolvedValueOnce({ unavailablePayloads: undefined, graphUnavailable: true });
+		await hook.result.current.refetch();
+		await waitFor(() => expect(store.getState().ui.graphUnavailable).toBe(true));
+		syncMock.mockResolvedValueOnce({ unavailablePayloads: 3, graphUnavailable: false });
+		await hook.result.current.refetch();
+		await waitFor(() => expect(store.getState().ui.graphUnavailable).toBe(false));
+
+		expect(store.getState().ui.storageDegraded).toBe(true);
+		expect(store.getState().ui.storageDegradedDismissed).toBe(true);
 	});
 
 	it('flags the history as not refreshed when the sync could not read The Graph', async () => {

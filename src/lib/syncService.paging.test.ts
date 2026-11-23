@@ -597,7 +597,7 @@ describe('syncWithRemote — an answer it cannot use, or no answer', () => {
 
 	it('says the Graph could not be read when a request fails, and that it could after a clean pass', async () => {
 		graphRequestMock.mockRejectedValueOnce(new Error('Failed to fetch'));
-		expect(await sync()).toMatchObject({ graphUnavailable: true, unavailablePayloads: 0 });
+		expect(await sync()).toMatchObject({ graphUnavailable: true });
 
 		useGraph([conversation('c1', T0 + 1)]);
 		expect(await sync()).toMatchObject({ graphUnavailable: false });
@@ -617,6 +617,18 @@ describe('syncWithRemote — an answer it cannot use, or no answer', () => {
 
 		expect(graphRequestMock).not.toHaveBeenCalled();
 		expect(result.graphUnavailable).toBeUndefined();
+		expect(result).toHaveProperty('unavailablePayloads', undefined);
+	});
+
+	// A pass that stops at The Graph reads no payload, so it says nothing about storage: a count
+	// of 0 would take a storage notice the user dismissed down and bring it back next pass.
+	it('says nothing about storage when the pass stops at The Graph', async () => {
+		graphRequestMock.mockRejectedValueOnce(new Error('Failed to fetch'));
+
+		const result = await sync();
+
+		expect(result.graphUnavailable).toBe(true);
+		expect(result).toHaveProperty('unavailablePayloads', undefined);
 	});
 
 	it('reports a failed read to Sentry once per page load per list and reason, by name only', async () => {
