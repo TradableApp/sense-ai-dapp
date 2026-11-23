@@ -23,11 +23,10 @@ export default function orderCancelPairs<T extends ActivityRow>(rows: readonly T
 			returnOf.set(row.id.slice(0, -RETURN_SUFFIX.length), row);
 		}
 	});
-	const paired = (cancel: T): T | undefined => {
-		const returned = returnOf.get(cancel.id);
-		return cancel.type === 'CANCEL' && returned?.timestamp === cancel.timestamp
-			? returned
-			: undefined;
+	// Given any row: the return that follows it, if the row is a CANCEL with its return in the page.
+	const paired = (row: T): T | undefined => {
+		const returned = returnOf.get(row.id);
+		return row.type === 'CANCEL' && returned?.timestamp === row.timestamp ? returned : undefined;
 	};
 	const moved = new Set(rows.flatMap(row => paired(row) ?? []));
 
