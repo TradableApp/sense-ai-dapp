@@ -235,7 +235,7 @@ async function cancelLimitAndClearApproval(
 		const cancel = await send(contractCall(chain, contracts.escrow, 'cancelSpendingLimit'));
 		// A mined transaction that reverted still resolves; only its status says it failed.
 		if (cancel.status !== 'success') {
-			throw new Error('The revoke was reverted on chain, so the plan still stands.');
+			throw new Error('the revoke transaction was reverted on chain');
 		}
 	} finally {
 		toast.dismiss(revokeToastId);

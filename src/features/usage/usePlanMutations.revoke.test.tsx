@@ -530,6 +530,8 @@ describe('a revoke whose cancel does not go through', () => {
 		const { title, options } = onlyNotice('error');
 		expect(title).toBe('Revoke Failed');
 		expect(options.description).toMatch(/reverted/);
+		// The fixed sentence says what holds; the reason does not say it again.
+		expect(options.description?.match(/still stands/g)).toHaveLength(1);
 		expect(options.action).toBeUndefined();
 		expect(toast.success).not.toHaveBeenCalled();
 		expect(onDone).not.toHaveBeenCalled();
