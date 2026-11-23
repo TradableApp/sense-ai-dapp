@@ -163,6 +163,7 @@ export default function Chat() {
 		register,
 		handleSubmit,
 		reset,
+		getValues,
 		formState: { errors, isSubmitting, isValid },
 	} = useForm({
 		resolver: zodResolver(promptSchema),
@@ -323,6 +324,15 @@ export default function Chat() {
 		storedMessages: messagesFromQuery,
 		conversations,
 	});
+	// The prompt shown from its receipt, kept with its hold: shown again when this conversation
+	// is opened again, with its cancel control, until the hold ends.
+	const { shownPrompt } = unsavedSend;
+	useEffect(() => {
+		if (!shownPrompt) return;
+		const shownIds = new Set(activeConversationMessages.map(message => String(message.id)));
+		const missing = shownPrompt.filter(message => !shownIds.has(String(message.id)));
+		if (missing.length > 0) dispatch(appendLiveMessages(missing as unknown as ActiveMessage[]));
+	}, [shownPrompt, activeConversationMessages, dispatch]);
 
 	useEffect(() => {
 		setActiveMessageId(null);
@@ -757,6 +767,14 @@ export default function Chat() {
 			m => m.role === 'assistant' && m.content != null && m.content !== '',
 		);
 
+		// A save can finish after the send was given up on and the composer freed: what the user
+		// typed since is theirs, so it is neither cleared nor left for the old send's conversation.
+		// Only text counts: an emptied composer holds nothing of the user's to keep.
+		const hasNewDraft = () => {
+			const draft = getValues('prompt');
+			return typeof draft === 'string' && draft.trim() !== '' && draft !== data.prompt;
+		};
+
 		initiatePromptMutation.mutate(
 			{
 				conversationId: activeConversationId ?? 0,
@@ -807,7 +825,10 @@ export default function Chat() {
 								String(answerMessageId),
 								queryClient,
 							);
-						if (!isStillActive(activeConversationId)) return;
+						// The composer cannot be typed in while a send is under way, so a new draft means the
+						// save was given up on first (`SAVE_GIVE_UP_MS`): the cancel window, a few seconds
+						// from the confirmation, has long closed and is not opened here.
+						if (!isStillActive(activeConversationId) || hasNewDraft()) return;
 						dispatch(setActiveConversationId(newConversation.id));
 						dispatch(
 							setActiveConversationMessages([
@@ -817,7 +838,7 @@ export default function Chat() {
 						);
 					}
 					openCancelWindow();
-					reset();
+					if (!hasNewDraft()) reset();
 				},
 				// Sent and paid for, not saved here: the composer is cleared so it is not sent again,
 				// and the prompt is shown from its receipt, at the time it was confirmed, with the cancel
@@ -833,6 +854,8 @@ export default function Chat() {
 						content: data.prompt,
 						ids: newIds,
 						at: confirmedAt,
+						queryClient,
+						ownerAddress,
 					});
 					openCancelWindow(confirmedAt);
 				},

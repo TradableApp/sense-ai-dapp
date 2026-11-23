@@ -77,6 +77,8 @@ export type GetConversationPromptRequestsQuery = {
 
 export type GetStuckPaymentsQueryVariables = {
 	user: string;
+	first: number;
+	skip: number;
 };
 
 export type GetStuckPaymentsQuery = {
