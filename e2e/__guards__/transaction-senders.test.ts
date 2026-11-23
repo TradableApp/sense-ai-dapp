@@ -19,7 +19,8 @@ import { E2E_DIR, sourceFiles, stripComments } from './source-scan';
  * So the files that can send are listed here:
  * - `useChatMutations.tsx`: prompts, branches, renames and deletes (each asks the gate),
  *   and cancel and refund (never refused, so money can always come back);
- * - `usePlanMutations.ts`: setting a plan (asks the gate) and revoking one (never refused);
+ * - `usePlanMutations.ts`: setting a plan (asks the gate), and revoking one and removing the
+ *   approval it leaves (never refused);
  * - `faucetService.ts`: the local faucet, an unlocked development account sending test
  *   tokens to the user. The user pays nothing, so there is nothing to refuse.
  */

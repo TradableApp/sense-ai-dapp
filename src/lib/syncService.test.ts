@@ -399,7 +399,7 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 		const syncWithRemote = await importSync();
 		const result = await syncWithRemote(sessionKey, OWNER);
 
-		expect(result).toEqual({ unavailablePayloads: 0 });
+		expect(result).toEqual({ unavailablePayloads: 0, graphUnavailable: false });
 		expect(captureMessageMock).not.toHaveBeenCalled();
 		expect(fetchedUrls().every(u => u.startsWith(MIRROR))).toBe(true);
 		expect(fetchedUrls().some(u => u.includes('gateway.autonomys.xyz'))).toBe(false);
@@ -423,7 +423,7 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 		const result = await syncWithRemote(sessionKey, OWNER);
 
 		// conversation + metadata + one message
-		expect(result).toEqual({ unavailablePayloads: 3 });
+		expect(result).toEqual({ unavailablePayloads: 3, graphUnavailable: false });
 		expect(fetchedUrls().some(u => u.includes('gateway.autonomys.xyz'))).toBe(true);
 		expect(mockDb.messageCache.put).not.toHaveBeenCalled();
 		expect(mockDb.conversations.bulkPut).not.toHaveBeenCalled();
@@ -466,7 +466,10 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 
 		const syncWithRemote = await importSync();
 
-		await expect(syncWithRemote(sessionKey, OWNER)).resolves.toEqual({ unavailablePayloads: 1 });
+		await expect(syncWithRemote(sessionKey, OWNER)).resolves.toEqual({
+			unavailablePayloads: 1,
+			graphUnavailable: false,
+		});
 		expect(mockDb.userMetadata.put).not.toHaveBeenCalled();
 	});
 });

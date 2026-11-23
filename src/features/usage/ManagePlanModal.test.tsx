@@ -17,6 +17,8 @@ const state = vi.hoisted(() => ({
 	chainId: 8453,
 	mutate: vi.fn(),
 	askAgain: vi.fn(),
+	// A plan transaction under way anywhere in the app (another dialog, a notice).
+	isUnderWay: false,
 }));
 
 vi.mock('@/config/feeToken', async original => {
@@ -48,8 +50,10 @@ vi.mock('@/hooks/useTokenBalance', () => ({ default: vi.fn() }));
 vi.mock('./PlanValueEstimate', () => ({ default: () => null }));
 vi.mock('./usePlanMutations', () => ({
 	default: () => ({
+		isUnderWay: state.isUnderWay,
 		setPlanMutation: { mutate: state.mutate, isPending: false },
 		revokeMutation: { mutate: vi.fn(), isPending: false },
+		clearApprovalMutation: { mutate: vi.fn(), isPending: false },
 	}),
 }));
 
@@ -74,6 +78,7 @@ beforeEach(() => {
 	state.chainId = 8453;
 	state.mutate.mockReset();
 	state.askAgain.mockReset();
+	state.isUnderWay = false;
 	vi.mocked(useFeeTokenCheck).mockReturnValue({
 		verdict: 'unknown',
 		blocks: action => blocksAction('unknown', action),
@@ -267,5 +272,43 @@ describe('the plan form says what is wrong in its own words', () => {
 		await type(daysField(), '30');
 
 		expect(screen.queryByText(/must be/)).toBeNull();
+	});
+});
+
+describe('the plan dialog while a plan transaction is under way elsewhere', () => {
+	it('disables the submit and Revoke, and sends nothing', async () => {
+		state.isUnderWay = true;
+		render(
+			<ManagePlanModal
+				open
+				onOpenChange={vi.fn()}
+				existingPlan={{ allowance: 100, pendingEscrowCount: 0 }}
+			/>,
+		);
+		await act(async () => undefined);
+
+		const submit = screen.getByRole('button', { name: 'Save Changes' });
+		expect((submit as HTMLButtonElement).disabled).toBe(true);
+		expect((screen.getByRole('button', { name: 'Revoke' }) as HTMLButtonElement).disabled).toBe(
+			true,
+		);
+		fireEvent.click(submit);
+		await act(async () => undefined);
+		expect(state.mutate).not.toHaveBeenCalled();
+	});
+
+	it('enables them once nothing is under way', async () => {
+		render(
+			<ManagePlanModal
+				open
+				onOpenChange={vi.fn()}
+				existingPlan={{ allowance: 100, pendingEscrowCount: 0 }}
+			/>,
+		);
+		await act(async () => undefined);
+
+		expect((screen.getByRole('button', { name: 'Revoke' }) as HTMLButtonElement).disabled).toBe(
+			false,
+		);
 	});
 });

@@ -13,10 +13,13 @@ import * as Sentry from '@sentry/react';
 import { GraphQLClient } from 'graphql-request';
 import { hexToBytes } from 'viem';
 
+import GraphFetchFailed from '@/lib/graph/GraphFetchFailed';
+import { reportGraphFetchFailed } from '@/lib/graph/graphSyncReport';
+import fetchAllUserUpdates, { type GraphRequest } from '@/lib/graph/userUpdates';
+import createLimiter from '@/lib/limitConcurrency';
+
 import { decryptData, encryptData } from './crypto';
 import db from './db';
-import { GET_USER_UPDATES_QUERY } from './graph/queries';
-import type { GetUserUpdatesQuery, GetUserUpdatesQueryVariables } from './graph/query-types';
 import mergeMessages from './mergeMessages';
 import { writeMessageCache } from './messageCacheStore';
 import { fetchPayload, type PayloadFetchDeps, type PayloadStorageConfig } from './payloadStorage';
@@ -27,6 +30,8 @@ import type { Message } from './types';
 // The Graph endpoint is configured via environment variables for flexibility between environments.
 const THE_GRAPH_API_URL = import.meta.env.VITE_THE_GRAPH_API_URL;
 const graphQLClient = new GraphQLClient(THE_GRAPH_API_URL);
+const requestGraph: GraphRequest = (document, variables) =>
+	graphQLClient.request(document, variables);
 
 // Where payload bytes come from — see payloadStorage.ts for the source order and
 // retry policy. VITE_PAYLOAD_MIRROR_URL is the public GCS mirror the oracle writes
@@ -45,6 +50,17 @@ const getPayloadStorageConfig = (): PayloadStorageConfig => ({
  * is just another retriable network failure.
  */
 const PAYLOAD_FETCH_TIMEOUT_MS = 10_000;
+
+/**
+ * How many payloads one sync pass fetches and decrypts at once. A first sync of a large wallet
+ * has a payload per message (and per search delta) of every conversation: started all at once,
+ * that is thousands of requests, which a gateway answers with 429 (each counted unavailable,
+ * so the cursor is held and the same burst comes back next pass) and which hold every body in
+ * memory together. Browsers open about 6 connections per host over HTTP/1.1, so 8 keeps every
+ * connection busy, with a couple queued, while one slow fetch (or one waiting out its retry
+ * backoff, which keeps its slot) does not stall the rest.
+ */
+export const PAYLOAD_FETCH_CONCURRENCY = 8;
 
 const payloadFetchDeps: PayloadFetchDeps = {
 	// Late-bound so the active global fetch is used, not the one at module load.
@@ -75,14 +91,27 @@ const payloadFetchDeps: PayloadFetchDeps = {
 	random: Math.random,
 };
 
-/** Result of a sync pass; the UI uses the count to show the "history unavailable" state. */
+/** Result of a sync pass; the UI turns it into the history banner's two notices. */
 export interface SyncResult {
-	/** Payloads no storage source could serve this pass (transient — retried next pass). */
-	readonly unavailablePayloads: number;
+	/**
+	 * Payloads no storage source could serve this pass (transient — retried next pass).
+	 * Undefined when the pass failed before its payloads were read (at The Graph, for one): it
+	 * says nothing about storage, so a storage notice stays as it is.
+	 */
+	readonly unavailablePayloads: number | undefined;
+	/**
+	 * The Graph could not be read this pass (see GraphFetchFailed): nothing was stored and the
+	 * cursor was held, so what is shown is what was saved before. Retried next pass. Undefined
+	 * when the pass failed before The Graph had answered: it says nothing either way.
+	 */
+	readonly graphUnavailable: boolean | undefined;
 }
 
 // Returned by reference from several early exits, so it must be immune to mutation.
-const NOTHING_UNAVAILABLE: SyncResult = Object.freeze({ unavailablePayloads: 0 });
+const NOTHING_UNAVAILABLE: SyncResult = Object.freeze({
+	unavailablePayloads: 0,
+	graphUnavailable: false,
+});
 
 /** A decrypted storage file: an object of unknown shape, as stored by the oracle. */
 type StoredRecord = Record<string, unknown>;
@@ -289,64 +318,42 @@ export function messageFromPromptRequest(
 }
 
 /**
- * @notice Fetches a list of updated conversation entities from The Graph's API.
- * @dev This is the entry point for the sync process. It queries for all conversations
- *      owned by the user that have been updated since the last sync.
+ * @notice Fetches every conversation updated since the last sync from The Graph, with all of
+ *         its messages and unanswered prompt requests, however many pages that takes.
+ * @dev Throws `GraphFetchFailed` when any request fails (see graph/userUpdates.ts), and when
+ *      no endpoint is configured. It never returns an empty list for a failure: the caller
+ *      reads an empty list as "nothing new" and moves the cursor up to the present.
  * @param {string} ownerAddress The user's wallet address.
  * @param {number} lastSync The timestamp of the last successful sync (Milliseconds).
- * @returns {Promise<Array>} A promise that resolves to a list of conversation entities from The Graph.
+ * @returns {Promise<Array>} The updated conversations, timestamps converted to milliseconds.
  */
 async function fetchUpdatesFromTheGraph(
 	ownerAddress: string,
 	lastSync: number,
 ): Promise<ConversationUpdate[]> {
-	if (!THE_GRAPH_API_URL) {
-		console.warn('[syncService] VITE_THE_GRAPH_API_URL is not set. Skipping remote sync.');
-		return [];
-	}
-	try {
-		// The Graph stores block timestamps in Seconds. We must convert our local MS timestamp.
-		const lastSyncSeconds = Math.floor(lastSync / 1000);
+	if (!THE_GRAPH_API_URL) throw new GraphFetchFailed('conversations', 'not-configured');
+	// The Graph stores block timestamps in Seconds. We must convert our local MS timestamp.
+	const lastSyncSeconds = Math.floor(lastSync / 1000);
+	const conversations = await fetchAllUserUpdates(
+		requestGraph,
+		ownerAddress.toLowerCase(),
+		lastSyncSeconds,
+	);
 
-		// The query variables are passed to the GraphQL client.
-		const variables: GetUserUpdatesQueryVariables = {
-			owner: ownerAddress.toLowerCase(),
-			lastSync: lastSyncSeconds.toString(), // Send SECONDS
-			limit: 250,
-			offset: 0,
-		};
-
-		const data = await graphQLClient.request<GetUserUpdatesQuery>(
-			GET_USER_UPDATES_QUERY,
-			variables,
-		);
-
-		// Convert BigInt strings from The Graph response into Numbers (MS) for frontend consistency.
-		const conversations = (data.conversations || []).map((conv: unknown) => {
-			const convObj = conv as Record<string, unknown>;
-			return {
-				...(convObj as unknown as ConversationUpdate),
-				lastMessageCreatedAt: Number(convObj.lastMessageCreatedAt as string | number) * 1000,
-				messages: ((convObj.messages as Array<Record<string, unknown>>) || []).map(
-					(msg: Record<string, unknown>) => ({
-						...msg,
-						createdAt: Number(msg.createdAt as string | number) * 1000,
-					}),
-				),
-				promptRequests: ((convObj.promptRequests as Array<Record<string, unknown>>) || []).map(
-					(req: Record<string, unknown>) => ({
-						...req,
-						createdAt: Number(req.createdAt as string | number) * 1000,
-					}),
-				),
-			};
-		}) as ConversationUpdate[];
-
-		return conversations;
-	} catch (error) {
-		console.error('[syncService] Failed to fetch updates from The Graph:', error);
-		return []; // Return an empty array to allow the app to continue functioning.
-	}
+	// Convert BigInt strings from The Graph response into Numbers (MS) for frontend consistency.
+	return conversations.map(conv => ({
+		...conv,
+		lastMessageCreatedAt: Number(conv.lastMessageCreatedAt) * 1000,
+		messages: conv.messages.map(msg => ({
+			...msg,
+			searchDelta: msg.searchDelta ?? undefined,
+			createdAt: Number(msg.createdAt) * 1000,
+		})),
+		promptRequests: conv.promptRequests.map(req => ({
+			...req,
+			createdAt: Number(req.createdAt) * 1000,
+		})),
+	}));
 }
 
 /**
@@ -367,37 +374,32 @@ export default async function syncWithRemote(
 	// what hydration found — returning 0 there would clear the "unavailable" banner while
 	// storage is in fact down.
 	let unavailablePayloads = 0;
+	// One pool per pass: every payload fetch of the pass waits for a slot (see the constant).
+	const limit = createLimiter(PAYLOAD_FETCH_CONCURRENCY);
+	const hydrate = (cid: string | undefined) => limit(() => hydratePayload(cid, sessionKey));
+	// Until The Graph has answered, a failure here says nothing about it (see SyncResult).
+	let graphRead = false;
+	// Likewise, until the payloads have been read a failure says nothing about storage.
+	let storageRead = false;
 
 	try {
 		// 1. Get the last known sync timestamp from our local state (Milliseconds).
 		const lastSync = await getLastSyncedAt(sessionKey, ownerAddress);
 
-		// 2. Fetch all entity updates from The Graph since that timestamp.
-		// (fetchUpdatesFromTheGraph handles the MS -> S -> MS conversions)
+		// 2. Fetch all entity updates from The Graph since that timestamp, every page of them.
+		// (fetchUpdatesFromTheGraph handles the MS -> S -> MS conversions.) A failed request
+		// throws to the catch below, so the cursor is not moved and nothing is stored.
 		const graphUpdates = await fetchUpdatesFromTheGraph(ownerAddress, lastSync);
+		graphRead = true;
 
-		// 3. Determine the new timestamp cursor.
-		let newLastSync = lastSync;
-		if (graphUpdates.length > 0) {
-			// If we got updates, the new cursor is the timestamp of the newest item we received.
-			// Since graphUpdates is normalized to MS, this works directly.
-			newLastSync = Math.max(...graphUpdates.map(c => c.lastMessageCreatedAt));
-		} else {
-			// If no updates, we can safely advance the cursor towards the present time,
-			// leaving a buffer for indexing delays.
-			const syncTime = Date.now();
-			const buffer = 60 * 1000; // 1 minute buffer
+		// 3. A pass that read no conversation leaves the cursor where it was. Moving it to the
+		// device's clock would hide a first conversation whose block time is earlier than that
+		// clock (a device running ahead, or indexing running late), and costs nothing to skip:
+		// asking again from the same cursor returns nothing until something new is indexed.
+		if (graphUpdates.length === 0) return NOTHING_UNAVAILABLE;
 
-			if (syncTime - buffer > lastSync) {
-				newLastSync = syncTime - buffer;
-			}
-		}
-
-		// If there are no updates, we're done. Update the timestamp to prevent constant polling on an idle account.
-		if (graphUpdates.length === 0) {
-			await setLastSyncedAt(sessionKey, ownerAddress, newLastSync);
-			return NOTHING_UNAVAILABLE;
-		}
+		// The new cursor is the newest conversation read (graphUpdates is normalized to MS).
+		const newLastSync = Math.max(...graphUpdates.map(c => c.lastMessageCreatedAt));
 
 		// 3. "Hydrate" the Graph data by fetching and decrypting all associated CIDs from Arweave in parallel.
 		const hydrationPromises = graphUpdates.map(async (conv: ConversationUpdate) => {
@@ -435,8 +437,8 @@ export default async function syncWithRemote(
 
 			// For each conversation, fetch its core data, metadata, and all its messages in parallel.
 			const [convPayload, metadataPayload] = await Promise.all([
-				hydratePayload(conv.conversationCID, sessionKey),
-				hydratePayload(conv.conversationMetadataCID, sessionKey),
+				hydrate(conv.conversationCID),
+				hydrate(conv.conversationMetadataCID),
 			]);
 			const convData = convPayload.value as StoredRecord | null;
 			const metadataData = metadataPayload.value as StoredRecord | null;
@@ -444,8 +446,8 @@ export default async function syncWithRemote(
 			const messageHydrationPromises = (conv.messages || []).map(
 				async (msg: ConversationUpdate['messages'][number]) => {
 					const [messagePayload, searchDeltaPayload] = await Promise.all([
-						hydratePayload(msg.messageCID, sessionKey),
-						hydratePayload(msg.searchDelta?.searchDeltaCID, sessionKey),
+						hydrate(msg.messageCID),
+						hydrate(msg.searchDelta?.searchDeltaCID),
 					]);
 					const messageData = messagePayload.value as StoredRecord | null;
 					// Return a structured object for clarity, associating the message with its search delta.
@@ -555,6 +557,7 @@ export default async function syncWithRemote(
 
 		const hydratedData = await Promise.all(hydrationPromises);
 		unavailablePayloads = hydratedData.reduce((sum, item) => sum + item.unavailablePayloads, 0);
+		storageRead = true;
 		if (unavailablePayloads > 0) {
 			// One line per pass, not one per CID: the per-attempt detail is in the Sentry
 			// breadcrumbs that payloadStorage leaves.
@@ -667,10 +670,23 @@ export default async function syncWithRemote(
 		if (unavailablePayloads === 0 && notStored.size === 0) {
 			await setLastSyncedAt(sessionKey, ownerAddress, newLastSync);
 		}
-		return { unavailablePayloads };
+		return { unavailablePayloads, graphUnavailable: false };
 	} catch (error) {
-		console.error('[syncService] A critical error occurred during the sync process:', error);
 		// We do not update the timestamp on failure, ensuring the process will be retried.
-		return { unavailablePayloads };
+		if (error instanceof GraphFetchFailed) {
+			// Its message names the list and the reason only; see GraphFetchFailed. The user is
+			// told through the result, and Sentry once per page load per list and reason.
+			console.error(`[syncService] ${error.name}: ${error.message} The sync cursor is held.`);
+			reportGraphFetchFailed(error);
+			return {
+				unavailablePayloads: storageRead ? unavailablePayloads : undefined,
+				graphUnavailable: true,
+			};
+		}
+		console.error('[syncService] A critical error occurred during the sync process:', error);
+		return {
+			unavailablePayloads: storageRead ? unavailablePayloads : undefined,
+			graphUnavailable: graphRead ? false : undefined,
+		};
 	}
 }

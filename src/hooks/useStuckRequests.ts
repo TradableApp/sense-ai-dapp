@@ -1,3 +1,5 @@
+import { useCallback, useEffect, useState } from 'react';
+
 import * as Sentry from '@sentry/react';
 import { useQuery } from '@tanstack/react-query';
 import { GraphQLClient } from 'graphql-request';
@@ -13,6 +15,7 @@ import type {
 } from '@/lib/graph/query-types';
 import {
 	fetchPendingPayments,
+	refundableAt,
 	STUCK_PAGE_SIZE,
 	type StuckPayment,
 	verifyStuck,
@@ -38,6 +41,12 @@ export const STUCK_POLL_MS = 60_000;
  * less often.
  */
 export const STUCK_POLL_MANY_PAGES_MS = 300_000;
+
+/**
+ * How often the refund hour is checked against the clock. It reads nothing: the list already
+ * holds when each payment was made.
+ */
+export const REFUND_CLOCK_MS = 15_000;
 
 /** What the query keeps: the stuck payments, and how many pages the answer took. */
 interface StuckAnswer {
@@ -110,7 +119,14 @@ export default function useStuckRequests() {
 	const chain = activeWallet?.getChain();
 	const chainId = chain?.id;
 
-	return useQuery({
+	// The hour is checked against a clock of its own, so the Refund button unlocks when the hour
+	// (and the margin after it, `REFUND_UNLOCK_MARGIN_MS`) passes and not at the next read of the
+	// list. The clock runs only while a listed request is still waiting for that time, and never
+	// goes back: a device clock set back does not lock a request it has unlocked.
+	const [now, setNow] = useState(() => Date.now());
+	const select = useCallback((answer: StuckAnswer) => refundableAt(answer.stuck, now), [now]);
+
+	const stuckQuery = useQuery({
 		queryKey: ['stuckRequests', chainId, ownerAddress],
 		queryFn: async (): Promise<StuckAnswer> => {
 			const escrow = chainId ? CONTRACTS[chainId]?.escrow : undefined;
@@ -130,8 +146,20 @@ export default function useStuckRequests() {
 				throw error;
 			}
 		},
-		select: answer => answer.stuck,
+		select,
 		enabled: !!ownerAddress && !!THE_GRAPH_API_URL,
 		refetchInterval: query => (tookManyPages(query) ? STUCK_POLL_MANY_PAGES_MS : STUCK_POLL_MS),
 	});
+
+	const isWaitingForHour = stuckQuery.data?.some(payment => !payment.isRefundable) ?? false;
+	useEffect(() => {
+		if (!isWaitingForHour) return undefined;
+		const timer = setInterval(
+			() => setNow(previous => Math.max(previous, Date.now())),
+			REFUND_CLOCK_MS,
+		);
+		return () => clearInterval(timer);
+	}, [isWaitingForHour]);
+
+	return stuckQuery;
 }

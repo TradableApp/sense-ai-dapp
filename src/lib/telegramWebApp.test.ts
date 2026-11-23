@@ -99,6 +99,21 @@ describe('isTelegramContext', () => {
 });
 
 describe('loadTelegramWebApp', () => {
+	// happy-dom (20 and later) loads no script files: it fails a script with a src at once, while
+	// it is being attached. A browser answers later, and these tests play that answer by calling
+	// onload or onerror themselves, so happy-dom's immediate answer is held back. The restore in
+	// the file's afterEach removes this spy.
+	beforeEach(() => {
+		const dispatch = HTMLScriptElement.prototype.dispatchEvent;
+		vi.spyOn(HTMLScriptElement.prototype, 'dispatchEvent').mockImplementation(function hold(
+			this: HTMLScriptElement,
+			event: Event,
+		) {
+			if (event.type === 'load' || event.type === 'error') return true;
+			return dispatch.call(this, event);
+		});
+	});
+
 	it('injects nothing for an ordinary web visitor', async () => {
 		const result = await loadTelegramWebApp();
 
