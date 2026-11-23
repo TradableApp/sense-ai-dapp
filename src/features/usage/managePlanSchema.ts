@@ -5,7 +5,7 @@ import { z } from 'zod';
  * fraction of a day (zod reports a failed `.int()` as a wrong type). A missing value is "Required",
  * as it always was. Other issues keep the message their own check gives.
  */
-const typeError = (message: string) => (issue: { code?: string; input?: unknown }) => {
+const typeError = (message: string) => (issue: { code: string; input?: unknown }) => {
 	if (issue.code !== 'invalid_type') return undefined;
 	return issue.input === undefined ? 'Required' : message;
 };
