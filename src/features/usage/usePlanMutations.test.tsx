@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { toast } from 'sonner';
-import { getContract, prepareContractCall } from 'thirdweb';
+import { getContract, prepareContractCall, readContract } from 'thirdweb';
+import { keccak256, stringToBytes } from 'viem';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CONTRACTS } from '@/config/contracts';
@@ -587,5 +588,103 @@ describe('the connected chain', () => {
 		expect(getContract).toHaveBeenCalledWith(
 			expect.objectContaining({ chain: { id: 31337 }, address: CONTRACTS[31337].escrow.address }),
 		);
+	});
+});
+
+// The selector a public node returns for the escrow's own refusal, worked out from the
+// canonical signature here rather than with the helper the code uses.
+const HAS_PENDING_SELECTOR = keccak256(stringToBytes('HasPendingPrompts()')).slice(0, 10);
+
+const OWNER = '0x00000000000000000000000000000000000000aa';
+const ESCROW = '0x00000000000000000000000000000000000000e5';
+
+describe('a plan change while a prompt is pending', () => {
+	// The wallet's pending count on the escrow; every other read answers 0.
+	function pendingCount(answer: () => Promise<unknown>) {
+		vi.mocked(readContract).mockImplementation((async ({ method }: { method: unknown }) =>
+			String(method).includes('pendingEscrowCount') ? answer() : 0n) as never);
+	}
+
+	afterEach(() => {
+		vi.mocked(readContract).mockImplementation((async () => 0n) as never);
+	});
+
+	it('reads the pending count on the escrow before anything is approved', async () => {
+		withVerdict('ok');
+		pendingCount(async () => 0n);
+
+		await attempt(setPlan);
+
+		expect(readContract).toHaveBeenCalledWith(
+			expect.objectContaining({
+				contract: { address: ESCROW },
+				method: expect.stringContaining('pendingEscrowCount'),
+				params: [OWNER],
+			}),
+		);
+		expect(vi.mocked(readContract).mock.invocationCallOrder[0]).toBeLessThan(
+			sendAndConfirm.mock.invocationCallOrder[0],
+		);
+	});
+
+	it('approves nothing and sends nothing when one is pending, and says when it can be changed', async () => {
+		withVerdict('ok');
+		pendingCount(async () => 1n);
+
+		const { onDone } = await attempt(setPlan);
+
+		expect(prepareContractCall).not.toHaveBeenCalled();
+		expect(sendAndConfirm).not.toHaveBeenCalled();
+		expect(onDone).not.toHaveBeenCalled();
+		expect(toast.error).toHaveBeenCalledTimes(1);
+		expect(toast.error).toHaveBeenCalledWith('Prompt Pending', {
+			description:
+				'A prompt is still pending, so nothing was sent. The plan can be changed once it is answered, cancelled or refunded.',
+		});
+	});
+
+	it('leaves the notice that offers to remove an approval up, since nothing is sent', async () => {
+		withVerdict('ok');
+		pendingCount(async () => 2n);
+
+		await attempt(setPlan);
+
+		expect(toast.dismiss).not.toHaveBeenCalledWith('plan-approval-not-cleared');
+	});
+
+	it.each([
+		['fails', async () => Promise.reject(new Error('HTTP request failed'))],
+		['gives no number', async () => '0x'],
+	])(
+		'sends the plan all the same when the read %s: the escrow refuses the limit itself',
+		async (_, answer) => {
+			withVerdict('ok');
+			pendingCount(answer);
+
+			const { onDone } = await attempt(setPlan);
+
+			expect(vi.mocked(prepareContractCall).mock.calls.map(([call]) => call)).toEqual([
+				expect.objectContaining({ method: 'approve' }),
+				expect.objectContaining({ method: 'setSpendingLimit' }),
+			]);
+			expect(onDone).toHaveBeenCalledTimes(1);
+		},
+	);
+
+	it.each([
+		['by name', 'execution reverted: HasPendingPrompts()'],
+		['by selector', `Encoded error signature "${HAS_PENDING_SELECTOR}" not found on ABI.`],
+	])('a revoke the escrow refuses for a pending prompt says so, %s', async (_, message) => {
+		withVerdict('ok');
+		sendAndConfirm.mockRejectedValueOnce(new Error(message));
+
+		const { onDone } = await attempt(revoke);
+
+		expect(toast.error).toHaveBeenCalledTimes(1);
+		expect(toast.error).toHaveBeenCalledWith('Prompt Pending', {
+			description:
+				'A prompt is still pending, so the plan was not revoked and still stands. It can be revoked once the prompt is answered, cancelled or refunded.',
+		});
+		expect(onDone).not.toHaveBeenCalled();
 	});
 });
