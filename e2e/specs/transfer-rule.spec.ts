@@ -146,35 +146,43 @@ test.describe('Fee token transfer rule (T-XFER)', () => {
 			expect(before - after).toBe(fee);
 		});
 
-		test('T-XFER-02: a refund comes back from the escrow to the user', async ({
-			freshUserAccount,
-			freshChatPage,
-		}) => {
+		// Skipped where it is declared, not in the test body: a skip there comes after the fixtures
+		// and the plan above, which on a public chain spend real test gas for a test that is skipped.
+		test.describe('with time travel', () => {
 			test.skip(CHAIN === 'testnet', `${LOCALNET_ONLY_REASON} (the real hour is R-REFUND-01)`);
-			const user = freshUserAccount.address;
-			const before = await getFeeTokenBalance(TOKEN_ADDRESS, user);
 
-			await freshChatPage.goto();
-			await freshChatPage.sendDroppedPrompt('Hold this payment so it can be refunded');
-			const reqs = await waitForGraph(
-				() => getPromptRequests(user),
-				r => r.some(isPending),
-				{ label: 'pending PromptRequest' },
-			);
-			const stuck = reqs.find(isPending);
-			if (!stuck)
-				throw new Error('waitForGraph returned without the pending request it waited for');
-			const whileHeld = await getFeeTokenBalance(TOKEN_ADDRESS, user);
-			expect(whileHeld).toBeLessThan(before);
+			test('T-XFER-02: a refund comes back from the escrow to the user', async ({
+				freshUserAccount,
+				freshChatPage,
+			}) => {
+				const user = freshUserAccount.address;
+				const before = await getFeeTokenBalance(TOKEN_ADDRESS, user);
 
-			await increaseTime(REFUND_TIMEOUT_S + 1);
-			await processRefund(ESCROW_ADDRESS, user, stuck.id);
+				await freshChatPage.goto();
+				await freshChatPage.sendDroppedPrompt('Hold this payment so it can be refunded');
+				const reqs = await waitForGraph(
+					() => getPromptRequests(user),
+					r => r.some(isPending),
+					{ label: 'pending PromptRequest' },
+				);
+				const stuck = reqs.find(isPending);
+				if (!stuck)
+					throw new Error('waitForGraph returned without the pending request it waited for');
+				const whileHeld = await getFeeTokenBalance(TOKEN_ADDRESS, user);
+				expect(whileHeld).toBeLessThan(before);
 
-			// The whole payment is back: escrow to user went through the transfer rule.
-			expect(await getFeeTokenBalance(TOKEN_ADDRESS, user)).toBe(before);
+				await increaseTime(REFUND_TIMEOUT_S + 1);
+				await processRefund(ESCROW_ADDRESS, user, stuck.id);
+
+				// The whole payment is back: escrow to user went through the transfer rule.
+				expect(await getFeeTokenBalance(TOKEN_ADDRESS, user)).toBe(before);
+			});
 		});
 
 		test.describe('with the escrow unlisted', () => {
+			// Declared here for the same reason as above.
+			test.skip(CHAIN === 'testnet', LOCALNET_ONLY_REASON);
+
 			// Owner-global state, put back forward-only: no evm_revert, which would freeze the subgraph
 			// for every later spec (docs/E2E-ISOLATION-MODEL.md).
 			let unlisted = false;
@@ -187,7 +195,6 @@ test.describe('Fee token transfer rule (T-XFER)', () => {
 				freshChatPage,
 				freshPage,
 			}) => {
-				test.skip(CHAIN === 'testnet', LOCALNET_ONLY_REASON);
 				const user = freshUserAccount.address;
 
 				const checked = feeTokenCheckFinished(freshPage);
