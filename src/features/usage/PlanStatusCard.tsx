@@ -42,7 +42,7 @@ export default function PlanStatusCard({ plan }: { plan: Plan }) {
 	const { allowance, spentAmount, expiresAt, pendingEscrowCount, realTokenAllowance } = plan;
 
 	// Hooks for Refund Functionality
-	const { data: stuckRequests /* , isLoading: isLoadingStuck */ } = useStuckRequests();
+	const { data: stuckRequests, isError: isStuckCheckFailed } = useStuckRequests();
 	const { processRefundMutation } = useChatMutations();
 
 	// --- GAP CALCULATION LOGIC ---
@@ -238,6 +238,19 @@ export default function PlanStatusCard({ plan }: { plan: Plan }) {
 									amounts back in. You will need to reset your allowance to use the full plan.
 								</span>
 							</div>
+						)}
+
+						{/* A failed read is not "nothing stuck": say so where the list is shown. */}
+						{hasPendingPrompts && isStuckCheckFailed && (
+							<p
+								role="status"
+								className="flex items-start gap-2 rounded-md border border-border/50 bg-muted/40 p-3 text-xs text-muted-foreground"
+							>
+								<AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+								<span>
+									Your pending requests could not be checked just now. This will be tried again.
+								</span>
+							</p>
 						)}
 
 						{/* Refund Section - Action Required */}

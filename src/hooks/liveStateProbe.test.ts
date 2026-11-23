@@ -344,8 +344,29 @@ describe('createStatePoller', () => {
 
 		expect(deps.read).toHaveBeenCalledTimes(3);
 		expect(onReading).toHaveBeenCalledTimes(3);
-		expect(onReading).toHaveBeenLastCalledWith(snap());
+		expect(onReading).toHaveBeenLastCalledWith(snap(), expect.any(Number));
 		expect(deps.onChange).not.toHaveBeenCalled();
+		poller.stop();
+	});
+
+	// A hold ends only on a reading asked for after it began: the time is when the request
+	// went out, not when its answer came back.
+	it('gives each reading with the time its request was sent', async () => {
+		const onReading = vi.fn<NonNullable<StatePollerDeps['onReading']>>();
+		const read = vi.fn<() => Promise<EscrowSnapshot>>(
+			() =>
+				new Promise(resolve => {
+					setTimeout(() => resolve(snap()), 500);
+				}),
+		);
+		const { poller } = makePoller({ read, onReading });
+		const sentAt = Date.now();
+
+		poller.start();
+		await vi.advanceTimersByTimeAsync(500);
+
+		expect(onReading).toHaveBeenCalledTimes(1);
+		expect(onReading).toHaveBeenCalledWith(snap(), sentAt);
 		poller.stop();
 	});
 

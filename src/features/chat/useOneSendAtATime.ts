@@ -241,7 +241,7 @@ function handleSaveFailure<TData>(
 	error: unknown,
 ): void {
 	const { sessionKey: key, ownerAddress: owner } = session;
-	const held = owner ? unsavedSendFor(kind, variables, data, owner) : null;
+	const held = owner ? unsavedSendFor(kind, variables, data, owner, confirmedAt) : null;
 	logError('A prompt was sent, but saving it on this device failed:', errorName(error));
 	attempt('the warning', () => announceSaveFailure(kind, startsConversation(kind, variables)));
 	attempt('holding the conversation', () => held && holdUnsavedSend(queryClient, held));
