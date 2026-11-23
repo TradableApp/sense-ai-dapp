@@ -159,3 +159,20 @@ describe('every project launch args', () => {
 		expect(launchFlagProblems(config).join('\n')).toMatch(/use: DESKTOP_CHROME/);
 	});
 });
+
+// A navigation ends on the browser's `load` event, which waits for the font stylesheet and the
+// analytics scripts. On 2026-11-22 one of those requests never finished and T-REASON-02 failed its
+// first navigation with the app already drawn. Every project's launch therefore carries the
+// arguments that refuse those hosts on the localnet.
+describe('every launch refuses the hosts a localnet run does not start', () => {
+	it('each launchOptions in the config spreads the off-stack arguments', () => {
+		const launches = CONFIG.match(/launchOptions:\s*\{[^}]*\}/g) ?? [];
+
+		expect(launches.length).toBeGreaterThan(0);
+		for (const launch of launches) expect(launch).toMatch(/\.\.\.OFF_STACK_ARGS\b/);
+	});
+
+	it('the arguments are the helper given the chain of the run', () => {
+		expect(CONFIG).toMatch(/const OFF_STACK_ARGS = offStackHostArgs\(CHAIN\);/);
+	});
+});

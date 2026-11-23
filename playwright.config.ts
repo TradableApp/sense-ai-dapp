@@ -6,6 +6,7 @@ import { defineConfig, devices, type Project } from '@playwright/test';
 import { BUDGET, RESILIENCE_BUDGET } from './e2e/helpers/budgets';
 import { CHAIN, getChainConfig, LIVE_STACK } from './e2e/helpers/chain';
 import { loadChainEnv } from './e2e/helpers/env';
+import { offStackHostArgs } from './e2e/helpers/off-stack-hosts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -58,6 +59,12 @@ const TESTNET_SPECS = [
 const RESILIENCE_SPECS = ['resilience-expiry', 'resilience-refund'];
 
 /**
+ * On the localnet, the browser refuses the font and analytics hosts, so a navigation never waits
+ * on a service the run does not start (see e2e/helpers/off-stack-hosts.ts). Empty on testnet.
+ */
+const OFF_STACK_ARGS = offStackHostArgs(CHAIN);
+
+/**
  * Software compositor, for every project. A page can stop scheduling animation frames while its
  * JavaScript keeps running, so Playwright's actionability check waits its full 15 s on a page
  * that is alive but not painting: once per Base Sepolia run in a fresh context (T-HIST-10
@@ -67,7 +74,7 @@ const RESILIENCE_SPECS = ['resilience-expiry', 'resilience-refund'];
  */
 const DESKTOP_CHROME = {
 	...devices['Desktop Chrome'],
-	launchOptions: { args: ['--disable-gpu'] },
+	launchOptions: { args: ['--disable-gpu', ...OFF_STACK_ARGS] },
 };
 
 const TESTNET_PROJECTS: Project[] = [
@@ -336,7 +343,7 @@ const LOCALNET_PROJECTS: Project[] = [
 	{
 		name: 'mobile',
 		testMatch: '**/ui.spec.ts',
-		use: { ...devices['Pixel 5'], launchOptions: { args: ['--disable-gpu'] } },
+		use: { ...devices['Pixel 5'], launchOptions: { args: ['--disable-gpu', ...OFF_STACK_ARGS] } },
 	},
 ];
 
