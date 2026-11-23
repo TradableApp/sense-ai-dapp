@@ -432,6 +432,95 @@ describe('removing the approval again from the notice', () => {
 	});
 });
 
+describe('removing the approval from a notice after the account changed', () => {
+	const OTHER = '0x00000000000000000000000000000000000000bb';
+
+	/** A revoke whose second step was declined, leaving the notice; returns its options. */
+	async function halfFinishedRevoke() {
+		sendAndConfirm
+			.mockResolvedValueOnce({ status: 'success' })
+			.mockRejectedValueOnce(new Error('user rejected'));
+		await revoke();
+		return onlyNotice('error').options;
+	}
+
+	it('sends nothing, reads nothing and says the approval was not removed', async () => {
+		const notice = await halfFinishedRevoke();
+		account.address = OTHER;
+		vi.mocked(prepareContractCall).mockClear();
+		vi.mocked(readContract).mockClear();
+
+		await act(async () => {
+			notice.action?.onClick();
+		});
+		await waitFor(() => expect(toast.warning).toHaveBeenCalled());
+
+		expect(sendAndConfirm).toHaveBeenCalledTimes(2);
+		expect(prepareContractCall).not.toHaveBeenCalled();
+		expect(readContract).not.toHaveBeenCalled();
+		const [title, options] = vi.mocked(toast.warning).mock.calls[0];
+		expect(title).toBe('Account Changed');
+		expect((options as Notice & { id?: string }).id).toBe('plan-approval-not-cleared');
+		expect((options as Notice).description).toBe(
+			'The token approval for the AI agent was not removed and nothing was sent, because another account is selected in your wallet than the one this notice was for. Select that account again: the dashboard then offers to remove it.',
+		);
+		// Its action would act for the account selected now.
+		expect((options as Notice).action).toBeUndefined();
+		expect(toast.success).not.toHaveBeenCalled();
+	});
+
+	it('counts the same address in other letter case as the same account', async () => {
+		const notice = await halfFinishedRevoke();
+		account.address = OWNER.toUpperCase().replace('0X', '0x');
+		vi.mocked(prepareContractCall).mockClear();
+
+		await pressAction(notice, 2);
+
+		expect(methods()).toEqual([clearCall]);
+		expect(toast.success).toHaveBeenCalledWith('Approval Removed', expect.anything());
+	});
+
+	it("a later notice's action still acts only for the account the revoke was for", async () => {
+		const notice = await halfFinishedRevoke();
+		// The removal fails again, and its own notice offers it once more.
+		sendAndConfirm.mockResolvedValueOnce({ status: 'reverted' });
+		await pressAction(notice, 2);
+		const again = vi.mocked(toast.error).mock.calls[1][1] as Notice;
+		account.address = OTHER;
+		vi.mocked(prepareContractCall).mockClear();
+
+		await act(async () => {
+			again.action?.onClick();
+		});
+		await waitFor(() => expect(toast.warning).toHaveBeenCalled());
+
+		expect(prepareContractCall).not.toHaveBeenCalled();
+		expect(sendAndConfirm).toHaveBeenCalledTimes(3);
+		expect(vi.mocked(toast.warning).mock.calls[0][0]).toBe('Account Changed');
+	});
+
+	it('after a limit that could not be read, its offer acts only for that account too', async () => {
+		const notice = await halfFinishedRevoke();
+		onChain.limit = new Error('HTTP request failed');
+		await act(async () => {
+			notice.action?.onClick();
+		});
+		await waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+		const [, unchecked] = vi.mocked(toast.warning).mock.calls[0];
+		onChain.limit = [0n, 0n, 0n];
+		account.address = OTHER;
+		vi.mocked(prepareContractCall).mockClear();
+
+		await act(async () => {
+			(unchecked as Notice).action?.onClick();
+		});
+		await waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(2));
+
+		expect(prepareContractCall).not.toHaveBeenCalled();
+		expect(vi.mocked(toast.warning).mock.calls[1][0]).toBe('Account Changed');
+	});
+});
+
 describe('removing the approval while a plan is active', () => {
 	/** A revoke whose second step was declined, leaving the notice; returns its options. */
 	async function halfFinishedRevoke() {
