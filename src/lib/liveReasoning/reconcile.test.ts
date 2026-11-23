@@ -87,6 +87,49 @@ describe('compareLiveWithStored', () => {
 		});
 	});
 
+	describe('the attempt that answered', () => {
+		// A fallback answered: the first attempt's steps and sources are earlier ones.
+		const failedOver = answered({ attempt: 2 });
+
+		it('matches when the record says the same attempt answered', () => {
+			expect(compareLiveWithStored(failedOver, { ...stored, answerAttempt: 2 })).toEqual({
+				kind: 'match',
+			});
+		});
+
+		it("names a record that says nothing, so its items would be shown as the answer's own", () => {
+			expect(compareLiveWithStored(failedOver, stored)).toEqual({
+				kind: 'mismatch',
+				mismatch: 'answer-attempt',
+			});
+		});
+
+		it('names a record that says another attempt answered', () => {
+			expect(compareLiveWithStored(failedOver, { ...stored, answerAttempt: 3 })).toEqual({
+				kind: 'mismatch',
+				mismatch: 'answer-attempt',
+			});
+			expect(compareLiveWithStored(answered(), { ...stored, answerAttempt: 2 })).toEqual({
+				kind: 'mismatch',
+				mismatch: 'answer-attempt',
+			});
+		});
+
+		it('reads a value that is not a positive safe integer as none', () => {
+			expect(compareLiveWithStored(answered(), { ...stored, answerAttempt: '2' })).toEqual({
+				kind: 'match',
+			});
+		});
+
+		it('says nothing when there are no steps or sources to group', () => {
+			const bare = answered({ attempt: 2, steps: [], sources: [] });
+
+			expect(compareLiveWithStored(bare, { content: 'Prices rose.' })).toEqual({
+				kind: 'match',
+			});
+		});
+	});
+
 	it('does not compare the answer text when no answer frame came (over the size limit)', () => {
 		expect(compareLiveWithStored(answered({ answer: null }), stored)).toEqual({ kind: 'match' });
 	});

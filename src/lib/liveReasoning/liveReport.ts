@@ -13,6 +13,7 @@ export type MismatchKind =
 	| 'step-text'
 	| 'source-count'
 	| 'source-text'
+	| 'answer-attempt'
 	| 'answer-text';
 export type RefusalKind = 'bad-request' | 'proof-refused';
 

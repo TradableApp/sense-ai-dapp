@@ -186,8 +186,11 @@ Known and accepted as they are; each is bounded, and the stored record is what i
   while the page is open and the answer is still awaited.
 - **A frame's type is inside its ciphertext.** The reader refuses a frame over the answer frame
   limit before decoding it; a smaller frame of another type that is over that type's own limit
-  is decrypted and parsed, then refused. The type stays encrypted so the wire shows nothing
-  about what a frame carries.
+  is decrypted and parsed, then refused. The type stays encrypted, but frames are not padded:
+  anyone who sees the traffic (record sizes and timing on the wire, or the `data:` lengths for
+  a proof holder) can tell the frame types apart and learns the number of steps and attempts,
+  each step's length and timing, and the answer's length before it is stored. It sees no
+  plaintext, and the stored answer file's size is public anyway.
 - **The server holds at most 1 MiB of frames per answer**, below the largest run the contract
   allows on paper. A run past it gets a 503 on the stream and the chat shows the stored answer
   when it lands.

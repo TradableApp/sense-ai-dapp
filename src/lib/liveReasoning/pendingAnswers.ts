@@ -1,7 +1,12 @@
 import { REFUND_TIMEOUT_MS } from '@/lib/constants';
 import { isAnswerMessageId } from '@/lib/liveReasoning/contract';
 
-/** How long the stream server keeps a finished run's frames (its `STREAM_GRACE_MS` default). */
+/**
+ * How long the stream server keeps a finished run's frames. This mirrors the default of the
+ * oracle's `STREAM_GRACE_MS` setting (`oracle/src/stream/streamConfig.js`), which an operator can
+ * change: it must change with it, or the dApp stops following answers the server still holds
+ * (setting raised) or keeps asking for ones it has dropped (setting lowered).
+ */
 const STREAM_GRACE_MS = 120_000;
 
 /**

@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+
 import * as Sentry from '@sentry/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -109,5 +113,44 @@ describe('initSentry', () => {
 				beforeSendTransaction: scrubTransactionEvent,
 			}),
 		);
+	});
+
+	describe('the live reasoning timing marks', () => {
+		// The SDK as installed, reached through the browser package that depends on it.
+		const fromBrowser = createRequire(require.resolve('@sentry/browser'));
+		// The SDK's own matcher, as browser tracing applies it to each mark and measure.
+		const { stringMatchesSomePattern } = fromBrowser('@sentry/core') as {
+			stringMatchesSomePattern: (_value: string, _patterns: Array<string | RegExp>) => boolean;
+		};
+		const ignoredBy = (name: string) => {
+			vi.stubEnv('VITE_SENTRY_DSN', 'https://public@sentry.example/1');
+			initSentry();
+			const [options] = vi.mocked(Sentry.browserTracingIntegration).mock.calls[0] ?? [];
+			return stringMatchesSomePattern(name, options?.ignorePerformanceApiSpans ?? []);
+		};
+
+		// The names the e2e suite reads, each carrying the answer id.
+		it.each(['live-answer:42', 'stored-answer:42', 'live-answer-lead:42'])(
+			'keeps %s, which names an answer id, out of the spans sent',
+			name => {
+				expect(ignoredBy(name)).toBe(true);
+			},
+		);
+
+		it.each(['app-start', 'live-answers', 'my-live-answer:42'])('still sends %s', name => {
+			expect(ignoredBy(name)).toBe(false);
+		});
+
+		it('relies on an option the installed SDK applies to marks and measures', () => {
+			const metrics = path.join(
+				path.dirname(fromBrowser.resolve('@sentry-internal/browser-utils/package.json')),
+				'build/esm/metrics/browserMetrics.js',
+			);
+			const source = readFileSync(metrics, 'utf8');
+
+			expect(source).toMatch(
+				/\['mark', 'measure'\]\.includes\(entry\.entryType\) &&\s*stringMatchesSomePattern\(entry\.name, ignorePerformanceApiSpans\)/,
+			);
+		});
 	});
 });

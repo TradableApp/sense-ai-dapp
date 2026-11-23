@@ -235,6 +235,41 @@ describe('syncWithRemote — message-aware hydration skip', () => {
 		expect(stored.length).toBeGreaterThan(0);
 	});
 
+	it.each([
+		{ answerAttempt: 2, kept: 2 },
+		{ answerAttempt: '2', kept: undefined },
+		{ answerAttempt: 0, kept: undefined },
+		{ answerAttempt: 1.5, kept: undefined },
+	])(
+		'keeps the stored answer attempt $answerAttempt only as a positive safe integer',
+		async ({ answerAttempt, kept }) => {
+			await seedMessageCache([{ id: 'm-answer', role: 'assistant', content: null, createdAt: 2 }]);
+			vi.stubGlobal(
+				'fetch',
+				vi.fn(async (url: string) => {
+					const payload = url.includes('msga')
+						? { role: 'assistant', content: 'The answer', createdAt: 1_700_000, answerAttempt }
+						: { title: 'Conversation' };
+					const encrypted = await encryptData(sessionKey, payload);
+					return { ok: true, text: async () => encrypted } as unknown as Response;
+				}),
+			);
+
+			const syncWithRemote = await importSync();
+			await syncWithRemote(sessionKey, OWNER);
+
+			const written = mockDb.messageCache.put.mock.calls.at(-1)?.[0];
+			const stored = (await decryptData(sessionKey, written.encryptedData)) as Array<{
+				id: string;
+				answerAttempt?: unknown;
+			}>;
+			const answer = stored.find(m => m.id === 'm-answer');
+			expect(answer).toBeDefined();
+			expect(answer?.answerAttempt).toBe(kept);
+			expect('answerAttempt' in (answer ?? {})).toBe(kept !== undefined);
+		},
+	);
+
 	it('still skips hydration when the cache is already fully resolved', async () => {
 		// Every assistant message already has content → the optimization should hold.
 		await seedMessageCache([

@@ -177,8 +177,10 @@ describe('useLiveReasoning', () => {
 			stream.options.onEvent({ id: `${RUN}.1`, data: 'not a sealed frame' });
 		});
 
+		// A drop re-renders nothing on its own; the count is shown with the next change.
+		await push(stream, frame(1, STEP));
 		await waitFor(() => expect(result.current.viewFor('42')?.dropped).toBe(3));
-		expect(result.current.viewFor('42')?.steps).toEqual([]);
+		expect(result.current.viewFor('42')?.steps).toHaveLength(1);
 	});
 
 	it('rejects a frame sealed for another answer of the same wallet', async () => {
@@ -187,9 +189,10 @@ describe('useLiveReasoning', () => {
 		await push(streamFor('42'), frame(0, RESET));
 
 		await push(streamFor('42'), frame(1, STEP, '43'));
+		await push(streamFor('42'), frame(1, STEP));
 
 		await waitFor(() => expect(result.current.viewFor('42')?.dropped).toBe(1));
-		expect(result.current.viewFor('42')?.steps).toEqual([]);
+		expect(result.current.viewFor('42')?.steps).toHaveLength(1);
 	});
 
 	it('reconnects with no cursor when a frame of another run arrives', async () => {
