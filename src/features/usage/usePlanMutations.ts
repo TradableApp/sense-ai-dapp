@@ -475,8 +475,8 @@ function showClearRefused(error: ClearApprovalRefusedError, retry: () => void): 
 
 /**
  * Sends the approval of zero for the escrow, and nothing else, once the spending limit has
- * been read and none stands: under a standing limit the approval is the plan's, and only
- * Revoke removes it. Started from the notice a half-finished revoke shows, or from the
+ * been read and none stands (under a standing limit the approval is the plan's, and only
+ * Revoke removes it) and an approval is left. Started from the notice a half-finished revoke shows, or from the
  * dashboard's notice of an approval left with no plan.
  */
 export function useClearApprovalMutation() {
@@ -500,6 +500,21 @@ export function useClearApprovalMutation() {
 					throw new ClearApprovalRefusedError('plan-unchecked', error);
 				}
 				if (isLimitStanding) throw new ClearApprovalRefusedError('plan-active');
+				// Removed since (another device, or an earlier step confirmed late): nothing to
+				// sign. A read that fails sends it all the same: an approval of zero changes
+				// nothing else.
+				const allowance = await readEscrowAllowance(
+					chain,
+					contracts,
+					activeWallet?.getAccount()?.address,
+				).catch(error => {
+					console.error(
+						'clearApprovalMutation allowance read Error:',
+						error instanceof Error ? error.name : typeof error,
+					);
+					return undefined;
+				});
+				if (allowance === 0n) return;
 				await clearApproval(
 					send,
 					chain,
