@@ -270,7 +270,7 @@ describe('the chat holds a conversation whose paid send was not saved here', () 
 	it('gives every reading of the pending count to the hold', () => {
 		const live = read('src/hooks/useLiveResponse.ts');
 		expect(live).toMatch(
-			/\bonReading:\s*snapshot\s*=>\s*notePendingCount\(\s*queryClient,\s*ownerAddress,\s*snapshot\.pendingEscrowCount,?\s*\)/,
+			/\bonReading:\s*\(\s*snapshot,\s*requestedAt\s*\)\s*=>\s*notePendingCount\(\s*queryClient,\s*ownerAddress,\s*snapshot\.pendingEscrowCount,\s*requestedAt,?\s*\)/,
 		);
 	});
 });

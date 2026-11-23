@@ -56,8 +56,12 @@ export interface StatePollerDeps {
 	/** One batched read of the escrow state for the current user. May reject. */
 	read: () => Promise<EscrowSnapshot>;
 	onChange: (_change: SnapshotChange) => void;
-	/** Every successful reading, the first and the unchanged ones included. */
-	onReading?: (_snapshot: EscrowSnapshot) => void;
+	/**
+	 * Every successful reading, the first and the unchanged ones included, with the time its
+	 * request was sent (`Date.now()` before the read): a reading says nothing about what
+	 * happened after its request went out.
+	 */
+	onReading?: (_snapshot: EscrowSnapshot, _requestedAt: number) => void;
 	/** Telemetry sink (Sentry breadcrumb in production). */
 	report: (_message: string, _data: Record<string, unknown>) => void;
 	/** `true` while the tab is in the background; polling pauses. */
@@ -121,9 +125,9 @@ export function createStatePoller(deps: StatePollerDeps): StatePoller {
 	}
 
 	/** As `notify`, for every reading. */
-	function noteReading(snapshot: EscrowSnapshot) {
+	function noteReading(snapshot: EscrowSnapshot, requestedAt: number) {
 		try {
-			deps.onReading?.(snapshot);
+			deps.onReading?.(snapshot, requestedAt);
 		} catch (error) {
 			deps.report('live poll: reading handler failed', { reason: describeError(error) });
 		}
@@ -132,6 +136,7 @@ export function createStatePoller(deps: StatePollerDeps): StatePoller {
 	async function probe() {
 		const myGeneration = generation;
 		inFlight = true;
+		const requestedAt = Date.now();
 		try {
 			const next = await deps.read();
 			if (!running || myGeneration !== generation) return;
@@ -142,7 +147,7 @@ export function createStatePoller(deps: StatePollerDeps): StatePoller {
 			}
 			const prev = baseline;
 			baseline = next;
-			noteReading(next);
+			noteReading(next, requestedAt);
 			if (prev !== null && serializeSnapshot(prev) !== serializeSnapshot(next)) {
 				notify({ prev, next });
 			}

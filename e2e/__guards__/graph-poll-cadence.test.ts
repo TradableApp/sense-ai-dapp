@@ -33,19 +33,35 @@ describe('subgraph polling cadence', () => {
 		'%s polls no faster than once a minute',
 		(_name, file) => {
 			const source = stripComments(readFileSync(file, 'utf8'));
-			// Accepts a literal or a product of literals (`60 * 1000`); anything else is a failure
-			// so a clever expression cannot slip under the floor unread.
+			// Accepts a literal or a product of literals (`60 * 1000`), or the name of a constant
+			// declared in the same file as one; anything else is a failure so a clever expression
+			// cannot slip under the floor unread.
+			const named = new Map(
+				[
+					...source.matchAll(/\bconst\s+([A-Z][A-Z0-9_]*)\s*=\s*([\d_]+(?:\s*\*\s*[\d_]+)*)\s*;/g),
+				].map(d => [d[1], d[2]] as const),
+			);
+			const valueOf = (arm: string, at: string) => {
+				const literal = named.get(arm) ?? arm;
+				expect(literal, at).toMatch(/^[\d_]+(\s*\*\s*[\d_]+)*$/);
+				return literal.split('*').reduce((acc, n) => acc * Number(n.replace(/[\s_]/g, '')), 1);
+			};
 			[...source.matchAll(/refetchInterval:\s*([^,\n]+)/g)].forEach(m => {
 				const expr = m[1].trim();
 				// `false` / `undefined` switch polling off entirely — no quota concern. A conditional
-				// (`enabled ? 60_000 : false`) still has to satisfy the floor on its polling arm.
+				// (`enabled ? 60_000 : false`, or a function of the query choosing between two
+				// intervals) has to satisfy the floor on every arm that polls.
 				if (expr === 'false' || expr === 'undefined') return;
-				const polling = expr.includes('?') ? expr.split('?')[1].split(':')[0].trim() : expr;
-				expect(polling, m[0]).toMatch(/^[\d_]+(\s*\*\s*[\d_]+)*$/);
-				const value = polling
-					.split('*')
-					.reduce((acc, n) => acc * Number(n.replace(/[\s_]/g, '')), 1);
-				expect(value, m[0]).toBeGreaterThanOrEqual(MIN_POLL_MS);
+				const arms = expr.includes('?')
+					? expr
+							.slice(expr.indexOf('?') + 1)
+							.split(':')
+							.map(arm => arm.replace(/\)+$/, '').trim())
+					: [expr];
+				expect(arms.length, m[0]).toBeLessThanOrEqual(2);
+				arms
+					.filter(arm => arm !== 'false' && arm !== 'undefined')
+					.forEach(arm => expect(valueOf(arm, m[0]), m[0]).toBeGreaterThanOrEqual(MIN_POLL_MS));
 			});
 		},
 	);

@@ -40,6 +40,8 @@ export type GetUserUpdatesQuery = {
 
 export type GetStuckPaymentsQueryVariables = {
 	user: string;
+	first: number;
+	skip: number;
 };
 
 export type GetStuckPaymentsQuery = {
