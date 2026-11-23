@@ -184,7 +184,7 @@ describe('a live answer session', () => {
 	}
 
 	it('publishes nothing for a frame whose decryption finishes after it was stopped', async () => {
-		let finishDecrypt: (_value: Uint8Array) => void = () => undefined;
+		let finishDecrypt: (_value: Uint8Array<ArrayBuffer>) => void = () => undefined;
 		vi.mocked(decryptBytes).mockReturnValue(
 			new Promise(resolve => {
 				finishDecrypt = resolve;
