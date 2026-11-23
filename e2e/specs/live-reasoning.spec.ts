@@ -568,7 +568,8 @@ test.describe('Live reasoning stream (T-STREAM)', () => {
 		expect(snapshots.filter(s => s.provisional !== null && s.stored > 0)).toEqual([]);
 		const provisionalText = shownLive.at(-1)?.provisional ?? '';
 		// Read once, at once: the stored answer replaces the provisional one already in full. Had it
-		// been typed again, this read would catch it part-way.
+		// been typed again, this read would catch it part-way. One `.prose` in scope: the reasoning
+		// disclosure and the sources are siblings of the stored bubble (Chat.tsx), not inside it.
 		const storedText = (
 			(await freshChatPage.latestAiMessage.locator('.prose').textContent()) ?? ''
 		).trim();
