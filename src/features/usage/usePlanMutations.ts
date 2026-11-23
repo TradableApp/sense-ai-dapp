@@ -324,10 +324,10 @@ export const PLAN_SEND_KEY = ['plan-send'];
 type PlanSend<TVariables> = UseMutationResult<void, Error, TVariables>;
 
 /**
- * `mutation`, whose `mutate` and `mutateAsync` do nothing while any plan transaction is under
- * way. It is read from the query client's mutation cache, which marks a mutation pending the
- * moment it starts, so a second press in the same moment is refused too, and so is one from
- * a dialog opened again or from a notice.
+ * `mutation`, whose `mutate` does nothing and whose `mutateAsync` rejects, sending nothing,
+ * while any plan transaction is under way. It is read from the query client's mutation
+ * cache, which marks a mutation pending the moment it starts, so a second press in the same
+ * moment is refused too, and so is one from a dialog opened again or from a notice.
  */
 function startedAlone<TVariables>(
 	mutation: PlanSend<TVariables>,
@@ -339,8 +339,10 @@ function startedAlone<TVariables>(
 		mutate: (variables, options) => {
 			if (!isUnderWay()) mutation.mutate(variables, options);
 		},
+		// Rejects rather than resolving, so an awaited start never reads as one that ran.
 		mutateAsync: async (variables, options) => {
-			if (!isUnderWay()) await mutation.mutateAsync(variables, options);
+			if (isUnderWay()) throw new Error('A plan transaction is already under way');
+			await mutation.mutateAsync(variables, options);
 		},
 	} as PlanSend<TVariables>;
 }

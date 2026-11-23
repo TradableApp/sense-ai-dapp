@@ -723,6 +723,23 @@ describe('one plan transaction at a time, from any mounted dialog or notice', ()
 		},
 	);
 
+	it('an awaited start while one is under way is refused, not resolved as if it ran', async () => {
+		onChain.allowance = 0n;
+		const confirm = holdTheCancel();
+		const result = renderTwo();
+
+		act(() => result.current.first.revokeMutation.mutate());
+		await waitFor(() => expect(sendAndConfirm).toHaveBeenCalledTimes(1));
+
+		await expect(result.current.second.revokeMutation.mutateAsync()).rejects.toThrow(
+			/already under way/,
+		);
+		expect(sendAndConfirm).toHaveBeenCalledTimes(1);
+
+		await act(async () => confirm());
+		await waitFor(() => expect(result.current.second.isUnderWay).toBe(false));
+	});
+
 	it('a second press in the same moment is refused', async () => {
 		onChain.allowance = 0n;
 		const result = renderTwo();
