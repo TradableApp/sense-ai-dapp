@@ -4,7 +4,8 @@ import { REFUND_TIMEOUT_MS } from '@/lib/constants';
  * How long after the hour, on this device's clock, the dApp offers a refund. The contract
  * refuses one while the time of the block that takes it is short of the prompt's time plus the
  * hour, and that block's time can trail this clock:
- * - Base makes a block every 2 s, so the including block's time trails real time by up to 2 s;
+ * - the including block's time trails real time by at most the time between two blocks, which
+ *   on Base Sepolia was measured at about 200 ms;
  * - a device clock kept by NTP is usually within a second, but one left to drift can run some
  *   seconds, sometimes tens of seconds, ahead; the rest of the margin (about 28 s) is for that;
  * - the 15 s clock that checks the hour (`REFUND_CLOCK_MS`) only ever unlocks later than this
