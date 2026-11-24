@@ -1,5 +1,5 @@
-import { REFUND_TIMEOUT_MS } from '@/lib/constants';
 import { resolveLocalStoreName } from '@/lib/localStoreName';
+import { refundOpensAt } from '@/lib/refund';
 
 import type { SendKind, UnsavedSend } from './unsavedSends';
 
@@ -10,8 +10,11 @@ import type { SendKind, UnsavedSend } from './unsavedSends';
  * Every storage access is wrapped: storage that throws leaves the holds in memory only.
  */
 
-/** How long a hold lasts at most: until a refund can be claimed for its send. */
-export const HOLD_LASTS_MS = REFUND_TIMEOUT_MS;
+/**
+ * How long a hold lasts at most: until the refund of its send is offered (the refund timeout
+ * and `REFUND_UNLOCK_MARGIN_MS`), so the hold never ends while the Refund button is still locked.
+ */
+export const HOLD_LASTS_MS = refundOpensAt(0);
 
 // A saved time this far ahead of the clock was not written by this build.
 const CLOCK_SKEW_MS = 5 * 60_000;

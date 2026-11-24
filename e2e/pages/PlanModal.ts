@@ -1,5 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 
+import { feeToken, feeTokenSymbolPattern } from '../helpers/feeToken';
+
 /**
  * Page Object Model for ManagePlanModal.
  */
@@ -50,15 +52,15 @@ export class PlanModal {
 	}
 
 	get tokenBalance() {
-		return this.modal.getByText(/able/i).filter({ hasText: /\d/ }).first();
+		return this.modal.getByText(feeTokenSymbolPattern()).filter({ hasText: /\d/ }).first();
 	}
 
 	get faucetButton() {
-		// Label is "Get 100 Localnet ABLE" / "Get 100 Testnet ABLE" (or "Sending
+		// Label is "Get 100 Localnet <symbol>" / "Get 100 Testnet <symbol>" (or "Sending
 		// Tokens…" while in flight); it only renders when the entered limit exceeds
-		// the wallet balance.
+		// the wallet balance. The symbol is the build's fee token.
 		return this.modal.getByRole('button', {
-			name: /get \d+ (localnet|testnet) able|sending tokens/i,
+			name: new RegExp(`get \\d+ (localnet|testnet) ${feeToken().symbol}|sending tokens`, 'i'),
 		});
 	}
 
@@ -77,11 +79,11 @@ export class PlanModal {
 		await this.waitForTxCompletion();
 	}
 
-	async fillAndSubmit(limitAble: number, days: number) {
+	async fillAndSubmit(limitTokens: number, days: number) {
 		await expect(this.modal).toBeVisible({ timeout: 5_000 });
 
 		await this.limitInput.clear();
-		await this.limitInput.fill(String(limitAble));
+		await this.limitInput.fill(String(limitTokens));
 
 		await this.daysInput.clear();
 		await this.daysInput.fill(String(days));

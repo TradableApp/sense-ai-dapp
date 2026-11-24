@@ -29,7 +29,7 @@ test.describe('Brain activity ledger (T-BRAIN)', () => {
 		freshChatPage,
 	}) => {
 		await freshChatPage.goto();
-		await freshChatPage.sendPromptAndWaitForResponse('What is the sentiment on ABLE right now?');
+		await freshChatPage.sendPromptAndWaitForResponse('What is the sentiment on BTC right now?');
 
 		// The ledger write follows escrow settlement, so it lags the rendered answer — poll.
 		// `targetId` is the user wallet and every test claims a fresh account (ADR-0002), so
@@ -68,7 +68,7 @@ test.describe('Brain activity ledger (T-BRAIN)', () => {
 		freshChatPage,
 	}) => {
 		await freshChatPage.goto();
-		await freshChatPage.sendPromptAndWaitForResponse('Summarise the macro backdrop for ABLE.');
+		await freshChatPage.sendPromptAndWaitForResponse('Summarise the macro backdrop for BTC.');
 
 		const rows = await waitForLedger(
 			freshUserAccount.address,

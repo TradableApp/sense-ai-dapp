@@ -2,7 +2,7 @@ import { expect, test } from '../fixtures';
 import { BUDGET } from '../helpers/budgets';
 import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
-import { getABLEBalance } from '../helpers/hardhat';
+import { getFeeTokenBalance } from '../helpers/hardhat';
 
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
@@ -114,12 +114,12 @@ test.describe('Chat — submission and response (T-CHAT-TX)', () => {
 		freshChatPage,
 		freshUserAccount,
 	}) => {
-		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		const balanceBefore = await getFeeTokenBalance(TOKEN_ADDRESS, freshUserAccount.address);
 
 		await freshChatPage.goto();
 		await freshChatPage.sendPromptAndWaitForResponse('Test balance deduction');
 
-		const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		const balanceAfter = await getFeeTokenBalance(TOKEN_ADDRESS, freshUserAccount.address);
 		expect(balanceAfter).toBeLessThanOrEqual(balanceBefore);
 	});
 

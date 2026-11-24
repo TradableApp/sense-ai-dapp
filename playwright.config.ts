@@ -49,6 +49,7 @@ const TESTNET_SPECS = [
 	'live-reasoning',
 	'remaining-features',
 	'plan',
+	'transfer-rule',
 ];
 
 /**
@@ -285,6 +286,16 @@ const LOCALNET_PROJECTS: Project[] = [
 		// heaviest: it holds a prompt's answer (20s sentinel), rotates mid-flight, waits past the
 		// delay, then waits up to 60s for the orphaned PENDING state to index — so give extra
 		// headroom over the other answer-flow projects.
+		timeout: 180_000,
+		use: DESKTOP_CHROME,
+	},
+	{
+		name: 'transfer-rule',
+		testMatch: '**/transfer-rule.spec.ts',
+		fullyParallel: false,
+		// A prompt round-trip, a dropped prompt plus indexing wait and refund, and a refused
+		// payment that unlists the escrow (owner-global; relisted in afterAll) — serial, with the
+		// headroom of the other answer-flow projects.
 		timeout: 180_000,
 		use: DESKTOP_CHROME,
 	},

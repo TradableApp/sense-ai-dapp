@@ -1,4 +1,5 @@
 import { REFUND_TIMEOUT_MS } from '@/lib/constants';
+import { REFUND_UNLOCK_MARGIN_MS } from '@/lib/refund';
 
 import { expect, test } from '../fixtures';
 import { BUDGET, RESILIENCE_BUDGET } from '../helpers/budgets';
@@ -10,7 +11,7 @@ import {
 	type IndexedPromptRequest,
 	waitForGraph,
 } from '../helpers/graph';
-import { getABLEBalance } from '../helpers/hardhat';
+import { getFeeTokenBalance } from '../helpers/hardhat';
 import {
 	evidenceDirFrom,
 	oracleDownSkipReason,
@@ -40,8 +41,9 @@ import { DashboardPage } from '../pages/DashboardPage';
 // The runner declares that with E2E_RESILIENCE_ORACLE_DOWN=1; without it the check is skipped.
 //
 // The dApp refund button needs two gates open: the contract's (chain time >= createdAt + 1 h) and
-// the dApp's (wall clock > createdAt + REFUND_TIMEOUT_MS). Both are waited out for real, gently,
-// with the page left open so the dashboard's own refetch flips the button on.
+// the dApp's (wall clock > createdAt + REFUND_TIMEOUT_MS + REFUND_UNLOCK_MARGIN_MS). Both are
+// waited out for real, gently, with the page left open so the dashboard's own clock flips the
+// button on.
 //
 // Fallback: if the UI path fails after the hour, processRefund is sent Node-side so the window is
 // not lost, and the path is recorded as `script-fallback`. The chain assertions still run, and the
@@ -81,7 +83,7 @@ test.describe('Resilience — real 1 h refund through the dApp (R-REFUND-01)', (
 
 		try {
 			// 1. Record the balance before the prompt; the window is read from the contract.
-			const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, owner);
+			const balanceBefore = await getFeeTokenBalance(TOKEN_ADDRESS, owner);
 			const refundTimeoutS = await refundTimeoutSeconds(ESCROW_ADDRESS);
 			evidence.tokenBalance = { beforePrompt: balanceBefore };
 			evidence.refundTimeoutS = refundTimeoutS;
@@ -147,6 +149,7 @@ test.describe('Resilience — real 1 h refund through the dApp (R-REFUND-01)', (
 				refundTimeoutS: Number(refundTimeoutS),
 				nowMs: Date.now(),
 				uiTimeoutMs: REFUND_TIMEOUT_MS,
+				uiMarginMs: REFUND_UNLOCK_MARGIN_MS,
 			});
 			while (!readiness.uiReady) {
 				await sleepMs(RESILIENCE_BUDGET.refundPollMs);
@@ -156,6 +159,7 @@ test.describe('Resilience — real 1 h refund through the dApp (R-REFUND-01)', (
 					refundTimeoutS: Number(refundTimeoutS),
 					nowMs: Date.now(),
 					uiTimeoutMs: REFUND_TIMEOUT_MS,
+					uiMarginMs: REFUND_UNLOCK_MARGIN_MS,
 				});
 			}
 			evidence.readyAt = {
@@ -252,7 +256,7 @@ test.describe('Resilience — real 1 h refund through the dApp (R-REFUND-01)', (
 				await pendingEscrowCount(ESCROW_ADDRESS, owner),
 				'no pending escrow after refund',
 			).toBe(0n);
-			const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, owner);
+			const balanceAfter = await getFeeTokenBalance(TOKEN_ADDRESS, owner);
 			evidence.tokenBalance = { ...(evidence.tokenBalance as object), afterRefund: balanceAfter };
 			expect(balanceAfter, 'token balance restored to the pre-prompt value').toBe(balanceBefore);
 

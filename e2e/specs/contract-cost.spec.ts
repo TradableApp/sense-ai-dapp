@@ -1,10 +1,11 @@
 import { expect, test } from '../fixtures';
 import { LIVE_STACK } from '../helpers/chain';
-import { ABLE, ESCROW_ADDRESS, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
+import { ESCROW_ADDRESS, feeTokenUnits, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
+import { feeToken } from '../helpers/feeToken';
 import {
 	activatePlan,
-	fundABLE,
-	getABLEBalance,
+	fundFeeToken,
+	getFeeTokenBalance,
 	getPromptFee,
 	getSpendingLimit,
 	setPromptFee,
@@ -38,7 +39,7 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 	usePromptFeeRestore(test, ESCROW_ADDRESS);
 
 	test.beforeEach(async ({ freshUserAccount }) => {
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundFeeToken(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
 		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
 	});
 
@@ -46,21 +47,21 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 		freshChatPage,
 		freshUserAccount,
 	}) => {
-		const newFee = ABLE(5);
+		const newFee = feeTokenUnits(5);
 		const defaultFee = await getPromptFee(ESCROW_ADDRESS);
 		expect(newFee).not.toBe(defaultFee); // the change must be observable
 
 		await setPromptFee(ESCROW_ADDRESS, newFee);
 		expect(await getPromptFee(ESCROW_ADDRESS)).toBe(newFee);
 
-		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		const balanceBefore = await getFeeTokenBalance(TOKEN_ADDRESS, freshUserAccount.address);
 
 		await freshChatPage.goto();
 		await freshChatPage.sendPrompt('What is the current market sentiment?');
 		// Thinking indicator ⇒ the initiatePrompt tx mined and escrowed the fee.
 		await expect(freshChatPage.thinkingIndicator).toBeVisible({ timeout: 20_000 });
 
-		const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		const balanceAfter = await getFeeTokenBalance(TOKEN_ADDRESS, freshUserAccount.address);
 		const { spentAmount } = await getSpendingLimit(ESCROW_ADDRESS, freshUserAccount.address);
 
 		// The user is debited exactly the new fee, and the spending-limit "spent"
@@ -73,7 +74,7 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 		freshChatPage,
 		freshDashboardPage,
 	}) => {
-		const newFee = ABLE(7);
+		const newFee = feeTokenUnits(7);
 		await setPromptFee(ESCROW_ADDRESS, newFee);
 
 		await freshChatPage.goto();
@@ -88,7 +89,10 @@ test.describe('Contract cost change → dApp/usage (T-COST)', () => {
 		// relied upon). No reload needed. After one prompt at the new fee, Spent = 7.
 		await freshDashboardPage.goto();
 		await freshDashboardPage.assertHasPlan();
-		await expect(freshDashboardPage.spentValue).toHaveText(/\b7\b.*ABLE/, { timeout: 20_000 });
+		await expect(freshDashboardPage.spentValue).toHaveText(
+			new RegExp(`\\b7\\b.*\\b${feeToken().symbol}\\b`),
+			{ timeout: 20_000 },
+		);
 	});
 });
 
@@ -107,7 +111,7 @@ test.describe('Contract cost change across prompts (T-COST-MULTI)', () => {
 	usePromptFeeRestore(test, ESCROW_ADDRESS);
 
 	test.beforeEach(async ({ freshUserAccount }) => {
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundFeeToken(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
 		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
 	});
 
@@ -115,25 +119,25 @@ test.describe('Contract cost change across prompts (T-COST-MULTI)', () => {
 		freshChatPage,
 		freshUserAccount,
 	}) => {
-		const feeA = ABLE(3);
-		const feeB = ABLE(8);
+		const feeA = feeTokenUnits(3);
+		const feeB = feeTokenUnits(8);
 
 		await setPromptFee(ESCROW_ADDRESS, feeA);
-		const before1 = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		const before1 = await getFeeTokenBalance(TOKEN_ADDRESS, freshUserAccount.address);
 		await freshChatPage.goto();
 		await freshChatPage.sendPrompt('First prompt at fee A');
 		await expect(freshChatPage.thinkingIndicator).toBeVisible({ timeout: 20_000 });
-		const after1 = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		const after1 = await getFeeTokenBalance(TOKEN_ADDRESS, freshUserAccount.address);
 		expect(before1 - after1).toBe(feeA);
 
 		await setPromptFee(ESCROW_ADDRESS, feeB);
 		// The answer arrives (local IPFS) and thinking clears, re-enabling the
 		// composer for the second prompt.
 		await expect(freshChatPage.thinkingIndicator).toBeHidden({ timeout: 90_000 });
-		const before2 = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		const before2 = await getFeeTokenBalance(TOKEN_ADDRESS, freshUserAccount.address);
 		await freshChatPage.sendPrompt('Second prompt at fee B');
 		await expect(freshChatPage.thinkingIndicator).toBeVisible({ timeout: 20_000 });
-		const after2 = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		const after2 = await getFeeTokenBalance(TOKEN_ADDRESS, freshUserAccount.address);
 		expect(before2 - after2).toBe(feeB);
 	});
 });
@@ -154,21 +158,21 @@ test.describe('Insufficient balance blocks an action (T-COST-INSUFFICIENT)', () 
 	// CU-86d3uqgh7).
 	usePromptFeeRestore(test, ESCROW_ADDRESS);
 
-	test('T-COST-04: a prompt fails when the wallet holds less ABLE than the fee', async ({
+	test('T-COST-04: a prompt fails when the wallet holds fewer tokens than the fee', async ({
 		freshChatPage,
 		freshUserAccount,
 	}) => {
-		const fee = ABLE(10);
+		const fee = feeTokenUnits(10);
 		await setPromptFee(ESCROW_ADDRESS, fee);
 		// The plan activates fine (approve + setSpendingLimit move no tokens), but the
 		// wallet holds LESS than one fee — so initiatePrompt's transferFrom(user, escrow,
 		// fee) reverts ERC20InsufficientBalance, which the dApp surfaces as a toast (with
 		// the localnet faucet). This is the "ran out of ABLE" boundary.
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, ABLE(3));
+		await fundFeeToken(TOKEN_ADDRESS, freshUserAccount.address, feeTokenUnits(3));
 		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
 
 		await freshChatPage.goto();
-		await freshChatPage.sendPrompt('Not enough ABLE to cover the fee');
+		await freshChatPage.sendPrompt('Not enough tokens to cover the fee');
 
 		await expect(freshChatPage.insufficientBalanceToast).toBeVisible({ timeout: 15_000 });
 		// The prompt was rejected, not accepted — no thinking indicator appears.
@@ -190,16 +194,16 @@ test.describe('Insufficient balance blocks regenerate (T-COST-REGEN)', () => {
 		freshChatPage,
 		freshUserAccount,
 	}) => {
-		const fee = ABLE(10);
+		const fee = feeTokenUnits(10);
 		await setPromptFee(ESCROW_ADDRESS, fee);
 		// Fund EXACTLY one fee: the first prompt succeeds and drains the wallet to 0, so
 		// the follow-up regenerate (another fee) hits ERC20InsufficientBalance — proving
 		// the guard covers regenerate too, not just the initial prompt (T-COST-04).
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, fee);
+		await fundFeeToken(TOKEN_ADDRESS, freshUserAccount.address, fee);
 		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
 
 		await freshChatPage.goto();
-		await freshChatPage.sendPromptAndWaitForResponse('Spend my last ABLE'); // debits the only fee
+		await freshChatPage.sendPromptAndWaitForResponse('Spend my last tokens'); // debits the only fee
 
 		await freshChatPage.regenerate();
 		await expect(freshChatPage.insufficientBalanceToast).toBeVisible({ timeout: 15_000 });

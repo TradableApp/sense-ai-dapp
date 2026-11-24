@@ -74,11 +74,15 @@ type SpendingLimit @entity(immutable: false) {
 
 # --- Activity Feed ---
 
-# Immutable: id = txHash-logIndex
+# Immutable: id = txHash-logIndex; a CANCEL_RETURN row is txHash-logIndex-return, beside its CANCEL row
 type Activity @entity(immutable: true) {
 	id: ID!
 	user: Bytes!
+	# One of "CONVERSATION", "BRANCH", "METADATA_UPDATE", "CANCEL", "CANCEL_RETURN", "REFUND",
+	# "PLAN_UPDATE", "PLAN_REVOKE". A cancel writes two rows: CANCEL for minus the cancellation fee
+	# and CANCEL_RETURN for plus the escrowed amount handed back.
 	type: String!
+	# Negative for a cost, positive for money returned (CANCEL_RETURN, REFUND). Wei.
 	amount: BigInt!
 	timestamp: BigInt!
 	transactionHash: Bytes!

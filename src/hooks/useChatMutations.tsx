@@ -157,6 +157,23 @@ export function buildErrorHandler(
 		const isError = (abi: readonly unknown[], name: string) =>
 			messageNamesError(errorMessage, abi, name);
 
+		// A cancel takes its fee from the user's wallet through the plan (cancelPrompt in
+		// EVMAIAgentEscrow), so it is refused when the plan's remaining limit, the token approval
+		// or the balance is below the fee. Raising the limit is switched off while a prompt is
+		// pending, so the message says what is left to the user.
+		if (
+			action === CANCEL_ACTION &&
+			(isError(EVMAIAgentEscrowABI.abi, 'InsufficientSpendingLimitAllowance') ||
+				isError(feeToken.abi, 'ERC20InsufficientAllowance') ||
+				isError(feeToken.abi, 'ERC20InsufficientBalance'))
+		) {
+			toast.error('Could Not Cancel', {
+				description:
+					"The cancellation fee could not be taken: your plan's remaining limit, the token approval or your balance is below it. Nothing was cancelled. The prompt can be refunded one hour after it was sent, unless it is answered first.",
+			});
+			return;
+		}
+
 		// --- Token Errors ---
 		if (isError(feeToken.abi, 'ERC20InsufficientBalance')) {
 			const faucetOffer =
@@ -242,7 +259,11 @@ export function buildErrorHandler(
 		}
 		if (isError(EVMAIAgentEscrowABI.abi, 'PromptNotRefundableYet')) {
 			toast.error('Too Soon to Refund', {
-				description: 'You must wait 1 hour after the request was created before refunding.',
+				// The button is offered only after the hour (and a margin) on this device's clock, so
+				// a refusal means the network's clock has not yet reached it. A device clock that runs
+				// ahead makes that wait as long as it is ahead, so no time is promised.
+				description:
+					"The hour since the request was sent has not yet passed on the network, though it may have on this device's clock. The refund opens once it has.",
 			});
 			return;
 		}

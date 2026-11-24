@@ -148,30 +148,51 @@ describe('waitForChainTime', () => {
 });
 
 describe('refundReadiness', () => {
+	const createdAtS = 1_000;
+	const refundTimeoutS = 3_600;
+	const uiTimeoutMs = 3_600_000;
+	// The dApp offers the refund only this long after the hour (REFUND_UNLOCK_MARGIN_MS).
+	const uiMarginMs = 30_000;
+	const uiOpensAtMs = (createdAtS + refundTimeoutS) * 1000 + uiMarginMs;
+
 	it('never reports zero UI time remaining while the UI gate is still shut', () => {
 		// The dApp's gate is strict (>), so at the exact boundary it is shut for one more ms.
 		const r = refundReadiness({
-			chainTimeS: 1_000 + 3_600,
-			createdAtS: 1_000,
-			refundTimeoutS: 3_600,
-			nowMs: (1_000 + 3_600) * 1000,
-			uiTimeoutMs: 3_600_000,
+			chainTimeS: createdAtS + refundTimeoutS,
+			createdAtS,
+			refundTimeoutS,
+			nowMs: uiOpensAtMs,
+			uiTimeoutMs,
+			uiMarginMs,
 		});
 		expect(r.uiReady).toBe(false);
 		expect(r.uiRemainingMs).toBe(1);
 	});
 
-	const createdAtS = 1_000;
-	const refundTimeoutS = 3_600;
-	const uiTimeoutMs = 3_600_000;
+	// The button waits a margin past the hour, so a spec that waited only for the hour would look
+	// for it too soon.
+	it('keeps the UI gate shut just after the hour, until the margin has passed', () => {
+		const r = refundReadiness({
+			chainTimeS: createdAtS + refundTimeoutS + 1,
+			createdAtS,
+			refundTimeoutS,
+			nowMs: (createdAtS + refundTimeoutS) * 1000 + 1,
+			uiTimeoutMs,
+			uiMarginMs,
+		});
+		expect(r.chainReady).toBe(true);
+		expect(r.uiReady).toBe(false);
+		expect(r.uiRemainingMs).toBe(uiMarginMs - 1);
+	});
 
 	it('is not ready before the chain window closes, even if the UI gate is open', () => {
 		const r = refundReadiness({
 			chainTimeS: createdAtS + refundTimeoutS - 1,
 			createdAtS,
 			refundTimeoutS,
-			nowMs: (createdAtS + refundTimeoutS + 5) * 1000,
+			nowMs: uiOpensAtMs + 5_000,
 			uiTimeoutMs,
+			uiMarginMs,
 		});
 		expect(r.chainReady).toBe(false);
 		expect(r.uiReady).toBe(true);
@@ -186,11 +207,12 @@ describe('refundReadiness', () => {
 			refundTimeoutS,
 			nowMs: (createdAtS + refundTimeoutS - 10) * 1000,
 			uiTimeoutMs,
+			uiMarginMs,
 		});
 		expect(r.chainReady).toBe(true);
 		expect(r.uiReady).toBe(false);
 		expect(r.ready).toBe(false);
-		expect(r.uiRemainingMs).toBe(10_000);
+		expect(r.uiRemainingMs).toBe(10_000 + uiMarginMs);
 	});
 
 	it('is ready only when both gates are open, with zero remaining time', () => {
@@ -198,8 +220,9 @@ describe('refundReadiness', () => {
 			chainTimeS: createdAtS + refundTimeoutS,
 			createdAtS,
 			refundTimeoutS,
-			nowMs: (createdAtS + refundTimeoutS + 1) * 1000,
+			nowMs: uiOpensAtMs + 1,
 			uiTimeoutMs,
+			uiMarginMs,
 		});
 		expect(r.ready).toBe(true);
 		expect(r.chainRemainingS).toBe(0);
@@ -214,6 +237,7 @@ describe('refundReadiness', () => {
 				refundTimeoutS,
 				nowMs: 0,
 				uiTimeoutMs: 60_000,
+				uiMarginMs,
 			}),
 		).toThrow(/UI refund window/);
 	});

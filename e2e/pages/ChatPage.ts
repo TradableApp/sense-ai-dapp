@@ -1,6 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 
 import { BUDGET } from '../helpers/budgets';
+import { feeToken } from '../helpers/feeToken';
 
 /** A stored answer bubble: never the live stream's provisional one (see assistantMessages). */
 export const STORED_ANSWER = '.is-assistant[data-answer-state="stored"]';
@@ -113,7 +114,9 @@ export class ChatPage {
 	/** Error toast shown when a token-costing action can't be covered by the wallet
 	 *  balance (ERC20InsufficientBalance — see useChatMutations buildErrorHandler). */
 	get insufficientBalanceToast() {
-		return this.page.getByText(/insufficient ABLE balance/i).first();
+		return this.page
+			.getByText(new RegExp(`insufficient ${feeToken().symbol} balance`, 'i'))
+			.first();
 	}
 
 	// ── Reasoning / sources (answer disclosure) ─────────────────────────────────

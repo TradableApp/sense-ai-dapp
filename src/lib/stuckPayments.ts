@@ -1,4 +1,4 @@
-import { REFUND_TIMEOUT_MS } from '@/lib/constants';
+import { isPastRefundWindow } from '@/lib/refund';
 
 /**
  * Which of a wallet's payments are stuck: pending in the subgraph and still held by the
@@ -67,6 +67,19 @@ export async function fetchPendingPayments(
 	return { payments: [...byId.values()], pagesRead };
 }
 
+/**
+ * The list as it stands at `now`: a payment whose hour (and the margin after it, see
+ * `REFUND_UNLOCK_MARGIN_MS`) has passed since the list was read is refundable. One that was
+ * refundable when read stays so; one unlocked by `now` stays so only while `now` does not go
+ * back, which the caller's clock ensures.
+ */
+export const refundableAt = (stuck: readonly StuckPayment[], now: number): StuckPayment[] =>
+	stuck.map(payment =>
+		payment.isRefundable || !isPastRefundWindow(payment.createdAt, now)
+			? payment
+			: { ...payment, isRefundable: true },
+	);
+
 /** The candidates the escrow still holds; rejects if any read fails. */
 export async function verifyStuck(
 	candidates: readonly PendingPayment[],
@@ -88,7 +101,7 @@ export async function verifyStuck(
 				id: payment.id,
 				amount: payment.amount,
 				createdAt,
-				isRefundable: now > createdAt + REFUND_TIMEOUT_MS,
+				isRefundable: isPastRefundWindow(createdAt, now),
 			},
 		];
 	});
