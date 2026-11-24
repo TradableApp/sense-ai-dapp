@@ -1,12 +1,12 @@
 import { expect, test } from '../fixtures';
 import { CHAIN, LIVE_STACK } from '../helpers/chain';
-import { ABLE, ESCROW_ADDRESS, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
+import { ESCROW_ADDRESS, feeTokenUnits, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
 import {
 	activatePlan,
-	approveABLE,
-	fundABLE,
-	getABLEBalance,
+	approveFeeToken,
+	fundFeeToken,
 	getAllowance,
+	getFeeTokenBalance,
 	getSpendingLimit,
 	increaseTime,
 } from '../helpers/hardhat';
@@ -26,7 +26,7 @@ test.describe('Spending plan management (T-PLAN)', () => {
 		// Fund the fresh user so plan activation has ABLE to authorise. A fresh account starts
 		// with 0 ABLE on localnet and the allocator's 5 ABLE float on testnet; neither covers a
 		// 10 ABLE plan, so this is the precondition for every test below.
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundFeeToken(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
 	});
 
 	test('T-PLAN-01: Dashboard shows onboarding for new user', async ({ freshDashboardPage }) => {
@@ -54,12 +54,12 @@ test.describe('Spending plan management (T-PLAN)', () => {
 		await expect(freshPlanModal.daysInput).toBeVisible();
 	});
 
-	test('T-PLAN-04: Initial ABLE balance matches on-chain balance', async ({
+	test('T-PLAN-04: Initial token balance matches on-chain balance', async ({
 		freshDashboardPage,
 		freshUserAccount,
 	}) => {
 		await freshDashboardPage.goto();
-		const onChainBalance = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		const onChainBalance = await getFeeTokenBalance(TOKEN_ADDRESS, freshUserAccount.address);
 		const displayedBalance = await freshDashboardPage.allowanceValue.textContent();
 		expect(onChainBalance).toBeGreaterThan(0n);
 		expect(displayedBalance).toBeTruthy();
@@ -70,7 +70,7 @@ test.describe('Spending plan management (T-PLAN)', () => {
 		freshPlanModal,
 		freshUserAccount,
 	}) => {
-		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		const balanceBefore = await getFeeTokenBalance(TOKEN_ADDRESS, freshUserAccount.address);
 
 		await freshDashboardPage.goto();
 		await freshDashboardPage.getStartedButton.click();
@@ -79,7 +79,7 @@ test.describe('Spending plan management (T-PLAN)', () => {
 
 		// Allowance model: activation sets an ERC-20 allowance + spending limit but
 		// does NOT move ABLE — tokens are escrowed per-prompt (initiatePrompt).
-		const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		const balanceAfter = await getFeeTokenBalance(TOKEN_ADDRESS, freshUserAccount.address);
 		expect(balanceAfter).toBe(balanceBefore);
 		await freshDashboardPage.assertHasPlan();
 	});
@@ -102,7 +102,7 @@ test.describe('Spending plan management (T-PLAN)', () => {
 			ESCROW_ADDRESS,
 			freshUserAccount.address,
 		);
-		expect(allowance).toBe(ABLE(10));
+		expect(allowance).toBe(feeTokenUnits(10));
 		expect(spentAmount).toBe(0n);
 	});
 
@@ -143,7 +143,7 @@ test.describe('Spending plan management (T-PLAN)', () => {
 		await freshPlanModal.fillAndSubmit(10, 30);
 		await freshPlanModal.waitForTxCompletion();
 
-		const balanceBeforeCancel = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		const balanceBeforeCancel = await getFeeTokenBalance(TOKEN_ADDRESS, freshUserAccount.address);
 		// The plan left an approval for the escrow, so the revoke has a second step to take.
 		expect(
 			await getAllowance(TOKEN_ADDRESS, freshUserAccount.address, ESCROW_ADDRESS),
@@ -161,7 +161,7 @@ test.describe('Spending plan management (T-PLAN)', () => {
 
 		// Allowance model: nothing was escrowed at activation, so cancelling only
 		// clears the spending limit — the user's ABLE balance is unchanged.
-		const balanceAfterCancel = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		const balanceAfterCancel = await getFeeTokenBalance(TOKEN_ADDRESS, freshUserAccount.address);
 		expect(balanceAfterCancel).toBe(balanceBeforeCancel);
 	});
 
@@ -171,12 +171,12 @@ test.describe('Spending plan management (T-PLAN)', () => {
 	}) => {
 		const user = freshUserAccount.address;
 		// Activate a 10 ABLE plan directly on-chain (approve(escrow, 10) → setSpendingLimit(10)).
-		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, user, ABLE(10));
+		await activatePlan(TOKEN_ADDRESS, ESCROW_ADDRESS, user, feeTokenUnits(10));
 		// Then drop the ERC-20 allowance BELOW the plan's remaining limit (10 → 5). In production this
 		// happens after cancellations/refunds (the allowance isn't credited back); here we reproduce it
 		// directly. Doing it BEFORE the first dashboard load means the very first useUsagePlan read
 		// already observes the gap — no dependence on a staleTime refetch.
-		await approveABLE(TOKEN_ADDRESS, user, ESCROW_ADDRESS, ABLE(5));
+		await approveFeeToken(TOKEN_ADDRESS, user, ESCROW_ADDRESS, feeTokenUnits(5));
 
 		await freshDashboardPage.goto();
 		await freshDashboardPage.assertHasPlan();
@@ -216,7 +216,10 @@ test.describe('Plan modal validation (T-PLAN-EDGE)', () => {
 	test.skip(!LIVE_STACK, SKIP_REASON);
 	test.skip(!TOKEN_ADDRESS || !ESCROW_ADDRESS, 'Skipped: contract addresses not set');
 
-	test('T-PLAN-11: Cannot set plan with 0 ABLE', async ({ freshDashboardPage, freshPlanModal }) => {
+	test('T-PLAN-11: Cannot set plan with no tokens', async ({
+		freshDashboardPage,
+		freshPlanModal,
+	}) => {
 		// Unfunded: 0 ABLE on localnet, only the allocator's float on testnet. A zero limit is
 		// refused by the form itself, before any balance comparison.
 		await freshDashboardPage.goto();
@@ -237,7 +240,7 @@ test.describe('Plan modal validation (T-PLAN-EDGE)', () => {
 		freshUserAccount,
 	}) => {
 		// Hold SOME ABLE so the guard under test is "limit exceeds balance", not "no balance at all".
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, ABLE(1));
+		await fundFeeToken(TOKEN_ADDRESS, freshUserAccount.address, feeTokenUnits(1));
 
 		await freshDashboardPage.goto();
 		await freshDashboardPage.getStartedButton.click();
@@ -264,7 +267,7 @@ test.describe('Plan modal validation (T-PLAN-EDGE)', () => {
 				'chain; real limit expiry is CU-14ym9bvdmju',
 		);
 		// Must actually activate a plan to observe it expire — so it needs funding.
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundFeeToken(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
 
 		await freshDashboardPage.goto();
 		await freshDashboardPage.getStartedButton.click();

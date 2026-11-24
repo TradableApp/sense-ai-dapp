@@ -30,7 +30,8 @@ mini-reorgs age graph-node's indexing over a long single-chain run until answer 
 late-slot projects (see LOCALNET_SETUP troubleshooting). `revertToSnapshot` mines past the orphaned
 head and waits for subgraph re-sync (which is why snapshot-using projects carry 120s test budgets),
 but chains older than ~45-60 min remain unreliable — the sharded runner keeps every chain young
-while executing all 23 spec files.
+while executing every localnet spec file: 25 of the 28 under `e2e/specs/` (`brain-substance` makes
+real model calls and is kept out of every shard; the two `resilience-*` files are testnet only).
 
 ## Layers an e2e test can observe
 
@@ -44,9 +45,16 @@ while executing all 23 spec files.
 ## Supported today
 
 **Contract (`hardhat.ts`):** `getBlockNumber`, `getBalance`, `mineBlocks`, `increaseTime`,
-`takeSnapshot`/`revertToSnapshot`; ERC-20 `getABLEBalance`, `getEscrowBalance`,
-`getAllowance`; `fundABLE` (treasury transfer); `approveABLE`, `activatePlan`, `processRefund`; `getPromptFee`,
+`takeSnapshot`/`revertToSnapshot`; ERC-20 `getFeeTokenBalance`, `getEscrowBalance`,
+`getAllowance`; `fundFeeToken` (treasury transfer); `approveFeeToken`, `activatePlan`, `processRefund`; `getPromptFee`,
 `setPromptFee` (owner); `getSpendingLimit` → `{allowance, spentAmount, expiresAt}`.
+
+**Fee token (`feeToken.ts`, `transferRule.ts`):** `feeToken()` → `{symbol, transferable}`, read from
+`VITE_FEE_TOKEN` and the same profile data the app uses (`src/config/feeTokenConfig.ts`); it stops
+when the setting is missing or misspelt, as the build does. Specs and page objects never name a
+token: the `fee-token-literals` guard scans e2e code for one. For a token that moves only to or from
+listed addresses: `isTransferExempt`, `setTransferExempt` (owner; localnet only) and `tryTransfer`
+(an `eth_call`, so no gas, decoding `TransferNotAllowed(from, to)`).
 
 **Indexing (`graph.ts`):** `isGraphRunning`, `getIndexedBlockNumber`, `waitForIndexing(block)`,
 `getConversations(owner)` → `[{id}]`, `getPendingPayments(user)` → `[{id, amount}]`.
@@ -115,7 +123,7 @@ path m/44'/60'/0'/0/i). Indices `0..E2E_TESTNET_ACCOUNT_COUNT-1` are pre-funded 
 `fund` stage (`bun run e2e:testnet:fund`); index 0 is the shared "user" behind
 `authenticatedPage` / `injectMockWallet` and the oracle smoke's sender (`e2e:testnet:key -- 0`).
 `allocateFreshAccount` claims indices beyond those, funded just in time from the treasury
-(0.0005 ETH + 5 ABLE, `e2e/testnet/treasury.ts`) and recorded in the accounts file BEFORE the
+(0.0005 ETH + 5 fee tokens, `e2e/testnet/treasury.ts`) and recorded in the accounts file BEFORE the
 transfer; the `freshUserAccount` fixture sweeps the account back on teardown so the float
 outstanding is one account's worth. `bun run e2e:testnet:sweep` returns everything the file lists
 and the runner reads every balance from the chain itself as the verdict. The accounts file holds
@@ -131,15 +139,25 @@ never enters a page, a trace or a screenshot.
 **Env contract** (exported by the runner): `E2E_TESTNET=1`, `E2E_BASE_URL`, `E2E_TESTNET_SEED`,
 `E2E_TESTNET_ACCOUNT_COUNT`, `E2E_TESTNET_ACCOUNTS_FILE`, `E2E_TESTNET_RPC_URL`,
 `E2E_TESTNET_TREASURY_PRIVATE_KEY`, `E2E_TESTNET_TREASURY_ADDRESS`, `E2E_TESTNET_TOKEN_ADDRESS`,
-`E2E_TESTNET_CHAIN_ID`; escrow/agent addresses and the Graph URL come from `.env.testnet`
-(loaded by `playwright.config.ts` and the scripts, never overriding the runner's exports). A
+`E2E_TESTNET_CHAIN_ID`; escrow/agent addresses, the Graph URL and `VITE_FEE_TOKEN` come from
+`.env.testnet` (loaded by `playwright.config.ts` and the scripts, never overriding the runner's
+exports). `VITE_FEE_TOKEN` must name the token the hosted build was made for: `transfer-rule`
+reads it when the file is loaded, so a missing or misspelt value stops the whole project from
+loading, and a value naming the other token fails the file on the on-chain symbol check. A
 missing or malformed variable fails once, by name, before any request.
 
-### Included in the `testnet` project (158 tests, 17 files)
+### Included in the `testnet` project (163 tests, 18 files)
 
 `smoke`, `ui`, `auth`, `chat`, `history`, `branching`, `cancel`, `metadata`, `search`,
 `versions`, `multi-device`, `live-sync`, `activity`, `graph`, `reasoning`, `remaining-features`,
-`plan`. `T-BRANCH-08` (regenerating an inherited answer inside a branch: the new answer renders in the branch, is indexed under the branch and leaves the original untouched) needs agent contracts that file a regeneration under the conversation it was asked in; against older contracts the answer is filed under the original and the test fails. It checks the stored state on a second device (a clean browser context): the original is unchanged and the regenerated answer is in the branch. `T-BRANCH-09` and `T-BRANCH-10` open a branch on a second device, which holds none of the copies the branching device made: the dApp rebuilds the inherited history from the original conversation's messages, up to the branch point and no further (a prompt sent in the original after the branch was made does not appear in the branch). `T-BRANCH-11` does the same for a branch made after an edit: the second device shows the edited path the branch inherited, not the prompt the edit replaced. Chain-aware adaptations: `T-INIT-SMOKE-01/02` check the configured RPC's chain id and the Graph
+`plan`, `transfer-rule`. `transfer-rule` first reads the token's `symbol()` on chain and fails
+the file if it is not the symbol of the profile `VITE_FEE_TOKEN` selects (the hosted build and the
+local env file could otherwise disagree and turn every test into a skip). On a `transferable`
+profile `T-XFER-00` runs: a holder-to-holder transfer goes through, shown by `eth_call` (no gas).
+On the other profile, on testnet only `T-XFER-01` runs: the same transfer is refused with
+`TransferNotAllowed` and the same wallet then pays for a prompt; a refusal that a public node
+names only in its message (no revert data, so no addresses to compare) is accepted there and
+recorded as an annotation. `T-BRANCH-08` (regenerating an inherited answer inside a branch: the new answer renders in the branch, is indexed under the branch and leaves the original untouched) needs agent contracts that file a regeneration under the conversation it was asked in; against older contracts the answer is filed under the original and the test fails. It checks the stored state on a second device (a clean browser context): the original is unchanged and the regenerated answer is in the branch. `T-BRANCH-09` and `T-BRANCH-10` open a branch on a second device, which holds none of the copies the branching device made: the dApp rebuilds the inherited history from the original conversation's messages, up to the branch point and no further (a prompt sent in the original after the branch was made does not appear in the branch). `T-BRANCH-11` does the same for a branch made after an edit: the second device shows the edited path the branch inherited, not the prompt the edit replaced. Chain-aware adaptations: `T-INIT-SMOKE-01/02` check the configured RPC's chain id and the Graph
 endpoint; `cancel` advances time by WAITING (`advanceTime`: Base's 2 s blocks move
 `block.timestamp` on their own) instead of `evm_increaseTime`; `T-REASON-01` asserts a real
 reasoning block with ≥ 1 step and ≥ 1 http(s) source (the mock sentinel is inert on a real
@@ -195,7 +213,24 @@ keeps the resilience specs out of the `testnet` project and the regular testnet 
 | `sentry` (4)                   | intercepts the localnet DSN                                                                                         | localnet suite                                                                                                  |
 | `T-STUCK-01`, `T-PENDING-01`   | need the mock oracle's `__E2E_DROP__` to leave an escrow pending; a real oracle answers everything                  | `T-STUCK-01`: `testnet-resilience` R-REFUND-01 (oracle down, real stuck prompt); `T-PENDING-01`: localnet suite |
 | `T-REASON-02`                  | only the mock oracle can be told to omit reasoning                                                                  | localnet suite                                                                                                  |
+| `T-XFER-02`                    | a refund needs `increaseTime(1h)` past the refund window — time travel                                              | localnet suite; `testnet-resilience` R-REFUND-01 (real 1 h refund)                                              |
+| `T-XFER-03`                    | unlists the escrow with the token owner's key, which never enters the suite on a real network                       | localnet suite                                                                                                  |
 | `T-PLAN-13`                    | expires a plan with `evm_increaseTime(24 h)` — time travel                                                          | localnet suite; `testnet-resilience` R-EXPIRY-01 (real limit expiry, 120 s ahead)                               |
 | `T-HIST-11`                    | seven paid prompts to exercise the local message cache, which is the same code on every chain                       | localnet suite                                                                                                  |
 | `T-BRANCH-12`                  | makes storage fail on a second device with a route intercept, to show a branch without its history holds the prompt | localnet suite                                                                                                  |
 | `mobile` (ui on Pixel 5)       | not in the first testnet pass — desktop only; add when the desktop pass is green                                    | localnet suite                                                                                                  |
+
+### Transfer rule (`transfer-rule`, localnet)
+
+Gated on the build's profile (`feeToken().transferable`), never on a token's name, after the
+token's on-chain symbol is shown to match the profile (`assertChainTokenMatchesSetting`, a failure
+rather than a skip). On a transferable token `T-XFER-00` runs and the rest skip with that reason;
+on the other, `T-XFER-00` skips and `T-XFER-01` runs as on testnet, except that on localnet the
+refusal must carry its `from` and `to` (the local node always returns the revert data). `T-XFER-02`: a
+dropped prompt is refunded after `increaseTime(1h)` and the wallet's balance is back to what it was
+(escrow to user). `T-XFER-03`: once the dApp's fee token check has read both listings, the owner
+unlists the escrow and a prompt is sent; the token refuses the payment, the composer shows "Payment
+Not Accepted" ("no tokens were taken", `src/lib/feeTokenRefusal.ts`) and the balance is unchanged.
+The escrow is listed again in the test and in `afterAll` (owner-global state, restored forward-only;
+no `evm_revert`). `governance` lists its synthetic treasury before `setTreasury` on such a token and
+unlists it after the treasury is restored.

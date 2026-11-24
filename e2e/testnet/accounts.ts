@@ -121,7 +121,7 @@ export interface FundingPlan {
 }
 
 const formatEth = (wei: bigint): string => `${(Number(wei) / 1e18).toFixed(6)} ETH`;
-const formatToken = (wei: bigint): string => `${(Number(wei) / 1e18).toFixed(2)} ABLE`;
+const formatToken = (wei: bigint): string => `${(Number(wei) / 1e18).toFixed(2)} tokens`;
 
 /**
  * Can the treasury afford this run? Fails LOUDLY with the asset and the shortfall, before any
@@ -145,7 +145,7 @@ export function planFunding(p: FundingParams): FundingPlan {
 	}
 	if (p.treasuryTokenWei < totalTokenWei) {
 		problems.push(
-			`ABLE token short by ${formatToken(totalTokenWei - p.treasuryTokenWei)} ` +
+			`Fee token short by ${formatToken(totalTokenWei - p.treasuryTokenWei)} ` +
 				`(need ${formatToken(totalTokenWei)}, treasury holds ${formatToken(p.treasuryTokenWei)})`,
 		);
 	}

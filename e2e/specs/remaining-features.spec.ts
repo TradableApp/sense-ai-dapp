@@ -7,7 +7,7 @@ import {
 	TOKEN_ADDRESS,
 } from '../helpers/contracts';
 import { getPendingPayments, waitForGraph } from '../helpers/graph';
-import { fundABLE } from '../helpers/hardhat';
+import { fundFeeToken } from '../helpers/hardhat';
 import { DashboardPage } from '../pages/DashboardPage';
 import { PlanModal } from '../pages/PlanModal';
 
@@ -123,7 +123,7 @@ test.describe('Onboarding flow (T-ONBOARD)', () => {
 		const planModal = new PlanModal(freshPage);
 
 		// Localnet has no faucet — seed the fresh wallet from the deployer so it can authorize a limit.
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
+		await fundFeeToken(TOKEN_ADDRESS, freshUserAccount.address, PLAN_ALLOWANCE);
 
 		await expect(dashboard.getStartedButton).toBeVisible({ timeout: 30_000 });
 		await dashboard.getStartedButton.click();

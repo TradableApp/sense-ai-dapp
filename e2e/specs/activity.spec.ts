@@ -82,7 +82,7 @@ test.describe('Recent activity feed (T-ACTIVITY)', () => {
 		freshPage,
 	}) => {
 		await freshChatPage.goto();
-		await freshChatPage.sendPromptAndWaitForResponse('What is the sentiment on ABLE right now?');
+		await freshChatPage.sendPromptAndWaitForResponse('What is the sentiment on BTC right now?');
 
 		await waitForGraph(
 			() => getActivities(freshUserAccount.address),

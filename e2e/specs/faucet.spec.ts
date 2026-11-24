@@ -1,7 +1,7 @@
 import { expect, test } from '../fixtures';
 import { LIVE_STACK } from '../helpers/chain';
-import { ABLE, TOKEN_ADDRESS } from '../helpers/contracts';
-import { fundABLE, getABLEBalance } from '../helpers/hardhat';
+import { feeTokenUnits, TOKEN_ADDRESS } from '../helpers/contracts';
+import { fundFeeToken, getFeeTokenBalance } from '../helpers/hardhat';
 
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + deployed contracts (set E2E_LOCAL_SERVICES=1)';
@@ -26,7 +26,7 @@ test.describe('Localnet faucet (T-FAUCET)', () => {
 		freshPage,
 		freshUserAccount,
 	}) => {
-		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		const balanceBefore = await getFeeTokenBalance(TOKEN_ADDRESS, freshUserAccount.address);
 		// The user must start unfunded so the faucet button appears and the delta below
 		// reflects exactly what the faucet dispensed — independent of the (adjustable)
 		// configured amount.
@@ -64,12 +64,12 @@ test.describe('Localnet faucet (T-FAUCET)', () => {
 		expect(reported).toBeGreaterThan(0n);
 
 		// On-chain truth: the balance rose by exactly what the UI reported.
-		const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
-		expect(balanceAfter - balanceBefore).toBe(ABLE(reported));
+		const balanceAfter = await getFeeTokenBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		expect(balanceAfter - balanceBefore).toBe(feeTokenUnits(reported));
 		expect(cloudFnHit).toBe(false);
 	});
 
-	test('T-FAUCET-02: faucet tops up a user who already holds some ABLE', async ({
+	test('T-FAUCET-02: faucet tops up a user who already holds some tokens', async ({
 		freshDashboardPage,
 		freshPlanModal,
 		freshPage,
@@ -78,9 +78,9 @@ test.describe('Localnet faucet (T-FAUCET)', () => {
 		// The faucet is gated on "requested limit > wallet balance", NOT "balance == 0".
 		// Seed a non-zero balance below the requested limit so the faucet still appears
 		// and tops the user up — the has-some-ABLE branch that T-FAUCET-01 doesn't cover.
-		const seed = ABLE(50n);
-		await fundABLE(TOKEN_ADDRESS, freshUserAccount.address, seed);
-		const balanceBefore = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		const seed = feeTokenUnits(50n);
+		await fundFeeToken(TOKEN_ADDRESS, freshUserAccount.address, seed);
+		const balanceBefore = await getFeeTokenBalance(TOKEN_ADDRESS, freshUserAccount.address);
 		expect(balanceBefore).toBe(seed);
 
 		await freshDashboardPage.goto();
@@ -93,7 +93,7 @@ test.describe('Localnet faucet (T-FAUCET)', () => {
 
 		await expect(freshPage.getByText(/tokens received/i)).toBeVisible({ timeout: 30_000 });
 		// The seeded balance was topped up (not reset) — it strictly increased.
-		const balanceAfter = await getABLEBalance(TOKEN_ADDRESS, freshUserAccount.address);
+		const balanceAfter = await getFeeTokenBalance(TOKEN_ADDRESS, freshUserAccount.address);
 		expect(balanceAfter).toBeGreaterThan(balanceBefore);
 	});
 });

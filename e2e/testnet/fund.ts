@@ -34,7 +34,7 @@ async function main(): Promise<void> {
 	console.log(
 		`fund: chain ${cfg.chainId} via ${redactUrl(cfg.rpcUrl)}, treasury ${cfg.treasuryAddress}, ` +
 			`${cfg.prefundedCount} account(s) × ${Number(ETH_PER_ACCOUNT_WEI) / 1e18} ETH + ` +
-			`${Number(TOKEN_PER_ACCOUNT_WEI) / 1e18} ABLE`,
+			`${Number(TOKEN_PER_ACCOUNT_WEI) / 1e18} fee tokens`,
 	);
 	await assertTreasuryCanFund(cfg.prefundedCount);
 
@@ -49,7 +49,7 @@ async function main(): Promise<void> {
 		console.log(
 			`fund: #${account.index} ${account.address} ← ` +
 				`${Number(await ethBalance(account.address)) / 1e18} ETH, ` +
-				`${Number(await tokenBalance(account.address)) / 1e18} ABLE`,
+				`${Number(await tokenBalance(account.address)) / 1e18} fee tokens`,
 		);
 	}
 	console.log(`fund: wrote ${cfg.accountsFile}`);

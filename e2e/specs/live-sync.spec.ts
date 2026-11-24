@@ -3,7 +3,7 @@ import { type BrowserContext } from '@playwright/test';
 import { expect, test } from '../fixtures';
 import { LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
-import { openDevice, parseAble } from '../helpers/devices';
+import { openDevice, parseTokenAmount } from '../helpers/devices';
 import { freshAccountPool } from '../helpers/fresh-account';
 import { getConversations, waitForGraph } from '../helpers/graph';
 
@@ -66,7 +66,7 @@ test.describe('Live cross-device sync (T-LIVE)', () => {
 		await deviceA.dashboard.goto();
 		await deviceA.dashboard.assertHasPlan(30_000);
 		await expect(deviceA.dashboard.spentValue).toBeVisible({ timeout: 30_000 });
-		expect(parseAble((await deviceA.dashboard.spentValue.textContent()) ?? '')).toBe(0);
+		expect(parseTokenAmount((await deviceA.dashboard.spentValue.textContent()) ?? '')).toBe(0);
 
 		// Device B (same wallet) sends a prompt, which escrows a per-prompt fee against the SHARED
 		// spending limit → spentAmount rises on-chain.
@@ -78,10 +78,13 @@ test.describe('Live cross-device sync (T-LIVE)', () => {
 		// refocused, so a scheduled refetch can't explain this within LIVE_CONVERGENCE_MS — only
 		// useLiveResponse invalidating ['usagePlan'] on B's PromptSubmitted/PaymentEscrowed events.
 		await expect
-			.poll(async () => parseAble((await deviceA.dashboard.spentValue.textContent()) ?? ''), {
-				timeout: LIVE_CONVERGENCE_MS,
-				intervals: [1_000],
-			})
+			.poll(
+				async () => parseTokenAmount((await deviceA.dashboard.spentValue.textContent()) ?? ''),
+				{
+					timeout: LIVE_CONVERGENCE_MS,
+					intervals: [1_000],
+				},
+			)
 			.toBeGreaterThan(0);
 	});
 
