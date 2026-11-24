@@ -5,7 +5,6 @@ import db from './db';
 import inheritedHistory, { reachesFirstMessage } from './inheritedHistory';
 import { writeMessageCache } from './messageCacheStore';
 import promptPair from './promptPair';
-// import simulateOracleProcess from './mockApi';
 import {
 	addDeltaToLiveIndex,
 	removeConversationFromLiveIndex,

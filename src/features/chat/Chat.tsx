@@ -1,14 +1,13 @@
-import { type FC, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { collection, query, where } from 'firebase/firestore';
 import { Loader2, MicIcon, RotateCcwIcon, Split } from 'lucide-react';
+import { useReducedMotion } from 'motion/react';
 import { useForm } from 'react-hook-form';
 import ReactMarkdown from 'react-markdown';
 import { useNavigate } from 'react-router-dom';
-import remarkBreaks from 'remark-breaks';
-import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
 
 import senseaiLogo from '@/assets/logos/senseai-logo.svg';
@@ -29,7 +28,6 @@ import {
 	PromptInputTextarea,
 	PromptInputToolbar,
 } from '@/components/ai/prompt-input';
-import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ai/reasoning';
 import UserMessageActions from '@/components/ai/user-message-actions';
 import StorageUnavailableBanner from '@/components/StorageUnavailableBanner';
 import { Button } from '@/components/ui/button';
@@ -38,6 +36,7 @@ import { useSession } from '@/features/auth/SessionProvider';
 import useChatMutations from '@/hooks/useChatMutations';
 import useConversations from '@/hooks/useConversations';
 import useFirestoreCollectionListener from '@/hooks/useFirestoreCollectionListener';
+import useLiveReasoning from '@/hooks/useLiveReasoning';
 import usePaymentGate from '@/hooks/usePaymentGate';
 import useUsagePlan from '@/hooks/useUsagePlan';
 import { CANCELLATION_TIMEOUT_MS } from '@/lib/constants';
@@ -64,6 +63,8 @@ import { useAppDispatch, useAppSelector, useAppStore } from '@/store/hooks';
 import ActivatePlanCTA from './ActivatePlanCTA';
 import { cancelWindow } from './cancelWindow';
 import ComposerHoldNotices, { composerHoldDescription } from './ComposerHoldNotices';
+import { AssistantReasoning, LiveAnswerTurn, ProvisionalAnswer } from './LiveAnswer';
+import { markdownComponents, remarkPlugins } from './markdown';
 import isQueryAhead from './messageReconcile';
 import { composerStateFor } from './promptParent';
 import promptSchema from './promptSchema';
@@ -71,15 +72,6 @@ import showUnsavedPrompt, { isActiveConversation, noWalletAddressError } from '.
 import useHeldBranchRefresh from './useHeldBranchRefresh';
 import useOneSendAtATime from './useOneSendAtATime';
 import useUnsavedSendHold from './useUnsavedSendHold';
-
-interface MarkdownParagraphProps {
-	children: ReactNode;
-}
-
-function MarkdownParagraph({ children }: MarkdownParagraphProps) {
-	return <p className="inline">{children}</p>;
-}
-const markdownComponents: Record<string, FC<any>> = { p: MarkdownParagraph };
 
 interface BranchInfoProps {
 	originalConversationId: string | number;
@@ -312,6 +304,23 @@ export default function Chat() {
 		sessionKey,
 		queryClient,
 	});
+	// The live reasoning overlay: in memory, read at render only. Nothing below that decides
+	// what can be sent or cancelled reads it; those keep reading the stored messages.
+	const live = useLiveReasoning({
+		messages: activeConversationMessages,
+		sessionKey: sessionKey ?? null,
+		ownerAddress: ownerAddress ?? null,
+	});
+	const reduceMotion = useReducedMotion();
+	// The stored answers' ids: another device's pending prompt shows its live answer until its
+	// answer is among them.
+	const answerIds = useMemo(
+		() =>
+			new Set(
+				activeConversationMessages.filter(m => m.role === 'assistant').map(m => String(m.id ?? '')),
+			),
+		[activeConversationMessages],
+	);
 	// Held while a paid send from here was confirmed but not saved on this device.
 	const unsavedSend = useUnsavedSendHold({
 		queryClient,
@@ -605,13 +614,17 @@ export default function Chat() {
 			lastMessage.content &&
 			prevLastMessage &&
 			lastMessage.id === prevLastMessage.id &&
-			!prevLastMessage.content
+			!prevLastMessage.content &&
+			// Already shown in full as the provisional answer: the stored one is not typed again.
+			!live.hadProvisionalAnswer(lastMessage.id) &&
+			// Under reduced motion the answer is shown whole.
+			!reduceMotion
 		) {
 			simulateTyping(lastMessage);
 		}
 
 		prevMessagesRef.current = messagesToDisplay;
-	}, [messagesToDisplay]);
+	}, [messagesToDisplay, live, reduceMotion]);
 
 	useFirestoreCollectionListener({
 		queryFn: () => {
@@ -955,47 +968,24 @@ export default function Chat() {
 							const animatedContent = animatedContents[msgIdStr];
 							const isTyping =
 								animatedContent != null && animatedContent.length < (message.content?.length ?? 0);
-							const hasReasoning = message.reasoning && message.reasoning.length > 0;
+							const liveView = live.viewFor(message.id);
 
 							return (
 								<div
 									key={String(message.id ?? message.answerMessageId ?? '')}
 									className="space-y-3"
 								>
-									<div className="ml-10">
-										<Reasoning
-											isStreaming={isThinking}
-											defaultOpen={false}
-											reasoningDuration={message.reasoningDuration}
-											reasoningSteps={
-												message.reasoning && Array.isArray(message.reasoning)
-													? message.reasoning
-													: undefined
-											}
-										>
-											<ReasoningTrigger hidden={!hasReasoning} />
-											<ReasoningContent
-												hidden={!hasReasoning}
-												reasoningSteps={
-													message.reasoning && Array.isArray(message.reasoning)
-														? message.reasoning
-														: undefined
-												}
-												sources={
-													message.sources && Array.isArray(message.sources)
-														? message.sources
-														: undefined
-												}
-											/>
-										</Reasoning>
-									</div>
+									<AssistantReasoning message={message} live={liveView} isThinking={isThinking} />
+									{isThinking && liveView?.answer && (
+										<ProvisionalAnswer text={liveView.answer.text} />
+									)}
 									{!isThinking && (
 										<>
 											<Message from={message.role} className="items-start" status={message.status}>
 												<MessageContent>
 													<div className="prose inherit-color prose-sm dark:prose-invert max-w-none">
 														<ReactMarkdown
-															remarkPlugins={[remarkGfm, remarkBreaks]}
+															remarkPlugins={remarkPlugins}
 															components={markdownComponents}
 														>
 															{isTyping ? `${animatedContent}▍` : message.content}
@@ -1040,9 +1030,7 @@ export default function Chat() {
 								<Message from={message.role} className="items-start">
 									<MessageContent>
 										<div className="prose inherit-color prose-sm dark:prose-invert max-w-none">
-											<ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-												{message.content}
-											</ReactMarkdown>
+											<ReactMarkdown remarkPlugins={remarkPlugins}>{message.content}</ReactMarkdown>
 										</div>
 									</MessageContent>
 									<MessageAvatar address={ownerAddress ?? ''} name="ME" />
@@ -1056,6 +1044,11 @@ export default function Chat() {
 										onNavigate={handleNavigate}
 									/>
 								</div>
+								{message.status === 'pending' &&
+									message.answerMessageId &&
+									!answerIds.has(String(message.answerMessageId)) && (
+										<LiveAnswerTurn live={live.viewFor(message.answerMessageId)} />
+									)}
 
 								{message.id &&
 									currentConversation?.branchedAtMessageId === message.id &&

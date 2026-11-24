@@ -55,3 +55,13 @@ that makes the refactor safe to attempt.
 - **Interim:** until the refactor lands, the gaining-only `isQueryAhead` + the explicit
   `cancelledAnswerIdsRef` tombstone (a recognised deletion-tombstone pattern) are the correct,
   validated fixes within the current architecture — not to be removed piecemeal.
+
+## Note: live reasoning is an overlay, not a third store (2026-11-21)
+
+The live reasoning stream (ADR-0005, "Live plane as agreed") adds no message state. What it shows
+lives in memory per answer id (`src/lib/liveReasoning/liveStore.ts`) and is laid over the stored
+messages at render; it is written to neither Redux nor the query cache, and no rule that decides
+what can be sent or cancelled reads it. So the two-store seam above is unchanged, and the
+refactor this ADR defers does not have to account for it: when the stored answer lands the
+overlay is dropped and the stored record is shown. The old socket path that appended live steps
+to Redux (`addReasoningStepById`, `updateMessageContentById`) was removed with it.

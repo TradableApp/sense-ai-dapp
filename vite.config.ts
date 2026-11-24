@@ -8,17 +8,20 @@ import { VitePWA } from 'vite-plugin-pwa';
 import svgr from 'vite-plugin-svgr';
 
 import { assertFeeTokenConfig } from './src/config/feeTokenConfig';
+import { assertReasoningStreamConfig } from './src/config/reasoningStreamConfig';
 import { assertLocalStoreConfig } from './src/lib/localStoreName';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode, isPreview }) => {
 	// A build or dev server that cannot name its local store stops here, with the reason.
 	// `vite preview` only serves a bundle that already passed this.
-	// So does one that does not name the token that pays its fees.
+	// So does one that does not name the token that pays its fees, and one whose live reasoning
+	// stream setting is malformed (unset is allowed: the stream is then off).
 	if (!isPreview) {
 		const env = loadEnv(mode, process.cwd(), 'VITE_');
 		assertLocalStoreConfig(mode, env);
 		assertFeeTokenConfig(mode, env);
+		assertReasoningStreamConfig(mode, env);
 	}
 
 	const isProduction = mode === 'mainnet' || mode === 'testnet' || mode === 'production';

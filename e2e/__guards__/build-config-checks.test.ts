@@ -25,6 +25,8 @@ describe('build configuration checks', () => {
 		vi.stubEnv('VITE_CHAIN_ID', '84532');
 		vi.stubEnv('VITE_AGENT_CONTRACT_ADDRESS', AGENT);
 		vi.stubEnv('VITE_FEE_TOKEN', 'SENSE');
+		vi.stubEnv('VITE_REASONING_STREAM_URL', '');
+		vi.stubEnv('VITE_REASONING_STREAM_MODE', '');
 	});
 
 	afterEach(() => {
@@ -89,6 +91,41 @@ describe('build configuration checks', () => {
 
 		expect(() => build({ mode: 'test' })).not.toThrow();
 		expect(() => build({ mode: 'test', command: 'serve' })).not.toThrow();
+	});
+
+	// Unset means the live reasoning stream is off and the chat works as it always has.
+	it('lets a build through with no reasoning stream URL', () => {
+		expect(() => build()).not.toThrow();
+	});
+
+	it('lets a build through with an https reasoning stream URL', () => {
+		vi.stubEnv('VITE_REASONING_STREAM_URL', 'https://stream.example/live');
+		vi.stubEnv('VITE_REASONING_STREAM_MODE', 'poll');
+
+		expect(() => build()).not.toThrow();
+	});
+
+	it('stops a build whose reasoning stream URL is malformed, without printing it', () => {
+		const value = 'https://stream.example/?key=hidden-value';
+		vi.stubEnv('VITE_REASONING_STREAM_URL', value);
+
+		expect(() => build()).toThrow(/VITE_REASONING_STREAM_URL/);
+		expect(() => build()).not.toThrow(/hidden-value/);
+	});
+
+	it('stops a build whose reasoning stream mode is neither sse nor poll', () => {
+		vi.stubEnv('VITE_REASONING_STREAM_URL', 'https://stream.example');
+		vi.stubEnv('VITE_REASONING_STREAM_MODE', 'socket');
+
+		expect(() => build({ command: 'serve' })).toThrow(/VITE_REASONING_STREAM_MODE/);
+	});
+
+	it('takes a loopback http reasoning stream URL on localnet only', () => {
+		vi.stubEnv('VITE_CHAIN_ID', '31337');
+		vi.stubEnv('VITE_REASONING_STREAM_URL', 'http://127.0.0.1:8787');
+
+		expect(() => build({ mode: 'localnet' })).not.toThrow();
+		expect(() => build()).toThrow(/VITE_REASONING_STREAM_URL/);
 	});
 
 	it('checks when Vite does not say whether this is a preview', () => {

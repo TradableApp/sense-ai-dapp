@@ -23,6 +23,7 @@ import db from './db';
 import mergeMessages from './mergeMessages';
 import { writeMessageCache } from './messageCacheStore';
 import { fetchPayload, type PayloadFetchDeps, type PayloadStorageConfig } from './payloadStorage';
+import { withCheckedAnswerAttempt } from './reasoningAttempts';
 import { mergeSearchIndexDeltas } from './searchService';
 import type { Message } from './types';
 
@@ -289,6 +290,34 @@ interface ConversationUpdate {
 }
 
 /**
+ * The user message for a prompt known from the subgraph's prompt requests: one sent from
+ * another device, or one that was cancelled or refunded. It carries its answer id (the request's
+ * id) so a pending prompt's answer can be followed live on this device before it is stored.
+ */
+export function messageFromPromptRequest(
+	req: Pick<
+		ConversationUpdate['promptRequests'][number],
+		'id' | 'promptMessageId' | 'createdAt' | 'isCancelled' | 'isRefunded'
+	>,
+	payload: { promptText?: string; previousMessageId?: string | null },
+	conversationId: string,
+) {
+	let status = 'pending';
+	if (req.isCancelled) status = 'cancelled';
+	if (req.isRefunded) status = 'refunded';
+	return {
+		id: req.promptMessageId.toString(), // The prompt's id, not the answer's
+		conversationId,
+		parentId: payload.previousMessageId || null,
+		role: 'user',
+		content: payload.promptText,
+		createdAt: req.createdAt,
+		status, // Lets the UI style it differently
+		answerMessageId: String(req.id),
+	};
+}
+
+/**
  * @notice Fetches every conversation updated since the last sync from The Graph, with all of
  *         its messages and unanswered prompt requests, however many pages that takes.
  * @dev Throws `GraphFetchFailed` when any request fails (see graph/userUpdates.ts), and when
@@ -425,7 +454,8 @@ export default async function syncWithRemote(
 					return {
 						message: messageData
 							? {
-									...messageData,
+									// The answer attempt is kept only as a positive safe integer.
+									...withCheckedAnswerAttempt(messageData),
 									id: msg.id,
 									messageCID: msg.messageCID,
 							  }
@@ -454,21 +484,7 @@ export default async function syncWithRemote(
 							hexToBytes(req.encryptedPayload as `0x${string}`),
 						);
 						const payload = await decryptData(sessionKey, encryptedString);
-
-						// payload is { promptText: "...", ... }
-						let status = 'pending';
-						if (req.isCancelled) status = 'cancelled';
-						if (req.isRefunded) status = 'refunded';
-
-						return {
-							id: req.promptMessageId.toString(), // Use the prompt ID, not answer ID
-							conversationId: conv.id,
-							parentId: payload.previousMessageId || null,
-							role: 'user',
-							content: payload.promptText,
-							createdAt: req.createdAt,
-							status, // This flag allows the UI to style them differently
-						};
+						return messageFromPromptRequest(req, payload, conv.id);
 					} catch (err) {
 						console.warn(
 							`[syncService] Failed to decrypt prompt request ${req.promptMessageId}:`,

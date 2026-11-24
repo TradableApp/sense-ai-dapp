@@ -5,6 +5,7 @@ import { ReactNode } from 'react';
 import { BookIcon, ChevronDownIcon } from 'lucide-react';
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import safeHref from '@/lib/safeHref';
 import { cn } from '@/lib/utils';
 
 interface SourcesProps {
@@ -71,21 +72,27 @@ export function SourcesContent({ className, ...props }: SourcesContentProps) {
 	);
 }
 
+/** A source's link. A URL that is not http or https is shown as plain text, never as a link. */
 export function Source({ href, title, children, ...props }: SourceProps) {
+	const content = children ?? (
+		<>
+			<BookIcon className="h-4 w-4" />
+			<span className="block font-medium">{title}</span>
+		</>
+	);
+	const safe = safeHref(href);
+	if (!safe) {
+		return <span className="flex items-center gap-2 text-muted-foreground">{content}</span>;
+	}
 	return (
 		<a
 			className="flex items-center gap-2 text-primary"
-			href={href}
+			href={safe}
 			rel="noreferrer"
 			target="_blank"
 			{...props}
 		>
-			{children ?? (
-				<>
-					<BookIcon className="h-4 w-4" />
-					<span className="block font-medium">{title}</span>
-				</>
-			)}
+			{content}
 		</a>
 	);
 }

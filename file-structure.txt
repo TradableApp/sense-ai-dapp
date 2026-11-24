@@ -153,8 +153,6 @@
 │   │   ├── graph
 │   │   │   ├── queries.js
 │   │   │   └── schema.graphql
-│   │   ├── mockApi.js
-│   │   ├── mockData.js
 │   │   ├── schema.js
 │   │   ├── searchService.js
 │   │   ├── syncService.js
