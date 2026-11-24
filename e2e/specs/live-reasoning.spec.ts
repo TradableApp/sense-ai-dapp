@@ -206,8 +206,14 @@ interface Traffic {
 	bodies: string[];
 }
 
+// The host is read from the parsed address, so a page that only mentions the name in a path or a
+// query is not taken for Sentry. A local DSN has another host and is known by `ingest`.
+const isSentryHost = (url: string) => {
+	const { hostname } = new URL(url);
+	return hostname === 'sentry.io' || hostname.endsWith('.sentry.io');
+};
 const isSentryPost = (req: Request) =>
-	req.method() === 'POST' && (req.url().includes('sentry.io') || req.url().includes('ingest'));
+	req.method() === 'POST' && (isSentryHost(req.url()) || req.url().includes('ingest'));
 const LIVE_REPORT = /"check"\s*:\s*"live-reasoning"/;
 
 /** Starts recording the page's traffic. Register before the prompt is sent. */
