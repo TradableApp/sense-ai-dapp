@@ -99,6 +99,30 @@ Full inventory in the PR description / CU-86d3bawhh. Today most write-flow specs
 each flow is verified end-to-end (e.g. a delivered answer ⇒ `PromptRequest.isAnswered == true` and a
 `role:"assistant"` Message indexed, not just a rendered bubble).
 
+## Live reasoning (`live-reasoning` project, shard 2)
+
+The stack serves each answer's sealed frames from the oracle's stream server (port 8787,
+`/health`), and sync-config gives the dApp `VITE_REASONING_STREAM_URL=http://127.0.0.1:8787`.
+The specs never read that address: a stream request is recognised by its path
+(`/stream/<answerMessageId>`). The live view is recorded in the page with a MutationObserver, so
+a state that lasts one render (a reset clearing the steps) is seen without a poll catching it.
+"No report" means no Sentry envelope carrying `check: live-reasoning`; without a DSN in the build
+that check cannot be made and the test says so in its annotations.
+
+| Test          | What it shows                                                                                                                                                                                                                    |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `T-STREAM-01` | steps are shown while the answer is awaited, typed out in full; the steps shown live equal the stored steps after a reload, by title and (localnet) description; the proof is in no request URL or body; no report               |
+| `T-STREAM-02` | a re-run: the first run's step disappears on its reset (nothing is marked "Earlier attempt", so it was not taken as an attempt), "Retrying" is shown between, and the second run's steps are the stored ones                     |
+| `T-STREAM-03` | a plain prompt: the stream is opened (a 200), no live step, no reasoning or sources disclosure                                                                                                                                   |
+| `T-STREAM-04` | a second device on the same account, which learns of the prompt from the subgraph, shows the same live steps                                                                                                                     |
+| `T-STREAM-05` | the stream refused at the network: the answer still lands through the sync, with its stored reasoning; the record of the awaited period holds no live step, no "Retrying", no provisional answer, and no error toast at any time |
+| `T-STREAM-06` | the provisional answer ("Not yet confirmed") is recorded while the answer is awaited and never beside the stored one, the texts are identical, and the lead time is read from `performance`                                      |
+| `T-STREAM-07` | a source link in the live steps is an http(s) link with the source's URL                                                                                                                                                         |
+| `T-STREAM-08` | leaving the conversation closes the stream request, and none is opened again while the answer completes (skipped in `poll` mode, where no request stays open)                                                                    |
+
+`T-LIVE-01` and `T-LIVE-02` in `live-sync.spec.ts` stay `fixme`: they are about dashboard usage
+and history on an idle device, which this stream does not carry.
+
 ## Testnet mode (Base Sepolia) — what runs, what cannot, and why
 
 The same specs run against the REAL stack on Base Sepolia (chain 84532): the deployed
@@ -146,18 +170,22 @@ reads it when the file is loaded, so a missing or misspelt value stops the whole
 loading, and a value naming the other token fails the file on the on-chain symbol check. A
 missing or malformed variable fails once, by name, before any request.
 
-### Included in the `testnet` project (163 tests, 18 files)
+### Included in the `testnet` project (171 tests, 19 files)
 
 `smoke`, `ui`, `auth`, `chat`, `history`, `branching`, `cancel`, `metadata`, `search`,
-`versions`, `multi-device`, `live-sync`, `activity`, `graph`, `reasoning`, `remaining-features`,
-`plan`, `transfer-rule`. `transfer-rule` first reads the token's `symbol()` on chain and fails
+`versions`, `multi-device`, `live-sync`, `activity`, `graph`, `reasoning`, `live-reasoning`,
+`remaining-features`, `plan`, `transfer-rule`. `transfer-rule` first reads the token's `symbol()` on chain and fails
 the file if it is not the symbol of the profile `VITE_FEE_TOKEN` selects (the hosted build and the
 local env file could otherwise disagree and turn every test into a skip). On a `transferable`
 profile `T-XFER-00` runs: a holder-to-holder transfer goes through, shown by `eth_call` (no gas).
 On the other profile, on testnet only `T-XFER-01` runs: the same transfer is refused with
 `TransferNotAllowed` and the same wallet then pays for a prompt; a refusal that a public node
 names only in its message (no revert data, so no addresses to compare) is accepted there and
-recorded as an annotation. `T-BRANCH-08` (regenerating an inherited answer inside a branch: the new answer renders in the branch, is indexed under the branch and leaves the original untouched) needs agent contracts that file a regeneration under the conversation it was asked in; against older contracts the answer is filed under the original and the test fails. It checks the stored state on a second device (a clean browser context): the original is unchanged and the regenerated answer is in the branch. `T-BRANCH-09` and `T-BRANCH-10` open a branch on a second device, which holds none of the copies the branching device made: the dApp rebuilds the inherited history from the original conversation's messages, up to the branch point and no further (a prompt sent in the original after the branch was made does not appear in the branch). `T-BRANCH-11` does the same for a branch made after an edit: the second device shows the edited path the branch inherited, not the prompt the edit replaced. Chain-aware adaptations: `T-INIT-SMOKE-01/02` check the configured RPC's chain id and the Graph
+recorded as an annotation. From `live-reasoning` only `T-STREAM-01` (at least one live step
+seen while the answer is awaited, equal by title to the stored steps after a reload) and `T-STREAM-06`
+(the provisional answer before the stored one, identical text, lead time printed) run; both need
+a hosted build with `VITE_REASONING_STREAM_URL` set and fail saying so when no live step or
+provisional answer appears. `T-BRANCH-08` (regenerating an inherited answer inside a branch: the new answer renders in the branch, is indexed under the branch and leaves the original untouched) needs agent contracts that file a regeneration under the conversation it was asked in; against older contracts the answer is filed under the original and the test fails. It checks the stored state on a second device (a clean browser context): the original is unchanged and the regenerated answer is in the branch. `T-BRANCH-09` and `T-BRANCH-10` open a branch on a second device, which holds none of the copies the branching device made: the dApp rebuilds the inherited history from the original conversation's messages, up to the branch point and no further (a prompt sent in the original after the branch was made does not appear in the branch). `T-BRANCH-11` does the same for a branch made after an edit: the second device shows the edited path the branch inherited, not the prompt the edit replaced. Chain-aware adaptations: `T-INIT-SMOKE-01/02` check the configured RPC's chain id and the Graph
 endpoint; `cancel` advances time by WAITING (`advanceTime`: Base's 2 s blocks move
 `block.timestamp` on their own) instead of `evm_increaseTime`; `T-REASON-01` asserts a real
 reasoning block with ≥ 1 step and ≥ 1 http(s) source (the mock sentinel is inert on a real
@@ -202,23 +230,24 @@ keeps the resilience specs out of the `testnet` project and the regular testnet 
 
 ### Excluded, with the reason
 
-| Spec                           | Why it cannot run on a public chain                                                                                 | Covered by                                                                                                      |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `refunds` (3)                  | `increaseTime(1h)` past the refund window — time travel                                                             | localnet suite; `testnet-resilience` R-REFUND-01 (real 1 h refund)                                              |
-| `contract-cost` (5)            | owner-only fee setters from the deployer                                                                            | localnet suite; contract unit tests (tokenized-ai-agent)                                                        |
-| `governance` (10)              | owner key (addOracle, transferOwnership, upgrade) never enters the suite on a real network                          | localnet suite; CU-14ym9bvdmjt (admin rehearsal, done by hand)                                                  |
-| `faucet` (2)                   | localnet-only faucet path                                                                                           | hand-run against the real callable                                                                              |
-| `brain`, `brain-substance` (5) | read the oracle's Postgres over Cloud SQL mTLS from a laptop                                                        | oracle smoke (`smoke:base-testnet`)                                                                             |
-| `security` (4)                 | localnet-shaped request intercepts and storage inspection                                                           | localnet suite                                                                                                  |
-| `sentry` (4)                   | intercepts the localnet DSN                                                                                         | localnet suite                                                                                                  |
-| `T-STUCK-01`, `T-PENDING-01`   | need the mock oracle's `__E2E_DROP__` to leave an escrow pending; a real oracle answers everything                  | `T-STUCK-01`: `testnet-resilience` R-REFUND-01 (oracle down, real stuck prompt); `T-PENDING-01`: localnet suite |
-| `T-REASON-02`                  | only the mock oracle can be told to omit reasoning                                                                  | localnet suite                                                                                                  |
-| `T-XFER-02`                    | a refund needs `increaseTime(1h)` past the refund window — time travel                                              | localnet suite; `testnet-resilience` R-REFUND-01 (real 1 h refund)                                              |
-| `T-XFER-03`                    | unlists the escrow with the token owner's key, which never enters the suite on a real network                       | localnet suite                                                                                                  |
-| `T-PLAN-13`                    | expires a plan with `evm_increaseTime(24 h)` — time travel                                                          | localnet suite; `testnet-resilience` R-EXPIRY-01 (real limit expiry, 120 s ahead)                               |
-| `T-HIST-11`                    | seven paid prompts to exercise the local message cache, which is the same code on every chain                       | localnet suite                                                                                                  |
-| `T-BRANCH-12`                  | makes storage fail on a second device with a route intercept, to show a branch without its history holds the prompt | localnet suite                                                                                                  |
-| `mobile` (ui on Pixel 5)       | not in the first testnet pass — desktop only; add when the desktop pass is green                                    | localnet suite                                                                                                  |
+| Spec                            | Why it cannot run on a public chain                                                                                 | Covered by                                                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `refunds` (3)                   | `increaseTime(1h)` past the refund window — time travel                                                             | localnet suite; `testnet-resilience` R-REFUND-01 (real 1 h refund)                                              |
+| `contract-cost` (5)             | owner-only fee setters from the deployer                                                                            | localnet suite; contract unit tests (tokenized-ai-agent)                                                        |
+| `governance` (10)               | owner key (addOracle, transferOwnership, upgrade) never enters the suite on a real network                          | localnet suite; CU-14ym9bvdmjt (admin rehearsal, done by hand)                                                  |
+| `faucet` (2)                    | localnet-only faucet path                                                                                           | hand-run against the real callable                                                                              |
+| `brain`, `brain-substance` (5)  | read the oracle's Postgres over Cloud SQL mTLS from a laptop                                                        | oracle smoke (`smoke:base-testnet`)                                                                             |
+| `security` (4)                  | localnet-shaped request intercepts and storage inspection                                                           | localnet suite                                                                                                  |
+| `sentry` (4)                    | intercepts the localnet DSN                                                                                         | localnet suite                                                                                                  |
+| `T-STUCK-01`, `T-PENDING-01`    | need the mock oracle's `__E2E_DROP__` to leave an escrow pending; a real oracle answers everything                  | `T-STUCK-01`: `testnet-resilience` R-REFUND-01 (oracle down, real stuck prompt); `T-PENDING-01`: localnet suite |
+| `T-REASON-02`                   | only the mock oracle can be told to omit reasoning                                                                  | localnet suite                                                                                                  |
+| `T-STREAM-02..05`, `-07`, `-08` | need the mock oracle's sentinels (fixed steps, step spacing, a held answer, a re-run)                               | localnet suite                                                                                                  |
+| `T-XFER-02`                     | a refund needs `increaseTime(1h)` past the refund window — time travel                                              | localnet suite; `testnet-resilience` R-REFUND-01 (real 1 h refund)                                              |
+| `T-XFER-03`                     | unlists the escrow with the token owner's key, which never enters the suite on a real network                       | localnet suite                                                                                                  |
+| `T-PLAN-13`                     | expires a plan with `evm_increaseTime(24 h)` — time travel                                                          | localnet suite; `testnet-resilience` R-EXPIRY-01 (real limit expiry, 120 s ahead)                               |
+| `T-HIST-11`                     | seven paid prompts to exercise the local message cache, which is the same code on every chain                       | localnet suite                                                                                                  |
+| `T-BRANCH-12`                   | makes storage fail on a second device with a route intercept, to show a branch without its history holds the prompt | localnet suite                                                                                                  |
+| `mobile` (ui on Pixel 5)        | not in the first testnet pass — desktop only; add when the desktop pass is green                                    | localnet suite                                                                                                  |
 
 ### Transfer rule (`transfer-rule`, localnet)
 

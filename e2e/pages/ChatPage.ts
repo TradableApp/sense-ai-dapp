@@ -3,6 +3,9 @@ import { expect, type Page } from '@playwright/test';
 import { BUDGET } from '../helpers/budgets';
 import { feeToken } from '../helpers/feeToken';
 
+/** A stored answer bubble: never the live stream's provisional one (see assistantMessages). */
+export const STORED_ANSWER = '.is-assistant[data-answer-state="stored"]';
+
 /**
  * Page Object Model for the Chat page (/chat).
  */
@@ -53,22 +56,28 @@ export class ChatPage {
 	}
 
 	/** Loading / thinking indicator while awaiting oracle response. The assistant
-	 *  message renders a Reasoning block ("Thinking…") while content is empty. */
+	 *  message renders a Reasoning block ("Thinking…") while content is empty. It stays while a
+	 *  provisional answer from the live stream is shown (that answer is not stored content), so
+	 *  "hidden" still means the stored answer has landed. */
 	get thinkingIndicator() {
 		return this.page.getByText(/thinking/i).first();
 	}
 
-	/** All AI response bubbles. The `.is-assistant` class is only present once the
-	 *  answer HAS content (a content-less "Thinking…" placeholder renders no bubble),
-	 *  so the count increments by one per delivered answer. */
+	/** All STORED AI answer bubbles. The `.is-assistant` class is only present once an
+	 *  answer HAS content (a content-less "Thinking…" placeholder renders no bubble), so the
+	 *  count increments by one per delivered answer. The live stream's provisional answer is
+	 *  also an `.is-assistant` bubble, but carries `data-answer-state="provisional"`; matching
+	 *  `"stored"` only means every count and wait built on this (sendPromptAndWaitForResponse,
+	 *  regenerate, the specs' toHaveCount) waits for the answer from the user's history, never
+	 *  the provisional one (components/ai/message.tsx). */
 	get assistantMessages() {
-		return this.page.locator('.is-assistant');
+		return this.page.locator(STORED_ANSWER);
 	}
 
-	/** The last AI response message. Message bubbles carry an `.is-assistant`
-	 *  class (see components/ai/message.tsx); user bubbles carry `.is-user`. */
+	/** The last stored AI answer (see assistantMessages for why the provisional one is excluded).
+	 *  User bubbles carry `.is-user`. */
 	get latestAiMessage() {
-		return this.page.locator('.is-assistant').last();
+		return this.page.locator(STORED_ANSWER).last();
 	}
 
 	/** All user messages in the conversation */
@@ -118,6 +127,19 @@ export class ChatPage {
 
 	get reasoningTrigger() {
 		return this.page.getByRole('button', { name: /thought for \d+ seconds?/i }).first();
+	}
+
+	/**
+	 * Opens the stored answer's reasoning block. With the live stream on, the block opens by itself
+	 * while steps arrive and closes a second after the stored answer lands; a click inside that
+	 * second would close it. So this waits for it to be closed, opens it, and checks it is open.
+	 */
+	async expandReasoning() {
+		await expect(this.reasoningTrigger).toHaveAttribute('aria-expanded', 'false', {
+			timeout: 15_000,
+		});
+		await this.reasoningTrigger.click();
+		await expect(this.reasoningTrigger).toHaveAttribute('aria-expanded', 'true');
 	}
 
 	/** The nested "Used N sources" disclosure inside an expanded reasoning block. */

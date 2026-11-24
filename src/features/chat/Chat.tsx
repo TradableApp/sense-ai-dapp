@@ -981,7 +981,12 @@ export default function Chat() {
 									)}
 									{!isThinking && (
 										<>
-											<Message from={message.role} className="items-start" status={message.status}>
+											<Message
+												from={message.role}
+												answerState="stored"
+												className="items-start"
+												status={message.status}
+											>
 												<MessageContent>
 													<div className="prose inherit-color prose-sm dark:prose-invert max-w-none">
 														<ReactMarkdown

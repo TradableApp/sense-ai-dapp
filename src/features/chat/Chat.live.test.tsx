@@ -179,6 +179,10 @@ describe('the live overlay in the chat', () => {
 
 		const answer = screen.getByTestId('live-provisional-answer');
 		expect(within(answer).getByText('Prices rose today.')).toBeTruthy();
+		// The e2e page object counts stored answers by this attribute; the provisional bubble must
+		// never carry "stored", or a wait for the stored answer would end on it.
+		const bubbles = [...document.querySelectorAll('.is-assistant')];
+		expect(bubbles.map(b => b.getAttribute('data-answer-state'))).toEqual(['provisional']);
 		const mark = screen.getByRole('button', { name: 'Not yet confirmed' });
 		expect(mark.getAttribute('data-testid')).toBe('live-provisional-mark');
 		expect(mark.getAttribute('aria-describedby')).toBeTruthy();
@@ -201,6 +205,8 @@ describe('the live overlay in the chat', () => {
 
 		expect(screen.getByText('Prices rose.')).toBeTruthy();
 		expect(document.body.textContent).not.toContain('▍');
+		const bubbles = [...document.querySelectorAll('.is-assistant')];
+		expect(bubbles.map(b => b.getAttribute('data-answer-state'))).toEqual(['stored']);
 		expect(screen.queryByTestId('live-provisional-mark')).toBeNull();
 	});
 

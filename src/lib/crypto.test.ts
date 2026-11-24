@@ -129,3 +129,22 @@ describe('decryptBytes', () => {
 		await expect(decryptBytes(key, 'nodothere')).rejects.toThrow('Invalid encrypted data format.');
 	});
 });
+
+describe('decryptBytes', () => {
+	it('gives the plaintext bytes, which decryptData reads as JSON', async () => {
+		const key = await deriveKeyFromEntropy(ENTROPY, OWNER);
+		const encrypted = await encryptData(key, { a: 'é' });
+
+		const bytes = await decryptBytes(key, encrypted);
+
+		expect(new TextDecoder().decode(bytes)).toBe('{"a":"é"}');
+		expect(bytes.length).toBe(10);
+		expect(await decryptData(key, encrypted)).toEqual({ a: 'é' });
+	});
+
+	it('throws on the same malformed input decryptData refuses', async () => {
+		const key = await deriveKeyFromEntropy(ENTROPY, OWNER);
+
+		await expect(decryptBytes(key, 'nodothere')).rejects.toThrow('Invalid encrypted data format.');
+	});
+});

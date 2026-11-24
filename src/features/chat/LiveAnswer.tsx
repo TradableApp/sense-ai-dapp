@@ -61,7 +61,7 @@ export function ProvisionalMark() {
 export function ProvisionalAnswer({ text }: { text: string }) {
 	return (
 		<div data-testid="live-provisional-answer" aria-live="off" className="space-y-1.5">
-			<Message from="assistant" className="items-start">
+			<Message from="assistant" answerState="provisional" className="items-start">
 				<MessageContent className="border border-dashed border-amber-500/40">
 					<div className="prose inherit-color prose-sm dark:prose-invert max-w-none">
 						<ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
