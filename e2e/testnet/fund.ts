@@ -2,7 +2,7 @@
  * `bun run e2e:testnet:fund` — the run-day runner's `fund` stage.
  *
  * Derives the pre-funded accounts (indices 0..E2E_TESTNET_ACCOUNT_COUNT-1) from the run seed,
- * checks the treasury can afford them, funds each with ETH + ABLE, and writes the accounts file
+ * checks the treasury can afford them, funds each with ETH + the fee token, and writes the accounts file
  * (addresses only). Index 0 doubles as the shared "user" for the cached-auth fixtures and as the
  * oracle smoke's sender (`key -- 0`).
  *
