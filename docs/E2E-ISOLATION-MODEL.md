@@ -53,6 +53,14 @@ balance. The advance is contained the same way it always was: `plan` runs alone,
 last test in the file, and the file reads nothing indexed. On testnet T-PLAN-13 is skipped (no
 time travel on a public chain) and the other 13 tests run.
 
+Two specs inside the graph-asserting shards also advance the clock, by one hour each:
+`refunds` and `transfer-rule` (`T-XFER-02`, to pass the refund window). They do not run alone, and
+every project after them in config order runs an hour ahead. That is safe only because each of
+their tests uses a fresh account and no later spec reads an absolute time on another account
+(stuck-request detection and refund eligibility are read on the account that made the prompt).
+A spec that reads "older than an hour" across accounts would fail depending on run order: move
+the advancing test to its own invocation before adding one.
+
 That is the full test for any future exemption from rule 1: **unrewindable global state a fresh
 account cannot isolate, no indexed reads, and its own invocation.** All three, or migrate to
 fresh accounts — and even then prefer a localnet-only gate on the one test, as `plan` does.
@@ -62,7 +70,7 @@ fresh accounts — and even then prefer a localnet-only gate on the one test, as
 A pristine per-test account gives the same isolation as a revert without rewinding the chain.
 The allocator (`e2e/helpers/fresh-account.ts`) hands out Hardhat accounts 2–249, provisions ETH
 and impersonation at claim time, and resets per invocation (keyed on genesis hash). A fresh
-account holds **zero fee tokens** by construction — several specs depend on that.
+account holds **no fee tokens** by construction — several specs depend on that.
 
 ---
 

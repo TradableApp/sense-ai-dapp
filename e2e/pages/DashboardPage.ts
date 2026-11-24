@@ -1,5 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 
+import { feeTokenSymbolPattern } from '../helpers/feeToken';
+
 /**
  * Page Object Model for the Usage Dashboard (/).
  */
@@ -31,7 +33,7 @@ export class DashboardPage {
 	get allowanceValue() {
 		return this.page
 			.getByTestId('plan-allowance')
-			.or(this.page.getByText(/able/i).filter({ hasText: /\d/ }).first());
+			.or(this.page.getByText(feeTokenSymbolPattern()).filter({ hasText: /\d/ }).first());
 	}
 
 	/** "Manage Plan" button */
@@ -39,19 +41,33 @@ export class DashboardPage {
 		return this.page.getByRole('button', { name: /manage plan|manage/i });
 	}
 
-	/** The "Spent" value in PlanStatusCard ("<n> ABLE"). Sourced from useUsagePlan →
+	/** The "Spent" value in PlanStatusCard ("<n> <symbol>"). Sourced from useUsagePlan →
 	 *  spendingLimits.spentAmount, so it reflects the per-prompt cost actually
 	 *  debited. Testid-first (matching `allowanceValue`), with a text fallback. */
 	get spentValue() {
 		return this.page
 			.getByTestId('plan-spent-value')
-			.or(this.page.getByText('Spent', { exact: true }).locator('..').getByText(/ABLE/).first());
+			.or(
+				this.page
+					.getByText('Spent', { exact: true })
+					.locator('..')
+					.getByText(feeTokenSymbolPattern())
+					.first(),
+			);
 	}
 
 	/** RecentActivityCard root (data-testid on the Card). Scope activity-row assertions to this so a
 	 *  label match is proven to live INSIDE the feed, not in some other layout/tooltip/aria node. */
 	get activityCard() {
 		return this.page.getByTestId('recent-activity-card');
+	}
+
+	/** The first feed row whose label is exactly `label`: the label's paragraph sits in the row's
+	 *  text column, beside the icon and the amount, so the row is two levels up. Its text is the
+	 *  label, the relative time and then the amount ("<amount> <symbol>"), or no amount when the
+	 *  action moved nothing. */
+	activityRow(label: string) {
+		return this.activityCard.getByText(label, { exact: true }).first().locator('../..');
 	}
 
 	/** PlanStatusCard's full-width allowance-gap warning panel, rendered whenever the on-chain
@@ -76,7 +92,8 @@ export class DashboardPage {
 	}
 
 	/** Per-request "Refund" button — only rendered once the request is refundable
-	 *  (Date.now() > createdAt + REFUND_TIMEOUT_MS). Base locator (see stuckRequestRow). */
+	 *  (Date.now() > createdAt + REFUND_TIMEOUT_MS + REFUND_UNLOCK_MARGIN_MS). Base locator (see
+	 *  stuckRequestRow). */
 	get refundButton() {
 		return this.page.getByRole('button', { name: /^refund$/i });
 	}

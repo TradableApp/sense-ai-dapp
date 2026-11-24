@@ -17,6 +17,8 @@ const state = vi.hoisted(() => ({
 	chainId: 8453,
 	mutate: vi.fn(),
 	askAgain: vi.fn(),
+	// A plan transaction under way anywhere in the app (another dialog, a notice).
+	isUnderWay: false,
 }));
 
 vi.mock('@/config/feeToken', async original => {
@@ -48,8 +50,10 @@ vi.mock('@/hooks/useTokenBalance', () => ({ default: vi.fn() }));
 vi.mock('./PlanValueEstimate', () => ({ default: () => null }));
 vi.mock('./usePlanMutations', () => ({
 	default: () => ({
+		isUnderWay: state.isUnderWay,
 		setPlanMutation: { mutate: state.mutate, isPending: false },
 		revokeMutation: { mutate: vi.fn(), isPending: false },
+		clearApprovalMutation: { mutate: vi.fn(), isPending: false },
 	}),
 }));
 
@@ -74,6 +78,7 @@ beforeEach(() => {
 	state.chainId = 8453;
 	state.mutate.mockReset();
 	state.askAgain.mockReset();
+	state.isUnderWay = false;
 	vi.mocked(useFeeTokenCheck).mockReturnValue({
 		verdict: 'unknown',
 		blocks: action => blocksAction('unknown', action),
@@ -230,5 +235,80 @@ describe('a first offer that is the whole balance', () => {
 		await renderDialog();
 
 		expect(label()).toBeNull();
+	});
+});
+
+// The words the form shows, read from the dialog itself rather than from a schema: a schema
+// option the installed validation library no longer reads (it ignores unknown ones) would
+// change these to its own defaults while every schema-level test still passed.
+describe('the plan form says what is wrong in its own words', () => {
+	const daysField = () => document.getElementById('days') as HTMLInputElement;
+
+	async function type(field: HTMLInputElement, value: string) {
+		await act(async () => {
+			fireEvent.change(field, { target: { value } });
+		});
+	}
+
+	it.each([
+		['an empty limit', limitField, '', 'Limit must be a number.'],
+		['a limit of zero', limitField, '0', 'Limit must be greater than zero.'],
+		['a negative limit', limitField, '-5', 'Limit must be greater than zero.'],
+		['an empty duration', daysField, '', 'Days must be a number.'],
+		['a duration of zero days', daysField, '0', 'Duration must be at least one day.'],
+	])('for %s', async (_label, field, value, message) => {
+		await renderDialog();
+
+		await type(field(), value);
+
+		expect(screen.queryByText(message)).not.toBeNull();
+		expect(submitButton().hasAttribute('disabled')).toBe(true);
+	});
+
+	it('shows no message for a valid limit and duration', async () => {
+		await renderDialog();
+
+		await type(limitField(), '20');
+		await type(daysField(), '30');
+
+		expect(screen.queryByText(/must be/)).toBeNull();
+	});
+});
+
+describe('the plan dialog while a plan transaction is under way elsewhere', () => {
+	it('disables the submit and Revoke, and sends nothing', async () => {
+		state.isUnderWay = true;
+		render(
+			<ManagePlanModal
+				open
+				onOpenChange={vi.fn()}
+				existingPlan={{ allowance: 100, pendingEscrowCount: 0 }}
+			/>,
+		);
+		await act(async () => undefined);
+
+		const submit = screen.getByRole('button', { name: 'Save Changes' });
+		expect((submit as HTMLButtonElement).disabled).toBe(true);
+		expect((screen.getByRole('button', { name: 'Revoke' }) as HTMLButtonElement).disabled).toBe(
+			true,
+		);
+		fireEvent.click(submit);
+		await act(async () => undefined);
+		expect(state.mutate).not.toHaveBeenCalled();
+	});
+
+	it('enables them once nothing is under way', async () => {
+		render(
+			<ManagePlanModal
+				open
+				onOpenChange={vi.fn()}
+				existingPlan={{ allowance: 100, pendingEscrowCount: 0 }}
+			/>,
+		);
+		await act(async () => undefined);
+
+		expect((screen.getByRole('button', { name: 'Revoke' }) as HTMLButtonElement).disabled).toBe(
+			false,
+		);
 	});
 });

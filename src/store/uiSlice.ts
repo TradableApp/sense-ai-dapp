@@ -19,6 +19,14 @@ export interface UiState {
 	storageDegraded: boolean;
 	/** The user dismissed the banner for the current outage. Cleared when storage recovers. */
 	storageDegradedDismissed: boolean;
+	/**
+	 * True while the last sync pass could not read The Graph (nothing stored, cursor held).
+	 * Set by useConversations from the sync result; read by StorageUnavailableBanner and the
+	 * notice of a branch held for its history.
+	 */
+	graphUnavailable: boolean;
+	/** The user dismissed that notice for the current failure. Cleared by a pass that read it. */
+	graphUnavailableDismissed: boolean;
 }
 
 const initialState: UiState = {
@@ -31,6 +39,8 @@ const initialState: UiState = {
 	currentModal: { type: null, props: {} },
 	storageDegraded: false,
 	storageDegradedDismissed: false,
+	graphUnavailable: false,
+	graphUnavailableDismissed: false,
 };
 
 export const uiSlice = createSlice({
@@ -82,10 +92,28 @@ export const uiSlice = createSlice({
 		dismissStorageDegraded: state => {
 			state.storageDegradedDismissed = true;
 		},
+
+		/** Flags (or clears) the "history could not be refreshed" state after a sync pass. */
+		setGraphUnavailable: (state, action: PayloadAction<boolean>) => {
+			state.graphUnavailable = action.payload;
+			// A pass that read The Graph re-arms the notice so the next failure is announced again.
+			if (!action.payload) state.graphUnavailableDismissed = false;
+		},
+
+		/** Hides that notice for the current failure, in every place it is rendered. */
+		dismissGraphUnavailable: state => {
+			state.graphUnavailableDismissed = true;
+		},
 	},
 });
 
-export const { openModal, closeModal, setStorageDegraded, dismissStorageDegraded } =
-	uiSlice.actions;
+export const {
+	openModal,
+	closeModal,
+	setStorageDegraded,
+	dismissStorageDegraded,
+	setGraphUnavailable,
+	dismissGraphUnavailable,
+} = uiSlice.actions;
 
 export default uiSlice.reducer;

@@ -13,19 +13,25 @@ import {
 
 import { useControllableState } from '@radix-ui/react-use-controllable-state';
 import { BrainIcon, ChevronDownIcon } from 'lucide-react';
+import { useReducedMotion } from 'motion/react';
 
+import EarlierAttempt from '@/components/ai/earlier-attempt';
 import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai/source';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { currentAttemptOf, splitByAttempt } from '@/lib/reasoningAttempts';
 import { cn } from '@/lib/utils';
 
 interface ReasoningStep {
 	title: string;
 	description: string;
+	/** The provider attempt that produced the step; none means attempt 1. */
+	attempt?: number;
 }
 
 interface SourceItem {
 	url: string;
 	title: string;
+	attempt?: number;
 }
 
 interface ReasoningContextValue {
@@ -59,6 +65,11 @@ interface ReasoningContentProps {
 	hidden?: boolean;
 	reasoningSteps?: ReasoningStep[];
 	sources?: SourceItem[];
+	/**
+	 * The attempt shown as current when it is higher than any step's: live, a fallback starts
+	 * before its first step arrives, and the steps so far move to "Earlier attempt" at once.
+	 */
+	currentAttempt?: number;
 	[key: string]: unknown;
 }
 
@@ -71,6 +82,13 @@ const useReasoning = () => {
 	}
 	return context;
 };
+
+interface TypedText {
+	/** The description being typed. */
+	target: string;
+	/** How much of it is shown so far. */
+	text: string;
+}
 
 const AUTO_CLOSE_DELAY = 1000;
 const TYPING_INTERVAL = 30;
@@ -177,14 +195,30 @@ export const ReasoningTrigger = memo(({ className, hidden, ...props }: Reasoning
 });
 
 export const ReasoningContent = memo(
-	({ className, hidden, reasoningSteps, sources, ...props }: ReasoningContentProps) => {
+	({
+		className,
+		hidden,
+		reasoningSteps,
+		sources,
+		currentAttempt,
+		...props
+	}: ReasoningContentProps) => {
 		const { isStreaming } = useReasoning();
-		const [animatedDescriptions, setAnimatedDescriptions] = useState<Record<string, string>>({});
+		const reduceMotion = useReducedMotion();
+		// What is being typed at each position, with the description it is typing. It is shown only
+		// while the answer is awaited and only under a step with that same description: once the
+		// stored record has content it is what is rendered, and a new run's step at a position
+		// never shows what was typed for an earlier run there.
+		const [animatedDescriptions, setAnimatedDescriptions] = useState<Record<string, TypedText>>({});
 		const typingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+		// The tick that starts a step's typing. Cleared on unmount with the interval: left pending,
+		// it would start an interval on a component that is gone.
+		const typingStartRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 		const prevReasoningRef = useRef<ReasoningStep[]>([]);
 
 		useEffect(
 			() => () => {
+				if (typingStartRef.current !== null) clearTimeout(typingStartRef.current);
 				if (typingTimerRef.current !== null) clearInterval(typingTimerRef.current);
 			},
 			[],
@@ -193,49 +227,75 @@ export const ReasoningContent = memo(
 		useEffect(() => {
 			const prevSteps = prevReasoningRef.current || [];
 			const currentSteps = reasoningSteps || [];
-			const simulateReasoningTyping = (step: ReasoningStep) => {
+			// Keyed by position: two steps may share a title.
+			const simulateReasoningTyping = (step: ReasoningStep, key: string) => {
 				const targetDescription = step.description || '';
-				if (!targetDescription) return undefined;
-				setAnimatedDescriptions(prev => ({ ...prev, [step.title]: '' }));
-				const timerId = setTimeout(() => {
+				if (!targetDescription) return;
+				// Under reduced motion the step is shown whole, with no typing.
+				if (reduceMotion) {
+					setAnimatedDescriptions(prev => ({
+						...prev,
+						[key]: { target: targetDescription, text: targetDescription },
+					}));
+					return;
+				}
+				setAnimatedDescriptions(prev => ({
+					...prev,
+					[key]: { target: targetDescription, text: '' },
+				}));
+				if (typingStartRef.current !== null) clearTimeout(typingStartRef.current);
+				typingStartRef.current = setTimeout(() => {
+					typingStartRef.current = null;
 					let index = 0;
 					if (typingTimerRef.current !== null) clearInterval(typingTimerRef.current);
 					typingTimerRef.current = setInterval(() => {
 						index += 1;
 						const currentDescription = targetDescription.slice(0, index);
-						setAnimatedDescriptions(prev => ({ ...prev, [step.title]: currentDescription }));
+						setAnimatedDescriptions(prev => ({
+							...prev,
+							[key]: { target: targetDescription, text: currentDescription },
+						}));
 						if (currentDescription.length === targetDescription.length) {
 							if (typingTimerRef.current !== null) clearInterval(typingTimerRef.current);
 						}
 					}, TYPING_INTERVAL);
 				}, 0);
-				return () => clearTimeout(timerId);
 			};
-			if (currentSteps.length > prevSteps.length) {
-				const newStep = currentSteps.at(-1);
-				const previousStep = prevSteps.at(-1);
-				if (previousStep) {
-					setAnimatedDescriptions(prev => ({
-						...prev,
-						[previousStep.title]: previousStep.description || '',
-					}));
-				}
-				if (newStep) {
-					simulateReasoningTyping(newStep);
-				}
-			}
-			if (!isStreaming && prevReasoningRef.current?.length > 0) {
+			const stopTyping = () => {
+				if (typingStartRef.current !== null) clearTimeout(typingStartRef.current);
 				if (typingTimerRef.current !== null) clearInterval(typingTimerRef.current);
-				const lastStep = prevReasoningRef.current.at(-1);
-				if (lastStep) {
-					setAnimatedDescriptions(prev => ({
-						...prev,
-						[lastStep.title]: lastStep.description || '',
-					}));
+				typingStartRef.current = null;
+				typingTimerRef.current = null;
+			};
+			// Once the answer is no longer awaited nothing typed is kept: the stored steps are shown
+			// as they are, so the stored record landing after the live steps types nothing again.
+			if (!isStreaming) {
+				stopTyping();
+				setAnimatedDescriptions(prev => (Object.keys(prev).length === 0 ? prev : {}));
+			} else if (currentSteps.length < prevSteps.length) {
+				// A reset: the new run starts with nothing typed.
+				stopTyping();
+				setAnimatedDescriptions({});
+			} else if (currentSteps.length > prevSteps.length) {
+				// Only a step arriving while the answer is awaited is typed out; the steps before it
+				// are shown whole.
+				stopTyping();
+				setAnimatedDescriptions({});
+				const newStep = currentSteps.at(-1);
+				if (newStep) {
+					simulateReasoningTyping(newStep, String(currentSteps.length - 1));
 				}
 			}
 			prevReasoningRef.current = currentSteps;
-		}, [reasoningSteps, isStreaming]);
+		}, [reasoningSteps, isStreaming, reduceMotion]);
+
+		const steps = Array.isArray(reasoningSteps) ? reasoningSteps : [];
+		const allSources = Array.isArray(sources) ? sources : [];
+		const attempt = currentAttemptOf([...steps, ...allSources], currentAttempt);
+		const stepGroups = splitByAttempt(steps, attempt);
+		const sourceGroups = splitByAttempt(allSources, attempt);
+		const latestSources = sourceGroups.latest.map(({ item }) => item);
+		const hasEarlier = stepGroups.earlier.length > 0 || sourceGroups.earlier.length > 0;
 
 		return hidden ? null : (
 			<CollapsibleContent
@@ -244,33 +304,49 @@ export const ReasoningContent = memo(
 					'data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-popover-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in',
 					className ?? '',
 				)}
+				// Live steps change as they are typed; inside the conversation's log that would be
+				// read out character by character. The stored answer is what is announced.
+				aria-live={isStreaming ? 'off' : undefined}
 				{...props}
 			>
 				<div className="space-y-4 rounded-md border bg-muted/50 p-4">
-					{Array.isArray(reasoningSteps) &&
-						reasoningSteps.map((step, index) => {
-							const isLastStep = index === reasoningSteps.length - 1;
-							const animatedText = animatedDescriptions[step.title];
-							const targetDescription = step.description || '';
-							const isTyping =
-								isStreaming && isLastStep && (animatedText?.length ?? 0) < targetDescription.length;
-							return (
-								<div key={step.title}>
-									<h4 className="font-semibold text-foreground mb-1">{step.title}</h4>
-									<p className="text-muted-foreground">
-										{animatedText ?? targetDescription}
-										{isTyping && <span className="animate-pulse">▍</span>}
-									</p>
-								</div>
-							);
-						})}
-					{sources && sources.length > 0 && (
+					{hasEarlier && (
+						<EarlierAttempt
+							steps={stepGroups.earlier.map(({ item }) => item)}
+							sources={sourceGroups.earlier.map(({ item }) => item)}
+						/>
+					)}
+					{stepGroups.latest.map(({ item: step, index }) => {
+						const isLastStep = index === steps.length - 1;
+						const targetDescription = step.description || '';
+						const typed = animatedDescriptions[String(index)];
+						const animatedText =
+							isStreaming && typed?.target === targetDescription ? typed.text : undefined;
+						const isTyping =
+							isLastStep &&
+							animatedText !== undefined &&
+							animatedText.length < targetDescription.length;
+						return (
+							// Steps carry no id of their own and titles can repeat; the position is stable
+							// because steps are only ever appended.
+							<div key={index} data-testid="reasoning-step">
+								<h4 className="font-semibold text-foreground mb-1">{step.title}</h4>
+								<p className="text-muted-foreground">
+									{animatedText ?? targetDescription}
+									{isTyping && <span className="animate-pulse">▍</span>}
+								</p>
+							</div>
+						);
+					})}
+					{latestSources.length > 0 && (
 						<Sources>
-							<SourcesTrigger count={sources.length} />
+							<SourcesTrigger count={latestSources.length} />
 							<SourcesContent>
-								{sources.map((source: SourceItem) => (
+								{/* The same source can come twice; sources are only ever appended. */}
+								{latestSources.map((source: SourceItem, index: number) => (
 									<Source
-										key={`${source.url}${source.title}`}
+										// eslint-disable-next-line react/no-array-index-key
+										key={index}
 										href={source.url}
 										title={source.title}
 									/>

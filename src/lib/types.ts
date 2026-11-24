@@ -36,10 +36,13 @@ export interface Message {
 	content: string | null;
 	createdAt: number;
 	// Shape matches the oracle's answer MessageFile + the Reasoning/Source UI components
-	// (see components/ai/reasoning.tsx ReasoningStep / source.tsx SourceItem).
-	reasoning?: Array<{ title: string; description: string }>;
-	sources?: Array<{ title: string; url: string }>;
+	// (see components/ai/reasoning.tsx ReasoningStep / source.tsx SourceItem). `attempt` is the
+	// provider attempt that produced the item; an item stored without one is attempt 1.
+	reasoning?: Array<{ title: string; description: string; attempt?: number }>;
+	sources?: Array<{ title: string; url: string; attempt?: number }>;
 	reasoningDuration?: number;
+	// The attempt that produced the answer (lib/reasoningAttempts); absent from older files.
+	answerAttempt?: number;
 }
 
 // Search index types

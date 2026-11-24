@@ -6,10 +6,18 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { client } from '@/config/thirdweb';
 import { cn } from '@/lib/utils';
 
+/**
+ * Whether an assistant bubble is the stored answer or the provisional one from the live stream.
+ * Rendered as `data-answer-state`, so a test that waits for the stored answer can never take the
+ * provisional bubble for it (both are `.is-assistant`).
+ */
+export type AnswerState = 'provisional' | 'stored';
+
 interface MessageProps {
 	className?: string;
 	from?: string;
 	status?: string;
+	answerState?: AnswerState;
 	children?: ReactNode;
 }
 
@@ -25,9 +33,10 @@ interface MessageAvatarProps {
 	className?: string;
 }
 
-export function Message({ className, from, status, ...props }: MessageProps) {
+export function Message({ className, from, status, answerState, ...props }: MessageProps) {
 	return (
 		<div
+			data-answer-state={answerState}
 			className={cn(
 				'group flex w-full items-end justify-end gap-2',
 				from === 'user' ? 'is-user' : 'is-assistant flex-row-reverse justify-end',

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import chatReducer, {
 	type ActiveMessage,
-	addReasoningStepById,
 	appendLiveMessages,
 	type ChatState,
 	clearActiveConversation,
@@ -11,7 +10,6 @@ import chatReducer, {
 	openRenameModal,
 	setActiveConversationId,
 	setActiveConversationMessages,
-	updateMessageContentById,
 } from './chatSlice';
 
 const initialState: ChatState = {
@@ -113,79 +111,6 @@ describe('chatSlice', () => {
 				]),
 			);
 			expect(state.activeConversationMessages.map(m => m.id)).toEqual(['1', '2']);
-		});
-	});
-
-	describe('addReasoningStepById', () => {
-		it('adds reasoning step to matching message', () => {
-			const withMsg: ChatState = {
-				...initialState,
-				activeConversationMessages: [{ id: '1', answerMessageId: 'ans-1', reasoning: [] }],
-			};
-			const state = chatReducer(
-				withMsg,
-				addReasoningStepById({ answerMessageId: 'ans-1', reasoningStep: { text: 'thinking...' } }),
-			);
-			expect(state.activeConversationMessages[0].reasoning).toHaveLength(1);
-		});
-
-		it('initializes reasoning array if not present', () => {
-			const withMsg: ChatState = {
-				...initialState,
-				activeConversationMessages: [{ id: '1', answerMessageId: 'ans-1' }],
-			};
-			const state = chatReducer(
-				withMsg,
-				addReasoningStepById({ answerMessageId: 'ans-1', reasoningStep: { text: 'step' } }),
-			);
-			expect(state.activeConversationMessages[0].reasoning).toHaveLength(1);
-		});
-
-		it('does nothing if message not found', () => {
-			const withMsg: ChatState = {
-				...initialState,
-				activeConversationMessages: [{ id: '1', answerMessageId: 'ans-1' }],
-			};
-			const state = chatReducer(
-				withMsg,
-				addReasoningStepById({ answerMessageId: 'nonexistent', reasoningStep: { text: 'x' } }),
-			);
-			expect(state.activeConversationMessages[0].reasoning).toBeUndefined();
-		});
-	});
-
-	describe('updateMessageContentById', () => {
-		it('updates content, sources, reasoningDuration and removes answerMessageId', () => {
-			const withMsg: ChatState = {
-				...initialState,
-				activeConversationMessages: [{ id: '1', answerMessageId: 'ans-1', content: null }],
-			};
-			const state = chatReducer(
-				withMsg,
-				updateMessageContentById({
-					answerMessageId: 'ans-1',
-					content: 'Final answer',
-					sources: ['src1'],
-					reasoningDuration: 1500,
-				}),
-			);
-			const msg = state.activeConversationMessages[0];
-			expect(msg.content).toBe('Final answer');
-			expect(msg.sources).toEqual(['src1']);
-			expect(msg.reasoningDuration).toBe(1500);
-			expect(msg.answerMessageId).toBeUndefined();
-		});
-
-		it('does nothing if answerMessageId not found', () => {
-			const withMsg: ChatState = {
-				...initialState,
-				activeConversationMessages: [{ id: '1', answerMessageId: 'ans-1' }],
-			};
-			const state = chatReducer(
-				withMsg,
-				updateMessageContentById({ answerMessageId: 'wrong', content: 'x' }),
-			);
-			expect(state.activeConversationMessages[0].answerMessageId).toBe('ans-1');
 		});
 	});
 

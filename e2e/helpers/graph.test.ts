@@ -11,6 +11,7 @@ import {
 	GraphUnavailableError,
 	probeSubgraph,
 	resolveGraphUrl,
+	subgraphHasType,
 	waitForGraph,
 } from './graph';
 
@@ -292,5 +293,54 @@ describe('resolveGraphUrl', () => {
 
 	it('defaults to the local graph-node when nothing is set', () => {
 		expect(resolveGraphUrl({}, 'localnet')).toBe('http://localhost:8000/subgraphs/name/sense-ai');
+	});
+});
+
+describe('subgraphHasType', () => {
+	afterEach(() => vi.unstubAllGlobals());
+
+	const answer = (data: unknown) =>
+		new Response(JSON.stringify({ data }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' },
+		});
+
+	it('is true when the schema declares the type, asked by introspection', async () => {
+		const fetchMock = vi.fn(async (_url: string, _init: { body?: unknown }) =>
+			answer({ __type: { name: 'PendingDirectPayment' } }),
+		);
+		vi.stubGlobal('fetch', fetchMock);
+
+		await expect(subgraphHasType('PendingDirectPayment')).resolves.toBe(true);
+		const body = JSON.parse(String(fetchMock.mock.calls[0][1].body)) as { query: string };
+		expect(body.query).toMatch(/__type\(name: "PendingDirectPayment"\)/);
+	});
+
+	it('is false when the schema has no such type', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => answer({ __type: null })),
+		);
+
+		await expect(subgraphHasType('PendingDirectPayment')).resolves.toBe(false);
+	});
+
+	it('fails, rather than answering false, when the endpoint cannot be read', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => new Response('<html>Bad gateway</html>', { status: 502 })),
+		);
+
+		await expect(subgraphHasType('PendingDirectPayment')).rejects.toBeInstanceOf(
+			GraphUnavailableError,
+		);
+	});
+
+	it('refuses a name that is not a GraphQL name before asking anything', async () => {
+		const fetchMock = vi.fn(async () => answer({ __type: null }));
+		vi.stubGlobal('fetch', fetchMock);
+
+		await expect(subgraphHasType('Pending") { x } #')).rejects.toThrow(/not a GraphQL type name/);
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 });

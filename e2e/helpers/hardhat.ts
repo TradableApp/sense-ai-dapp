@@ -418,7 +418,7 @@ async function callContract(contractAddress: string, data: string): Promise<stri
 	return (await rpc('eth_call', [{ to: contractAddress, data }, 'latest'])) as string;
 }
 
-export async function getABLEBalance(
+export async function getFeeTokenBalance(
 	tokenAddress: string,
 	accountAddress: string,
 ): Promise<bigint> {
@@ -449,7 +449,7 @@ export async function getAllowance(
 
 // ── Funding (the localnet "treasury": there is no faucet on localnet) ─────────
 const TRANSFER_SELECTOR = '0xa9059cbb'; // transfer(address,uint256)
-// Hardhat account 0 — deployer/treasury; holds the full ABLE supply and is
+// Hardhat account 0 — deployer/treasury; holds the fee token's supply and is
 // unlocked on the node, so eth_sendTransaction needs no signing key.
 export const DEPLOYER_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 
@@ -457,7 +457,7 @@ function padUint(value: bigint): string {
 	return value.toString(16).padStart(64, '0');
 }
 
-/** The account that hands out ABLE: Hardhat's deployer (unlocked, holds the supply) on
+/** The account that hands out fee tokens: Hardhat's deployer (unlocked, holds the supply) on
  *  localnet; the funded test treasury on testnet. */
 function fundingSource(): string {
 	const cfg = getChainConfig();
@@ -465,17 +465,18 @@ function fundingSource(): string {
 }
 
 /**
- * Fund a user with ABLE from the chain's funding source — the deployer/treasury
+ * Fund a user with fee tokens from the chain's funding source — the deployer/treasury
  * (account 0) on localnet, where the full supply is minted to it at deploy time
- * so users start with 0 ABLE; the test treasury on testnet.
+ * so users start with none; the test treasury on testnet. On a token that moves only to or
+ * from listed addresses the source must be listed; the deployer owns the token on localnet.
  * @param amount Amount in base units (wei-scale, 18 decimals).
  */
-export async function fundABLE(
+export async function fundFeeToken(
 	tokenAddress: string,
 	toAddress: string,
 	amount: bigint,
 ): Promise<void> {
-	// The source's ABLE is finite PER CHAIN: every fresh-account claim transfers
+	// The source's tokens are finite PER CHAIN: every fresh-account claim transfers
 	// some away, and heavy live-chain rerunning can drain it to zero. When that
 	// happens plan activation fails silently and specs die with an opaque
 	// "composer not found" — fail loudly at the source instead.
@@ -489,7 +490,7 @@ export async function fundABLE(
 				: 'The chain has been reused past its token supply — restart the stack ' +
 				  '(sense-ai-e2e: stop-e2e.sh + start-e2e.sh) for a fresh chain.';
 		throw new Error(
-			`fundABLE: funding source ABLE depleted (${BigInt(balHex)} < ${amount}). ${remedy}`,
+			`fundFeeToken: funding source has too few tokens (${BigInt(balHex)} < ${amount}). ${remedy}`,
 		);
 	}
 	const data = `${TRANSFER_SELECTOR}${padAddress(toAddress).slice(2)}${padUint(
@@ -543,7 +544,7 @@ async function sendFrom(from: string, to: string, data: string): Promise<void> {
 }
 
 /** ERC-20 approve(spender, amount) sent by `ownerAddress` (an unlocked account). */
-export async function approveABLE(
+export async function approveFeeToken(
 	tokenAddress: string,
 	ownerAddress: string,
 	spenderAddress: string,
@@ -571,7 +572,7 @@ export async function activatePlan(
 	allowance: bigint,
 	durationSec = 30 * 24 * 60 * 60,
 ): Promise<void> {
-	await approveABLE(tokenAddress, userAddress, escrowAddress, allowance);
+	await approveFeeToken(tokenAddress, userAddress, escrowAddress, allowance);
 	const expiresAt = (await getLatestBlockTimestamp()) + durationSec;
 	const data = encodeFunctionData({
 		abi: ESCROW_ABI,

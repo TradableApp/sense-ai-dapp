@@ -90,8 +90,8 @@ export async function openDevice(
 	};
 }
 
-/** Extracts the leading numeric amount from a displayed "<n> ABLE" string (e.g. "12.5 ABLE" → 12.5). */
-export function parseAble(text: string): number {
+/** Extracts the leading numeric amount from a displayed "<n> <symbol>" string (e.g. "12.5 <symbol>" → 12.5). */
+export function parseTokenAmount(text: string): number {
 	const match = text.replace(/,/g, '').match(/\d+(\.\d+)?/);
 	return match ? Number(match[0]) : NaN;
 }

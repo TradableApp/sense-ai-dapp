@@ -277,7 +277,26 @@ export function getChainConfig(): ChainConfig {
 
 interface JsonRpcResponse {
 	result?: unknown;
-	error?: { message?: string; code?: number };
+	error?: { message?: string; code?: number; data?: unknown };
+}
+
+/**
+ * The node answered with a JSON-RPC error. `data` is what the node put beside the message: for
+ * a reverted `eth_call` it holds the revert data (a public node gives only that, a local node
+ * also names the error in the message), so a caller can decode which error the contract raised.
+ */
+export interface RpcResponseError extends Error {
+	name: 'RpcResponseError';
+	code: number | undefined;
+	data: unknown;
+}
+
+function rpcResponseError(message: string, code: number | undefined, data: unknown): Error {
+	return Object.assign(new Error(message), { name: 'RpcResponseError', code, data });
+}
+
+export function isRpcResponseError(err: unknown): err is RpcResponseError {
+	return err instanceof Error && err.name === 'RpcResponseError';
 }
 
 let reqId = 1;
@@ -352,7 +371,11 @@ async function rpcOnce(method: string, params: unknown[]): Promise<unknown> {
 	const json = (await res.json()) as JsonRpcResponse;
 	if (json.error) {
 		// The URL is NOT included: on testnet it carries the provider key.
-		throw new Error(`RPC error (${CHAIN}, ${method}): ${json.error.message ?? 'unknown'}`);
+		throw rpcResponseError(
+			`RPC error (${CHAIN}, ${method}): ${json.error.message ?? 'unknown'}`,
+			json.error.code,
+			json.error.data,
+		);
 	}
 	return json.result;
 }

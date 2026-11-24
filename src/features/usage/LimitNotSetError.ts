@@ -18,7 +18,8 @@ const UNCONFIRMED =
 const NOT_SET =
 	"The approval went through and stands: the token approval is now the new amount. The new limit was not set. An earlier plan's limit still stands, but it can spend only up to the new approval.";
 
-const REVOKE = 'To stop spending under an earlier plan, use Revoke once no prompt is pending.';
+const REVOKE =
+	'To stop spending under an earlier plan and remove the approval, use Revoke once no prompt is pending.';
 
 function notSetMessage(cause: unknown): string {
 	if (cause instanceof PaymentSwitchedOffError) return `${NOT_SET} ${REVOKE} ${cause.message}`;
@@ -33,7 +34,7 @@ function notSetMessage(cause: unknown): string {
  * so the user is told what holds and the plan and balance are read again. The approval
  * replaced the escrow's allowance: an earlier plan's limit still stands on the escrow, but it
  * can spend only up to the new approval. The escrow refuses a new limit, and Revoke, while a
- * prompt is pending, so both are offered for once none is.
+ * prompt is pending, so both are offered for once none is. Revoke also removes the approval.
  *
  * The guidance comes first and the reason last: the reason is the first line of the error,
  * scrubbed and capped (thirdweb's text runs on with the RPC URL and the call data). When the

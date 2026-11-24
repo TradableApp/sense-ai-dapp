@@ -3,7 +3,7 @@ import { BUDGET, RESILIENCE_BUDGET } from '../helpers/budgets';
 import { CHAIN, LIVE_STACK, LIVE_STACK_SKIP_REASON, sendFrom } from '../helpers/chain';
 import { ESCROW_ADDRESS, PLAN_ALLOWANCE, TOKEN_ADDRESS } from '../helpers/contracts';
 import { waitForGraph } from '../helpers/graph';
-import { fundABLE } from '../helpers/hardhat';
+import { fundFeeToken } from '../helpers/hardhat';
 import {
 	approveCalldata,
 	evidenceDirFrom,
@@ -56,7 +56,7 @@ test.describe('Resilience — spending-limit expiry on testnet (R-EXPIRY-01)', (
 		try {
 			// 1. Fund, approve and set a limit that expires EXPIRY_TTL_S past the latest block.
 			// Fund the full limit so the only reason the prompt can be refused is the expiry.
-			await fundABLE(TOKEN_ADDRESS, owner, PLAN_ALLOWANCE);
+			await fundFeeToken(TOKEN_ADDRESS, owner, PLAN_ALLOWANCE);
 			const approveHash = await sendFrom({
 				from: owner,
 				to: TOKEN_ADDRESS,

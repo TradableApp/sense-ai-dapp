@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { decryptData, deriveKeyFromEntropy, encryptData } from './crypto';
+import { decryptBytes, decryptData, deriveKeyFromEntropy, encryptData } from './crypto';
 
 const ENTROPY = 'test-entropy-signature-0xdeadbeef';
 const OWNER = '0xabc123def456abc123def456abc123def456abc1';
@@ -97,5 +97,54 @@ describe('encryptData / decryptData round-trip', () => {
 		const corrupted = `${badIv}.${cipher}`;
 
 		await expect(decryptData(key, corrupted)).rejects.toThrow();
+	});
+
+	it('round-trips a value too large to spread into one call', async () => {
+		// A conversation's stored messages can run to megabytes; 1,200 short messages are
+		// already about 150 KB. 2 MB is well past the argument limit of every engine.
+		const key = await deriveKeyFromEntropy(ENTROPY, OWNER);
+		const large = { text: 'x'.repeat(2 * 1024 * 1024) };
+
+		const encrypted = await encryptData(key, large);
+
+		expect(await decryptData(key, encrypted)).toEqual(large);
+	});
+});
+
+describe('decryptBytes', () => {
+	it('gives the plaintext bytes, which decryptData reads as JSON', async () => {
+		const key = await deriveKeyFromEntropy(ENTROPY, OWNER);
+		const encrypted = await encryptData(key, { a: 'é' });
+
+		const bytes = await decryptBytes(key, encrypted);
+
+		expect(new TextDecoder().decode(bytes)).toBe('{"a":"é"}');
+		expect(bytes.length).toBe(10);
+		expect(await decryptData(key, encrypted)).toEqual({ a: 'é' });
+	});
+
+	it('throws on the same malformed input decryptData refuses', async () => {
+		const key = await deriveKeyFromEntropy(ENTROPY, OWNER);
+
+		await expect(decryptBytes(key, 'nodothere')).rejects.toThrow('Invalid encrypted data format.');
+	});
+});
+
+describe('decryptBytes', () => {
+	it('gives the plaintext bytes, which decryptData reads as JSON', async () => {
+		const key = await deriveKeyFromEntropy(ENTROPY, OWNER);
+		const encrypted = await encryptData(key, { a: 'é' });
+
+		const bytes = await decryptBytes(key, encrypted);
+
+		expect(new TextDecoder().decode(bytes)).toBe('{"a":"é"}');
+		expect(bytes.length).toBe(10);
+		expect(await decryptData(key, encrypted)).toEqual({ a: 'é' });
+	});
+
+	it('throws on the same malformed input decryptData refuses', async () => {
+		const key = await deriveKeyFromEntropy(ENTROPY, OWNER);
+
+		await expect(decryptBytes(key, 'nodothere')).rejects.toThrow('Invalid encrypted data format.');
 	});
 });
