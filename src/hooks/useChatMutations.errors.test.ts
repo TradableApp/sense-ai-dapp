@@ -317,6 +317,7 @@ describe('buildErrorHandler — every explained error is recognised by its selec
 		['EscrowNotPending', 'Action Invalid', EVMAIAgentEscrowABI.abi],
 		['EscrowNotFound', 'Request Not Found', EVMAIAgentEscrowABI.abi],
 		['SafeERC20FailedOperation', 'Payment Failed', EVMAIAgentEscrowABI.abi],
+		['FeeAboveMaximum', 'Fee Changed', EVMAIAgentEscrowABI.abi],
 		['RegenerationAlreadyPending', 'Regeneration in Progress', EVMAIAgentABI.abi],
 		['JobAlreadyFinalized', 'Request Already Finalized', EVMAIAgentABI.abi],
 		['Unauthorized', 'Access Denied', EVMAIAgentABI.abi],
@@ -330,23 +331,17 @@ describe('buildErrorHandler — every explained error is recognised by its selec
 		expect(toast.error).toHaveBeenCalledWith(title, expect.any(Object));
 	});
 
-	// A cancel takes its fee from the user's wallet through the plan, so a remaining limit, an
-	// approval or a balance below the fee refuses it. Raising the limit is switched off while a
-	// prompt is pending, so the message says what is left: the refund after the hour.
+	// A cancel takes its fee out of the payment the escrow holds, so the wallet's balance, its
+	// approval and the plan's remaining limit play no part in it. What can refuse it is the fee
+	// having been raised above the one the cancel was sent with.
 	const cancelFeeRows = [FEE_TOKEN_PROFILES.ABLE, FEE_TOKEN_PROFILES.SENSE].flatMap(profile =>
 		[
-			['InsufficientSpendingLimitAllowance', EVMAIAgentEscrowABI.abi],
-			['ERC20InsufficientAllowance', profile.abi],
-			['ERC20InsufficientBalance', profile.abi],
-		].flatMap(([name, abi]) =>
-			[
-				['name', name as string],
-				['selector', undecoded(realSelector(abi as unknown[], name as string))],
-			].map(([by, message]) => ({ profile, name: name as string, by, message })),
-		),
+			['name', 'FeeAboveMaximum'],
+			['selector', undecoded(realSelector(EVMAIAgentEscrowABI.abi, 'FeeAboveMaximum'))],
+		].map(([by, message]) => ({ profile, by, message })),
 	);
 	it.each(cancelFeeRows)(
-		'$name by $by during a cancel says the fee could not be taken ($profile.symbol build)',
+		'a raised fee by $by during a cancel says nothing was cancelled ($profile.symbol build)',
 		({ profile, message }) => {
 			buildErrorHandler(false, false, 100, vi.fn(), profile)({ message }, 'cancel prompt');
 
@@ -354,16 +349,42 @@ describe('buildErrorHandler — every explained error is recognised by its selec
 			const [title, options] = vi.mocked(toast.error).mock.calls[0];
 			const description = String((options as { description?: unknown }).description);
 			expect(title).toBe('Could Not Cancel');
-			expect(description).toMatch(/cancellation fee could not be taken/i);
-			expect(description).toMatch(/remaining limit, the token approval or your balance/i);
-			expect(description).toMatch(/Nothing was cancelled/);
-			expect(description).toMatch(
-				/refunded one hour after it was sent, unless it is answered first/i,
-			);
-			expect(description).not.toMatch(/increase your limit|used up/i);
+			expect(description).toMatch(/cancellation fee was raised/i);
+			expect(description).toMatch(/nothing was cancelled/i);
+			expect(description).toMatch(/cancelling again uses the new fee/i);
 			expect(`${title} ${description}`).not.toMatch(/\b(SENSE|ABLE)\b/);
 		},
 	);
+
+	it.each(['send message', 'regenerate response', 'branch conversation', 'update conversation'])(
+		'a raised fee during "%s" says nothing was sent and no tokens were taken',
+		action => {
+			buildErrorHandler(false, false, 100, vi.fn(), FEE_TOKEN_PROFILES.SENSE)(
+				{ message: undecoded(realSelector(EVMAIAgentEscrowABI.abi, 'FeeAboveMaximum')) },
+				action,
+			);
+
+			const [title, options] = vi.mocked(toast.error).mock.calls[0];
+			const description = String((options as { description?: unknown }).description);
+			expect(title).toBe('Fee Changed');
+			expect(description).toMatch(/fee was raised.*nothing was sent.*no tokens were taken/i);
+			expect(description).toMatch(/sending it again uses the new fee/i);
+		},
+	);
+
+	// The escrow no longer pulls the fee from the wallet on a cancel, so these keep their
+	// general wording whatever the action: a cancel has no wording of its own for them.
+	it.each([
+		['InsufficientSpendingLimitAllowance', 'Limit Reached', EVMAIAgentEscrowABI.abi],
+		['ERC20InsufficientAllowance', 'Spending Limit Reached', AbleTokenABI.abi],
+	])('%s during a cancel keeps its general title "%s"', (name, title, abi) => {
+		buildErrorHandler(false, false, 100, vi.fn(), FEE_TOKEN_PROFILES.ABLE)(
+			{ message: undecoded(realSelector(abi as unknown[], name)) },
+			'cancel prompt',
+		);
+
+		expect(toast.error).toHaveBeenCalledWith(title, expect.any(Object));
+	});
 
 	// A paused token has one message per action, whichever token the build is for.
 	const pausedRows = [
