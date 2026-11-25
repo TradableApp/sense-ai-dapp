@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LIMITS, MAX_SEALED_FRAME_CHARS } from '@/lib/liveReasoning/contract';
 
 import {
+	HELD_OPEN_MS,
 	IDLE_GIVE_UP_MS,
 	MAX_DATA_LINES_PER_EVENT,
 	MAX_EVENT_CHARS,
@@ -50,6 +51,35 @@ const ok = (chunks: string[], opts?: { hold?: boolean }): StreamResponse => ({
 	status: 200,
 	headers: new Headers({ 'Content-Type': 'text/event-stream' }),
 	body: body(chunks, opts),
+});
+
+/**
+ * A response body that yields the given chunks, stays open for `openMs`, then ends as the server
+ * ends a connection at its lifetime, or fails as a proxy cutting it does (`cut`).
+ */
+function heldBody(chunks: string[], openMs: number, { cut = false } = {}) {
+	const encoder = new TextEncoder();
+	const queue = [...chunks];
+	return {
+		getReader: () => ({
+			read: async () => {
+				const next = queue.shift();
+				if (next !== undefined) return { done: false, value: encoder.encode(next) };
+				await new Promise(resolve => {
+					setTimeout(resolve, openMs);
+				});
+				if (cut) throw new TypeError('network error');
+				return { done: true, value: undefined };
+			},
+			cancel: async () => undefined,
+		}),
+	} as unknown as ReadableStream<Uint8Array>;
+}
+
+const held = (chunks: string[], openMs: number, opts?: { cut?: boolean }): StreamResponse => ({
+	status: 200,
+	headers: new Headers({ 'Content-Type': 'text/event-stream' }),
+	body: heldBody(chunks, openMs, opts),
 });
 
 const refusal = (status: number, retryAfter?: string): StreamResponse => ({
@@ -349,6 +379,54 @@ describe('the frame transport', () => {
 
 		expect(IDLE_GIVE_UP_MS).toBe(600_000);
 		expect(h.stops).toEqual(['idle']);
+	});
+
+	describe('a quiet connection the server held open', () => {
+		/** The server's connection lifetime under the proxy's 30 s limit. */
+		const LIFETIME_MS = 25_000;
+		const QUIET = ['retry: 2000\n\n: ping\n\n'];
+
+		it('reconnects at once when the server ends it at its lifetime', async () => {
+			const h = start([held(QUIET, LIFETIME_MS), ok([], { hold: true })]);
+			await vi.advanceTimersByTimeAsync(LIFETIME_MS - 1);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(1);
+			// No wait for the retry line: a frame made in that wait would be shown that much late.
+			await vi.advanceTimersByTimeAsync(1);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(2);
+			h.handle.stop();
+		});
+
+		it('still waits the retry line when the response ended sooner than a held connection does', async () => {
+			const h = start([held(QUIET, HELD_OPEN_MS - 1), ok([], { hold: true })]);
+			await vi.advanceTimersByTimeAsync(HELD_OPEN_MS - 1);
+			await vi.advanceTimersByTimeAsync(STREAM_RETRY_MS - 1);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(1);
+			await vi.advanceTimersByTimeAsync(1);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(2);
+			h.handle.stop();
+		});
+
+		it('asks at most once per held connection, however long the answer stays quiet', async () => {
+			const h = start([], { repeat: () => held(QUIET, LIFETIME_MS) });
+			// 10 lifetimes of 25 s: the first request and one more as each connection ends.
+			await vi.advanceTimersByTimeAsync(10 * LIFETIME_MS);
+			expect(h.fetchImpl).toHaveBeenCalledTimes(11);
+			h.handle.stop();
+		});
+
+		it('waits the first backoff step, and no longer, each time a proxy cuts it', async () => {
+			const h = start([], { repeat: () => held(QUIET, LIFETIME_MS, { cut: true }) });
+			await vi.advanceTimersByTimeAsync(0);
+			// Six cuts in a row: each is followed by MIN_RETRY_MS (random is 0, so no jitter), never
+			// by a doubled wait, since a connection that was held is not a failing server.
+			for (let cuts = 1; cuts <= 6; cuts += 1) {
+				await vi.advanceTimersByTimeAsync(LIFETIME_MS + MIN_RETRY_MS - 1);
+				expect(h.fetchImpl).toHaveBeenCalledTimes(cuts);
+				await vi.advanceTimersByTimeAsync(1);
+				expect(h.fetchImpl).toHaveBeenCalledTimes(cuts + 1);
+			}
+			h.handle.stop();
+		});
 	});
 
 	describe('progress is the cursor moving, not a frame arriving', () => {
