@@ -277,9 +277,9 @@ export function feeTokenBlockCopy(
 		case 'treasury-not-exempt':
 			return {
 				title: 'Some actions are switched off',
-				// A cancellation pays its fee from the user straight to the treasury, and with
-				// neither end listed the token always refuses it. A refund leaves the listed escrow.
-				description: `The fee for a branch, a rename or a delete cannot be received yet and would be refused, so those are switched off until this is fixed. Prompts still work. Cancelling a prompt will be refused too, because its fee is paid the same way; a prompt that is not answered can be refunded one hour after it was sent. ${GET_HELP}`,
+				// A cancellation pays its fee and the rest of the payment out of the escrow, and a
+				// refund leaves the escrow too. The escrow is listed, so the token lets them through.
+				description: `The fee for a branch, a rename or a delete cannot be received yet and would be refused, so those are switched off until this is fixed. Prompts still work, and cancelling a prompt and claiming a refund still work. ${GET_HELP}`,
 			};
 		default: {
 			// A verdict with no words here fails to compile: a block must never be silent.

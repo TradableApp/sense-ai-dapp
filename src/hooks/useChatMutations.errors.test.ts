@@ -359,10 +359,13 @@ describe('buildErrorHandler — every explained error is recognised by its selec
 	it.each(['send message', 'regenerate response', 'branch conversation', 'update conversation'])(
 		'a raised fee during "%s" says nothing was sent and no tokens were taken',
 		action => {
-			buildErrorHandler(false, false, 100, vi.fn(), FEE_TOKEN_PROFILES.SENSE)(
-				{ message: undecoded(realSelector(EVMAIAgentEscrowABI.abi, 'FeeAboveMaximum')) },
-				action,
-			);
+			buildErrorHandler(
+				false,
+				false,
+				100,
+				vi.fn(),
+				FEE_TOKEN_PROFILES.SENSE,
+			)({ message: undecoded(realSelector(EVMAIAgentEscrowABI.abi, 'FeeAboveMaximum')) }, action);
 
 			const [title, options] = vi.mocked(toast.error).mock.calls[0];
 			const description = String((options as { description?: unknown }).description);
@@ -378,10 +381,13 @@ describe('buildErrorHandler — every explained error is recognised by its selec
 		['InsufficientSpendingLimitAllowance', 'Limit Reached', EVMAIAgentEscrowABI.abi],
 		['ERC20InsufficientAllowance', 'Spending Limit Reached', AbleTokenABI.abi],
 	])('%s during a cancel keeps its general title "%s"', (name, title, abi) => {
-		buildErrorHandler(false, false, 100, vi.fn(), FEE_TOKEN_PROFILES.ABLE)(
-			{ message: undecoded(realSelector(abi as unknown[], name)) },
-			'cancel prompt',
-		);
+		buildErrorHandler(
+			false,
+			false,
+			100,
+			vi.fn(),
+			FEE_TOKEN_PROFILES.ABLE,
+		)({ message: undecoded(realSelector(abi as unknown[], name)) }, 'cancel prompt');
 
 		expect(toast.error).toHaveBeenCalledWith(title, expect.any(Object));
 	});

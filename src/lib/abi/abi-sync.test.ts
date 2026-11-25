@@ -126,13 +126,14 @@ describe('EVMAIAgentEscrow ABI — cancelPrompt and processRefund', () => {
 	const raw = loadAbi('EVMAIAgentEscrow.json');
 	const abi = Array.isArray(raw) ? raw : raw.abi ?? [];
 
-	it('cancelPrompt accepts _answerMessageId uint256', () => {
+	it('cancelPrompt accepts _answerMessageId and _maxFee, both uint256', () => {
 		const fn = abi.find(
 			(x: unknown) => (x as any).type === 'function' && (x as any).name === 'cancelPrompt',
 		);
 		expect(fn).toBeDefined();
-		expect(fn.inputs).toHaveLength(1);
+		expect(fn.inputs).toHaveLength(2);
 		expect(fn.inputs[0]).toMatchObject({ name: '_answerMessageId', type: 'uint256' });
+		expect(fn.inputs[1]).toMatchObject({ name: '_maxFee', type: 'uint256' });
 	});
 
 	it('processRefund accepts _answerMessageId uint256', () => {

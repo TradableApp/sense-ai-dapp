@@ -42,3 +42,13 @@ graph-node↔Hardhat incompatibility, and the same code is correct on testnet/ma
   read before its `*FeeUpdated` event has been indexed falls back to `0` (logged).
 - **Alternative rejected:** pinning the localnet graph-node / Hardhat to compatible versions —
   fixes only localnet, leaves the `eth_call` anti-pattern in place on all networks.
+
+## Update, 2026-11-25: a cancel's fee comes from its own event
+
+The escrow now takes a cancellation fee out of the escrowed amount and emits
+`CancellationSettled(escrowId, user, fee, returned)`. The subgraph files a cancel from that event:
+`CANCEL` is minus `fee`, and `CANCEL_RETURN` is `fee + returned`, the escrowed amount the cancel
+released. The cancellation fee is therefore no longer read from `FeeConfig` (the fee charged can be
+lower than the configured fee, when the escrowed amount is lower), and the rule of this decision
+still holds: no handler makes an `eth_call`. `FeeConfig` still carries the four fees for readers
+that want the configured values.

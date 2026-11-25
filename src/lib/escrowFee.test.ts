@@ -4,7 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 
-import { ESCROW_FEE_GETTERS, type EscrowFeeKind, FeeNotReadError, readEscrowFee } from './escrowFee';
+import {
+	ESCROW_FEE_GETTERS,
+	type EscrowFeeKind,
+	FeeNotReadError,
+	readEscrowFee,
+} from './escrowFee';
 
 vi.mock('thirdweb', () => ({
 	getContract: vi.fn((options: { address: string }) => ({ address: options.address })),
@@ -46,9 +51,7 @@ describe('readEscrowFee', () => {
 		async answer => {
 			vi.mocked(readContract).mockResolvedValue(answer as never);
 
-			await expect(readEscrowFee(chain, ESCROW, 'prompt')).rejects.toBeInstanceOf(
-				FeeNotReadError,
-			);
+			await expect(readEscrowFee(chain, ESCROW, 'prompt')).rejects.toBeInstanceOf(FeeNotReadError);
 		},
 	);
 
@@ -67,17 +70,20 @@ describe('readEscrowFee', () => {
 // The reads are found by name on a contract synced from another repository. A renamed getter
 // would make every paid send fail before it is sent, so the names are pinned to the real file.
 describe('the fee getters the reads depend on', () => {
-	it.each(KINDS)('the escrow has the %s fee getter, a view with no inputs returning uint256', kind => {
-		const item = (EVMAIAgentEscrowABI.abi as AbiFunction[]).find(
-			entry => entry.type === 'function' && entry.name === ESCROW_FEE_GETTERS[kind],
-		);
+	it.each(KINDS)(
+		'the escrow has the %s fee getter, a view with no inputs returning uint256',
+		kind => {
+			const item = (EVMAIAgentEscrowABI.abi as AbiFunction[]).find(
+				entry => entry.type === 'function' && entry.name === ESCROW_FEE_GETTERS[kind],
+			);
 
-		expect({
-			inputs: item?.inputs.map(input => input.type),
-			outputs: item?.outputs.map(output => output.type),
-			stateMutability: item?.stateMutability,
-		}).toEqual({ inputs: [], outputs: ['uint256'], stateMutability: 'view' });
-	});
+			expect({
+				inputs: item?.inputs.map(input => input.type),
+				outputs: item?.outputs.map(output => output.type),
+				stateMutability: item?.stateMutability,
+			}).toEqual({ inputs: [], outputs: ['uint256'], stateMutability: 'view' });
+		},
+	);
 
 	// The last argument of each paying call is the most the caller agrees to pay.
 	it.each([
