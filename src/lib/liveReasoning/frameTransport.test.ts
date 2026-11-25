@@ -391,7 +391,8 @@ describe('the frame transport', () => {
 			await vi.advanceTimersByTimeAsync(LIFETIME_MS - 1);
 			expect(h.fetchImpl).toHaveBeenCalledTimes(1);
 			// No wait for the retry line: a frame made in that wait would be shown that much late.
-			await vi.advanceTimersByTimeAsync(1);
+			// The retry line said 2 000 ms; the next request is made before that has passed.
+			await vi.advanceTimersByTimeAsync(STREAM_RETRY_MS - 1);
 			expect(h.fetchImpl).toHaveBeenCalledTimes(2);
 			h.handle.stop();
 		});
@@ -408,8 +409,9 @@ describe('the frame transport', () => {
 
 		it('asks at most once per held connection, however long the answer stays quiet', async () => {
 			const h = start([], { repeat: () => held(QUIET, LIFETIME_MS) });
-			// 10 lifetimes of 25 s: the first request and one more as each connection ends.
-			await vi.advanceTimersByTimeAsync(10 * LIFETIME_MS);
+			// 10 lifetimes of 25 s: the first request and one more as each connection ends (a 2 s
+			// wait after each would make it 10, and a storm far more).
+			await vi.advanceTimersByTimeAsync(10 * LIFETIME_MS + STREAM_RETRY_MS - 1);
 			expect(h.fetchImpl).toHaveBeenCalledTimes(11);
 			h.handle.stop();
 		});
@@ -419,12 +421,16 @@ describe('the frame transport', () => {
 			await vi.advanceTimersByTimeAsync(0);
 			// Six cuts in a row: each is followed by MIN_RETRY_MS (random is 0, so no jitter), never
 			// by a doubled wait, since a connection that was held is not a failing server.
-			for (let cuts = 1; cuts <= 6; cuts += 1) {
+			const cutOnce = async (cuts: number) => {
 				await vi.advanceTimersByTimeAsync(LIFETIME_MS + MIN_RETRY_MS - 1);
 				expect(h.fetchImpl).toHaveBeenCalledTimes(cuts);
 				await vi.advanceTimersByTimeAsync(1);
 				expect(h.fetchImpl).toHaveBeenCalledTimes(cuts + 1);
-			}
+			};
+			await [1, 2, 3, 4, 5, 6].reduce(
+				(before, cuts) => before.then(() => cutOnce(cuts)),
+				Promise.resolve(),
+			);
 			h.handle.stop();
 		});
 	});

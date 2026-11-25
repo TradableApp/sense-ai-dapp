@@ -4,12 +4,14 @@
  * server-sent events, reconnects with `Last-Event-ID`, and acts on the response status alone.
  *
  *   200          read `frame` events until the server ends the response, then reconnect: at
- *                once when the cursor moved; after the server's `retry:` when nothing came;
- *                with the backoff when something came and the cursor did not move, and after
+ *                once when the cursor moved, or when nothing came and the response had been
+ *                open `HELD_OPEN_MS` (the server ended it at its lifetime); after the server's
+ *                `retry:` when nothing came and it ended sooner; with the backoff when something came and the cursor did not move, and after
  *                `MAX_STALLED_CONNECTIONS` such connections in a row, stop as `finished`
  *   404/429/503  retry after `Retry-After` (never sooner than `MIN_RETRY_MS`)
  *   400/403/410  stop for good (`bad-request`, `proof-refused`, `finished`)
  *   other, or a network failure: retry with the shared jittered backoff from `MIN_RETRY_MS`
+ *                (a response cut after `HELD_OPEN_MS` open starts that backoff again)
  *
  * Progress is the cursor moving, never a frame merely arriving: a frame that cannot be applied
  * is replayed by the server on every connection. A response is judged once every frame it
@@ -35,6 +37,14 @@ import {
 
 /** The shortest wait before any retry, whatever the server says. */
 export const MIN_RETRY_MS = 1_000;
+/**
+ * A response open at least this long was held by the server, not ended early: a quiet one is
+ * followed at once, since a frame made during the `retry:` wait would be shown that much late,
+ * and one a proxy cut is no failing server, so the backoff starts again from its first step.
+ * Either way at most one request is made per this long. Below the server's poll wait (20 s) and
+ * any connection lifetime it is given.
+ */
+export const HELD_OPEN_MS = 10_000;
 /** No progress for this long and the stream is given up; the stored answer still lands by sync. */
 export const IDLE_GIVE_UP_MS = 10 * 60 * 1000;
 /**
@@ -112,8 +122,8 @@ export interface FrameStreamHandle {
 }
 
 type ConnectionOutcome =
-	| { kind: 'ended'; sawEvents: boolean; malformed: boolean }
-	| { kind: 'retry'; afterMs: number | null }
+	| { kind: 'ended'; sawEvents: boolean; malformed: boolean; held: boolean }
+	| { kind: 'retry'; afterMs: number | null; held: boolean }
 	| { kind: 'stop'; reason: Exclude<StopReason, 'idle'> }
 	| { kind: 'aborted' };
 
@@ -277,6 +287,9 @@ async function readConnection(options: ReadOptions): Promise<ConnectionOutcome> 
 	};
 	if (options.lastEventId) headers[STREAM_HTTP.lastEventIdHeader] = options.lastEventId;
 	let sawEvents = false;
+	let openedAt: number | null = null;
+	/** Whether the 200 response has been open `HELD_OPEN_MS`. */
+	const held = () => openedAt !== null && Date.now() - openedAt >= HELD_OPEN_MS;
 	try {
 		const response = await options.fetchImpl(options.url, {
 			method: 'GET',
@@ -292,21 +305,24 @@ async function readConnection(options: ReadOptions): Promise<ConnectionOutcome> 
 		if (response.status !== 200) discardBody(response);
 		if (STOPS[response.status]) return { kind: 'stop', reason: STOPS[response.status] };
 		if (RETRY_AFTER_STATUSES.has(response.status)) {
-			return { kind: 'retry', afterMs: retryAfterMs(response) };
+			return { kind: 'retry', afterMs: retryAfterMs(response), held: false };
 		}
-		if (response.status !== 200 || !response.body) return { kind: 'retry', afterMs: null };
+		if (response.status !== 200 || !response.body) {
+			return { kind: 'retry', afterMs: null, held: false };
+		}
+		openedAt = Date.now();
 		const parser = createSseParser(event => {
 			sawEvents = true;
 			options.onEvent(event);
 		}, options.onRetry);
 		await readBody(response.body, parser, options);
-		return { kind: 'ended', sawEvents, malformed: false };
+		return { kind: 'ended', sawEvents, malformed: false, held: held() };
 	} catch (error) {
 		if (options.signal.aborted) return { kind: 'aborted' };
 		const malformed = error instanceof MalformedStreamError;
 		return sawEvents || malformed
-			? { kind: 'ended', sawEvents, malformed }
-			: { kind: 'retry', afterMs: null };
+			? { kind: 'ended', sawEvents, malformed, held: held() }
+			: { kind: 'retry', afterMs: null, held: held() };
 	}
 }
 
@@ -408,12 +424,19 @@ export function startFrameStream(options: FrameStreamOptions): FrameStreamHandle
 					stalled = 0;
 					return 0;
 				}
-				// Nothing came (a quiet poll, a heartbeat-only response): the server sets the pace.
-				if (!outcome.sawEvents && !outcome.malformed) return retryMs;
+				if (!outcome.sawEvents && !outcome.malformed) {
+					// Nothing came (a quiet poll, a heartbeat-only response). One the server held open
+					// is followed at once; one it ended sooner waits the pace the server set.
+					if (!outcome.held) return retryMs;
+					failures = 0;
+					return 0;
+				}
 				stalled += 1;
 				return stalled >= MAX_STALLED_CONNECTIONS ? 'give-up' : backoff();
 			case 'retry':
 				if (outcome.afterMs !== null) return Math.max(outcome.afterMs, MIN_RETRY_MS);
+				// A response cut after it was held open is not a failing server.
+				if (outcome.held) failures = 0;
 				return backoff();
 			default:
 				return null;
