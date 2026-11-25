@@ -17,6 +17,7 @@ import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 import { messageNamesError } from '@/lib/contractErrorSelector';
 import { encryptData } from '@/lib/crypto';
 import eciesEncrypt from '@/lib/ecies';
+import { FeeNotReadError, readEscrowFee } from '@/lib/escrowFee';
 import type { FeeTokenCheckState, PaidAction } from '@/lib/feeTokenCheck';
 import { CANCEL_ACTION, REFUND_ACTION, refusedTransferMessage } from '@/lib/feeTokenRefusal';
 import { PaymentSwitchedOffError } from '@/lib/paymentGate';
@@ -157,19 +158,38 @@ export function buildErrorHandler(
 		const isError = (abi: readonly unknown[], name: string) =>
 			messageNamesError(errorMessage, abi, name);
 
-		// A cancel takes its fee from the user's wallet through the plan (cancelPrompt in
-		// EVMAIAgentEscrow), so it is refused when the plan's remaining limit, the token approval
-		// or the balance is below the fee. Raising the limit is switched off while a prompt is
-		// pending, so the message says what is left to the user.
-		if (
-			action === CANCEL_ACTION &&
-			(isError(EVMAIAgentEscrowABI.abi, 'InsufficientSpendingLimitAllowance') ||
-				isError(feeToken.abi, 'ERC20InsufficientAllowance') ||
-				isError(feeToken.abi, 'ERC20InsufficientBalance'))
-		) {
-			toast.error('Could Not Cancel', {
+		// The fee is read just before a paying call so the call can name the most it agrees to
+		// pay. With no reading there is no maximum to send, so nothing was sent.
+		if (error instanceof FeeNotReadError) {
+			if (action === CANCEL_ACTION) {
+				toast.error('Could Not Cancel', {
+					description:
+						'The cancellation fee could not be read from the network, so nothing was cancelled. Please try again.',
+				});
+				return;
+			}
+			toast.error('Not Sent', {
 				description:
-					"The cancellation fee could not be taken: your plan's remaining limit, the token approval or your balance is below it. Nothing was cancelled. The prompt can be refunded one hour after it was sent, unless it is answered first.",
+					'The fee could not be read from the network, so nothing was sent and no tokens were taken. Please try again.',
+			});
+			return;
+		}
+
+		// The escrow refuses a call whose fee was raised above the one it was sent with. A
+		// cancel takes its fee out of the payment the escrow holds (cancelPrompt in
+		// EVMAIAgentEscrow), so this is the only fee error a cancel has wording of its own for.
+		// A refund names no maximum and pays no fee, so it is left to the general failure below.
+		if (action !== REFUND_ACTION && isError(EVMAIAgentEscrowABI.abi, 'FeeAboveMaximum')) {
+			if (action === CANCEL_ACTION) {
+				toast.error('Could Not Cancel', {
+					description:
+						'The cancellation fee was raised while this was being sent, so nothing was cancelled. Cancelling again uses the new fee.',
+				});
+				return;
+			}
+			toast.error('Fee Changed', {
+				description:
+					'The fee was raised while this was being sent, so nothing was sent and no tokens were taken. Sending it again uses the new fee.',
 			});
 			return;
 		}
@@ -428,6 +448,7 @@ export default function useChatMutations() {
 			if (!contractConfig?.escrow) {
 				throw new Error('Contracts not configured for this chain.');
 			}
+			const maxFee = await readEscrowFee(chain, contractConfig.escrow.address, 'prompt');
 			const { encryptedPayload, roflEncryptedKey } = await createEncryptedPayloads(
 				sessionKey,
 				buildInitiatePromptPayload({
@@ -449,7 +470,7 @@ export default function useChatMutations() {
 			const tx = prepareContractCall({
 				contract: escrowContract,
 				method: 'initiatePrompt',
-				params: [conversationId || 0, encryptedPayload, roflEncryptedKey],
+				params: [conversationId || 0, encryptedPayload, roflEncryptedKey, maxFee],
 			} as unknown as Parameters<typeof prepareContractCall>[0]);
 			const transactionReceipt = await sendAndConfirmTransaction({
 				transaction: tx,
@@ -522,6 +543,7 @@ export default function useChatMutations() {
 				throw new Error('Contracts not configured for this chain.');
 			}
 
+			const maxFee = await readEscrowFee(chain, contractConfig.escrow.address, 'prompt');
 			const { encryptedPayload, roflEncryptedKey } = await createEncryptedPayloads(sessionKey, {
 				instructions,
 				promptMessageCID,
@@ -543,6 +565,7 @@ export default function useChatMutations() {
 					originalAnswerMessageId,
 					encryptedPayload,
 					roflEncryptedKey,
+					maxFee,
 				],
 			} as unknown as Parameters<typeof prepareContractCall>[0]);
 			const transactionReceipt = await sendAndConfirmTransaction({
@@ -604,6 +627,7 @@ export default function useChatMutations() {
 				throw new Error('Contracts not configured for this chain.');
 			}
 
+			const maxFee = await readEscrowFee(chain, contractConfig.escrow.address, 'branch');
 			const { encryptedPayload, roflEncryptedKey } = await createEncryptedPayloads(sessionKey, {
 				originalTitle,
 			});
@@ -617,7 +641,13 @@ export default function useChatMutations() {
 			const tx = prepareContractCall({
 				contract: escrowContract,
 				method: 'initiateBranch',
-				params: [originalConversationId, branchPointMessageId, encryptedPayload, roflEncryptedKey],
+				params: [
+					originalConversationId,
+					branchPointMessageId,
+					encryptedPayload,
+					roflEncryptedKey,
+					maxFee,
+				],
 			} as unknown as Parameters<typeof prepareContractCall>[0]);
 			const transactionReceipt = await sendAndConfirmTransaction({
 				transaction: tx,
@@ -678,6 +708,7 @@ export default function useChatMutations() {
 				throw new Error('Contracts not configured for this chain.');
 			}
 
+			const maxFee = await readEscrowFee(chain, contractConfig.escrow.address, 'metadata');
 			const { encryptedPayload, roflEncryptedKey } = await createEncryptedPayloads(sessionKey, {
 				title,
 				isDeleted,
@@ -692,7 +723,7 @@ export default function useChatMutations() {
 			const tx = prepareContractCall({
 				contract: escrowContract,
 				method: 'initiateMetadataUpdate',
-				params: [conversationId, encryptedPayload, roflEncryptedKey],
+				params: [conversationId, encryptedPayload, roflEncryptedKey, maxFee],
 			} as unknown as Parameters<typeof prepareContractCall>[0]);
 
 			await sendAndConfirmTransaction({
@@ -716,10 +747,16 @@ export default function useChatMutations() {
 	const cancelPromptMutation = useMutation({
 		mutationFn: async ({ answerMessageId }: { answerMessageId: number | string }) => {
 			const chain = activeWallet?.getChain();
-			if (!activeWallet || !chain) throw new Error('Wallet not connected');
+			// The account is checked before the fee is read, so a wallet still reconnecting stops
+			// here and not after a network round trip.
+			if (!activeWallet || !chain || !activeAccount) throw new Error('Wallet not connected');
 
 			const contractConfig = CONTRACTS[chain.id];
 			if (!contractConfig?.escrow) throw new Error('Contracts not configured for this chain.');
+
+			// The escrow charges this or the payment it holds, whichever is lower, so the fee
+			// read is the most the cancel can cost.
+			const maxFee = await readEscrowFee(chain, contractConfig.escrow.address, 'cancellation');
 
 			const escrowContract = getContract({
 				client,
@@ -731,17 +768,18 @@ export default function useChatMutations() {
 			const tx = prepareContractCall({
 				contract: escrowContract,
 				method: 'cancelPrompt',
-				params: [answerMessageId],
+				params: [answerMessageId, maxFee],
 			} as unknown as Parameters<typeof prepareContractCall>[0]);
 
 			await sendAndConfirmTransaction({
 				transaction: tx,
-				account: activeAccount!,
+				account: activeAccount,
 			});
 		},
 		onSuccess: () => {
 			toast.success('Prompt Cancelled', {
-				description: 'The prompt has been cancelled and tokens refunded.',
+				description:
+					'The prompt has been cancelled and your payment returned, less the cancellation fee.',
 			});
 
 			// Immediate RPC update

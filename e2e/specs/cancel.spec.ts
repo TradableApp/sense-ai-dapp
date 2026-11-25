@@ -2,6 +2,13 @@ import { expect, test } from '../fixtures';
 import { advanceTime, LIVE_STACK } from '../helpers/chain';
 import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/contracts';
 import { getPromptRequests, waitForGraph } from '../helpers/graph';
+import {
+	getAllowance,
+	getCancellationFee,
+	getFeeTokenBalance,
+	getPromptFee,
+	getSpendingLimit,
+} from '../helpers/hardhat';
 
 const SKIP_REASON =
 	'Skipped: requires Hardhat node + oracle + Graph node (set E2E_LOCAL_SERVICES=1)';
@@ -19,9 +26,9 @@ const HOLD_MS = 8000;
 const CANCELLATION_TIMEOUT_S = 3;
 
 // Cancel a pending prompt + concurrency. A 2nd prompt cannot be submitted while one is
-// pending (the composer swaps Send→Cancel while isAiThinking). Cancelling debits a
-// cancellation fee, refunds the prompt fee, flags PromptRequest.isCancelled, and the dApp
-// drops the pending message so the composer frees up. On localnet the oracle mock-delay
+// pending (the composer swaps Send→Cancel while isAiThinking). Cancelling keeps the
+// cancellation fee out of the payment the escrow holds and sends the rest back, flags
+// PromptRequest.isCancelled, and the dApp drops the pending message so the composer frees up. On localnet the oracle mock-delay
 // sentinel holds the answer pending deterministically; on testnet the real oracle's latency
 // does (see HOLD_MS). Fresh per-test users; serial.
 test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
@@ -61,6 +68,47 @@ test.describe('Cancel — pending prompt + concurrency (T-CANCEL)', () => {
 		// and none can ever land. Assert on that confirmed state rather than sleeping for
 		// the (wall-clock) hold, which would race the oracle on a slow runner.
 		await expect(freshChatPage.assistantMessages).toHaveCount(0);
+	});
+
+	// The escrow takes the fee out of the payment it holds: the fee charged is the cancellation
+	// fee or the prompt's payment, whichever is lower, and the rest goes back to the wallet.
+	// Nothing more is pulled from the wallet, so its approval is left as the prompt left it.
+	// Only the user's own figures are read: the treasury and the escrow are shared by the suite.
+	test('T-CANCEL-05: a cancel returns the payment less the fee and takes nothing more from the wallet', async ({
+		freshChatPage,
+		freshUserAccount,
+	}) => {
+		const owner = freshUserAccount.address;
+		const promptFee = await getPromptFee(ESCROW_ADDRESS);
+		const cancellationFee = await getCancellationFee(ESCROW_ADDRESS);
+		const feeCharged = cancellationFee < promptFee ? cancellationFee : promptFee;
+		const balanceBefore = await getFeeTokenBalance(TOKEN_ADDRESS, owner);
+		const spentBefore = (await getSpendingLimit(ESCROW_ADDRESS, owner)).spentAmount;
+
+		await freshChatPage.goto();
+		await freshChatPage.sendDelayedPrompt('Hold this one, then give it back', HOLD_MS);
+		await expect(freshChatPage.cancelButton).toBeVisible({ timeout: 30_000 });
+
+		// The prompt's payment has left the wallet: balanceBefore - promptFee.
+		expect(await getFeeTokenBalance(TOKEN_ADDRESS, owner)).toBe(balanceBefore - promptFee);
+		const approvalWhilePending = await getAllowance(TOKEN_ADDRESS, owner, ESCROW_ADDRESS);
+
+		await advanceTime(CANCELLATION_TIMEOUT_S + 1);
+		await freshChatPage.cancelButton.click();
+		await waitForGraph(
+			() => getPromptRequests(owner),
+			reqs => reqs.some(r => r.isCancelled),
+			{ label: 'PromptRequest.isCancelled' },
+		);
+
+		// (balanceBefore - promptFee) + (promptFee - feeCharged) = balanceBefore - feeCharged.
+		expect(await getFeeTokenBalance(TOKEN_ADDRESS, owner)).toBe(balanceBefore - feeCharged);
+		// The cancel moved tokens out of the escrow only, so the wallet's approval is untouched.
+		expect(await getAllowance(TOKEN_ADDRESS, owner, ESCROW_ADDRESS)).toBe(approvalWhilePending);
+		// The plan is charged what the cancel cost: spentBefore + promptFee - (promptFee - feeCharged).
+		expect((await getSpendingLimit(ESCROW_ADDRESS, owner)).spentAmount).toBe(
+			spentBefore + feeCharged,
+		);
 	});
 
 	test('T-CANCEL-02: a second prompt cannot be submitted while one is pending', async ({

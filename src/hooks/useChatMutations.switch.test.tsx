@@ -73,6 +73,12 @@ vi.mock('@/lib/faucetService', () => ({
 }));
 vi.mock('@/lib/crypto', () => ({ encryptData: vi.fn(async () => 'iv.cipher') }));
 vi.mock('@/lib/ecies', () => ({ default: vi.fn(async () => new Uint8Array([1, 2, 3, 4])) }));
+// Each paying call first reads the fee it will name as its maximum. A plain function, so a
+// reset of the mocks between tests leaves it answering.
+vi.mock('@/lib/escrowFee', async importOriginal => ({
+	...(await importOriginal<typeof import('@/lib/escrowFee')>()),
+	readEscrowFee: async () => 1n,
+}));
 
 const sessionKey = {} as CryptoKey;
 

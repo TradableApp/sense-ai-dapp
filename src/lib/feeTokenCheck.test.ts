@@ -577,18 +577,16 @@ describe('feeTokenBlockCopy', () => {
 		const copy = feeTokenBlockCopy('treasury-not-exempt', 'PTS');
 		expect(copy?.title).toMatch(/some actions/i);
 		expect(copy?.description).toMatch(/prompts still work/i);
-		expect(copy?.description).toMatch(/cancel/i);
 	});
 
-	// A cancellation pays its fee from the user straight to the treasury, and a restricted
-	// token lets that through only when one end is listed: neither is, so it always fails.
-	// A refund goes from the listed escrow back to the user, so it gets through.
-	it('says a cancellation is refused, not that it may be, when only the treasury is not listed', () => {
+	// A cancellation pays its fee and the rest of the payment out of the escrow, which is
+	// listed, so the token lets both through whether or not the treasury is listed. A refund
+	// leaves the escrow too.
+	it('says cancelling and refunds still work when only the treasury is not listed', () => {
 		const description = feeTokenBlockCopy('treasury-not-exempt', 'PTS')?.description ?? '';
 
-		expect(description).toMatch(/cancelling a prompt will be refused/i);
-		expect(description).not.toMatch(/may be refused/i);
-		expect(description).toMatch(/not answered can be refunded one hour after it was sent/i);
+		expect(description).toMatch(/cancelling a prompt and claiming a refund still work/i);
+		expect(description).not.toMatch(/refused too|will be refused/i);
 	});
 
 	// Both a cancellation and a refund pay the prompt's payment from the escrow back to the

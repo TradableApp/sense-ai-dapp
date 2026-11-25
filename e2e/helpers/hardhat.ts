@@ -517,6 +517,7 @@ const ESCROW_ABI = parseAbi([
 	'function acceptOwnership()',
 	'function pendingOwner() view returns (address)',
 	'function promptFee() view returns (uint256)',
+	'function cancellationFee() view returns (uint256)',
 	'function treasury() view returns (address)',
 	'function owner() view returns (address)',
 	'function spendingLimits(address) view returns (uint256 allowance, uint256 spentAmount, uint256 expiresAt)',
@@ -606,6 +607,13 @@ export async function processRefund(
 /** Read the current per-prompt fee (wei-scale) from the escrow. */
 export async function getPromptFee(escrowAddress: string): Promise<bigint> {
 	const data = encodeFunctionData({ abi: ESCROW_ABI, functionName: 'promptFee', args: [] });
+	const result = await callContract(escrowAddress, data);
+	return BigInt(result);
+}
+
+/** Read the current cancellation fee (wei-scale) from the escrow. */
+export async function getCancellationFee(escrowAddress: string): Promise<bigint> {
+	const data = encodeFunctionData({ abi: ESCROW_ABI, functionName: 'cancellationFee', args: [] });
 	const result = await callContract(escrowAddress, data);
 	return BigInt(result);
 }
