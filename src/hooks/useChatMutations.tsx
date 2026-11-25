@@ -178,7 +178,8 @@ export function buildErrorHandler(
 		// The escrow refuses a call whose fee was raised above the one it was sent with. A
 		// cancel takes its fee out of the payment the escrow holds (cancelPrompt in
 		// EVMAIAgentEscrow), so this is the only fee error a cancel has wording of its own for.
-		if (isError(EVMAIAgentEscrowABI.abi, 'FeeAboveMaximum')) {
+		// A refund names no maximum and pays no fee, so it is left to the general failure below.
+		if (action !== REFUND_ACTION && isError(EVMAIAgentEscrowABI.abi, 'FeeAboveMaximum')) {
 			if (action === CANCEL_ACTION) {
 				toast.error('Could Not Cancel', {
 					description:
@@ -746,7 +747,9 @@ export default function useChatMutations() {
 	const cancelPromptMutation = useMutation({
 		mutationFn: async ({ answerMessageId }: { answerMessageId: number | string }) => {
 			const chain = activeWallet?.getChain();
-			if (!activeWallet || !chain) throw new Error('Wallet not connected');
+			// The account is checked before the fee is read, so a wallet still reconnecting stops
+			// here and not after a network round trip.
+			if (!activeWallet || !chain || !activeAccount) throw new Error('Wallet not connected');
 
 			const contractConfig = CONTRACTS[chain.id];
 			if (!contractConfig?.escrow) throw new Error('Contracts not configured for this chain.');
@@ -770,7 +773,7 @@ export default function useChatMutations() {
 
 			await sendAndConfirmTransaction({
 				transaction: tx,
-				account: activeAccount!,
+				account: activeAccount,
 			});
 		},
 		onSuccess: () => {

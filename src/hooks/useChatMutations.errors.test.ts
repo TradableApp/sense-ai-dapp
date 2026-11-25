@@ -375,6 +375,28 @@ describe('buildErrorHandler — every explained error is recognised by its selec
 		},
 	);
 
+	// A refund names no maximum and pays no fee, so the escrow never raises this for one. If it
+	// ever arrived there, words about sending again would be wrong: it gets the general failure.
+	it('a raised fee during a refund is not worded as a send', () => {
+		buildErrorHandler(
+			false,
+			false,
+			100,
+			vi.fn(),
+			FEE_TOKEN_PROFILES.SENSE,
+		)(
+			{ message: undecoded(realSelector(EVMAIAgentEscrowABI.abi, 'FeeAboveMaximum')) },
+			'process refund',
+		);
+
+		expect(toast.error).toHaveBeenCalledTimes(1);
+		const [title, options] = vi.mocked(toast.error).mock.calls[0];
+		expect(title).not.toBe('Fee Changed');
+		expect(String((options as { description?: unknown }).description)).not.toMatch(
+			/sending it again|nothing was sent/i,
+		);
+	});
+
 	// The escrow no longer pulls the fee from the wallet on a cancel, so these keep their
 	// general wording whatever the action: a cancel has no wording of its own for them.
 	it.each([
