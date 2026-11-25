@@ -170,7 +170,7 @@ reads it when the file is loaded, so a missing or misspelt value stops the whole
 loading, and a value naming the other token fails the file on the on-chain symbol check. A
 missing or malformed variable fails once, by name, before any request.
 
-### Included in the `testnet` project (171 tests, 19 files)
+### Included in the `testnet` project (172 tests, 19 files)
 
 `smoke`, `ui`, `auth`, `chat`, `history`, `branching`, `cancel`, `metadata`, `search`,
 `versions`, `multi-device`, `live-sync`, `activity`, `graph`, `reasoning`, `live-reasoning`,
