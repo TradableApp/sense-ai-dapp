@@ -8,15 +8,18 @@ import describeShape from '@/lib/settingShape';
  * history).
  *
  * What it guarantees:
- * - It names, in words read in the wallet's prompt, the one site it belongs to, the chain,
- *   the agent contract whose history the key opens and the signing account, and says never
- *   to sign it anywhere else. A page on any other host asking for this text shows a host
- *   that is not the one named.
- * - It is the same text on every visit and every device for one wallet, site, chain and
- *   agent (no time, no nonce), so the key can be derived again and the stored history read.
- *   Addresses are written in their checksummed form, so how a setting is cased changes
- *   nothing.
- * - The key differs per network and per agent contract, as the local store does.
+ * - It names, in words read in the wallet's prompt, the signing account, the one site it
+ *   belongs to and the chain, and says never to sign it anywhere else. A page on any other
+ *   host asking for this text shows a host that is not the one named.
+ * - It is the same text on every visit and every device for one wallet, site and chain (no
+ *   time, no nonce), so the key can be derived again and the stored history read. The
+ *   account is written in its checksummed form, so how it is cased changes nothing.
+ * - The key is bound to the wallet, the site (one per network) and the chain, and to nothing
+ *   else. It names no agent contract: the key is the same across agent deployments on one
+ *   network, so replacing the contract pair changes no user's key and history from an
+ *   earlier deployment stays decryptable. Which deployment a stored row belongs to is the
+ *   local store's concern (one database per agent, `src/lib/localStoreName.ts`), not the
+ *   key's.
  * - It carries a version, so a later change to the text is deliberate: changing any of it
  *   changes every user's key, and history stored under the old key can no longer be read.
  *
@@ -41,10 +44,6 @@ const SESSION_SITES: Readonly<Record<string, string>> = Object.freeze({
 	test: LOCAL_SITE,
 });
 
-/** Modes that may build the message with no agent contract configured. */
-const MAY_RUN_WITHOUT_AGENT = new Set(['localnet', 'test']);
-const NO_AGENT = 'none (a local build with no agent)';
-
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const CHAIN_ID = /^[1-9][0-9]*$/;
 
@@ -61,8 +60,6 @@ export interface SessionMessageInput {
 	mode: string;
 	/** The build's chain id (`VITE_CHAIN_ID`). */
 	chainId: string | number | undefined;
-	/** The build's agent contract (`VITE_AGENT_CONTRACT_ADDRESS`). */
-	agentAddress: string | undefined;
 	/** The account that signs. */
 	walletAddress: string;
 }
@@ -76,25 +73,8 @@ export function sessionSiteFor(mode: string): string | undefined {
 
 const checksummed = (address: string): string => getAddress(address.toLowerCase());
 
-function agentLine(mode: string, agentAddress: string | undefined): string {
-	if (!agentAddress && MAY_RUN_WITHOUT_AGENT.has(mode)) return NO_AGENT;
-	if (!agentAddress || !ADDRESS.test(agentAddress)) {
-		throw new SessionMessageConfigError(
-			`The session message needs the agent contract address, 0x followed by 40 hex digits; got ${describeShape(
-				agentAddress ?? '',
-			)}.`,
-		);
-	}
-	return checksummed(agentAddress);
-}
-
 /** The exact text the wallet is asked to sign. Throws `SessionMessageConfigError`. */
-export function buildSessionMessage({
-	mode,
-	chainId,
-	agentAddress,
-	walletAddress,
-}: SessionMessageInput): string {
+export function buildSessionMessage({ mode, chainId, walletAddress }: SessionMessageInput): string {
 	const site = sessionSiteFor(mode);
 	if (!site) {
 		throw new SessionMessageConfigError(
@@ -107,7 +87,6 @@ export function buildSessionMessage({
 			`The session message needs a chain id, a whole number above 0; got ${describeShape(chain)}.`,
 		);
 	}
-	const agent = agentLine(mode, agentAddress);
 	if (!ADDRESS.test(walletAddress)) {
 		throw new SessionMessageConfigError(
 			`The session message needs the wallet address, 0x followed by 40 hex digits; got ${describeShape(
@@ -130,7 +109,6 @@ export function buildSessionMessage({
 		'Purpose: SenseAI conversation history encryption key',
 		`Site: ${site}`,
 		`Chain ID: ${chain}`,
-		`Agent contract: ${agent}`,
 		`Message version: ${SESSION_MESSAGE_VERSION}`,
 	].join('\n');
 }

@@ -132,14 +132,13 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
 				derivingForRef.current = account.address;
 				setStatus('deriving');
 
-				// Names this build's site, chain and agent and the account; built in sessionMessage
-				// and the same text on every visit, so the key can be derived again.
+				// Names this build's site and chain and the account; built in sessionMessage and
+				// the same text on every visit, so the key can be derived again.
 				const entropy = await signMessage({
 					account,
 					message: buildSessionMessage({
 						mode: import.meta.env.MODE,
 						chainId: import.meta.env.VITE_CHAIN_ID,
-						agentAddress: import.meta.env.VITE_AGENT_CONTRACT_ADDRESS,
 						walletAddress: account.address,
 					}),
 				});
