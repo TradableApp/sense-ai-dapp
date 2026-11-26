@@ -10,6 +10,8 @@ import { linkHref, textShowsHost } from '@/lib/safeHref';
 import remarkSafeContent from '@/lib/safeMarkdown';
 import { cn } from '@/lib/utils';
 
+import { isNestedTooDeep } from './markdownDepth';
+
 /**
  * The one renderer for conversation text: the stored answer, the provisional answer from the
  * live stream and the user's own prompt. Conversation text is decrypted, so what is rendered can
@@ -70,7 +72,6 @@ const textOf = (nodes: ReadonlyArray<ElementContent>): string =>
 		})
 		.join('');
 
-
 interface MarkdownLinkProps {
 	href?: string;
 	children?: ReactNode;
@@ -78,6 +79,8 @@ interface MarkdownLinkProps {
 }
 
 function MarkdownLink({ href, children, node }: MarkdownLinkProps) {
+	// Checked again here and in SafeLink, though urlTransform has already been through it: each
+	// layer holds the rule itself, so none depends on which caller it has.
 	const url = linkHref(href);
 	// The host is left out only after text that already shows it, as written (an autolink).
 	const shown = !!url && !!node && textShowsHost(textOf(node.children), url);
@@ -110,9 +113,9 @@ interface PlainTextFallbackProps {
 /**
  * Shows the text as it was written when rendering it as markdown throws (text nested deeper
  * than the parser or the renderer can follow), so one message cannot take the page down with
- * it. Given a `key` of the text by its caller, so other text is tried afresh.
+ * it. Text nested past `MAX_NESTING` never gets this far: `MarkdownText` shows it plain itself. Given a `key` of the text by its caller, so other text is tried afresh.
  */
-class PlainTextFallback extends Component<PlainTextFallbackProps, { failed: boolean }> {
+export class PlainTextFallback extends Component<PlainTextFallbackProps, { failed: boolean }> {
 	constructor(props: PlainTextFallbackProps) {
 		super(props);
 		this.state = { failed: false };
@@ -151,6 +154,18 @@ interface MarkdownTextProps {
 }
 
 export default function MarkdownText({ children, paragraphs, className }: MarkdownTextProps) {
+	const text = children ?? '';
+	// Not attempted: the renderer would spend seconds on it before it gave up.
+	if (isNestedTooDeep(text)) {
+		return (
+			<div className={cn('ph-no-capture', className)}>
+				<span data-markdown-fallback className="whitespace-pre-wrap break-words">
+					{text}
+				</span>
+			</div>
+		);
+	}
+
 	return (
 		<div
 			className={cn(

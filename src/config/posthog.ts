@@ -13,6 +13,15 @@ export const RECORD_SESSIONS = false;
 
 const API_HOST = import.meta.env.VITE_PUBLIC_POSTHOG_HOST || 'https://eu.i.posthog.com';
 
+/** The host analytics is sent to; null when the setting is not a URL, and then it matches nothing. */
+const API_HOSTNAME = (() => {
+	try {
+		return new URL(API_HOST).hostname;
+	} catch {
+		return null;
+	}
+})();
+
 /** The replay recorder's path on the analytics host. */
 const RECORDER_PATH = /^\/static\/(?:lazy-recorder|posthog-recorder)\.js$/;
 
@@ -24,8 +33,7 @@ const RECORDER_PATH = /^\/static\/(?:lazy-recorder|posthog-recorder)\.js$/;
 function isRecorderScript(src: string): boolean {
 	try {
 		const { protocol, hostname, pathname } = new URL(src);
-		const isAnalyticsHost =
-			hostname.endsWith('.posthog.com') || hostname === new URL(API_HOST).hostname;
+		const isAnalyticsHost = hostname.endsWith('.posthog.com') || hostname === API_HOSTNAME;
 		return protocol === 'https:' && isAnalyticsHost && RECORDER_PATH.test(pathname);
 	} catch {
 		return false;

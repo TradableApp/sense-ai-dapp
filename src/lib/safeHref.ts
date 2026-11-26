@@ -21,15 +21,19 @@ export default function safeHref(url: string | null | undefined): string | null 
 }
 
 /**
- * The URL a link made from conversation text may lead to: one `safeHref` accepts that carries
- * no user name or password. `https://bank.example@other.example/` goes to `other.example`, and
+ * The URL a link made from conversation text may lead to: one `safeHref` would accept (the
+ * same parse and the same schemes) that carries no user name or password. `https://bank.example@other.example/` goes to `other.example`, and
  * a reader takes the part before the `@` for the site, so such a URL is never a link.
  */
 export function linkHref(url: string | null | undefined): string | null {
-	const href = safeHref(url);
-	if (!href) return null;
-	const { username, password } = new URL(href);
-	return username === '' && password === '' ? href : null;
+	if (typeof url !== 'string' || url === '') return null;
+	try {
+		const parsed = new URL(url);
+		if (!WEB_PROTOCOLS.has(parsed.protocol)) return null;
+		return parsed.username === '' && parsed.password === '' ? parsed.href : null;
+	} catch {
+		return null;
+	}
 }
 
 /**
