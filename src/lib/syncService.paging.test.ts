@@ -565,6 +565,116 @@ describe('syncWithRemote — the cursor', () => {
 	});
 });
 
+describe('syncWithRemote — a time ahead of this device', () => {
+	const YEAR_S = 365 * 24 * 60 * 60;
+	const nowSeconds = () => Math.floor(Date.now() / 1000);
+
+	beforeEach(async () => {
+		vi.resetModules();
+		graphRequestMock.mockReset();
+		captureExceptionMock.mockReset();
+		vi.stubEnv('VITE_THE_GRAPH_API_URL', GRAPH_URL);
+		vi.stubEnv('VITE_STORAGE_GATEWAY_URL', GATEWAY);
+		store.conversations.clear();
+		store.messageCache.clear();
+		store.userMetadata.clear();
+		store.conversationBulkPuts.length = 0;
+		store.metadataPuts = 0;
+		sessionKey = await deriveKeyFromEntropy('test-sig-0xpaging', OWNER);
+		payloads = new Map([
+			[CONV_CID, { title: 'Conversation' }],
+			[META_CID, { metadata: true }],
+		]);
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string) => {
+				const encrypted = await encryptData(
+					sessionKey,
+					payloads.get(url.slice(GATEWAY.length)) ?? {},
+				);
+				return { ok: true, status: 200, text: async () => encrypted };
+			}),
+		);
+	});
+
+	afterEach(() => {
+		vi.unstubAllEnvs();
+		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
+	});
+
+	// Held there, the cursor would ask only for what comes after that time, and everything
+	// updated before it would never be read again.
+	it('does not move the cursor to a time far ahead of the clock', async () => {
+		useGraph([conversation('honest', T0), conversation('far-row', nowSeconds() + YEAR_S)]);
+
+		await sync();
+
+		expect(await storedCursor()).toBe(T0 * 1000);
+	});
+
+	// The time is the indexer's; what the conversation holds was decrypted with this wallet's
+	// key, so it is kept.
+	it('still stores the conversation served with that time', async () => {
+		useGraph([conversation('honest', T0), conversation('far-row', nowSeconds() + YEAR_S)]);
+
+		await sync();
+
+		expect(storedConversationIds().sort()).toEqual(['far-row', 'honest']);
+	});
+
+	// Block time can run a little ahead of a device's clock: that is not refused.
+	it('takes a time a little ahead of the clock, inside the allowance', async () => {
+		const slightlyAhead = nowSeconds() + 60;
+		useGraph([conversation('honest', T0), conversation('block-ahead', slightlyAhead)]);
+
+		await sync();
+
+		expect(await storedCursor()).toBe(slightlyAhead * 1000);
+	});
+
+	// A clamp to the clock would put the cursor at a time no conversation was served with, and
+	// a conversation indexed later with an earlier block time would never be read.
+	it('leaves the cursor where it was when every conversation read is far ahead', async () => {
+		await storeCursor(T0 * 1000);
+		useGraph([conversation('far-row', nowSeconds() + YEAR_S)]);
+
+		await sync();
+
+		expect(await storedCursor()).toBe(T0 * 1000);
+	});
+
+	it('is reported once per page load, by kind only', async () => {
+		const ahead = nowSeconds() + YEAR_S;
+		useGraph([conversation('honest', T0), conversation('far-row', ahead)]);
+
+		await sync();
+		await sync();
+
+		expect(captureExceptionMock).toHaveBeenCalledTimes(1);
+		const [, context] = captureExceptionMock.mock.calls[0];
+		expect(context).toEqual(
+			expect.objectContaining({
+				tags: expect.objectContaining({ check: 'graph-sync', reason: 'time-ahead' }),
+			}),
+		);
+		const sent = JSON.stringify(captureExceptionMock.mock.calls[0]);
+		expect(sent).not.toContain(String(ahead));
+		expect(sent).not.toContain('far-row');
+	});
+
+	// A device whose cursor was moved there before this check reads its history again.
+	it('reads from the start when the stored cursor is far ahead of the clock', async () => {
+		await storeCursor((nowSeconds() + YEAR_S) * 1000);
+		useGraph([conversation('honest', T0)]);
+
+		await sync();
+
+		expect(storedConversationIds()).toEqual(['honest']);
+		expect(await storedCursor()).toBe(T0 * 1000);
+	});
+});
+
 describe('syncWithRemote — an answer it cannot use, or no answer', () => {
 	beforeEach(async () => {
 		vi.resetModules();
