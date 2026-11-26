@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 
-import { isSessionOriginAllowed } from '@/features/auth/sessionOrigin';
+import isSessionOriginAllowed from '@/features/auth/sessionOrigin';
 
 const LOOPBACK = [
 	'http://localhost:3002',

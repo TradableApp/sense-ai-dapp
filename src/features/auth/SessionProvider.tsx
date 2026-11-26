@@ -15,7 +15,7 @@ import type { Wallet } from 'thirdweb/wallets';
 
 import { deriveSessionKey, SessionSignatureError } from '@/features/auth/sessionKey';
 import { buildSessionMessage } from '@/features/auth/sessionMessage';
-import { isSessionOriginAllowed } from '@/features/auth/sessionOrigin';
+import isSessionOriginAllowed from '@/features/auth/sessionOrigin';
 import { reportUnsupportedSignature } from '@/lib/sessionKeyReport';
 import { clearUserSession } from '@/store/chatSlice';
 import { useAppDispatch } from '@/store/hooks';

@@ -32,9 +32,9 @@ export default function SessionKeyMismatchBanner({ className }: SessionKeyMismat
 			<KeyRound className="size-4" />
 			<AlertTitle>Some history on this device cannot be opened</AlertTitle>
 			<AlertDescription className="pr-8 text-amber-900/80 dark:text-amber-100/80">
-				History on this device was saved with a key from a different signature by this wallet, so
-				it cannot be opened here with the signature just given. Nothing has been deleted, and you
-				can keep using SenseAI as usual.
+				History on this device was saved with a key from a different signature by this wallet, so it
+				cannot be opened here with the signature just given. Nothing has been deleted, and you can
+				keep using SenseAI as usual.
 			</AlertDescription>
 			<Button
 				type="button"

@@ -26,7 +26,7 @@ const parse = (origin: string): URL | null => {
 	}
 };
 
-export function isSessionOriginAllowed(mode: string, origin: string): boolean {
+export default function isSessionOriginAllowed(mode: string, origin: string): boolean {
 	const site = sessionSiteFor(mode);
 	const page = parse(origin);
 	if (!site || !page) return false;

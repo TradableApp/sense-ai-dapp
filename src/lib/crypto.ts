@@ -91,7 +91,7 @@ export class EncryptedDataFormatError extends Error {
 	}
 }
 
-const base64ToBytes = (text: string): Uint8Array => {
+const base64ToBytes = (text: string): Uint8Array<ArrayBuffer> => {
 	let binary: string;
 	try {
 		binary = atob(text);

@@ -5,8 +5,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
 	canonicalSignature,
 	deriveSessionKey,
-	SessionSignatureError,
 	sessionKeyInfo,
+	SessionSignatureError,
 } from '@/features/auth/sessionKey';
 import { buildSessionMessage, SESSION_MESSAGE_VERSION } from '@/features/auth/sessionMessage';
 import { deriveKeyFromEntropy } from '@/lib/crypto';

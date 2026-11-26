@@ -105,7 +105,7 @@ async function readableRows<T>(
 	sessionKey: CryptoKey,
 	records: Array<{ encryptedData: string }>,
 ): Promise<T[]> {
-	const rows = await Promise.all(
+	const rows: Array<T | null> = await Promise.all(
 		records.map(r => decryptDataOrNull<T>(sessionKey, r.encryptedData)),
 	);
 	return rows.filter((row): row is T => row !== null);
