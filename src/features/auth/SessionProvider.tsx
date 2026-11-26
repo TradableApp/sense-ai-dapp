@@ -13,13 +13,29 @@ import { useActiveAccount, useActiveWallet } from 'thirdweb/react';
 import { signMessage } from 'thirdweb/utils';
 import type { Wallet } from 'thirdweb/wallets';
 
-import { deriveKeyFromEntropy } from '@/lib/crypto';
+import { deriveSessionKey, SessionSignatureError } from '@/features/auth/sessionKey';
+import { buildSessionMessage } from '@/features/auth/sessionMessage';
+import isSessionOriginAllowed from '@/features/auth/sessionOrigin';
+import { reportUnsupportedSignature } from '@/lib/sessionKeyReport';
 import { clearUserSession } from '@/store/chatSlice';
 import { useAppDispatch } from '@/store/hooks';
 
 import needsSessionDerivation from './sessionDerivation';
 
-type SessionStatus = 'disconnected' | 'deriving' | 'ready' | 'rejected' | 'error';
+/**
+ * `unsupported-wallet`: the wallet signed in a way that cannot give the same key twice (a
+ * smart account), or not as the connected account; no key is made (sessionKey.ts).
+ * `wrong-site`: the page is not where this build may ask for the signature (sessionOrigin.ts);
+ * nothing is asked.
+ */
+export type SessionStatus =
+	| 'disconnected'
+	| 'deriving'
+	| 'ready'
+	| 'rejected'
+	| 'unsupported-wallet'
+	| 'wrong-site'
+	| 'error';
 
 interface SessionContextValue {
 	sessionKey: CryptoKey | null;
@@ -38,11 +54,6 @@ const SessionContext = createContext<SessionContextValue>({
 });
 
 export const useSession = () => useContext(SessionContext);
-
-// This is the single, unchanging message that will be signed by all users.
-// It acts as the "password" for key derivation.
-const SIGNATURE_MESSAGE =
-	'Login to SenseAI to encrypt and decrypt your local conversation history.';
 
 /**
  * A custom hook that tracks whether the current browser tab is visible.
@@ -121,6 +132,13 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
 				return;
 			}
 
+			// --- GUARD CLAUSE 4: NOT THE SITE THE MESSAGE NAMES ---
+			// The message says to sign it only on its site; it is never asked for elsewhere.
+			if (!isSessionOriginAllowed(import.meta.env.MODE, window.location.origin)) {
+				setStatus('wrong-site');
+				return;
+			}
+
 			// A key for a DIFFERENT account means the user switched wallets. Drop the prior account's
 			// key AND chat state up-front, so the context never exposes a mismatched
 			// (account A's key, account B's address) pair during the async derivation window — only a
@@ -136,12 +154,21 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
 				derivingForRef.current = account.address;
 				setStatus('deriving');
 
-				const entropy = await signMessage({
-					account,
-					message: SIGNATURE_MESSAGE,
+				// Names this build's site and chain and the account; built in sessionMessage and
+				// the same text on every visit, so the key can be derived again.
+				const message = buildSessionMessage({
+					mode: import.meta.env.MODE,
+					chainId: import.meta.env.VITE_CHAIN_ID,
+					walletAddress: account.address,
 				});
+				const signature = await signMessage({ account, message });
 
-				const derivedKey = await deriveKeyFromEntropy(entropy, account.address);
+				// Refuses a signature that cannot give the same key twice (sessionKey.ts).
+				const derivedKey = await deriveSessionKey({
+					message,
+					signature,
+					walletAddress: account.address,
+				});
 
 				// Set owner + key together on SUCCESS only. ownerAddress is an effect dependency, so
 				// setting it before the await would, on a rejection, change a dep and auto-re-run the
@@ -154,7 +181,10 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
 				console.error('Failed to derive session key:', error);
 				setSessionKey(null);
 				const errorMessage = error instanceof Error ? error.message : String(error);
-				if (errorMessage.toLowerCase().includes('user rejected')) {
+				if (error instanceof SessionSignatureError) {
+					reportUnsupportedSignature(error.kind);
+					setStatus('unsupported-wallet');
+				} else if (errorMessage.toLowerCase().includes('user rejected')) {
 					setStatus('rejected');
 				} else {
 					setStatus('error');

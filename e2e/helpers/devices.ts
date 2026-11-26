@@ -62,8 +62,9 @@ export interface OpenDeviceOptions {
 /**
  * Opens a brand-new "device" — a fresh BrowserContext (its own empty IndexedDB) whose mock wallet
  * impersonates `account`, then completes the real connect + session-key signature. Two devices on
- * the SAME account derive the SAME session key (SIGNATURE_MESSAGE is fixed and Hardhat signing is
- * deterministic), so device B can decrypt device A's data; two DIFFERENT accounts derive different
+ * the SAME account derive the SAME session key (the session message from
+ * src/features/auth/sessionMessage.ts is one text per account, site and chain, and Hardhat signing
+ * is deterministic), so device B can decrypt device A's data; two DIFFERENT accounts derive different
  * keys and query the subgraph under a different owner, so they stay isolated.
  *
  * The context is pushed onto `openContexts` so the caller's `afterEach` can close it even if the

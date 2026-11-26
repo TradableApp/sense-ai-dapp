@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
 
-import { decryptData, encryptData } from './crypto';
+import { decryptData, decryptDataOrNull, encryptData } from './crypto';
 import db from './db';
 import inheritedHistory, { reachesFirstMessage } from './inheritedHistory';
 import { writeMessageCache } from './messageCacheStore';
@@ -115,11 +115,20 @@ export const fetchAndCacheConversations = async (
 ): Promise<Conversation[]> => {
 	if (!sessionKey || !ownerAddress) return [];
 	const finalRecords = await db.conversations.where({ ownerAddress }).toArray();
+	// A row that cannot be decrypted with this key (written under an earlier session key, or
+	// damaged) is not shown and is left as it is; the others are still listed. Any other error
+	// fails the list.
 	const decrypted = await Promise.all(
-		finalRecords.map(c => decryptData(sessionKey, c.encryptedData)),
+		finalRecords.map(c => decryptDataOrNull<Conversation>(sessionKey, c.encryptedData)),
 	);
+	const unreadable = decrypted.filter(c => c === null).length;
+	if (unreadable > 0) {
+		console.warn(
+			`[dataService] ${unreadable} stored conversation(s) could not be read; not shown.`,
+		);
+	}
 	return decrypted
-		.filter(c => !c.isDeleted)
+		.filter((c): c is Conversation => c !== null && !c.isDeleted)
 		.sort((a, b) => (b.lastMessageCreatedAt || 0) - (a.lastMessageCreatedAt || 0));
 };
 
@@ -135,7 +144,18 @@ const readCachedMessages = async (
 			`%c[dataService-LOG] Cache HIT for messages in conversation "${conversationId}".`,
 			'color: green',
 		);
-		const decryptedData = (await decryptData(sessionKey, cachedRecord.encryptedData)) as Message[];
+		const decryptedData = await decryptDataOrNull<Message[]>(
+			sessionKey,
+			cachedRecord.encryptedData,
+		);
+		if (decryptedData === null) {
+			// Not decryptable with this key: shown as not on this device, and left as it is. The
+			// sync replaces it when the conversation can be read from storage.
+			console.warn(
+				`[dataService] The stored messages of conversation "${conversationId}" could not be read.`,
+			);
+			return [];
+		}
 		const sortedMessages = collapseDuplicates(decryptedData);
 
 		// Heal the stored list when duplicates were actually collapsed, so it is not collapsed

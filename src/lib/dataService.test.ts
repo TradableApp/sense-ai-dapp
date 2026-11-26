@@ -102,6 +102,46 @@ describe('fetchAndCacheConversations', () => {
 		expect(result[0].id).toBe('c1');
 	});
 
+	// Rows written under another session key (an earlier signed message, for one) cannot be
+	// read: they are left out, and the rows that can be read are still listed.
+	it('leaves out a conversation stored under another key and lists the others', async () => {
+		const otherKey = await deriveKeyFromEntropy('another-signature', OWNER);
+		const records = [
+			{
+				id: 'old',
+				ownerAddress: OWNER,
+				encryptedData: await encryptData(otherKey, { id: 'old', lastMessageCreatedAt: 3000 }),
+			},
+			{
+				id: 'c1',
+				ownerAddress: OWNER,
+				encryptedData: await encryptData(sessionKey, {
+					id: 'c1',
+					isDeleted: false,
+					lastMessageCreatedAt: 1000,
+				}),
+			},
+			{ id: 'broken', ownerAddress: OWNER, encryptedData: 'not.ciphertext' },
+		];
+		mockDb.conversations.where.mockReturnValue({ toArray: vi.fn().mockResolvedValue(records) });
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+		const result = await fetchAndCacheConversations(sessionKey, OWNER);
+
+		expect(result.map(c => c.id)).toEqual(['c1']);
+	});
+
+	// Anything but a failure to decrypt is a fault: the list fails, as it did before rows
+	// that cannot be read were left out.
+	it('fails when a row fails for another reason than not decrypting', async () => {
+		mockDb.conversations.where.mockReturnValue({
+			toArray: vi.fn().mockResolvedValue([{ id: 'odd', ownerAddress: OWNER, encryptedData: 42 }]),
+		});
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+		await expect(fetchAndCacheConversations(sessionKey, OWNER)).rejects.toBeInstanceOf(TypeError);
+	});
+
 	it('returns empty array when no conversations exist', async () => {
 		mockDb.conversations.where.mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) });
 
@@ -148,6 +188,39 @@ describe('getMessagesForConversation', () => {
 		expect(result).toHaveLength(2);
 		expect(result[0].createdAt).toBe(1000);
 		expect(result[1].createdAt).toBe(2000);
+	});
+
+	it('returns no messages when the stored ones were written under another key', async () => {
+		const otherKey = await deriveKeyFromEntropy('another-signature', OWNER);
+		mockDb.messageCache.get.mockResolvedValue({
+			ownerAddress: OWNER,
+			conversationId: 'c1',
+			encryptedData: await encryptData(otherKey, [
+				{ id: 'm1', conversationId: 'c1', role: 'user', content: 'hello', createdAt: 1000 },
+			]),
+		});
+		mockDb.conversations.get.mockResolvedValue(undefined);
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+		const result = await getMessagesForConversation(sessionKey, OWNER, 'c1');
+
+		expect(result).toEqual([]);
+		// Left as it is: the sync replaces it if the conversation can be read from storage.
+		expect(mockDb.messageCache.put).not.toHaveBeenCalled();
+	});
+
+	it('fails when the stored messages fail for another reason than not decrypting', async () => {
+		mockDb.messageCache.get.mockResolvedValue({
+			ownerAddress: OWNER,
+			conversationId: 'c1',
+			encryptedData: 42,
+		});
+		mockDb.conversations.get.mockResolvedValue(undefined);
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+		await expect(getMessagesForConversation(sessionKey, OWNER, 'c1')).rejects.toBeInstanceOf(
+			TypeError,
+		);
 	});
 
 	it('collapses duplicate ids, keeping the content-bearing version', async () => {

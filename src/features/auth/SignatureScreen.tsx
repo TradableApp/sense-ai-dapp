@@ -8,8 +8,13 @@ import { Separator } from '@/components/ui/separator';
 import { SUPPORTED_TOKENS } from '@/config/contracts';
 import { client, deploymentChain, wallets } from '@/config/thirdweb';
 import { DISPLAY_BALANCE_TOKEN, WALLET_DETAILS_MODAL } from '@/config/walletPanel';
+import { sessionSiteFor } from '@/features/auth/sessionMessage';
 
 import { useSession } from './SessionProvider';
+
+// The host the signed message names (sessionMessage.ts), so the user can match the two.
+const SESSION_SITE = sessionSiteFor(import.meta.env.MODE);
+const SESSION_HOST = SESSION_SITE ? new URL(SESSION_SITE).host : undefined;
 
 interface SignatureScreenProps {
 	onRetry: () => void;
@@ -56,6 +61,13 @@ export default function SignatureScreen({ onRetry }: SignatureScreenProps) {
 						To protect your conversations, SenseAI requires a one-time signature to generate your
 						private, session-only encryption key.
 					</p>
+					{SESSION_HOST && (
+						<p className="text-sm text-[#eeeef0] mt-3 px-2" data-testid="session-message-site">
+							If your wallet shows the message before you sign, check that it names {SESSION_HOST},
+							and sign it only while you are on {SESSION_HOST}. A wallet you sign in to with email,
+							a social account or a passkey signs it without showing it.
+						</p>
+					)}
 					<p className="text-xs text-muted-foreground/60 text-center mt-4">
 						This is a free, gas-less action and does not grant any transaction permissions.
 					</p>
@@ -66,6 +78,25 @@ export default function SignatureScreen({ onRetry }: SignatureScreenProps) {
 							<Loader2 className="mr-2 size-4 animate-spin" />
 							Waiting for signature in your wallet...
 						</div>
+					)}
+					{status === 'wrong-site' && SESSION_SITE && (
+						<p className="text-sm text-[#eeeef0] text-center" data-testid="wrong-site">
+							SenseAI is at{' '}
+							<a
+								href={SESSION_SITE}
+								className="font-medium text-green-400 underline underline-offset-4"
+							>
+								{SESSION_HOST}
+							</a>
+							. Open it there to unlock your history: no signature is asked for on this page.
+						</p>
+					)}
+					{status === 'unsupported-wallet' && (
+						<p className="text-sm text-destructive text-center" data-testid="unsupported-wallet">
+							This wallet cannot create the key that protects your history: it signs in a way that
+							gives a different key each time, or it signed for another account. Please connect
+							another wallet.
+						</p>
 					)}
 					{hasError && (
 						<>

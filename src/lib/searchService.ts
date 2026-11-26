@@ -2,7 +2,7 @@
 import Fuse from 'fuse.js';
 import { eng, removeStopwords } from 'stopword';
 
-import { decryptData, encryptData } from './crypto';
+import { decryptData, decryptDataOrNull, encryptData } from './crypto';
 import db from './db';
 import type { Conversation, Message } from './types';
 
@@ -96,6 +96,21 @@ const initializeFuse = (rawIndex: {
 	});
 };
 
+/**
+ * The rows that can be decrypted with this key. One that cannot (written under an earlier
+ * session key, or damaged) is left out of the index and left as it is in the store; any other
+ * error fails the rebuild.
+ */
+async function readableRows<T>(
+	sessionKey: CryptoKey,
+	records: Array<{ encryptedData: string }>,
+): Promise<T[]> {
+	const rows: Array<T | null> = await Promise.all(
+		records.map(r => decryptDataOrNull<T>(sessionKey, r.encryptedData)),
+	);
+	return rows.filter((row): row is T => row !== null);
+}
+
 const syncSearchIndex = async (sessionKey: CryptoKey, ownerAddress: string): Promise<void> => {
 	if (isSyncing) return;
 	isSyncing = true;
@@ -106,12 +121,8 @@ const syncSearchIndex = async (sessionKey: CryptoKey, ownerAddress: string): Pro
 		const allEncryptedConvos = await db.conversations.where({ ownerAddress }).toArray();
 		const allEncryptedMessages = await db.messageCache.where({ ownerAddress }).toArray();
 
-		const allConversations = await Promise.all(
-			allEncryptedConvos.map(c => decryptData(sessionKey, c.encryptedData)),
-		);
-		const allMessagesNested = await Promise.all(
-			allEncryptedMessages.map(m => decryptData(sessionKey, m.encryptedData)),
-		);
+		const allConversations = await readableRows<Conversation>(sessionKey, allEncryptedConvos);
+		const allMessagesNested = await readableRows<Message[]>(sessionKey, allEncryptedMessages);
 		const allMessages = allMessagesNested.flat();
 
 		const rawIndex: {
@@ -173,7 +184,20 @@ export const mergeSearchIndexDeltas = async (
 		let rawIndex = { m: {}, c: {} };
 
 		if (existingIndexRecord) {
-			rawIndex = await decryptData(sessionKey, existingIndexRecord.encryptedData);
+			// An index that cannot be decrypted with this key is started again: it holds nothing
+			// that is not rebuilt from the conversations and messages themselves. Any other error
+			// leaves the stored index as it is.
+			const stored = await decryptDataOrNull<typeof rawIndex>(
+				sessionKey,
+				existingIndexRecord.encryptedData,
+			);
+			if (stored === null) {
+				console.warn(
+					'[searchService] The stored search index could not be read; starting it again.',
+				);
+			} else {
+				rawIndex = stored;
+			}
 		}
 
 		// 2. Merge new deltas into the raw index
