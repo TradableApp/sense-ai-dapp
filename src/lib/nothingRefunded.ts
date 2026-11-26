@@ -1,3 +1,5 @@
+import { type Abi, decodeEventLog } from 'viem';
+
 /**
  * A refund whose transaction succeeded but refunded nothing: the escrow ignores a refund of
  * an id it holds no payment for, without reverting, so success is read from its
@@ -15,3 +17,42 @@ export const NOTHING_REFUNDED_MESSAGE = {
 	description:
 		'The transaction went through, but the escrow refunded no payment for this request, so nothing was refunded. The list of pending requests is read again.',
 };
+
+/** A log as a receipt carries it. */
+interface ReceiptLog {
+	address: string;
+	topics: readonly string[];
+	data: string;
+}
+
+const REFUND_EVENT = 'PaymentRefunded';
+
+/**
+ * Whether the receipt's logs carry the escrow's `PaymentRefunded` for `answerMessageId`. Only
+ * a log from the escrow that decodes as that event counts: another event of the escrow with the
+ * same field does not, and neither does a log that does not decode.
+ */
+export function receiptRefunded(
+	logs: readonly ReceiptLog[],
+	escrowAddress: string,
+	escrowAbi: readonly unknown[],
+	answerMessageId: number | string,
+): boolean {
+	const escrow = escrowAddress.toLowerCase();
+	const id = BigInt(answerMessageId);
+	return logs.some(log => {
+		if (log.address.toLowerCase() !== escrow) return false;
+		try {
+			// The log says which event it is (its first topic); the name is then compared here,
+			// since decoding does not refuse a log of another event.
+			const decoded = decodeEventLog({
+				abi: escrowAbi as Abi,
+				topics: log.topics as [`0x${string}`, ...`0x${string}`[]],
+				data: log.data as `0x${string}`,
+			}) as { eventName?: string; args?: { escrowId?: unknown } };
+			return decoded.eventName === REFUND_EVENT && decoded.args?.escrowId === id;
+		} catch {
+			return false;
+		}
+	});
+}

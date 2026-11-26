@@ -19,7 +19,11 @@ import { encryptData } from '@/lib/crypto';
 import eciesEncrypt from '@/lib/ecies';
 import type { FeeTokenCheckState, PaidAction } from '@/lib/feeTokenCheck';
 import { CANCEL_ACTION, REFUND_ACTION, refusedTransferMessage } from '@/lib/feeTokenRefusal';
-import { NOTHING_REFUNDED_MESSAGE, NothingRefundedError } from '@/lib/nothingRefunded';
+import {
+	NOTHING_REFUNDED_MESSAGE,
+	NothingRefundedError,
+	receiptRefunded,
+} from '@/lib/nothingRefunded';
 import { PaymentSwitchedOffError } from '@/lib/paymentGate';
 import {
 	BRANCH_ACTION,
@@ -55,37 +59,6 @@ async function sendConfirmed(
 	const receipt = await sendAndConfirmTransaction({ transaction, account });
 	throwIfReverted(receipt, action);
 	return receipt;
-}
-
-/**
- * Whether the receipt carries the escrow's `PaymentRefunded` for `answerMessageId`. The escrow
- * returns without reverting for an id it holds no payment under, so a successful receipt alone
- * does not say anything was refunded.
- */
-export function receiptRefunded(
-	logs: readonly EvmLog[],
-	escrowAddress: string,
-	escrowAbi: readonly unknown[],
-	answerMessageId: number | string,
-): boolean {
-	const topic = toEventSelector(
-		getAbiItem({ abi: escrowAbi, name: 'PaymentRefunded' } as never) as AbiEvent,
-	);
-	return logs.some(log => {
-		if (log.address.toLowerCase() !== escrowAddress.toLowerCase() || log.topics[0] !== topic) {
-			return false;
-		}
-		try {
-			const { args } = decodeEventLog({
-				abi: escrowAbi as never,
-				topics: log.topics,
-				data: log.data,
-			}) as unknown as { args: { escrowId: bigint } };
-			return args.escrowId === BigInt(answerMessageId);
-		} catch {
-			return false;
-		}
-	});
 }
 
 export async function createEncryptedPayloads(
@@ -205,7 +178,7 @@ export function buildErrorHandler(
 			toast.error(error.notice.title, { description: error.notice.description });
 			return;
 		}
-		console.error(`Failed to ${action}:`, error);
+		// The chain's own answer, not a fault here: told to the user, not printed as an error.
 		if (error instanceof TransactionRevertedError) {
 			const { title, description } = revertedMessage(error.action);
 			toast.error(title, { description });
@@ -217,6 +190,7 @@ export function buildErrorHandler(
 			});
 			return;
 		}
+		console.error(`Failed to ${action}:`, error);
 		const errorMessage =
 			(error instanceof Error
 				? error.message
@@ -846,7 +820,7 @@ export default function useChatMutations() {
 			const receipt = await sendConfirmed(tx, activeAccount!, REFUND_ACTION);
 			if (
 				!receiptRefunded(
-					receipt.logs as unknown as EvmLog[],
+					receipt.logs,
 					contractConfig.escrow.address,
 					contractConfig.escrow.abi as readonly unknown[],
 					answerMessageId,

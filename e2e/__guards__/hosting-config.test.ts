@@ -199,7 +199,10 @@ describe('what the enforced directives rely on', () => {
 
 	// The inline script the report-only policy allows by its hash.
 	it('has the one inline script whose hash the report-only policy names', () => {
-		const inline = [...indexHtml.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+		// Every script element, however its tag is written; the inline ones name no `src`.
+		const inline = [...indexHtml.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)]
+			.filter(m => !/\bsrc\s*=/i.test(m[1]))
+			.map(m => m[2]);
 		expect(inline).toHaveLength(1);
 		const hash = `'sha256-${createHash('sha256').update(inline[0]).digest('base64')}'`;
 		const reported = directives(headerOnEveryPath('Content-Security-Policy-Report-Only'));
