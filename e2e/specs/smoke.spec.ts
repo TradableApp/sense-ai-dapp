@@ -4,6 +4,7 @@ import { injectMockWallet } from '../fixtures/mock-wallet';
 import { waitForAppShell } from '../helpers/app-ready';
 import { CHAIN, getChainConfig, isChainReachable, LIVE_STACK, redactUrl } from '../helpers/chain';
 import { GRAPH_NODE_ORIGIN, isGraphRunning } from '../helpers/graph';
+import { isSentryUrl } from '../helpers/sentryRequest';
 
 const test = base;
 
@@ -103,7 +104,7 @@ test.describe('App initialisation (T-INIT)', () => {
 		await waitForAppShell(page);
 
 		const sentryRequest = page.waitForRequest(
-			req => req.url().includes('sentry.io') || req.url().includes('ingest'),
+			req => isSentryUrl(req.url()),
 			{ timeout: 10_000 },
 		);
 		await page.goto('/');

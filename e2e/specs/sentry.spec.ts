@@ -2,6 +2,7 @@ import { test as base, expect } from '@playwright/test';
 
 import { injectMockWallet } from '../fixtures/mock-wallet';
 import { waitForAppShell } from '../helpers/app-ready';
+import { isSentryUrl } from '../helpers/sentryRequest';
 
 const test = base;
 
@@ -32,7 +33,7 @@ test.describe('Sentry — error tracking initialisation (T-SENTRY)', () => {
 		await waitForAppShell(page);
 
 		const sentryRequest = page.waitForRequest(
-			req => req.url().includes('sentry.io') || req.url().includes('ingest'),
+			req => isSentryUrl(req.url()),
 			{ timeout: 10_000 },
 		);
 		await page.goto('/');
@@ -48,7 +49,7 @@ test.describe('Sentry — error tracking initialisation (T-SENTRY)', () => {
 
 		const sentryEvent = page.waitForRequest(
 			req =>
-				(req.url().includes('sentry.io') || req.url().includes('ingest')) &&
+				isSentryUrl(req.url()) &&
 				req.method() === 'POST',
 			{ timeout: 15_000 },
 		);
@@ -69,7 +70,7 @@ test.describe('Sentry — error tracking initialisation (T-SENTRY)', () => {
 
 		const sentryRequests: string[] = [];
 		page.on('request', req => {
-			if (req.url().includes('sentry.io') || req.url().includes('ingest')) {
+			if (isSentryUrl(req.url())) {
 				sentryRequests.push(req.url());
 			}
 		});

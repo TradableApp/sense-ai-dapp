@@ -7,6 +7,7 @@ import { ESCROW_ADDRESS, fundAndActivatePlan, TOKEN_ADDRESS } from '../helpers/c
 import { openDevice } from '../helpers/devices';
 import { freshAccountPool } from '../helpers/fresh-account';
 import { getConversations, getPromptRequests, waitForGraph } from '../helpers/graph';
+import { isSentryUrl } from '../helpers/sentryRequest';
 import { STORED_ANSWER } from '../pages/ChatPage';
 
 // Live reasoning: while an answer is awaited, the dApp reads the oracle's sealed frames for it
@@ -206,14 +207,7 @@ interface Traffic {
 	bodies: string[];
 }
 
-// The host is read from the parsed address, so a page that only mentions the name in a path or a
-// query is not taken for Sentry. A local DSN has another host and is known by `ingest`.
-const isSentryHost = (url: string) => {
-	const { hostname } = new URL(url);
-	return hostname === 'sentry.io' || hostname.endsWith('.sentry.io');
-};
-const isSentryPost = (req: Request) =>
-	req.method() === 'POST' && (isSentryHost(req.url()) || req.url().includes('ingest'));
+const isSentryPost = (req: Request) => req.method() === 'POST' && isSentryUrl(req.url());
 const LIVE_REPORT = /"check"\s*:\s*"live-reasoning"/;
 
 /** Starts recording the page's traffic. Register before the prompt is sent. */
