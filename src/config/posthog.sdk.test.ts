@@ -16,6 +16,15 @@ const SEND_REQUEST = '_send_request';
 type Request = { url: string; data?: unknown; callback?: (_response: unknown) => void };
 const requests: Request[] = [];
 
+const EXPECTED_EVENTS = ['$pageview', '$identify', 'clicked'];
+
+/** The names of the events sent so far. */
+const sentEvents = () =>
+	requests.flatMap(request => {
+		const { event } = (request.data ?? {}) as { event?: string };
+		return event ? [event] : [];
+	});
+
 beforeAll(async () => {
 	window.history.replaceState(null, '', LAUNCH_URL);
 	vi.stubEnv('VITE_PUBLIC_POSTHOG_KEY', 'phc_test');
@@ -37,6 +46,11 @@ beforeAll(async () => {
 	enablePosthogAfterConsent();
 	posthog.identify('0x70997970c51812dc3a010c7d01b50e0d17dc79c8', { plan: 'free' });
 	posthog.capture('clicked');
+	// Until the events are out, then a moment longer: a request that must not be sent has nothing
+	// to wait for.
+	await vi.waitFor(() => expect(sentEvents()).toEqual(expect.arrayContaining(EXPECTED_EVENTS)), {
+		timeout: 5000,
+	});
 	await new Promise<void>(resolve => {
 		setTimeout(resolve, 200);
 	});
@@ -48,11 +62,7 @@ afterAll(() => {
 
 describe('a Mini App launch, through the installed analytics SDK', () => {
 	it('sends its events', () => {
-		const events = requests.flatMap(request => {
-			const { event } = (request.data ?? {}) as { event?: string };
-			return event ? [event] : [];
-		});
-		expect(events).toEqual(expect.arrayContaining(['$pageview', '$identify', 'clicked']));
+		expect(sentEvents()).toEqual(expect.arrayContaining(EXPECTED_EVENTS));
 	});
 
 	it('sends no request that carries the launch data', () => {
