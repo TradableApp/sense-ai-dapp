@@ -2,7 +2,7 @@
 import Fuse from 'fuse.js';
 import { eng, removeStopwords } from 'stopword';
 
-import { decryptData, encryptData } from './crypto';
+import { decryptData, decryptDataOrNull, encryptData } from './crypto';
 import db from './db';
 import type { Conversation, Message } from './types';
 
@@ -97,15 +97,16 @@ const initializeFuse = (rawIndex: {
 };
 
 /**
- * The rows that can be read with this key. One that cannot (written under an earlier session
- * key, or damaged) is left out of the index and left as it is in the store.
+ * The rows that can be decrypted with this key. One that cannot (written under an earlier
+ * session key, or damaged) is left out of the index and left as it is in the store; any other
+ * error fails the rebuild.
  */
 async function readableRows<T>(
 	sessionKey: CryptoKey,
 	records: Array<{ encryptedData: string }>,
 ): Promise<T[]> {
 	const rows = await Promise.all(
-		records.map(r => decryptData(sessionKey, r.encryptedData).catch(() => null)),
+		records.map(r => decryptDataOrNull<T>(sessionKey, r.encryptedData)),
 	);
 	return rows.filter((row): row is T => row !== null);
 }
@@ -183,17 +184,20 @@ export const mergeSearchIndexDeltas = async (
 		let rawIndex = { m: {}, c: {} };
 
 		if (existingIndexRecord) {
-			// An index that cannot be read with this key is started again: it holds nothing
-			// that is not rebuilt from the conversations and messages themselves.
-			rawIndex = await decryptData(sessionKey, existingIndexRecord.encryptedData).catch(
-				(error: unknown) => {
-					console.warn(
-						'[searchService] The stored search index could not be read; starting it again.',
-						error instanceof Error ? error.name : typeof error,
-					);
-					return { m: {}, c: {} };
-				},
+			// An index that cannot be decrypted with this key is started again: it holds nothing
+			// that is not rebuilt from the conversations and messages themselves. Any other error
+			// leaves the stored index as it is.
+			const stored = await decryptDataOrNull<typeof rawIndex>(
+				sessionKey,
+				existingIndexRecord.encryptedData,
 			);
+			if (stored === null) {
+				console.warn(
+					'[searchService] The stored search index could not be read; starting it again.',
+				);
+			} else {
+				rawIndex = stored;
+			}
 		}
 
 		// 2. Merge new deltas into the raw index

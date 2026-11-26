@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
 
-import { decryptData, encryptData } from './crypto';
+import { decryptData, decryptDataOrNull, encryptData } from './crypto';
 import db from './db';
 import inheritedHistory, { reachesFirstMessage } from './inheritedHistory';
 import { writeMessageCache } from './messageCacheStore';
@@ -115,10 +115,11 @@ export const fetchAndCacheConversations = async (
 ): Promise<Conversation[]> => {
 	if (!sessionKey || !ownerAddress) return [];
 	const finalRecords = await db.conversations.where({ ownerAddress }).toArray();
-	// A row that cannot be read with this key (written under an earlier session key, or
-	// damaged) is not shown and is left as it is; the others are still listed.
-	const decrypted: Array<Conversation | null> = await Promise.all(
-		finalRecords.map(c => decryptData(sessionKey, c.encryptedData).catch(() => null)),
+	// A row that cannot be decrypted with this key (written under an earlier session key, or
+	// damaged) is not shown and is left as it is; the others are still listed. Any other error
+	// fails the list.
+	const decrypted = await Promise.all(
+		finalRecords.map(c => decryptDataOrNull<Conversation>(sessionKey, c.encryptedData)),
 	);
 	const unreadable = decrypted.filter(c => c === null).length;
 	if (unreadable > 0) {
@@ -143,15 +144,15 @@ const readCachedMessages = async (
 			`%c[dataService-LOG] Cache HIT for messages in conversation "${conversationId}".`,
 			'color: green',
 		);
-		let decryptedData: Message[];
-		try {
-			decryptedData = (await decryptData(sessionKey, cachedRecord.encryptedData)) as Message[];
-		} catch (error) {
-			// Not readable with this key: shown as not on this device, and left as it is. The
+		const decryptedData = await decryptDataOrNull<Message[]>(
+			sessionKey,
+			cachedRecord.encryptedData,
+		);
+		if (decryptedData === null) {
+			// Not decryptable with this key: shown as not on this device, and left as it is. The
 			// sync replaces it when the conversation can be read from storage.
 			console.warn(
 				`[dataService] The stored messages of conversation "${conversationId}" could not be read.`,
-				error,
 			);
 			return [];
 		}
