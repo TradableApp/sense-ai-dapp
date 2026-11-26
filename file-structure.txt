@@ -42,7 +42,6 @@
 │   ├── client.js
 │   ├── components
 │   │   ├── ai
-│   │   │   ├── code-block.jsx
 │   │   │   ├── conversation.jsx
 │   │   │   ├── edit-prompt-input.jsx
 │   │   │   ├── loader.jsx
@@ -50,7 +49,6 @@
 │   │   │   ├── message.jsx
 │   │   │   ├── prompt-input.jsx
 │   │   │   ├── reasoning.jsx
-│   │   │   ├── response.jsx
 │   │   │   ├── source.jsx
 │   │   │   └── user-message-actions.jsx
 │   │   ├── ErrorBoundary.jsx
