@@ -14,7 +14,7 @@ That was a deliberate cost choice — usage is overwhelmingly single-device, so 
 focus refetch covers the rare second device without paying for constant subgraph queries. An
 event-driven supplement already exists — `useLiveResponse` (`liveResponseEvents.ts`) invalidates
 these queries on `AnswerMessageAdded` / `ConversationBranched` / `MetadataUpdateRequested` and
-related events — but the poll is still the *primary* freshness driver. Phase 1 below flips that
+related events — but the poll is still the _primary_ freshness driver. Phase 1 below flips that
 primacy (events primary, poll fallback) and adds the events not yet watched; it is an incremental
 change, not a greenfield event build.
 
@@ -24,7 +24,7 @@ Two pressures push beyond polling:
    today, but coarse, and the read query couples two concerns: `useConversations`' `queryFn` runs
    `syncWithRemote` (subgraph → IndexedDB) **and then** reads IndexedDB, so you cannot read the
    local cache without triggering a network sync, nor sync more often than `staleTime` allows.
-2. **Live reasoning** — streaming reasoning tokens *as they generate* is high-frequency and
+2. **Live reasoning** — streaming reasoning tokens _as they generate_ is high-frequency and
    ephemeral. It cannot ride on-chain events or storage-then-poll.
 
 A naive "stream from the TEE to the device" reintroduces device↔TEE coupling and, once the oracle
@@ -38,18 +38,18 @@ Tuning these windows is a UX + RPC-cost tradeoff, **not** a security one:
   T-SEC-06: no plaintext in IndexedDB). Cache duration does not change that.
 - Over-spend is enforced **on-chain** by the escrow spending limit (T-MULTI-06 shows a second device
   observing the shared deduction); the displayed allowance is advisory. A stale balance only risks a
-  *failed tx*, never an actual double-spend.
+  _failed tx_, never an actual double-spend.
 
 ## Decision
 
 Model freshness as **two planes**, and keep the TEE coupled to the **prompt**, never to the device.
 
-| | Durable plane | Live plane |
-|---|---|---|
-| Carries | final answer + reasoning, encrypted at rest | reasoning tokens as they generate |
-| Transport | chain events + storage + subgraph | encrypted pub/sub keyed by `answerMessageId` |
-| Lifetime | permanent, cross-device | ephemeral, in-flight prompt only |
-| TEE ↔ device knowledge | none | none — keyed by `answerMessageId`, not the device |
+|                        | Durable plane                               | Live plane                                        |
+| ---------------------- | ------------------------------------------- | ------------------------------------------------- |
+| Carries                | final answer + reasoning, encrypted at rest | reasoning tokens as they generate                 |
+| Transport              | chain events + storage + subgraph           | encrypted pub/sub keyed by `answerMessageId`      |
+| Lifetime               | permanent, cross-device                     | ephemeral, in-flight prompt only                  |
+| TEE ↔ device knowledge | none                                        | none — keyed by `answerMessageId`, not the device |
 
 **Phase 1 — dApp freshness (near-term, ships alone).** Make on-chain **event-driven invalidation
 the primary** mechanism, the poll a fallback: a dedicated WSS `watchContractEvent` filtered by the
@@ -75,11 +75,11 @@ the TEE. Metadata only — never plaintext.
   user's session key. It encrypts each reasoning chunk with that key and **publishes ciphertext to
   `topic(answerMessageId)`** on a broker (NATS / Redis Streams / PubSub). The device — which already
   holds `answerMessageId` from the `PromptSubmitted` receipt (param index 3) — subscribes and decrypts.
-  The TEE never opens a connection *to* a device; it publishes to a topic. The final reasoning+answer
+  The TEE never opens a connection _to_ a device; it publishes to a topic. The final reasoning+answer
   is also persisted encrypted (durable plane) for late joiners / other devices. (Superseded for the
   live plane: see "Live plane as agreed" below. The live side is an overlay in memory, not a Redux
   append.)
-  - *Security:* the broker sees only ciphertext + topic ids + timing. Be explicit about the trust
+  - _Security:_ the broker sees only ciphertext + topic ids + timing. Be explicit about the trust
     level, though: because subscription uses a **wallet-signed token**, the broker operator can
     correlate **device IP ↔ wallet address ↔ specific `answerMessageId` activity, in real time**. The
     wallet↔prompt link is already public on-chain, but the chain doesn't tie it to device network
@@ -92,7 +92,7 @@ the TEE. Metadata only — never plaintext.
   `sense-ai-shared-schema` Postgres; replicas claim with `FOR UPDATE SKIP LOCKED` + a lease/heartbeat
   (reclaim on replica death). **Correctness is already guaranteed** by the existing
   `isJobFinalized(answerMessageId)` re-check in `handlePrompt` — a second racer sees the job finalized
-  and drops, so duplicate *answers* are impossible; the claim layer only minimizes wasted compute.
+  and drops, so duplicate _answers_ are impossible; the claim layer only minimizes wasted compute.
   **No wallet/device affinity is required** (optional `hash(user)` affinity later is a cache-warming
   optimization, not correctness).
 - **Shared decryption identity** is the one true cross-replica requirement: all ROFL replicas must
@@ -112,7 +112,7 @@ the TEE. Metadata only — never plaintext.
   `rofl-appd` sealing semantics; without it, threshold/MPC decryption or client-side TEE selection is
   required (much harder). (2) **Live↔durable reasoning consistency** — the streamed reasoning must
   equal the persisted `Message.reasoning[]`; generate once inside the enclave, emit to both sinks.
-- **Alternatives rejected:** a direct device↔TEE realtime channel for *sync* (the wrong tool — the TEE
+- **Alternatives rejected:** a direct device↔TEE realtime channel for _sync_ (the wrong tool — the TEE
   should write to chain/storage and publish to a prompt topic, not hold device connections); per-user
   sticky routing to a TEE (unnecessary — the chain decouples devices from TEEs); shortening cache
   windows "for security" (the windows are not a security boundary).
@@ -124,10 +124,10 @@ testable (today it is verified by opening a fresh device, since a fetched query 
 
 ### Current behaviour confirmed by e2e (2026-06-21, [CU-86d3dvxdy](https://app.clickup.com/t/86d3dvxdy))
 
-The e2e Area-11 work tried to assert live convergence on an *idle* second device and confirmed it is
+The e2e Area-11 work tried to assert live convergence on an _idle_ second device and confirmed it is
 not reliable today, with a sharper edge than the "5-minute lag" framing above:
 
-- The existing `useLiveResponse` event path *is* eligible to update an idle device (the same-wallet
+- The existing `useLiveResponse` event path _is_ eligible to update an idle device (the same-wallet
   gate `args.user === ownerAddress` passes for a second device of the same wallet), but live delivery
   rides `useContractEvents({ watch:true, useIndexer:false })`, whose RPC filters "intermittently miss
   events" (the hook's own comment, wevm/wagmi#3883). The only backstop — the effect-6 fallback poll —
@@ -194,3 +194,32 @@ Known and accepted as they are; each is bounded, and the stored record is what i
 - **The server holds at most 1 MiB of frames per answer**, below the largest run the contract
   allows on paper. A run past it gets a 503 on the stream and the chat shows the stored answer
   when it lands.
+
+### Connections behind the ROFL proxy (2026-11-26)
+
+The ROFL proxy in front of the oracle's stream server closes every connection about 30 s after it
+opens, whether frames are passing or not (measured on a Sapphire testnet machine, 2026-11-25; the
+proxy's passthrough mode has the same limit, and its documentation names no setting for it). The
+live plane is built around that:
+
+- **The server ends each connection at 25 s** (`STREAM_MAX_CONN_MS`; 30 s or more stops the
+  oracle's start-up), so a stream is ended cleanly and never cut. The reader reconnects from its
+  cursor and the frames made meanwhile are sent first on the new connection. A server that
+  disconnects at will and a client that resumes by event id is the pattern of the HTML standard's
+  server-sent events and of the Model Context Protocol's SEP-1699.
+- **The reader follows a quiet connection at once** when the server held it open 10 s or more
+  (`HELD_OPEN_MS`), rather than waiting the `retry:` line.
+- **No overlap of the old and new connection.** Measured beside the plain reader on the same
+  answer, it gave the same lateness: ordinary network jitter is larger than a reconnect.
+- **The server does not send `Connection: close`** (agreed by Garrick, 2026-11-26). Measured in
+  Chromium, Firefox and WebKit on the same answer, with and without it: no frame was lost or
+  repeated either way and frame lateness was the same, but with the header a reconnect took about
+  200 ms longer in Chromium and Firefox (about 600 to 800 ms against 400 to 640 ms). WebKit keeps
+  its connection for the next stream; the proxy ends that second stream at about 20 s, which WebKit
+  reads as a normal end, and its reconnect on the kept connection takes about 100 ms. Keeping
+  connections is HTTP/1.1's default and the header would fix no fault a browser sees; the reader
+  resumes from its cursor however a stream ends.
+
+What a user sees: a reconnect about every 25 s while an answer is awaited, about 0.1 to 0.6 s to
+the next first byte, and a frame that lands in it shown that much late. To be read again on a
+mainnet machine before launch; a real Safari on a device has not been measured.
