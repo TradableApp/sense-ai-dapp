@@ -14,7 +14,8 @@ import { GraphQLClient } from 'graphql-request';
 import { hexToBytes } from 'viem';
 
 import GraphFetchFailed from '@/lib/graph/GraphFetchFailed';
-import { reportGraphFetchFailed } from '@/lib/graph/graphSyncReport';
+import { reportGraphFetchFailed, reportGraphTimeAhead } from '@/lib/graph/graphSyncReport';
+import { cursorFrom, isAheadOfClock, usableCursor } from '@/lib/graph/syncCursor';
 import fetchAllUserUpdates, { type GraphRequest } from '@/lib/graph/userUpdates';
 import createLimiter from '@/lib/limitConcurrency';
 
@@ -228,7 +229,11 @@ async function getLastSyncedAt(sessionKey: CryptoKey, ownerAddress: string): Pro
 	if (!metadataRecord) return 0;
 	try {
 		const decrypted = await decryptData(sessionKey, metadataRecord.encryptedData);
-		return decrypted.conversationsLastSyncedAt || 0;
+		const stored = Number(decrypted.conversationsLastSyncedAt) || 0;
+		// A cursor ahead of the clock would ask only for times nothing has reached yet.
+		const usable = usableCursor(stored, Date.now());
+		if (usable !== stored) reportGraphTimeAhead('stored-cursor-ahead');
+		return usable;
 	} catch (error) {
 		console.error('[syncService] Could not decrypt user metadata, syncing from scratch.', error);
 		return 0;
@@ -398,8 +403,19 @@ export default async function syncWithRemote(
 		// asking again from the same cursor returns nothing until something new is indexed.
 		if (graphUpdates.length === 0) return NOTHING_UNAVAILABLE;
 
-		// The new cursor is the newest conversation read (graphUpdates is normalized to MS).
-		const newLastSync = Math.max(...graphUpdates.map(c => c.lastMessageCreatedAt));
+		// The new cursor is the newest conversation read (graphUpdates is normalized to MS) whose
+		// time is not ahead of this device's clock (see syncCursor.ts). A conversation served
+		// with a time past that is stored all the same: what it holds is decrypted with this
+		// wallet's key and checked against what was asked for, and the time only orders the
+		// history. It is served again on every pass until the clock reaches it, and its matching
+		// CIDs make that repeat free. Undefined when every conversation read is ahead: the cursor
+		// then stays where it was.
+		const passStartedAt = Date.now();
+		const lastMessageTimes = graphUpdates.map(c => c.lastMessageCreatedAt);
+		const newLastSync = cursorFrom(lastMessageTimes, passStartedAt);
+		if (lastMessageTimes.some(time => isAheadOfClock(time, passStartedAt))) {
+			reportGraphTimeAhead('time-ahead');
+		}
 
 		// 3. "Hydrate" the Graph data by fetching and decrypting all associated CIDs from Arweave in parallel.
 		const hydrationPromises = graphUpdates.map(async (conv: ConversationUpdate) => {
@@ -667,7 +683,7 @@ export default async function syncWithRemote(
 		// whenever that 404 was a fresh upload the gateway had not propagated yet.
 		//
 		// The same goes for a conversation whose messages could not be stored on this device.
-		if (unavailablePayloads === 0 && notStored.size === 0) {
+		if (unavailablePayloads === 0 && notStored.size === 0 && newLastSync !== undefined) {
 			await setLastSyncedAt(sessionKey, ownerAddress, newLastSync);
 		}
 		return { unavailablePayloads, graphUnavailable: false };
