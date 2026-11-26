@@ -1,9 +1,11 @@
+import * as Sentry from '@sentry/react';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { privateKeyToAccount } from 'viem/accounts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildSessionMessage } from '@/features/auth/sessionMessage';
 import SessionProvider, { useSession } from '@/features/auth/SessionProvider';
+import { forgetSessionKeyReports } from '@/lib/sessionKeyReport';
 
 // Hardhat's well-known accounts 0 and 1 (public test keys).
 const HARDHAT_0 = privateKeyToAccount(
@@ -18,6 +20,7 @@ const ERC6492_MAGIC = '649264926492649264926492649264926492649264926492649264926
 const { signMessage, dispatch } = vi.hoisted(() => ({ signMessage: vi.fn(), dispatch: vi.fn() }));
 
 vi.mock('thirdweb/utils', () => ({ signMessage }));
+vi.mock('@sentry/react', () => ({ captureException: vi.fn() }));
 vi.mock('thirdweb/react', () => ({
 	useActiveAccount: () => ({ address: HARDHAT_0.address }),
 	useActiveWallet: () => undefined,
@@ -67,6 +70,8 @@ describe('SessionProvider signature', () => {
 
 	afterEach(() => {
 		cleanup();
+		forgetSessionKeyReports();
+		vi.mocked(Sentry.captureException).mockClear();
 		vi.unstubAllEnvs();
 		vi.restoreAllMocks();
 	});
@@ -117,6 +122,10 @@ describe('SessionProvider signature', () => {
 
 		await statusIs('unsupported-wallet');
 		expect(screen.getByTestId('has-key').textContent).toBe('no');
+		expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error), {
+			tags: { check: 'session-key', kind: 'unsupported-signature', signature: 'not-plain-ecdsa' },
+			fingerprint: ['session-key', 'unsupported-signature', 'not-plain-ecdsa'],
+		});
 	});
 
 	it('makes no key from a signature by another account', async () => {
@@ -127,5 +136,9 @@ describe('SessionProvider signature', () => {
 		await statusIs('unsupported-wallet');
 		expect(screen.getByTestId('has-key').textContent).toBe('no');
 		expect(signMessage).toHaveBeenCalledTimes(1);
+		expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error), {
+			tags: { check: 'session-key', kind: 'unsupported-signature', signature: 'other-signer' },
+			fingerprint: ['session-key', 'unsupported-signature', 'other-signer'],
+		});
 	});
 });
