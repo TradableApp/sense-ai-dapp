@@ -160,6 +160,14 @@ describe('the Content-Security-Policy that is only reported', () => {
 		expect(reported.get('img-src') ?? []).not.toContain('https:');
 	});
 
+	// Where the app connects to (the chain's node, the indexer, the storage mirror, the stream,
+	// error reporting) is set per build, so no fixed list can name it here. Any secure origin is
+	// let through rather than left to `default-src`: otherwise every request the app makes,
+	// one a block for the chain alone, would be a console line and bury the reports that matter.
+	it('reports no connection to a secure origin', () => {
+		expect(reported.get('connect-src')).toEqual(["'self'", 'https:', 'wss:']);
+	});
+
 	// The repository has no setting for a reporting endpoint; reports go to the console.
 	it('names no report endpoint', () => {
 		expect(reported.has('report-uri')).toBe(false);
