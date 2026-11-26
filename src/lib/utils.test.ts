@@ -152,4 +152,11 @@ describe('copyMarkdownToClipboard', () => {
 		]);
 		expect(html.textContent).toContain('inline alt');
 	});
+
+	it('copies no link whose address carries a user name or password', async () => {
+		const html = await copiedHtml('[pay](https://bank.example@evil.example/login)');
+
+		expect(html.querySelector('[href]')).toBeNull();
+		expect(html.textContent).toContain('pay');
+	});
 });

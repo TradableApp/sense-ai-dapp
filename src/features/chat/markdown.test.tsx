@@ -43,7 +43,47 @@ describe.each(['inline', 'block'] as const)('MarkdownText (%s paragraphs)', para
 
 		const link = screen.getByRole('link', { name: 'Claim refund' });
 		expect(shownHostOf(link)).toBe('phish.example');
-		expect(link.getAttribute('title')).toBe('https://phish.example/claim');
+		// No tooltip: an attribute's value can be read by tools that name an element by them.
+		expect(link.hasAttribute('title')).toBe(false);
+		expect(link.className).toContain('ph-no-capture');
+	});
+
+	it('shows a link whose address carries a user name or password as its text alone', () => {
+		const container = renderText(
+			'See https://bank.example@evil.example/login and [pay](https://a:b@evil.example/)',
+		);
+
+		expect(container.querySelector('a')).toBeNull();
+		expect(container.textContent).toContain('pay');
+	});
+
+	it('shows the host as the browser reads it when the text names it in other letters', () => {
+		// Cyrillic letters that look like Latin ones: the browser goes to the punycode host.
+		renderText('[раураl.com](https://раураl.com/) and https://раураl.com/x');
+
+		const links = screen.getAllByRole('link');
+		expect(links).toHaveLength(2);
+		links.forEach(link => expect(shownHostOf(link)).toMatch(/^xn--/));
+	});
+
+	it('shows the host after text that names another host', () => {
+		renderText('[news.example](https://evil.example/)');
+
+		expect(shownHostOf(screen.getByRole('link'))).toBe('evil.example');
+	});
+
+	it('keeps the shown host apart from the direction of the text before it', () => {
+		const container = renderText('[\u202Eexample.good](https://evil.example/)');
+
+		expect(container.querySelector('[data-link-host]')?.tagName).toBe('BDI');
+	});
+
+	it('shows text nested too deeply to render as plain text', () => {
+		const deep = `${'>'.repeat(20000)} deep`;
+
+		const container = renderText(deep);
+
+		expect(container.querySelector('[data-markdown-fallback]')?.textContent).toBe(deep);
 	});
 
 	it('does not repeat the host after a link that already shows its URL', () => {
