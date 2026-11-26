@@ -36,7 +36,14 @@ export const SESSION_MESSAGE_VERSION = 2;
 
 const LOCAL_SITE = 'http://localhost:3002';
 
-/** The site named in the message, by build mode. `test` is the mode Vitest runs in. */
+/**
+ * The site named in the message, by build mode. `test` is the mode Vitest runs in.
+ *
+ * Each value is part of the signed text, so changing one changes the key of every user of
+ * that network: do it only with a new `SESSION_MESSAGE_VERSION` and a plan for the history
+ * stored under the old key. The testnet value is the host the testnet build is deployed to.
+ * `sessionMessage.test.ts` pins all four, so a rename fails there first.
+ */
 const SESSION_SITES: Readonly<Record<string, string>> = Object.freeze({
 	mainnet: 'https://senseai.tradable.app',
 	testnet: 'https://sense-ai-app-garrick.web.app',
