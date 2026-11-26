@@ -27,7 +27,7 @@ const renderBanner = () => {
 	);
 };
 
-const NOTICE = /cannot be opened/i;
+const NOTICE = /some history on this device cannot be opened/i;
 
 describe('SessionKeyMismatchBanner', () => {
 	beforeEach(() => {

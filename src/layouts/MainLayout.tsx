@@ -4,6 +4,7 @@ import { ConnectButton } from 'thirdweb/react';
 
 import senseaiLogo from '@/assets/logos/senseai-logo.svg';
 import PaymentsSwitchedOffBanner from '@/components/PaymentsSwitchedOffBanner';
+import SessionKeyMismatchBanner from '@/components/SessionKeyMismatchBanner';
 import ThemeToggle from '@/components/ThemeToggle';
 import {
 	Breadcrumb,
@@ -101,6 +102,7 @@ export default function MainLayout() {
 						</div>
 					</header>
 					<PaymentsSwitchedOffBanner className="rounded-none border-x-0 border-t-0" />
+					<SessionKeyMismatchBanner className="rounded-none border-x-0 border-t-0" />
 					<main className="flex-1 overflow-y-auto p-4">
 						<Outlet />
 					</main>

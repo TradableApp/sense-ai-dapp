@@ -15,6 +15,7 @@ import type { Wallet } from 'thirdweb/wallets';
 
 import { deriveSessionKey, SessionSignatureError } from '@/features/auth/sessionKey';
 import { buildSessionMessage } from '@/features/auth/sessionMessage';
+import { reportUnsupportedSignature } from '@/lib/sessionKeyReport';
 import { clearUserSession } from '@/store/chatSlice';
 import { useAppDispatch } from '@/store/hooks';
 
@@ -170,6 +171,7 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
 				setSessionKey(null);
 				const errorMessage = error instanceof Error ? error.message : String(error);
 				if (error instanceof SessionSignatureError) {
+					reportUnsupportedSignature(error.kind);
 					setStatus('unsupported-wallet');
 				} else if (errorMessage.toLowerCase().includes('user rejected')) {
 					setStatus('rejected');
