@@ -41,6 +41,14 @@ describe('checkSessionKey', () => {
 		expect(sessionKeyCheckId(OWNER)).not.toBe(OWNER);
 	});
 
+	it('reports no mismatch when the record another tab wrote is gone again', async () => {
+		// The write is refused because a record is there, and the read that follows finds none:
+		// nothing was compared, so nothing is known to differ.
+		mockDb.userMetadata.add.mockRejectedValue(constraintError());
+
+		await expect(checkSessionKey(key, OWNER)).resolves.toBe('written');
+	});
+
 	it('writes the check value under the key on first use of the store', async () => {
 		await expect(checkSessionKey(key, OWNER)).resolves.toBe('written');
 
