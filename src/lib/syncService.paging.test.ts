@@ -109,6 +109,18 @@ let sessionKey: CryptoKey;
 /** What the storage gateway serves, by CID, before encryption. */
 let payloads: Map<string, Record<string, unknown>>;
 
+/** Each conversation's own conversation file, naming it as the oracle's does. */
+const conversationCids = new Map<string, string>();
+function conversationCidFor(id: string): string {
+	let cid = conversationCids.get(id);
+	if (!cid) {
+		cid = fakeCid('conv', conversationCids.size + 1);
+		conversationCids.set(id, cid);
+	}
+	payloads.set(cid, { id, title: 'Conversation' });
+	return cid;
+}
+
 function conversation(
 	id: string,
 	lastAt: number,
@@ -116,7 +128,7 @@ function conversation(
 ): FakeConversation {
 	return {
 		id,
-		conversationCID: CONV_CID,
+		conversationCID: conversationCidFor(id),
 		conversationMetadataCID: META_CID,
 		lastMessageCreatedAt: String(lastAt),
 		messages: lists.messages ?? [],
@@ -130,6 +142,7 @@ function messagesOf(conversationId: string, from: number, to: number): FakeMessa
 		const n = from + i;
 		const messageCID = fakeCid('msg', n);
 		payloads.set(messageCID, {
+			id: String(n),
 			conversationId,
 			role: n % 2 === 1 ? 'user' : 'assistant',
 			content: `message ${n}`,
@@ -455,6 +468,7 @@ describe('syncWithRemote — a full sync reads every page', () => {
 	it('lets a branch from message 150 of a 1,200-message conversation send after one sync', async () => {
 		const branchCID = fakeCid('branch', 0);
 		payloads.set(branchCID, {
+			id: 'b',
 			title: 'Branch',
 			branchedFromConversationId: 'p',
 			branchedAtMessageId: '150',

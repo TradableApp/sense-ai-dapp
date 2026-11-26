@@ -68,6 +68,8 @@ const CONV_ID = 'c1';
 const CID_CONV = `bafyconv${'a'.repeat(24)}`;
 const CID_META = `bafymeta${'a'.repeat(24)}`;
 const CID_MSG = `bafymsga${'a'.repeat(24)}`;
+/** Marks the CIDs of a second conversation's files, so the gateway stub serves files naming it. */
+const SECOND_CONV_MARK = 'b'.repeat(24);
 
 /** The Graph conversation update whose conv-level CIDs/timestamp match the local record. */
 function graphConversationUpdate() {
@@ -127,10 +129,18 @@ describe('syncWithRemote — message-aware hydration skip', () => {
 		// Storage gateway returns encrypted payloads keyed by which CID is requested.
 		const fetchMock = vi.fn(async (url: string) => {
 			let payload: Record<string, unknown> = {};
-			if (url.includes('conv')) payload = { title: 'Conversation' };
+			// Each file names the conversation it was written for (see SECOND_CONV_MARK).
+			const conversationId = url.includes(SECOND_CONV_MARK) ? 'c2' : CONV_ID;
+			if (url.includes('conv')) payload = { id: conversationId, title: 'Conversation' };
 			else if (url.includes('meta')) payload = { metadata: true };
 			else if (url.includes('msga'))
-				payload = { role: 'assistant', content: 'The hydrated answer', createdAt: 1_700_000 };
+				payload = {
+					id: 'm-answer',
+					conversationId,
+					role: 'assistant',
+					content: 'The hydrated answer',
+					createdAt: 1_700_000,
+				};
 			const encrypted = await encryptData(sessionKey, payload);
 			return { ok: true, text: async () => encrypted } as unknown as Response;
 		});
@@ -202,7 +212,14 @@ describe('syncWithRemote — message-aware hydration skip', () => {
 	it('records the conversations whose messages were stored, and not the one whose were not', async () => {
 		// Two conversations this device has never seen.
 		const [first] = graphConversationUpdate().conversations;
-		graphRequestMock.mockResolvedValue({ conversations: [first, { ...first, id: 'c2' }] });
+		const second = {
+			...first,
+			id: 'c2',
+			conversationCID: `bafyconv${SECOND_CONV_MARK}`,
+			conversationMetadataCID: `bafymeta${SECOND_CONV_MARK}`,
+			messages: [{ ...first.messages[0], messageCID: `bafymsga${SECOND_CONV_MARK}` }],
+		};
+		graphRequestMock.mockResolvedValue({ conversations: [first, second] });
 		mockDb.conversations.get.mockResolvedValue(undefined);
 		mockDb.messageCache.get.mockResolvedValue(undefined);
 		mockDb.messageCache.put.mockImplementation(async (row: { conversationId: string }) => {
@@ -248,8 +265,15 @@ describe('syncWithRemote — message-aware hydration skip', () => {
 				'fetch',
 				vi.fn(async (url: string) => {
 					const payload = url.includes('msga')
-						? { role: 'assistant', content: 'The answer', createdAt: 1_700_000, answerAttempt }
-						: { title: 'Conversation' };
+						? {
+								id: 'm-answer',
+								conversationId: CONV_ID,
+								role: 'assistant',
+								content: 'The answer',
+								createdAt: 1_700_000,
+								answerAttempt,
+						  }
+						: { id: CONV_ID, title: 'Conversation' };
 					const encrypted = await encryptData(sessionKey, payload);
 					return { ok: true, text: async () => encrypted } as unknown as Response;
 				}),
@@ -346,6 +370,7 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 	// Autonomys-style id so the resolver routes through the mirror, then the public
 	// gateway (the localnet IPFS gateway is not consulted for it).
 	const CID_ANSWER = `bafkr6i${'m'.repeat(52)}`;
+	const CID_CONV_FILE = `bafkr6i${'c'.repeat(52)}`;
 	const MIRROR = 'https://storage.googleapis.com/tradable-app-garrick-senseai-payloads/';
 	let sessionKey: CryptoKey;
 
@@ -361,7 +386,7 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 			conversations: [
 				{
 					id: CONV_ID,
-					conversationCID: CID_ANSWER,
+					conversationCID: CID_CONV_FILE,
 					conversationMetadataCID: CID_ANSWER,
 					lastMessageCreatedAt: '1700',
 					messages: [{ id: 'm-answer', messageCID: CID_ANSWER, createdAt: '1700' }],
@@ -387,13 +412,20 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 
 	it('serves every payload from the mirror without calling the Autonomys gateway', async () => {
 		const encrypted = await encryptData(sessionKey, {
+			id: 'm-answer',
+			conversationId: CONV_ID,
 			role: 'assistant',
 			content: 'mirrored',
 			createdAt: 1_700_000,
 		});
+		const conversationFile = await encryptData(sessionKey, { id: CONV_ID });
 		vi.stubGlobal(
 			'fetch',
-			vi.fn(async () => ({ ok: true, status: 200, text: async () => encrypted })),
+			vi.fn(async (url: string) => ({
+				ok: true,
+				status: 200,
+				text: async () => (String(url).endsWith(CID_CONV_FILE) ? conversationFile : encrypted),
+			})),
 		);
 
 		const syncWithRemote = await importSync();
@@ -441,7 +473,11 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 		// Mirror serves the conversation and metadata, the message is unavailable, and
 		// then the cache write blows up: the caller must not be told "all clear".
 		const CID_MISSING = `bafkr6i${'n'.repeat(52)}`;
-		const encrypted = await encryptData(sessionKey, { title: 'conv', createdAt: 1_700_000 });
+		const encrypted = await encryptData(sessionKey, {
+			id: CONV_ID,
+			title: 'conv',
+			createdAt: 1_700_000,
+		});
 		vi.stubGlobal(
 			'fetch',
 			vi.fn(async (url: string) =>

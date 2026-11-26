@@ -26,6 +26,13 @@ import { writeMessageCache } from './messageCacheStore';
 import { fetchPayload, type PayloadFetchDeps, type PayloadStorageConfig } from './payloadStorage';
 import { withCheckedAnswerAttempt } from './reasoningAttempts';
 import { mergeSearchIndexDeltas } from './searchService';
+import {
+	conversationFileFits,
+	messageFileFits,
+	reportStoredFileMismatch,
+	searchDeltaFits,
+	type StoredFileKind,
+} from './storedFileSlot';
 import type { Message } from './types';
 
 // The Graph endpoint is configured via environment variables for flexibility between environments.
@@ -150,6 +157,22 @@ async function hydratePayload(
 		console.warn(`[syncService] Could not decrypt payload ${cid}; skipping it.`, error);
 		return EMPTY_PAYLOAD;
 	}
+}
+
+/**
+ * A hydrated file kept only if it belongs to the slot it was fetched for (see
+ * storedFileSlot.ts). One that does not is counted like a payload no source could serve, so the
+ * cursor is held and the slot is asked for again next pass, and is reported once per page load
+ * by its kind.
+ */
+function inSlot(
+	payload: HydratedPayload,
+	fits: (_value: unknown) => boolean,
+	kind: StoredFileKind,
+): HydratedPayload {
+	if (payload.value === null || fits(payload.value)) return payload;
+	reportStoredFileMismatch(kind);
+	return { value: null, unavailable: true };
 }
 
 /**
@@ -439,6 +462,7 @@ export default async function syncWithRemote(
 					) {
 						// Data is identical and fully hydrated. Skip to save bandwidth and processing.
 						return {
+							conversationId: conv.id,
 							conversation: null,
 							messages: [],
 							searchDeltas: [],
@@ -452,8 +476,11 @@ export default async function syncWithRemote(
 			}
 
 			// For each conversation, fetch its core data, metadata, and all its messages in parallel.
+			// The metadata file carries no identifier, so it cannot be checked against its slot.
 			const [convPayload, metadataPayload] = await Promise.all([
-				hydrate(conv.conversationCID),
+				hydrate(conv.conversationCID).then(payload =>
+					inSlot(payload, file => conversationFileFits(file, conv.id), 'conversation'),
+				),
 				hydrate(conv.conversationMetadataCID),
 			]);
 			const convData = convPayload.value as StoredRecord | null;
@@ -462,8 +489,12 @@ export default async function syncWithRemote(
 			const messageHydrationPromises = (conv.messages || []).map(
 				async (msg: ConversationUpdate['messages'][number]) => {
 					const [messagePayload, searchDeltaPayload] = await Promise.all([
-						hydrate(msg.messageCID),
-						hydrate(msg.searchDelta?.searchDeltaCID),
+						hydrate(msg.messageCID).then(payload =>
+							inSlot(payload, file => messageFileFits(file, msg.id, conv.id), 'message'),
+						),
+						hydrate(msg.searchDelta?.searchDeltaCID).then(payload =>
+							inSlot(payload, delta => searchDeltaFits(delta, msg.id, conv.id), 'search-delta'),
+						),
 					]);
 					const messageData = messagePayload.value as StoredRecord | null;
 					// Return a structured object for clarity, associating the message with its search delta.
@@ -473,6 +504,7 @@ export default async function syncWithRemote(
 									// The answer attempt is kept only as a positive safe integer.
 									...withCheckedAnswerAttempt(messageData),
 									id: msg.id,
+									conversationId: conv.id,
 									messageCID: msg.messageCID,
 							  }
 							: null,
@@ -550,6 +582,7 @@ export default async function syncWithRemote(
 				if (localConv.lastUpdatedAt > Number(remoteConversation.lastUpdatedAt)) {
 					// Returning null conversation prevents the overwrite in the next step
 					return {
+						conversationId: conv.id,
 						conversation: null,
 						messages: allMessages,
 						searchDeltas: [],
@@ -561,6 +594,7 @@ export default async function syncWithRemote(
 
 			// Return a single, fully hydrated object for the conversation.
 			return {
+				conversationId: conv.id,
 				conversation: remoteConversation,
 				messages: allMessages,
 				cancelledAnswerIds,
@@ -605,11 +639,9 @@ export default async function syncWithRemote(
 		const messageWrites = hydratedData
 			.filter(item => item.messages.length > 0)
 			.map(item => {
-				// We need to ensure we have a valid conversationId for the cache key.
-				// If the metadata update was skipped, we grab the ID from the first message.
-				const conversationId = item.conversation
-					? item.conversation.id
-					: ((item.messages[0] as Record<string, unknown>)?.conversationId as string) || '';
+				// The cache key is the conversation the files were asked for, never one read from
+				// a decrypted file, also when the conversation record is not written this pass.
+				const { conversationId } = item;
 
 				const mergeHydrated = (current: Message[] | null): Message[] => {
 					// Merge by id, keyed so The Graph is authority for status/metadata, but an
