@@ -99,6 +99,8 @@ const DELTA_CID = fakeCid('delta', 1);
 let sessionKey: CryptoKey;
 /** What the storage gateway serves, by CID, before encryption. */
 let payloads: Map<string, unknown>;
+/** The files every storage source answers 503 for. */
+const down = new Set<string>();
 
 /** The files the oracle writes for conversation c1 and its message 1, as it writes them. */
 function honestFiles(): Map<string, unknown> {
@@ -150,6 +152,11 @@ async function storedCursor(): Promise<number | undefined> {
 	return (await decryptData(sessionKey, row.encryptedData)).conversationsLastSyncedAt;
 }
 
+async function storedConversation(id: string): Promise<Record<string, unknown> | undefined> {
+	const row = store.conversations.get(JSON.stringify([OWNER, id]));
+	return row ? decryptData(sessionKey, row.encryptedData) : undefined;
+}
+
 const storedConversationIds = () => [...store.conversations.values()].map(row => row.id);
 
 async function sync() {
@@ -174,9 +181,13 @@ beforeEach(async () => {
 	store.userMetadata.clear();
 	sessionKey = await deriveKeyFromEntropy('test-sig-0xslots', OWNER);
 	payloads = honestFiles();
+	down.clear();
 	vi.stubGlobal(
 		'fetch',
 		vi.fn(async (url: string) => {
+			if (down.has(url.slice(GATEWAY.length))) {
+				return { ok: false, status: 503, text: async () => '' };
+			}
 			const payload = payloads.get(url.slice(GATEWAY.length));
 			if (payload === undefined) return { ok: false, status: 404, text: async () => '' };
 			const encrypted = await encryptData(sessionKey, payload);
@@ -289,5 +300,103 @@ describe('a file that does not name its slot, served on every pass', () => {
 		expect(sent).not.toContain(MSG_CID);
 		expect(sent).not.toContain(OWNER);
 		expect(sent).not.toContain('message 1');
+	});
+});
+
+// A conversation's record is what lets a later pass skip it. One whose files did not all
+// arrive must be asked for again on every pass until they do, not only on the next one.
+describe('a conversation whose files did not all arrive', () => {
+	it('is asked for again on every pass while a file does not name its slot', async () => {
+		payloads.set(MSG_CID, { ...(honestFiles().get(MSG_CID) as object), id: '2' });
+
+		await sync();
+		const second = await sync();
+		const third = await sync();
+
+		expect(second.unavailablePayloads).toBe(1);
+		expect(third.unavailablePayloads).toBe(1);
+		expect(await storedCursor()).toBeUndefined();
+	});
+
+	it('gets the file once it is served, and only then does the cursor move', async () => {
+		down.add(MSG_CID);
+		const first = await sync();
+		expect(first.unavailablePayloads).toBe(1);
+		// Listed meanwhile, so the conversation is not missing from the history.
+		expect(storedConversationIds()).toEqual([CONV]);
+
+		down.clear();
+		const second = await sync();
+
+		expect(second.unavailablePayloads).toBe(0);
+		expect((await storedMessages(CONV)).map(m => m.content)).toEqual(['message 1']);
+		expect(await storedCursor()).toBe(T0 * 1000);
+	});
+
+	it('is skipped again once every file has arrived', async () => {
+		down.add(MSG_CID);
+		await sync();
+		down.clear();
+		await sync();
+		vi.mocked(fetch).mockClear();
+
+		await sync();
+
+		expect(fetch).not.toHaveBeenCalled();
+	});
+});
+
+// The metadata file holds a title, whether the conversation is deleted, and when that last
+// changed. It carries no id, so only those three are taken from it, and a file of another
+// kind served in its place is refused.
+describe('a conversation metadata file', () => {
+	it.each([
+		['a conversation file', { id: 'c9', ownerAddress: OWNER, createdAt: 1 }],
+		['a message file', { id: '7', conversationId: CONV, role: 'user', content: 'x' }],
+		['a list', ['title']],
+	])('that is %s is not stored, and the cursor is held', async (_name, file) => {
+		payloads.set(META_CID, file);
+
+		const result = await sync();
+
+		expect(result.unavailablePayloads).toBe(1);
+		expect(await storedCursor()).toBeUndefined();
+		expect(reportedMismatches()).toEqual(['metadata']);
+		expect((await storedConversation(CONV))?.title).toBeUndefined();
+	});
+
+	it('gives the record its three fields and nothing else', async () => {
+		payloads.set(META_CID, {
+			title: 'Renamed',
+			isDeleted: true,
+			lastUpdatedAt: T0 * 1000 + 5,
+			createdAt: 1,
+			branchedFromConversationId: 'c7',
+			conversationCID: 'other',
+		});
+
+		await sync();
+
+		const record = await storedConversation(CONV);
+		expect(record).toMatchObject({
+			id: CONV,
+			title: 'Renamed',
+			isDeleted: true,
+			lastUpdatedAt: T0 * 1000 + 5,
+			createdAt: T0 * 1000,
+			conversationCID: CONV_CID,
+		});
+		expect(record).not.toHaveProperty('branchedFromConversationId');
+	});
+
+	it('leaves out a field of the wrong type', async () => {
+		payloads.set(META_CID, { title: { a: 1 }, isDeleted: 'yes', lastUpdatedAt: T0 * 1000 });
+
+		await sync();
+
+		const record = await storedConversation(CONV);
+		expect(record).not.toHaveProperty('title');
+		expect(record).not.toHaveProperty('isDeleted');
+		expect(record?.lastUpdatedAt).toBe(T0 * 1000);
 	});
 });
