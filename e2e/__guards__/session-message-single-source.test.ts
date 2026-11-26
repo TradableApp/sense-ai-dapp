@@ -7,7 +7,8 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { E2E_DIR, offenders, stripComments } from './source-scan';
+import { SIGNING_RULES } from './session-signing-rules';
+import { E2E_DIR, offenders, sourceFiles, stripComments } from './source-scan';
 
 /**
  * The message a wallet signs to create the session key is built in one place:
@@ -21,12 +22,19 @@ import { E2E_DIR, offenders, stripComments } from './source-scan';
  * in the suite) would drift from it unnoticed. The module reads nothing from the page it
  * is opened on: a page served from another host would otherwise name itself in the text.
  * The site comes from the build's mode, and the chain from the build's settings.
+ *
+ * Only the session provider asks a wallet to sign anything, and only with this text, and only
+ * `deriveSessionKey` makes a key of the signature (it refuses a signature that is not the
+ * connected account's plain one). A second way to the same signature (another importer of
+ * the builder, `eth_sign` over the message's hash, a wallet request whose method is computed)
+ * would let code outside the provider obtain the key's secret.
  */
 
 const ROOT = path.resolve(E2E_DIR, '..');
 const SRC = path.join(ROOT, 'src');
 const MODULE = path.join('features', 'auth', 'sessionMessage.ts');
 const PROVIDER = path.join('features', 'auth', 'SessionProvider.tsx');
+const KEY_MODULE = path.join('features', 'auth', 'sessionKey.ts');
 const THIS_GUARD = path.join('__guards__', 'session-message-single-source.test.ts');
 
 const isSource = (file: string) =>
@@ -35,8 +43,16 @@ const isE2eCode = (file: string) => /\.(ts|tsx|js|mjs)$/.test(file) && file !== 
 const read = (...parts: string[]) => stripComments(readFileSync(path.join(...parts), 'utf8'));
 const flat = (code: string) => code.replace(/\s+/g, '');
 
-// Lines only the message carries. Matched in any file but the module.
-const WORDING = /Message version:|Never sign this message|asks you to sign this message/;
+// Words only the message carries (its statement and nonce, and EIP-4361's opening line,
+// which viem writes). Matched in any file but the module.
+const WORDING =
+	/Never sign this message|creates the key that encrypts|SenseAIHistoryKey|wants you to sign in with your Ethereum account/;
+
+/** `src/<file>` for every non-test source file whose flattened code matches `rule`. */
+const flatOffenders = (rule: RegExp, allowed: string[] = []) =>
+	sourceFiles(SRC, file => isSource(file) && !allowed.includes(file))
+		.filter(file => rule.test(flat(read(SRC, file))))
+		.map(file => `src/${file}`);
 
 describe('the session message', () => {
 	it('is worded only in its module', () => {
@@ -47,13 +63,25 @@ describe('the session message', () => {
 	});
 
 	it('is signed only by the session provider', () => {
-		const signers = offenders(
-			SRC,
-			file => isSource(file) && file !== PROVIDER,
-			/\bsignMessage\b|personal_sign/,
-		);
+		expect(flatOffenders(SIGNING_RULES.signer, [PROVIDER])).toEqual([]);
+	});
 
-		expect(signers).toEqual([]);
+	it('is built only by the session provider', () => {
+		expect(flatOffenders(SIGNING_RULES.builderNamed, [MODULE, PROVIDER])).toEqual([]);
+		expect(flatOffenders(SIGNING_RULES.moduleImportedWhole)).toEqual([]);
+	});
+
+	it('is never hashed for a wallet to sign the hash', () => {
+		expect(flatOffenders(SIGNING_RULES.hashMessage)).toEqual([]);
+	});
+
+	it('is not reachable through a wallet request whose method is computed', () => {
+		expect(flatOffenders(SIGNING_RULES.computedRequestMethod)).toEqual([]);
+		expect(flatOffenders(SIGNING_RULES.concatenatedRpcName)).toEqual([]);
+	});
+
+	it('becomes a key only through deriveSessionKey', () => {
+		expect(flatOffenders(/\bderiveKeyFromEntropy\(/, [KEY_MODULE])).toEqual([]);
 	});
 
 	it('is the text the session provider asks the wallet to sign', () => {
@@ -75,6 +103,16 @@ describe('the session message', () => {
 		expect(code).not.toContain('deriveKeyFromEntropy');
 	});
 
+	it('is asked for only after the page is checked against the site it names', () => {
+		const code = flat(read(SRC, PROVIDER));
+		const check = code.indexOf(
+			"if(!isSessionOriginAllowed(import.meta.env.MODE,window.location.origin)){setStatus('wrong-site');return;}",
+		);
+
+		expect(check).toBeGreaterThan(-1);
+		expect(check).toBeLessThan(code.indexOf('awaitsignMessage('));
+	});
+
 	it('names no agent contract', () => {
 		expect(read(SRC, MODULE)).not.toMatch(/agent/i);
 	});
@@ -84,5 +122,42 @@ describe('the session message', () => {
 
 		expect(code).not.toMatch(/\b(window|document|location|globalThis|self|navigator)\b/);
 		expect(code).not.toMatch(/import\.meta/);
+	});
+});
+
+// Each rule catches what it is for and leaves ordinary code alone, so a rule that matched
+// nothing could not pass the scans above unnoticed.
+describe('the signing rules', () => {
+	const catches = (rule: RegExp, code: string) => rule.test(flat(code));
+
+	it.each([
+		['signer', 'await signMessage({ account, message })'],
+		['signer', "provider.request({ method: 'personal_sign', params })"],
+		['signer', "provider.request({ method: 'eth_sign', params: [address, hash] })"],
+		[
+			'builderNamed',
+			"import { buildSessionMessage as text } from '@/features/auth/sessionMessage';",
+		],
+		['moduleImportedWhole', "import * as session from '@/features/auth/sessionMessage';"],
+		['moduleImportedWhole', "const m = await import('@/features/auth/sessionMessage');"],
+		['hashMessage', 'const hash = hashMessage(text);'],
+		['computedRequestMethod', 'provider.request({ method: name, params })'],
+		['computedRequestMethod', 'provider.request({ params, method })'],
+		['computedRequestMethod', 'provider.request({ method: `personal_${kind}`, params })'],
+		['concatenatedRpcName', "const name = 'personal_' + 'sign';"],
+		['concatenatedRpcName', 'const name = `eth_${kind}`;'],
+	] as const)('%s catches %s', (rule, code) => {
+		expect(catches(SIGNING_RULES[rule], code)).toBe(true);
+	});
+
+	it.each([
+		['signer', "provider.request({ method: 'eth_signTypedData_v4', params })"],
+		['computedRequestMethod', "provider.request({ method: 'eth_chainId' })"],
+		['computedRequestMethod', "provider.request({ method: 'eth_call', params: [call] })"],
+		['computedRequestMethod', "prepareContractCall({ contract, method: 'cancelPrompt', params })"],
+		['concatenatedRpcName', "const label = 'eth_call';"],
+		['moduleImportedWhole', "import { sessionSiteFor } from '@/features/auth/sessionMessage';"],
+	] as const)('%s leaves %s alone', (rule, code) => {
+		expect(catches(SIGNING_RULES[rule], code)).toBe(false);
 	});
 });
