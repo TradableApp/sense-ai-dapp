@@ -33,6 +33,17 @@ describe('deriveKeyFromEntropy', () => {
 		expect(new Uint8Array(raw1)).not.toEqual(new Uint8Array(raw2));
 	});
 
+	it('takes a context string, and gives another key for another context', async () => {
+		const raw = async (key: CryptoKey) =>
+			new Uint8Array(await window.crypto.subtle.exportKey('raw', key));
+		const byDefault = await deriveKeyFromEntropy(ENTROPY, OWNER);
+		const sameContext = await deriveKeyFromEntropy(ENTROPY, OWNER, 'SenseAI dApp v1 AES-GCM Key');
+		const otherContext = await deriveKeyFromEntropy(ENTROPY, OWNER, 'another context');
+
+		expect(await raw(sameContext)).toEqual(await raw(byDefault));
+		expect(await raw(otherContext)).not.toEqual(await raw(byDefault));
+	});
+
 	it('throws when entropy is empty', async () => {
 		await expect(deriveKeyFromEntropy('', OWNER)).rejects.toThrow(
 			'Entropy string cannot be empty.',
