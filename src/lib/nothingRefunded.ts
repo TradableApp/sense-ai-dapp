@@ -28,31 +28,46 @@ interface ReceiptLog {
 const REFUND_EVENT = 'PaymentRefunded';
 
 /**
- * Whether the receipt's logs carry the escrow's `PaymentRefunded` for `answerMessageId`. Only
- * a log from the escrow that decodes as that event counts: another event of the escrow with the
- * same field does not, and neither does a log that does not decode.
+ * Whether the receipt's logs carry `eventName` from the contract at `address` with its `field`
+ * equal to `id`. Only a log from that contract that decodes as that event counts: another event
+ * with the same field does not, and neither does a log that does not decode. A receipt's
+ * `success` alone says the transaction was mined without reverting, not that the contract did
+ * what was asked (an account contract can swallow its inner call's failure, and the escrow
+ * returns quietly for a refund it holds no payment for), so this is the proof.
  */
+export function receiptCarries(
+	logs: readonly ReceiptLog[],
+	address: string,
+	abi: readonly unknown[],
+	eventName: string,
+	field: string,
+	id: number | string | bigint,
+): boolean {
+	const contract = address.toLowerCase();
+	const wanted = BigInt(id);
+	return logs.some(log => {
+		if (log.address.toLowerCase() !== contract) return false;
+		try {
+			// The log says which event it is (its first topic); the name is then compared here,
+			// since decoding does not refuse a log of another event.
+			const decoded = decodeEventLog({
+				abi: abi as Abi,
+				topics: log.topics as [`0x${string}`, ...`0x${string}`[]],
+				data: log.data as `0x${string}`,
+			}) as { eventName?: string; args?: Record<string, unknown> };
+			return decoded.eventName === eventName && decoded.args?.[field] === wanted;
+		} catch {
+			return false;
+		}
+	});
+}
+
+/** Whether the receipt's logs carry the escrow's `PaymentRefunded` for `answerMessageId`. */
 export function receiptRefunded(
 	logs: readonly ReceiptLog[],
 	escrowAddress: string,
 	escrowAbi: readonly unknown[],
 	answerMessageId: number | string,
 ): boolean {
-	const escrow = escrowAddress.toLowerCase();
-	const id = BigInt(answerMessageId);
-	return logs.some(log => {
-		if (log.address.toLowerCase() !== escrow) return false;
-		try {
-			// The log says which event it is (its first topic); the name is then compared here,
-			// since decoding does not refuse a log of another event.
-			const decoded = decodeEventLog({
-				abi: escrowAbi as Abi,
-				topics: log.topics as [`0x${string}`, ...`0x${string}`[]],
-				data: log.data as `0x${string}`,
-			}) as { eventName?: string; args?: { escrowId?: unknown } };
-			return decoded.eventName === REFUND_EVENT && decoded.args?.escrowId === id;
-		} catch {
-			return false;
-		}
-	});
+	return receiptCarries(logs, escrowAddress, escrowAbi, REFUND_EVENT, 'escrowId', answerMessageId);
 }

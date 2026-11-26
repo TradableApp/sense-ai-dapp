@@ -22,8 +22,10 @@ import { CANCEL_ACTION, REFUND_ACTION, refusedTransferMessage } from '@/lib/feeT
 import {
 	NOTHING_REFUNDED_MESSAGE,
 	NothingRefundedError,
+	receiptCarries,
 	receiptRefunded,
 } from '@/lib/nothingRefunded';
+import { NotRecordedError, notRecordedMessage } from '@/lib/notRecorded';
 import { PaymentSwitchedOffError } from '@/lib/paymentGate';
 import {
 	BRANCH_ACTION,
@@ -181,6 +183,11 @@ export function buildErrorHandler(
 		// The chain's own answer, not a fault here: told to the user, not printed as an error.
 		if (error instanceof TransactionRevertedError) {
 			const { title, description } = revertedMessage(error.action);
+			toast.error(title, { description });
+			return;
+		}
+		if (error instanceof NotRecordedError) {
+			const { title, description } = notRecordedMessage(error.action);
 			toast.error(title, { description });
 			return;
 		}
@@ -441,7 +448,11 @@ export default function useChatMutations() {
 	const onFailure =
 		(action: string, queryKeysToRefresh: string[] = []) =>
 		(error: Error) => {
-			if (error instanceof TransactionRevertedError || error instanceof NothingRefundedError) {
+			if (
+				error instanceof TransactionRevertedError ||
+				error instanceof NotRecordedError ||
+				error instanceof NothingRefundedError
+			) {
 				genericOnSuccess(queryKeysToRefresh);
 			}
 			genericOnError(error, action);
@@ -742,8 +753,21 @@ export default function useChatMutations() {
 				params: [conversationId, encryptedPayload, roflEncryptedKey],
 			} as unknown as Parameters<typeof prepareContractCall>[0]);
 
-			// A reverted change throws here, so the history's save on this device never runs.
-			await sendConfirmed(tx, activeAccount, METADATA_ACTION);
+			// A reverted change throws here, and so does one the agent did not record for this
+			// conversation, so the history's save on this device never runs for either.
+			const receipt = await sendConfirmed(tx, activeAccount, METADATA_ACTION);
+			if (
+				!receiptCarries(
+					receipt.logs,
+					contractConfig.agent.address,
+					contractConfig.agent.abi as readonly unknown[],
+					'MetadataUpdateRequested',
+					'conversationId',
+					conversationId,
+				)
+			) {
+				throw new NotRecordedError(METADATA_ACTION);
+			}
 			return { conversationId };
 		},
 		onSuccess: () => {
@@ -779,7 +803,19 @@ export default function useChatMutations() {
 				params: [answerMessageId],
 			} as unknown as Parameters<typeof prepareContractCall>[0]);
 
-			await sendConfirmed(tx, activeAccount!, CANCEL_ACTION);
+			const receipt = await sendConfirmed(tx, activeAccount!, CANCEL_ACTION);
+			if (
+				!receiptCarries(
+					receipt.logs,
+					contractConfig.escrow.address,
+					contractConfig.escrow.abi as readonly unknown[],
+					'PromptCancelled',
+					'answerMessageId',
+					answerMessageId,
+				)
+			) {
+				throw new NotRecordedError(CANCEL_ACTION);
+			}
 		},
 		onSuccess: () => {
 			toast.success('Prompt Cancelled', {

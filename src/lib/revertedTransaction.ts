@@ -29,7 +29,7 @@ export function throwIfReverted(receipt: { status?: string }, action: string): v
 	if (receipt.status !== 'success') throw new TransactionRevertedError(action);
 }
 
-const GAS_ONLY = 'Only the network fee for the transaction was spent.';
+export const GAS_ONLY = 'Only the network fee for the transaction was spent.';
 
 const PAID_SEND_REVERTED = {
 	title: 'Not Sent',
@@ -54,7 +54,7 @@ const REVERTED_WORDS: Record<string, { title: string; description: string }> = {
 	[BRANCH_ACTION]: PAID_SEND_REVERTED,
 };
 
-const REVERTED_FALLBACK = {
+export const REVERTED_FALLBACK = {
 	title: 'Transaction Reverted',
 	description: `The transaction was mined but reverted on chain, so nothing changed. ${GAS_ONLY}`,
 };
