@@ -143,8 +143,12 @@ describe('the signing rules', () => {
 		['hashMessage', 'const hash = hashMessage(text);'],
 		['computedRequestMethod', 'provider.request({ method: name, params })'],
 		['computedRequestMethod', 'provider.request({ params, method })'],
+		// A template's text as a fixture, not a template.
+		// eslint-disable-next-line no-template-curly-in-string
 		['computedRequestMethod', 'provider.request({ method: `personal_${kind}`, params })'],
 		['concatenatedRpcName', "const name = 'personal_' + 'sign';"],
+		// A template's text as a fixture, not a template.
+		// eslint-disable-next-line no-template-curly-in-string
 		['concatenatedRpcName', 'const name = `eth_${kind}`;'],
 	] as const)('%s catches %s', (rule, code) => {
 		expect(catches(SIGNING_RULES[rule], code)).toBe(true);
