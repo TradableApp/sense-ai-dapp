@@ -125,17 +125,29 @@ describe('initSentry', () => {
 		);
 	});
 
-	// Interaction spans are on by default and sent on their own, in a span envelope: the
-	// installed SDK runs beforeSendSpan there, and keeps the span as it was if given nothing.
+	// Interaction spans are on by default and sent on their own, in a span envelope, which the
+	// installed SDK builds through beforeSendSpan (and never through beforeSendTransaction).
 	it('relies on the installed SDK running beforeSendSpan on spans sent on their own', () => {
 		const fromBrowser = createRequire(require.resolve('@sentry/browser'));
-		const core = path.dirname(fromBrowser.resolve('@sentry/core/package.json'));
-		const envelope = readFileSync(path.join(core, 'build/esm/envelope.js'), 'utf8');
-		const span = readFileSync(path.join(core, 'build/esm/tracing/sentrySpan.js'), 'utf8');
+		const core = fromBrowser('@sentry/core') as {
+			SentrySpan: new (_context: object) => object;
+			createSpanEnvelope: (_spans: object[], _client: object) => [object, Array<[object, unknown]>];
+		};
+		const url = 'https://rpc.example/v2/KEY123abc';
+		const span = new core.SentrySpan({
+			name: `body > a[title="${url}"]`,
+			isStandalone: true,
+			startTimestamp: 1,
+			endTimestamp: 2,
+		});
+		const sent = (options: object) =>
+			JSON.stringify(
+				core.createSpanEnvelope([span], { getOptions: () => options, getDsn: () => undefined })[1],
+			);
 
-		expect(envelope).toMatch(/const \{ beforeSendSpan, ignoreSpans \} = client\?\.getOptions\(\)/);
-		expect(envelope).toMatch(/beforeSendSpan\(spanJson\)/);
-		expect(span).toMatch(/sendSpanEnvelope\(createSpanEnvelope\(\[this\], client\)\)/);
+		expect(sent({})).toContain(url);
+		expect(sent({ beforeSendSpan: scrubSpanJson })).not.toContain('rpc.example');
+		expect(sent({ beforeSendSpan: scrubSpanJson })).not.toContain('KEY123abc');
 	});
 
 	describe('the live reasoning timing marks', () => {

@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/react';
 
-import { scrubErrorEvent, scrubTransactionEvent } from '@/config/sentryEvent';
+import { scrubErrorEvent, scrubSpanJson, scrubTransactionEvent } from '@/config/sentryEvent';
 import { LIVE_PERFORMANCE_ENTRIES } from '@/lib/liveReasoning/performanceMarks';
 import scrubSecrets from '@/lib/scrubSecrets';
 
@@ -75,5 +75,7 @@ export function initSentry() {
 		// Scrubbed text only, and no request body (it can hold encrypted payloads).
 		beforeSend: scrubErrorEvent,
 		beforeSendTransaction: scrubTransactionEvent,
+		// Also a span sent outside a transaction, which beforeSendTransaction never sees.
+		beforeSendSpan: scrubSpanJson,
 	});
 }
