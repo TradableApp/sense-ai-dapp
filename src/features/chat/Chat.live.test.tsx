@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { LiveReasoning } from '@/hooks/useLiveReasoning';
 import { initialLiveState, type LiveAnswerState } from '@/lib/liveReasoning/liveReducer';
+import { expectRenderedTextIsInert, HOSTILE_LINKS, HOSTILE_MARKDOWN } from '@/test/hostileMarkdown';
 
 import Chat from './Chat';
 
@@ -379,5 +380,81 @@ describe('the live overlay in the chat', () => {
 		expect(screen.queryByTestId('live-reasoning')).toBeNull();
 		expect(screen.queryByRole('alert')).toBeNull();
 		expect(screen.getByText('Thinking...')).toBeTruthy();
+	});
+});
+
+describe('conversation text in the chat renders inert', () => {
+	// Every place the chat renders conversation text: the user's prompt, the stored answer, the
+	// provisional answer, and the live steps and sources. Nothing in them loads or links unsafely.
+	it("renders the user's prompt and the stored answer inert", () => {
+		motion.reduced = true;
+		chatState.value = {
+			activeConversationId: '5',
+			activeConversationMessages: [
+				{ ...PROMPT, content: HOSTILE_MARKDOWN },
+				{ ...PLACEHOLDER, content: HOSTILE_MARKDOWN },
+			],
+		};
+
+		renderChat();
+
+		const rendered = [...document.querySelectorAll<HTMLElement>('.prose')];
+		expect(rendered).toHaveLength(2);
+		rendered.forEach(text => {
+			expect(text.textContent).toContain('inline alt');
+			expect(expectRenderedTextIsInert(text)).toHaveLength(3);
+		});
+		motion.reduced = false;
+	});
+
+	it('renders the provisional answer inert', () => {
+		live.views.set('42', liveView({ answer: { text: HOSTILE_MARKDOWN, answerMessageCID: 'b' } }));
+		live.provisional.add('42');
+
+		renderChat();
+
+		const answer = screen.getByTestId('live-provisional-answer');
+		expect(expectRenderedTextIsInert(answer)).toHaveLength(3);
+	});
+
+	it('renders live steps as text and links only web sources', () => {
+		live.views.set(
+			'42',
+			liveView({
+				steps: [
+					{ title: '![t](https://img.example/t.png)', description: HOSTILE_MARKDOWN, attempt: 1 },
+				],
+				sources: [
+					...Object.values(HOSTILE_LINKS).map(url => ({ title: 'Unsafe', url, attempt: 1 })),
+					{ title: 'News', url: 'https://news.example/a', attempt: 1 },
+				],
+			}),
+		);
+
+		renderChat();
+		fireEvent.click(screen.getByText(/^Used \d+ sources$/));
+
+		const reasoning = screen.getByTestId('live-reasoning');
+		const links = expectRenderedTextIsInert(reasoning);
+		expect(links.map(link => link.getAttribute('href'))).toEqual(['https://news.example/a']);
+		expect(reasoning.textContent).toContain('![t](https://img.example/t.png)');
+	});
+});
+
+describe('conversation text in the chat is kept out of analytics', () => {
+	// Autocapture records nothing inside `ph-no-capture`, and replay blocks it whole.
+	const isUnrecorded = (el: Element) => el.closest('.ph-no-capture') !== null;
+
+	it('marks the prompt, the answers, the live steps and the composer', () => {
+		live.views.set('42', liveView({ answer: { text: 'Prices rose.', answerMessageCID: 'b' } }));
+		live.provisional.add('42');
+
+		renderChat();
+
+		expect(isUnrecorded(screen.getByText('Where is BTC going?'))).toBe(true);
+		expect(isUnrecorded(screen.getByTestId('live-provisional-answer'))).toBe(true);
+		expect(isUnrecorded(screen.getByTestId('live-reasoning'))).toBe(true);
+		expect(isUnrecorded(composer())).toBe(true);
+		expect(isUnrecorded(screen.getByRole('log'))).toBe(true);
 	});
 });

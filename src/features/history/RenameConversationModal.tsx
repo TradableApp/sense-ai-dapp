@@ -66,7 +66,7 @@ export default function RenameConversationModal({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="w-full max-w-[calc(100vw-2rem)] rounded-xl sm:max-w-md">
+			<DialogContent className="ph-no-capture w-full max-w-[calc(100vw-2rem)] rounded-xl sm:max-w-md">
 				<DialogHeader>
 					<DialogTitle>Rename Conversation</DialogTitle>
 					<DialogDescription>Enter a new name for this conversation.</DialogDescription>

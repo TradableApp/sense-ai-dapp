@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { cn, isObject, markdownToPlainText, wait } from './utils';
+import { HOSTILE_MARKDOWN } from '@/test/hostileMarkdown';
+
+import { cn, copyMarkdownToClipboard, isObject, markdownToPlainText, wait } from './utils';
 
 describe('cn', () => {
 	it('merges class names', () => {
@@ -106,5 +108,55 @@ describe('markdownToPlainText', () => {
 	it('handles code blocks', () => {
 		const result = markdownToPlainText('`inline code`');
 		expect(result).toBe('inline code');
+	});
+});
+
+describe('copyMarkdownToClipboard', () => {
+	// The rich copy is pasted into other apps (mail, documents), which load what its HTML names.
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	async function copiedHtml(markdown: string): Promise<HTMLElement> {
+		const items: Array<Record<string, Blob>> = [];
+		vi.stubGlobal(
+			'ClipboardItem',
+			class {
+				constructor(parts: Record<string, Blob>) {
+					items.push(parts);
+				}
+			},
+		);
+		vi.stubGlobal('navigator', { clipboard: { write: vi.fn(async () => {}) } });
+
+		expect(await copyMarkdownToClipboard(markdown)).toBe(true);
+		const holder = document.createElement('div');
+		holder.innerHTML = await items[0]['text/html'].text();
+		return holder;
+	}
+
+	it('copies HTML that names no image or other resource, and only web links', async () => {
+		const html = await copiedHtml(HOSTILE_MARKDOWN);
+
+		expect(
+			html.querySelectorAll('img, iframe, video, audio, source, object, embed, link'),
+		).toHaveLength(0);
+		// The image URLs are gone; the raw HTML lines stay as escaped text.
+		['p.png', 'r.png', 'n.png'].forEach(file => expect(html.innerHTML).not.toContain(file));
+		const hrefs = [...html.querySelectorAll('[href]')].map(el => el.getAttribute('href'));
+		// The same links the chat shows for this text, the bare address included.
+		expect(hrefs).toEqual([
+			'https://news.example/n',
+			'https://phish.example/claim',
+			'http://www.bare.example/',
+		]);
+		expect(html.textContent).toContain('inline alt');
+	});
+
+	it('copies no link whose address carries a user name or password', async () => {
+		const html = await copiedHtml('[pay](https://bank.example@evil.example/login)');
+
+		expect(html.querySelector('[href]')).toBeNull();
+		expect(html.textContent).toContain('pay');
 	});
 });

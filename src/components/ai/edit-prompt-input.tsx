@@ -51,7 +51,7 @@ export default function EditPromptInput({
 	});
 
 	return (
-		<div className="w-full">
+		<div className="ph-no-capture w-full">
 			<PromptInput onSubmit={save} errors={errors}>
 				<PromptInputTextarea
 					{...register('content')}

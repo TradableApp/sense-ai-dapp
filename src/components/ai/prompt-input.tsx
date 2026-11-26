@@ -51,7 +51,7 @@ export function PromptInput({ errors, className, ...props }: PromptInputProps) {
 	return (
 		<form
 			className={cn(
-				'w-full divide-y overflow-hidden rounded-xl border bg-card shadow-sm',
+				'ph-no-capture w-full divide-y overflow-hidden rounded-xl border bg-card shadow-sm',
 				// If there's a visible prompt error, apply the destructive border color
 				hasVisibleError && 'border-destructive',
 				className,

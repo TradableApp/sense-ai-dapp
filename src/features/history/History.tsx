@@ -184,7 +184,8 @@ export default function History() {
 				error={metadataUpdateMutation.error}
 				conversationToRename={conversationToRename}
 			/>
-			<div className="flex flex-col gap-4">
+			{/* Titles, previews and the search: analytics records nothing inside. */}
+			<div className="ph-no-capture flex flex-col gap-4">
 				<div>
 					<h2 className="text-2xl font-bold">Conversations</h2>
 					<p className="text-muted-foreground">
