@@ -268,6 +268,37 @@ describe('a conversation file that names another conversation', () => {
 	});
 });
 
+describe('a conversation file and the wallet it names', () => {
+	it.each([
+		['another wallet', { ownerAddress: '0x9999999999999999999999999999999999999999' }],
+		['no wallet', { ownerAddress: undefined }],
+		['a wallet that is not text', { ownerAddress: 42 }],
+	])('naming %s is not stored, and the cursor is held', async (_name, change) => {
+		payloads.set(CONV_CID, { ...(honestFiles().get(CONV_CID) as object), ...change });
+
+		const result = await sync();
+
+		expect(result.unavailablePayloads).toBe(1);
+		expect(storedConversationIds()).toEqual([]);
+		expect(await storedCursor()).toBeUndefined();
+		expect(reportedMismatches()).toEqual(['conversation']);
+	});
+
+	it('naming the wallet in other letter case is stored', async () => {
+		const checksummed = `0x${OWNER.slice(2).toUpperCase()}`;
+		payloads.set(CONV_CID, {
+			...(honestFiles().get(CONV_CID) as object),
+			ownerAddress: checksummed,
+		});
+
+		const result = await sync();
+
+		expect(result.unavailablePayloads).toBe(0);
+		expect(storedConversationIds()).toEqual([CONV]);
+		expect(reportedMismatches()).toEqual([]);
+	});
+});
+
 describe('a search delta that names another slot', () => {
 	it.each([
 		['another message', { 2: { cid: CONV, c: 'message' } }],

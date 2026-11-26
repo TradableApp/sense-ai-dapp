@@ -4,7 +4,8 @@
  * storage hosts serve the bytes; decrypting with the wallet's key proves the oracle wrote the
  * file for this wallet, not for which slot. So each file is checked against the identifiers it
  * carries, as the oracle writes them (`oracle/src/formatters.js` in `tokenized-ai-agent`):
- * - a conversation file carries its `id`;
+ * - a conversation file carries its `id` and the wallet it belongs to (`ownerAddress`, compared
+ *   without regard to letter case; a file with none is refused, as the oracle has always written it);
  * - a message file carries its `id` and its `conversationId`;
  * - a search delta is `{ [messageId]: { cid: conversationId, c: keywords } }`, one key.
  * The conversation metadata file (`title`, `isDeleted`, `lastUpdatedAt`) carries no identifier,
@@ -26,8 +27,18 @@ const isId = (value: unknown, id: string): boolean =>
 	(typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint') &&
 	String(value) === id;
 
-export const conversationFileFits = (file: unknown, conversationId: string): boolean =>
-	isRecord(file) && isId(file.id, conversationId);
+/** Whether a value is the wallet address given, as text, without regard to letter case. */
+const isOwner = (value: unknown, ownerAddress: string): boolean =>
+	typeof value === 'string' &&
+	ownerAddress !== '' &&
+	value.toLowerCase() === ownerAddress.toLowerCase();
+
+export const conversationFileFits = (
+	file: unknown,
+	conversationId: string,
+	ownerAddress: string,
+): boolean =>
+	isRecord(file) && isId(file.id, conversationId) && isOwner(file.ownerAddress, ownerAddress);
 
 export const messageFileFits = (
 	file: unknown,
@@ -49,7 +60,14 @@ export function searchDeltaFits(
 }
 
 /** Fields a conversation file or a message file carries and a metadata file never does. */
-const NOT_METADATA_FIELDS = ['id', 'conversationId', 'ownerAddress', 'role', 'content', 'parentCID'];
+const NOT_METADATA_FIELDS = [
+	'id',
+	'conversationId',
+	'ownerAddress',
+	'role',
+	'content',
+	'parentCID',
+];
 
 export const metadataFileFits = (file: unknown): boolean =>
 	isRecord(file) && !NOT_METADATA_FIELDS.some(field => field in file);

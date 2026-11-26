@@ -127,7 +127,7 @@ export function scrubErrorEvent(event: ErrorEvent): ErrorEvent | null {
 	}
 }
 
-type SpanJson = NonNullable<TransactionEvent['spans']>[number];
+export type SpanJson = NonNullable<TransactionEvent['spans']>[number];
 
 /**
  * Span data the SDK sets on every fetch span that no pattern can scrub with certainty: a query
@@ -143,6 +143,35 @@ function scrubSpan(span: SpanJson): SpanJson {
 	const { links: _links, ...rest } = span;
 	// The span's own ids are top-level fields, not data, and are kept as they are.
 	return { ...rest, description: scrubText(span.description), data: scrubFlat(data) ?? {} };
+}
+
+/**
+ * A span before it is sent, wherever it is sent from: the SDK runs `beforeSendSpan` on a
+ * transaction's spans and on a span it sends on its own (an interaction's, named after the
+ * element that was used, attributes included), which never reaches `beforeSendTransaction`.
+ * The same scrub as a transaction's spans. The SDK cannot drop a span here (given nothing back
+ * it sends the span as it was), so one that cannot be read is sent with its ids, times and op only,
+ * and one whose ids cannot be read either is sent empty.
+ */
+export function scrubSpanJson(span: SpanJson): SpanJson {
+	try {
+		return scrubSpan(span);
+	} catch {
+		try {
+			return {
+				span_id: span.span_id,
+				trace_id: span.trace_id,
+				parent_span_id: span.parent_span_id,
+				start_timestamp: span.start_timestamp,
+				timestamp: span.timestamp,
+				op: span.op,
+				data: {},
+			};
+		} catch {
+			// Not even those can be read: an empty span, since a throw here is not the SDK's to catch.
+			return { data: {} } as SpanJson;
+		}
+	}
 }
 
 export function scrubTransactionEvent(event: TransactionEvent): TransactionEvent | null {

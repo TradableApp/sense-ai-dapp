@@ -6,7 +6,7 @@ import * as Sentry from '@sentry/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { initSentry, scrubBreadcrumb } from './sentry';
-import { scrubErrorEvent, scrubTransactionEvent } from './sentryEvent';
+import { scrubErrorEvent, scrubSpanJson, scrubTransactionEvent } from './sentryEvent';
 
 vi.mock('@sentry/react', () => ({
 	init: vi.fn(),
@@ -113,6 +113,41 @@ describe('initSentry', () => {
 				beforeSendTransaction: scrubTransactionEvent,
 			}),
 		);
+	});
+
+	it('scrubs every span before it is sent, also one sent outside a transaction', () => {
+		vi.stubEnv('VITE_SENTRY_DSN', 'https://public@sentry.example/1');
+
+		initSentry();
+
+		expect(Sentry.init).toHaveBeenCalledWith(
+			expect.objectContaining({ beforeSendSpan: scrubSpanJson }),
+		);
+	});
+
+	// Interaction spans are on by default and sent on their own, in a span envelope, which the
+	// installed SDK builds through beforeSendSpan (and never through beforeSendTransaction).
+	it('relies on the installed SDK running beforeSendSpan on spans sent on their own', () => {
+		const fromBrowser = createRequire(require.resolve('@sentry/browser'));
+		const core = fromBrowser('@sentry/core') as {
+			SentrySpan: new (_context: object) => object;
+			createSpanEnvelope: (_spans: object[], _client: object) => [object, Array<[object, unknown]>];
+		};
+		const url = 'https://rpc.example/v2/KEY123abc';
+		const span = new core.SentrySpan({
+			name: `body > a[title="${url}"]`,
+			isStandalone: true,
+			startTimestamp: 1,
+			endTimestamp: 2,
+		});
+		const sent = (options: object) =>
+			JSON.stringify(
+				core.createSpanEnvelope([span], { getOptions: () => options, getDsn: () => undefined })[1],
+			);
+
+		expect(sent({})).toContain(url);
+		expect(sent({ beforeSendSpan: scrubSpanJson })).not.toContain('rpc.example');
+		expect(sent({ beforeSendSpan: scrubSpanJson })).not.toContain('KEY123abc');
 	});
 
 	describe('the live reasoning timing marks', () => {

@@ -484,7 +484,11 @@ export default async function syncWithRemote(
 			// The metadata file carries no identifier, so it is held to its kind and its three fields.
 			const [convPayload, metadataPayload] = await Promise.all([
 				hydrate(conv.conversationCID).then(payload =>
-					inSlot(payload, file => conversationFileFits(file, conv.id), 'conversation'),
+					inSlot(
+						payload,
+						file => conversationFileFits(file, conv.id, ownerAddress),
+						'conversation',
+					),
 				),
 				hydrate(conv.conversationMetadataCID).then(payload =>
 					inSlot(payload, metadataFileFits, 'metadata'),

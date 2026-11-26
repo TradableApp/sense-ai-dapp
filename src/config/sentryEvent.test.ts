@@ -3,7 +3,13 @@ import { describe, expect, it } from 'vitest';
 
 import scrubSecrets from '@/lib/scrubSecrets';
 
-import { scrubErrorEvent, scrubTransactionEvent, type TransactionEvent } from './sentryEvent';
+import {
+	scrubErrorEvent,
+	scrubSpanJson,
+	scrubTransactionEvent,
+	type SpanJson,
+	type TransactionEvent,
+} from './sentryEvent';
 
 // thirdweb's error text names the RPC endpoint, key included, and a batch's call data.
 const KEY = 'KEY123abc';
@@ -290,5 +296,100 @@ describe('fields no pattern can scrub with certainty', () => {
 
 		expect(scrubbed?.spans?.[0]).not.toHaveProperty('links');
 		expect(leaks(scrubbed)).toEqual([]);
+	});
+});
+
+// A span the SDK sends on its own (an interaction's, for one) is named after the element that
+// was used, attributes included, and never passes through the transaction scrub.
+describe('scrubSpanJson', () => {
+	const span = (over: Partial<SpanJson> = {}): SpanJson => ({
+		span_id: SPAN_ID,
+		trace_id: TRACE_ID,
+		parent_span_id: PARENT_SPAN_ID,
+		start_timestamp: 1,
+		timestamp: 2,
+		op: 'ui.interaction.click',
+		description: `body > div.chat > a[title="${RPC}?wallet=${WALLET}"]`,
+		data: {
+			transaction: `/chat?rpc=${RPC}`,
+			'sentry.exclusive_time': 40,
+			'http.query': `key=${KEY}`,
+			'http.fragment': 'free text',
+			'server.address': 'rpc.example',
+			nested: [RPC],
+		},
+		measurements: { inp: { value: 40, unit: 'millisecond' } },
+		is_segment: true,
+		segment_id: SPAN_ID,
+		...over,
+	});
+
+	it("scrubs the description and the string data, as a transaction's spans are", () => {
+		const scrubbed = scrubSpanJson(span());
+
+		expect(scrubbed.description).toBe(scrubSecrets(span().description ?? ''));
+		expect(scrubbed.data.transaction).toBe(scrubSecrets(`/chat?rpc=${RPC}`));
+		expect(leaks(scrubbed)).toEqual([]);
+	});
+
+	it('drops what the transaction scrub drops', () => {
+		const scrubbed = scrubSpanJson(
+			span({ links: [{ trace_id: TRACE_ID, span_id: SPAN_ID, attributes: { 'peer.url': RPC } }] }),
+		);
+
+		expect(Object.keys(scrubbed.data).sort()).toEqual(['sentry.exclusive_time', 'transaction']);
+		expect(scrubbed).not.toHaveProperty('links');
+	});
+
+	it('keeps the ids, times, op and measurements as they are', () => {
+		const scrubbed = scrubSpanJson(span());
+
+		expect(scrubbed).toMatchObject({
+			span_id: SPAN_ID,
+			trace_id: TRACE_ID,
+			parent_span_id: PARENT_SPAN_ID,
+			start_timestamp: 1,
+			timestamp: 2,
+			op: 'ui.interaction.click',
+			measurements: { inp: { value: 40, unit: 'millisecond' } },
+			is_segment: true,
+			segment_id: SPAN_ID,
+		});
+	});
+
+	it('does not change the span it was given', () => {
+		const given = span();
+		const before = JSON.stringify(given);
+
+		scrubSpanJson(given);
+
+		expect(JSON.stringify(given)).toBe(before);
+	});
+
+	// The SDK cannot drop a span here: given nothing back it sends the span as it was.
+	it('sends a span it cannot read with no description and no data', () => {
+		const unreadable = {
+			...span(),
+			get data(): SpanJson['data'] {
+				throw new Error('unreadable');
+			},
+		};
+
+		const scrubbed = scrubSpanJson(unreadable);
+
+		expect(scrubbed).not.toHaveProperty('description');
+		expect(scrubbed.data).toEqual({});
+		expect(scrubbed).toMatchObject({ span_id: SPAN_ID, trace_id: TRACE_ID, start_timestamp: 1 });
+		expect(leaks(scrubbed)).toEqual([]);
+	});
+
+	it('gives back an empty span when no field of it can be read', () => {
+		const unreadable = new Proxy({} as SpanJson, {
+			get() {
+				throw new Error(`cannot read a span that names ${RPC}`);
+			},
+		});
+
+		expect(scrubSpanJson(unreadable)).toEqual({ data: {} });
 	});
 });
