@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { cn, isObject, markdownToPlainText, wait } from './utils';
+import { HOSTILE_MARKDOWN } from '@/test/hostileMarkdown';
+
+import { cn, copyMarkdownToClipboard, isObject, markdownToPlainText, wait } from './utils';
 
 describe('cn', () => {
 	it('merges class names', () => {
@@ -106,5 +108,45 @@ describe('markdownToPlainText', () => {
 	it('handles code blocks', () => {
 		const result = markdownToPlainText('`inline code`');
 		expect(result).toBe('inline code');
+	});
+});
+
+describe('copyMarkdownToClipboard', () => {
+	// The rich copy is pasted into other apps (mail, documents), which load what its HTML names.
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	async function copiedHtml(markdown: string): Promise<HTMLElement> {
+		const items: Array<Record<string, Blob>> = [];
+		vi.stubGlobal(
+			'ClipboardItem',
+			class {
+				constructor(parts: Record<string, Blob>) {
+					items.push(parts);
+				}
+			},
+		);
+		vi.stubGlobal('navigator', { clipboard: { write: vi.fn(async () => {}) } });
+
+		expect(await copyMarkdownToClipboard(markdown)).toBe(true);
+		const holder = document.createElement('div');
+		holder.innerHTML = await items[0]['text/html'].text();
+		return holder;
+	}
+
+	it('copies HTML that names no image or other resource, and only web links', async () => {
+		const html = await copiedHtml(HOSTILE_MARKDOWN);
+
+		expect(html.querySelectorAll('img, iframe, video, audio, source, object, embed, link')).toHaveLength(
+			0,
+		);
+		expect(html.innerHTML).not.toContain('img.example');
+		const hrefs = [...html.querySelectorAll('[href]')].map(el => el.getAttribute('href'));
+		expect(hrefs).toEqual([
+			'https://news.example/n',
+			'https://phish.example/claim',
+		]);
+		expect(html.textContent).toContain('inline alt');
 	});
 });
