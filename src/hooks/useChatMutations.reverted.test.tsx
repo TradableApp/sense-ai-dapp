@@ -154,6 +154,18 @@ describe('a cancellation that was mined and reverted', () => {
 	});
 });
 
+describe('a transaction the chain refused', () => {
+	// A revert is the chain's answer, not a fault in the app: it is told to the user and not
+	// printed as an error, which would also follow later reports as a breadcrumb.
+	it('is not printed as an error', async () => {
+		vi.mocked(sendAndConfirmTransaction).mockResolvedValue(REVERTED as never);
+
+		await settle(m => m.cancelPromptMutation.mutateAsync({ answerMessageId: '3' }));
+
+		expect(console.error).not.toHaveBeenCalled();
+	});
+});
+
 describe('a refund that was mined and reverted', () => {
 	it('fails and says nothing was refunded', async () => {
 		const { outcome, invalidate } = await settle(m =>
