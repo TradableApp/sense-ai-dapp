@@ -1,6 +1,8 @@
 import { clsx } from 'clsx';
 import rehypeStringify from 'rehype-stringify';
 import { remark } from 'remark';
+import remarkBreaks from 'remark-breaks';
+import remarkGfm from 'remark-gfm';
 import remarkRehype from 'remark-rehype';
 import strip from 'strip-markdown';
 import { twMerge } from 'tailwind-merge';
@@ -41,9 +43,12 @@ export async function copyMarkdownToClipboard(markdown: string): Promise<boolean
 		const plainText = String(await remark().use(strip).process(markdown)).trim();
 
 		// Generate HTML Version. It is pasted into other apps, which load what it names, so it
-		// gets the chat's markdown rule: images as their alt text, raw HTML as text, web links only.
+		// is read as the chat reads it (the same plugins, in the same order) and gets the chat's
+		// markdown rule: images as their alt text, raw HTML as text, web links only.
 		const htmlText = String(
 			await remark()
+				.use(remarkGfm)
+				.use(remarkBreaks)
 				.use(remarkSafeContent)
 				.use(remarkRehype)
 				.use(rehypeStringify)

@@ -11,8 +11,26 @@ export const INTERNAL_DOMAINS = ['tradable.app'];
  */
 export const RECORD_SESSIONS = false;
 
-/** The replay recorder: the one script the SDK may load from the analytics host, with replay on. */
-const RECORDER_SCRIPT = /\/static\/(?:lazy-recorder|posthog-recorder)\.js(?:\?|$)/;
+const API_HOST = import.meta.env.VITE_PUBLIC_POSTHOG_HOST || 'https://eu.i.posthog.com';
+
+/** The replay recorder's path on the analytics host. */
+const RECORDER_PATH = /^\/static\/(?:lazy-recorder|posthog-recorder)\.js$/;
+
+/**
+ * Whether a script is the replay recorder: the one script the SDK may load, with replay on. It
+ * is known by its host as well as its path: over https, from the analytics vendor's own hosts or
+ * the host this build sends analytics to.
+ */
+function isRecorderScript(src: string): boolean {
+	try {
+		const { protocol, hostname, pathname } = new URL(src);
+		const isAnalyticsHost =
+			hostname.endsWith('.posthog.com') || hostname === new URL(API_HOST).hostname;
+		return protocol === 'https:' && isAnalyticsHost && RECORDER_PATH.test(pathname);
+	} catch {
+		return false;
+	}
+}
 
 /**
  * What analytics may capture, the same before and after consent, set in code so a project
@@ -21,7 +39,7 @@ const RECORDER_SCRIPT = /\/static\/(?:lazy-recorder|posthog-recorder)\.js(?:\?|$
  * no heatmaps, dead clicks, exceptions, console logs, performance or network timing; no
  * surveys, conversations, product tours or web experiments; and no script loaded from the
  * analytics host, which is how the SDK would start a channel the project turned on (with replay
- * on, the recorder alone, `RECORDER_SCRIPT`). Replay, if switched on, blocks every
+ * on, the recorder alone, `isRecorderScript`). Replay, if switched on, blocks every
  * `ph-no-capture` element, masks all text and all inputs, and records no canvas, header, body or
  * network request.
  */
@@ -41,7 +59,7 @@ const PRIVACY_OPTIONS = {
 	disable_session_recording: !RECORD_SESSIONS,
 	disable_external_dependency_loading: !RECORD_SESSIONS,
 	prepare_external_dependency_script: (script: HTMLScriptElement) =>
-		RECORDER_SCRIPT.test(script.src) ? script : null,
+		isRecorderScript(script.src) ? script : null,
 	session_recording: {
 		maskAllInputs: true,
 		maskTextSelector: '*',
@@ -101,7 +119,7 @@ export function initPosthog() {
 	// const IS_PROD = ENV === 'production' || ENV === 'mainnet';
 
 	posthog.init(import.meta.env.VITE_PUBLIC_POSTHOG_KEY, {
-		api_host: import.meta.env.VITE_PUBLIC_POSTHOG_HOST || 'https://eu.i.posthog.com',
+		api_host: API_HOST,
 		capture_pageview: false,
 		autocapture: false,
 		capture_pageleave: false,
