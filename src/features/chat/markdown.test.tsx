@@ -1,9 +1,9 @@
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { expectRenderedTextIsInert, HOSTILE_MARKDOWN, shownHostOf } from '@/test/hostileMarkdown';
 
-import MarkdownText from './markdown';
+import MarkdownText, { PlainTextFallback } from './markdown';
 
 /**
  * The one renderer for conversation text: an answer, stored or provisional, and the user's own
@@ -134,5 +134,25 @@ describe('MarkdownText paragraphs', () => {
 		cleanup();
 		const block = render(<MarkdownText paragraphs="block">one</MarkdownText>).container;
 		expect(block.querySelector('p')?.className ?? '').not.toContain('inline');
+	});
+});
+
+describe('PlainTextFallback', () => {
+	afterEach(cleanup);
+
+	it('shows the text as written when what it wraps throws while rendering', () => {
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const Throws = (): never => {
+			throw new RangeError('Maximum call stack size exceeded');
+		};
+
+		const { container } = render(
+			<PlainTextFallback text="**as written**">
+				<Throws />
+			</PlainTextFallback>,
+		);
+
+		expect(container.querySelector('[data-markdown-fallback]')?.textContent).toBe('**as written**');
+		logged.mockRestore();
 	});
 });
