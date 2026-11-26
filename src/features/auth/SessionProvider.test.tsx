@@ -112,6 +112,27 @@ describe('SessionProvider signature', () => {
 		expect(signMessage).not.toHaveBeenCalled();
 	});
 
+	// Vitest runs in the `test` mode, whose rule is the site the message names or this
+	// machine (sessionOrigin.test.ts covers every mode).
+	it('asks for no signature on a page that is not the site the message names', async () => {
+		setPage('https://another-site.example/chat');
+
+		renderProvider();
+
+		await statusIs('wrong-site');
+		expect(signMessage).not.toHaveBeenCalled();
+		expect(screen.getByTestId('has-key').textContent).toBe('no');
+	});
+
+	it('asks for the signature on this machine under another loopback name', async () => {
+		setPage('http://127.0.0.1:4173/chat');
+
+		renderProvider();
+
+		await statusIs('ready');
+		expect(signMessage).toHaveBeenCalledTimes(1);
+	});
+
 	it('makes no key from a wrapped smart-account signature', async () => {
 		signMessage.mockImplementation(
 			async (args: SignArgs) =>
