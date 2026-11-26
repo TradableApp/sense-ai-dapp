@@ -12,6 +12,8 @@ import { reportSessionKeyMismatch } from '@/lib/sessionKeyReport';
 export default function useSessionKeyCheck(): SessionKeyCheck | undefined {
 	const { sessionKey, ownerAddress } = useSession();
 	const { data } = useQuery({
+		// The account is what tells one entry from another: a `CryptoKey` hashes the same as any
+		// other in a query key. One account has one key, since its signature is made canonical.
 		queryKey: ['sessionKeyCheck', sessionKey, ownerAddress],
 		queryFn: async () => {
 			try {
