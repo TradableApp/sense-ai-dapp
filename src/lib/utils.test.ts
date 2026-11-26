@@ -144,7 +144,12 @@ describe('copyMarkdownToClipboard', () => {
 		// The image URLs are gone; the raw HTML lines stay as escaped text.
 		['p.png', 'r.png', 'n.png'].forEach(file => expect(html.innerHTML).not.toContain(file));
 		const hrefs = [...html.querySelectorAll('[href]')].map(el => el.getAttribute('href'));
-		expect(hrefs).toEqual(['https://news.example/n', 'https://phish.example/claim']);
+		// The same links the chat shows for this text, the bare address included.
+		expect(hrefs).toEqual([
+			'https://news.example/n',
+			'https://phish.example/claim',
+			'http://www.bare.example/',
+		]);
 		expect(html.textContent).toContain('inline alt');
 	});
 });

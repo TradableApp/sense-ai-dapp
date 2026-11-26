@@ -56,6 +56,23 @@ describe('analytics never records conversation text', () => {
 		expect(config).toMatch(/maskTextSelector:\s*'\*'/);
 	});
 
+	// The class counts wherever it stands in the attribute, not only in its first string.
+	it.each([
+		'className="ph-no-capture flex"',
+		"className={cn('ph-no-capture flex', className)}",
+		"className={cn('flex', 'ph-no-capture')}",
+		"className={cn('flex', wide && 'w-full', `ph-no-capture`)}",
+	])('reads the class in %s', attribute => {
+		expect(attribute).toMatch(NO_CAPTURE);
+	});
+
+	it.each(['className="flex"', "className={cn('flex')} title='ph-no-capture'"])(
+		'reads no class in %s',
+		attribute => {
+			expect(attribute).not.toMatch(NO_CAPTURE);
+		},
+	);
+
 	it.each(CONTAINERS)('%s carries the no-capture class', file => {
 		expect(code(file)).toMatch(NO_CAPTURE);
 	});

@@ -116,6 +116,13 @@ describe('PostHog options', () => {
 			kind =>
 				expect(prepare(script(`https://eu-assets.i.posthog.com/static/${kind}.js?v=1`))).toBeNull(),
 		);
+		// The recorder's path on any other host, or over plain http, is not the recorder.
+		[
+			'https://assets.other.example/static/lazy-recorder.js?v=1',
+			'https://posthog.com.other.example/static/lazy-recorder.js',
+			'http://eu-assets.i.posthog.com/static/lazy-recorder.js',
+			'https://eu-assets.i.posthog.com/other/static/lazy-recorder.js',
+		].forEach(src => expect(prepare(script(src))).toBeNull());
 	});
 
 	it('keeps replay off unless the one switch is changed', async () => {
