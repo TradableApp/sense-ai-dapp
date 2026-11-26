@@ -121,12 +121,12 @@ describe('live reasoning is an overlay in memory only', () => {
 	it('turns a source URL into a link only through SafeLink, which applies safeHref', () => {
 		const files = ['src/components/ai/source.tsx', 'src/components/ai/earlier-attempt.tsx'];
 
-		// Passing the URL to the `Source` component is fine: it applies safeHref itself.
+		// Passing the URL to `Source` or `SafeLink` is fine: they apply safeHref themselves.
 		const rawLinks = ALL_SRC.flatMap(file => {
 			const lines = stripComments(read(file)).split('\n');
 			return lines.flatMap((line, i) =>
 				/href=\{\s*source\.url\s*\}/.test(line) &&
-				!/<Source\b/.test(lines.slice(Math.max(0, i - 3), i).join('\n'))
+				!/<(Source|SafeLink)\b/.test(lines.slice(Math.max(0, i - 3), i).join('\n'))
 					? [`${file}:${i + 1}`]
 					: [],
 			);

@@ -138,15 +138,13 @@ describe('copyMarkdownToClipboard', () => {
 	it('copies HTML that names no image or other resource, and only web links', async () => {
 		const html = await copiedHtml(HOSTILE_MARKDOWN);
 
-		expect(html.querySelectorAll('img, iframe, video, audio, source, object, embed, link')).toHaveLength(
-			0,
-		);
-		expect(html.innerHTML).not.toContain('img.example');
+		expect(
+			html.querySelectorAll('img, iframe, video, audio, source, object, embed, link'),
+		).toHaveLength(0);
+		// The image URLs are gone; the raw HTML lines stay as escaped text.
+		['p.png', 'r.png', 'n.png'].forEach(file => expect(html.innerHTML).not.toContain(file));
 		const hrefs = [...html.querySelectorAll('[href]')].map(el => el.getAttribute('href'));
-		expect(hrefs).toEqual([
-			'https://news.example/n',
-			'https://phish.example/claim',
-		]);
+		expect(hrefs).toEqual(['https://news.example/n', 'https://phish.example/claim']);
 		expect(html.textContent).toContain('inline alt');
 	});
 });

@@ -421,10 +421,12 @@ describe('conversation text in the chat renders inert', () => {
 		live.views.set(
 			'42',
 			liveView({
-				steps: [{ title: '![t](https://img.example/t.png)', description: HOSTILE_MARKDOWN }],
+				steps: [
+					{ title: '![t](https://img.example/t.png)', description: HOSTILE_MARKDOWN, attempt: 1 },
+				],
 				sources: [
-					...Object.values(HOSTILE_LINKS).map(url => ({ title: 'Unsafe', url })),
-					{ title: 'News', url: 'https://news.example/a' },
+					...Object.values(HOSTILE_LINKS).map(url => ({ title: 'Unsafe', url, attempt: 1 })),
+					{ title: 'News', url: 'https://news.example/a', attempt: 1 },
 				],
 			}),
 		);

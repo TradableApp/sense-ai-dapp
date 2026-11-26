@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { expectRenderedTextIsInert, HOSTILE_MARKDOWN, shownHostOf } from '@/test/hostileMarkdown';
 
-import { MarkdownText } from './markdown';
+import MarkdownText from './markdown';
 
 /**
  * The one renderer for conversation text: an answer, stored or provisional, and the user's own
@@ -34,7 +34,8 @@ describe.each(['inline', 'block'] as const)('MarkdownText (%s paragraphs)', para
 		expect(container.textContent).toContain('reference alt');
 		const linked = screen.getByRole('link', { name: 'nested alt' });
 		expect(linked.getAttribute('href')).toBe('https://news.example/n');
-		expect(container.textContent).not.toContain('SECRET');
+		// The image URLs are gone; the raw HTML lines stay as the text they were written as.
+		['p.png', 'r.png', 'n.png'].forEach(file => expect(container.textContent).not.toContain(file));
 	});
 
 	it('shows the host each link leads to', () => {

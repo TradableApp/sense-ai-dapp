@@ -1,7 +1,7 @@
 import { ChevronDownIcon, HistoryIcon } from 'lucide-react';
 
+import SafeLink from '@/components/ai/safe-link';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import safeHref from '@/lib/safeHref';
 
 interface EarlierAttemptProps {
 	steps: ReadonlyArray<{ title: string; description: string }>;
@@ -49,27 +49,19 @@ export default function EarlierAttempt({ steps, sources }: EarlierAttemptProps) 
 					))}
 					{sources.length > 0 && (
 						<ul className="space-y-1 text-xs">
-							{sources.map((source, index) => {
-								const href = safeHref(source.url);
-								return (
-									// eslint-disable-next-line react/no-array-index-key
-									<li key={index}>
-										{href ? (
-											<a
-												href={href}
-												target="_blank"
-												rel="noreferrer noopener"
-												className="text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
-											>
-												{source.title}
-											</a>
-										) : (
-											// Not an http or https URL: the title only, never a link.
-											<span className="text-muted-foreground">{source.title}</span>
-										)}
-									</li>
-								);
-							})}
+							{sources.map((source, index) => (
+								// eslint-disable-next-line react/no-array-index-key
+								<li key={index}>
+									{/* Not an http or https URL: the title only, never a link. */}
+									<SafeLink
+										href={source.url}
+										className="text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+										textClassName="text-muted-foreground"
+									>
+										{source.title}
+									</SafeLink>
+								</li>
+							))}
 						</ul>
 					)}
 				</div>

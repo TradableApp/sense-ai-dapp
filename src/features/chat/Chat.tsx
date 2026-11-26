@@ -6,7 +6,6 @@ import { collection, query, where } from 'firebase/firestore';
 import { Loader2, MicIcon, RotateCcwIcon, Split } from 'lucide-react';
 import { useReducedMotion } from 'motion/react';
 import { useForm } from 'react-hook-form';
-import ReactMarkdown from 'react-markdown';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -64,7 +63,7 @@ import ActivatePlanCTA from './ActivatePlanCTA';
 import { cancelWindow } from './cancelWindow';
 import ComposerHoldNotices, { composerHoldDescription } from './ComposerHoldNotices';
 import { AssistantReasoning, LiveAnswerTurn, ProvisionalAnswer } from './LiveAnswer';
-import { markdownComponents, remarkPlugins } from './markdown';
+import MarkdownText from './markdown';
 import isQueryAhead from './messageReconcile';
 import { composerStateFor } from './promptParent';
 import promptSchema from './promptSchema';
@@ -988,14 +987,9 @@ export default function Chat() {
 												status={message.status}
 											>
 												<MessageContent>
-													<div className="prose inherit-color prose-sm dark:prose-invert max-w-none">
-														<ReactMarkdown
-															remarkPlugins={remarkPlugins}
-															components={markdownComponents}
-														>
-															{isTyping ? `${animatedContent}▍` : message.content}
-														</ReactMarkdown>
-													</div>
+													<MarkdownText paragraphs="inline">
+														{isTyping ? `${animatedContent}▍` : message.content}
+													</MarkdownText>
 												</MessageContent>
 												<MessageAvatar src={senseaiLogo} name="SenseAI" />
 											</Message>
@@ -1034,9 +1028,7 @@ export default function Chat() {
 							<div key={msgIdStr} className="group space-y-1">
 								<Message from={message.role} className="items-start">
 									<MessageContent>
-										<div className="prose inherit-color prose-sm dark:prose-invert max-w-none">
-											<ReactMarkdown remarkPlugins={remarkPlugins}>{message.content}</ReactMarkdown>
-										</div>
+										<MarkdownText paragraphs="block">{message.content}</MarkdownText>
 									</MessageContent>
 									<MessageAvatar address={ownerAddress ?? ''} name="ME" />
 								</Message>

@@ -94,13 +94,17 @@ describe('conversation text renders inert', () => {
 	});
 
 	it('renders no element that loads a resource in the conversation code, but bundled images', () => {
-		const tags = /<(img|iframe|frame|audio|video|source|track|picture|object|embed|link|script|style|image|AvatarImage)\b/;
+		const tags =
+			/<(img|iframe|frame|audio|video|source|track|picture|object|embed|link|script|style|image|AvatarImage)\b/;
 		const offenders = CONVERSATION_FILES.flatMap(file => {
 			const lines = code(file).split('\n');
 			return lines.flatMap((line, i) => {
 				if (!tags.test(line)) return [];
 				// The tag's own attributes, up to the end of the tag.
-				const tag = lines.slice(i, i + 6).join(' ').split(/\/?>/)[0];
+				const tag = lines
+					.slice(i, i + 6)
+					.join(' ')
+					.split(/\/?>/)[0];
 				const src = tag.match(/\bsrcS?e?t?=\{\s*([A-Za-z_$][\w$]*)\s*\}/)?.[1];
 				const isBundled =
 					src !== undefined &&
@@ -128,7 +132,19 @@ describe('conversation text renders inert', () => {
 	it('makes a link in the conversation code only through SafeLink', () => {
 		const others = CONVERSATION_FILES.filter(file => file !== SAFE_LINK);
 
-		expect(offending(others, /\bhref=|<a\b/)).toEqual([]);
+		// An `href` given to `SafeLink` or `Source` (which renders one) is checked there.
+		const rawLinks = others.flatMap(file => {
+			const lines = code(file).split('\n');
+			return lines.flatMap((line, i) => {
+				const opening = lines.slice(Math.max(0, i - 3), i + 1).join('\n');
+				const isChecked = /\bhref=/.test(line) && /<(SafeLink|Source)\b[^<]*$/.test(opening);
+				return /<a\b/.test(line) || (/\bhref=/.test(line) && !isChecked)
+					? [`${file}:${i + 1}`]
+					: [];
+			});
+		});
+
+		expect(rawLinks).toEqual([]);
 		expect(code(SAFE_LINK)).toMatch(/safeHref\(/);
 		expect(code(SAFE_LINK)).toMatch(/rel="noopener noreferrer nofollow"/);
 		expect(code(SAFE_LINK)).toMatch(/referrerPolicy="no-referrer"/);

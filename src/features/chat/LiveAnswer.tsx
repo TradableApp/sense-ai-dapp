@@ -1,7 +1,5 @@
 import { useId } from 'react';
 
-import ReactMarkdown from 'react-markdown';
-
 import senseaiLogo from '@/assets/logos/senseai-logo.svg';
 import { Message, MessageAvatar, MessageContent } from '@/components/ai/message';
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ai/reasoning';
@@ -9,7 +7,7 @@ import type { LiveAnswerState } from '@/lib/liveReasoning/liveReducer';
 import { storedAnswerAttempt } from '@/lib/reasoningAttempts';
 import type { ActiveMessage } from '@/store/chatSlice';
 
-import { markdownComponents, remarkPlugins } from './markdown';
+import MarkdownText from './markdown';
 
 /**
  * The parts of an answer the live reasoning overlay can fill while the stored answer is
@@ -63,11 +61,7 @@ export function ProvisionalAnswer({ text }: { text: string }) {
 		<div data-testid="live-provisional-answer" aria-live="off" className="space-y-1.5">
 			<Message from="assistant" answerState="provisional" className="items-start">
 				<MessageContent className="border border-dashed border-amber-500/40">
-					<div className="prose inherit-color prose-sm dark:prose-invert max-w-none">
-						<ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
-							{text}
-						</ReactMarkdown>
-					</div>
+					<MarkdownText paragraphs="inline">{text}</MarkdownText>
 				</MessageContent>
 				<MessageAvatar src={senseaiLogo} name="SenseAI" />
 			</Message>
