@@ -13,6 +13,7 @@ import { useActiveAccount, useActiveWallet } from 'thirdweb/react';
 import { signMessage } from 'thirdweb/utils';
 import type { Wallet } from 'thirdweb/wallets';
 
+import { buildSessionMessage } from '@/features/auth/sessionMessage';
 import { deriveKeyFromEntropy } from '@/lib/crypto';
 import { clearUserSession } from '@/store/chatSlice';
 import { useAppDispatch } from '@/store/hooks';
@@ -38,11 +39,6 @@ const SessionContext = createContext<SessionContextValue>({
 });
 
 export const useSession = () => useContext(SessionContext);
-
-// This is the single, unchanging message that will be signed by all users.
-// It acts as the "password" for key derivation.
-const SIGNATURE_MESSAGE =
-	'Login to SenseAI to encrypt and decrypt your local conversation history.';
 
 /**
  * A custom hook that tracks whether the current browser tab is visible.
@@ -136,9 +132,16 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
 				derivingForRef.current = account.address;
 				setStatus('deriving');
 
+				// Names this build's site, chain and agent and the account; built in sessionMessage
+				// and the same text on every visit, so the key can be derived again.
 				const entropy = await signMessage({
 					account,
-					message: SIGNATURE_MESSAGE,
+					message: buildSessionMessage({
+						mode: import.meta.env.MODE,
+						chainId: import.meta.env.VITE_CHAIN_ID,
+						agentAddress: import.meta.env.VITE_AGENT_CONTRACT_ADDRESS,
+						walletAddress: account.address,
+					}),
 				});
 
 				const derivedKey = await deriveKeyFromEntropy(entropy, account.address);

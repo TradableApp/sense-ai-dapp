@@ -8,8 +8,13 @@ import { Separator } from '@/components/ui/separator';
 import { SUPPORTED_TOKENS } from '@/config/contracts';
 import { client, deploymentChain, wallets } from '@/config/thirdweb';
 import { DISPLAY_BALANCE_TOKEN, WALLET_DETAILS_MODAL } from '@/config/walletPanel';
+import { sessionSiteFor } from '@/features/auth/sessionMessage';
 
 import { useSession } from './SessionProvider';
+
+// The host the signed message names (sessionMessage.ts), so the user can match the two.
+const SESSION_SITE = sessionSiteFor(import.meta.env.MODE);
+const SESSION_HOST = SESSION_SITE ? new URL(SESSION_SITE).host : undefined;
 
 interface SignatureScreenProps {
 	onRetry: () => void;
@@ -56,6 +61,12 @@ export default function SignatureScreen({ onRetry }: SignatureScreenProps) {
 						To protect your conversations, SenseAI requires a one-time signature to generate your
 						private, session-only encryption key.
 					</p>
+					{SESSION_HOST && (
+						<p className="text-sm text-[#eeeef0] mt-3 px-2" data-testid="session-message-site">
+							Your wallet will show a message that names {SESSION_HOST} on its first line. Sign it
+							only if it does, and only while you are on {SESSION_HOST}.
+						</p>
+					)}
 					<p className="text-xs text-muted-foreground/60 text-center mt-4">
 						This is a free, gas-less action and does not grant any transaction permissions.
 					</p>

@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import SessionProvider, { useSession } from '@/features/auth/SessionProvider';
 import { buildSessionMessage } from '@/features/auth/sessionMessage';
+import SessionProvider, { useSession } from '@/features/auth/SessionProvider';
 
 const WALLET = '0xabc123def456abc123def456abc123def456abc1';
 const AGENT = '0x00000000000000000000000000000000000000a1';
@@ -38,6 +38,7 @@ describe('SessionProvider signature', () => {
 	});
 
 	afterEach(() => {
+		cleanup();
 		vi.unstubAllEnvs();
 		vi.restoreAllMocks();
 	});
@@ -58,7 +59,9 @@ describe('SessionProvider signature', () => {
 	});
 
 	it('asks for the same message whatever page it is opened on', async () => {
-		window.happyDOM.setURL('https://another-site.example/chat');
+		(window as unknown as { happyDOM: { setURL: (_url: string) => void } }).happyDOM.setURL(
+			'https://another-site.example/chat',
+		);
 
 		renderProvider();
 
