@@ -59,7 +59,9 @@ describe('the session message', () => {
 	it('is the text the session provider asks the wallet to sign', () => {
 		const code = flat(read(SRC, PROVIDER));
 
-		expect(code).toContain("import{buildSessionMessage}from'@/features/auth/sessionMessage';");
+		expect(code).toMatch(
+			/import\{[^}]*\bbuildSessionMessage\b[^}]*\}from'@\/features\/auth\/sessionMessage';/,
+		);
 		expect((code.match(/signMessage\(/g) ?? []).length).toBe(1);
 		expect(code).toMatch(/signMessage\(\{account,message:buildSessionMessage\(\{/);
 		expect(code).toContain('mode:import.meta.env.MODE');

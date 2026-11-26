@@ -186,7 +186,13 @@ export const mergeSearchIndexDeltas = async (
 			// An index that cannot be read with this key is started again: it holds nothing
 			// that is not rebuilt from the conversations and messages themselves.
 			rawIndex = await decryptData(sessionKey, existingIndexRecord.encryptedData).catch(
-				() => rawIndex,
+				(error: unknown) => {
+					console.warn(
+						'[searchService] The stored search index could not be read; starting it again.',
+						error instanceof Error ? error.name : typeof error,
+					);
+					return { m: {}, c: {} };
+				},
 			);
 		}
 
