@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import useOneMetadataSend from '@/features/history/useOneMetadataSend';
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
 import usePromptsSwitch from '@/hooks/usePromptsSwitch';
+import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
 import { blocksAction } from '@/lib/feeTokenCheck';
 
@@ -82,6 +83,31 @@ function paymentRefundedLog(escrowId: bigint, address = ESCROW) {
 		args: { escrowId },
 	} as never);
 	return { address, topics, data: '0x' };
+}
+
+const AGENT = '0x00000000000000000000000000000000000000a9';
+const USER = '0x00000000000000000000000000000000000000c1';
+
+/** The escrow's `PromptCancelled(user, answerMessageId)` log. */
+function promptCancelledLog(answerMessageId: bigint, address = ESCROW) {
+	const topics = encodeEventTopics({
+		abi: [getAbiItem({ abi: EVMAIAgentEscrowABI.abi, name: 'PromptCancelled' }) as AbiEvent],
+		eventName: 'PromptCancelled',
+		args: { user: USER, answerMessageId },
+	} as never);
+	return { address, topics, data: '0x' };
+}
+
+/** The agent's `MetadataUpdateRequested(user, conversationId, ...)` log, its two indexed fields. */
+function metadataRequestedLog(conversationId: bigint, address = AGENT) {
+	const topics = encodeEventTopics({
+		abi: [getAbiItem({ abi: EVMAIAgentABI.abi, name: 'MetadataUpdateRequested' }) as AbiEvent],
+		eventName: 'MetadataUpdateRequested',
+		args: { user: USER, conversationId },
+	} as never);
+	// Two empty `bytes` fields, ABI-encoded.
+	const data = `0x${[64, 96, 0, 0].map(n => n.toString(16).padStart(64, '0')).join('')}`;
+	return { address, topics, data };
 }
 
 function render() {
@@ -281,5 +307,76 @@ describe('a paid send that was mined and reverted', () => {
 		expect(outcome).toBeInstanceOf(Error);
 		expect(errorTitles()).toEqual(['Not Sent']);
 		wasRefreshed(invalidate);
+	});
+});
+
+// A receipt can say success for a transaction whose own call did nothing (an account contract
+// that swallows the inner revert), so a cancellation or a change counts only when the receipt
+// carries the contract's own event for it, as a refund does.
+describe('a cancellation whose transaction succeeded', () => {
+	it('is called cancelled when the escrow recorded it for this prompt', async () => {
+		vi.mocked(sendAndConfirmTransaction).mockResolvedValue({
+			status: 'success',
+			logs: [promptCancelledLog(3n)],
+		} as never);
+
+		const { outcome } = await settle(m =>
+			m.cancelPromptMutation.mutateAsync({ answerMessageId: '3' }),
+		);
+
+		expect(outcome).toBe('resolved');
+		expect(toast.success).toHaveBeenCalledWith('Prompt Cancelled', expect.anything());
+	});
+
+	it.each([
+		['no cancellation log', []],
+		['a cancellation of another prompt', [promptCancelledLog(4n)]],
+		['the same log from another contract', [promptCancelledLog(3n, AGENT)]],
+	])('with %s fails and says nothing was cancelled', async (_name, logs) => {
+		vi.mocked(sendAndConfirmTransaction).mockResolvedValue({ status: 'success', logs } as never);
+
+		const { outcome } = await settle(m =>
+			m.cancelPromptMutation.mutateAsync({ answerMessageId: '3' }),
+		);
+
+		expect(outcome).toBeInstanceOf(Error);
+		expect(toast.success).not.toHaveBeenCalled();
+		expect(errorTitles()).toEqual(['Not Cancelled']);
+	});
+});
+
+describe('a rename or delete whose transaction succeeded', () => {
+	const send = async (logs: unknown[]) => {
+		vi.mocked(sendAndConfirmTransaction).mockResolvedValue({ status: 'success', logs } as never);
+		const { result } = render();
+		const onSaved = vi.fn(async () => undefined);
+		await act(async () => {
+			result.current.sendMetadata(
+				{ conversationId: '1', title: 'Title', isDeleted: true, sessionKey },
+				onSaved,
+			);
+			await vi.waitFor(() =>
+				expect(vi.mocked(toast.error).mock.calls.length + onSaved.mock.calls.length).toBe(1),
+			);
+		});
+		return onSaved;
+	};
+
+	it('is saved on this device when the agent recorded it for this conversation', async () => {
+		const onSaved = await send([metadataRequestedLog(1n)]);
+
+		expect(onSaved).toHaveBeenCalledTimes(1);
+		expect(toast.error).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		['no log', []],
+		['a change to another conversation', [metadataRequestedLog(2n)]],
+		['the same log from another contract', [metadataRequestedLog(1n, ESCROW)]],
+	])('with %s is not saved on this device', async (_name, logs) => {
+		const onSaved = await send(logs);
+
+		expect(onSaved).not.toHaveBeenCalled();
+		expect(errorTitles()).toEqual(['Not Changed']);
 	});
 });
