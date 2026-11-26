@@ -54,7 +54,7 @@ const REVERTED_WORDS: Record<string, { title: string; description: string }> = {
 	[BRANCH_ACTION]: PAID_SEND_REVERTED,
 };
 
-export const REVERTED_FALLBACK = {
+const REVERTED_FALLBACK = {
 	title: 'Transaction Reverted',
 	description: `The transaction was mined but reverted on chain, so nothing changed. ${GAS_ONLY}`,
 };

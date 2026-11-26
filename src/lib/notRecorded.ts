@@ -1,5 +1,5 @@
 import { CANCEL_ACTION } from '@/lib/feeTokenRefusal';
-import { GAS_ONLY, METADATA_ACTION, REVERTED_FALLBACK } from '@/lib/revertedTransaction';
+import { GAS_ONLY, METADATA_ACTION } from '@/lib/revertedTransaction';
 
 /**
  * A transaction that was mined without reverting but whose receipt does not carry the
@@ -26,8 +26,13 @@ const NOT_RECORDED_WORDS: Record<string, { title: string; description: string }>
 	},
 };
 
+/** For an action with no words of its own: it went through, so it is never called reverted. */
+const NOT_RECORDED_FALLBACK = {
+	title: 'Nothing Changed',
+	description: `The transaction went through, but the contract recorded nothing for it, so nothing changed. ${GAS_ONLY}`,
+};
+
 /** What the user is told when the transaction for `action` went through and did nothing. */
 export function notRecordedMessage(action: string): { title: string; description: string } {
-	return NOT_RECORDED_WORDS[action] ?? REVERTED_FALLBACK;
+	return NOT_RECORDED_WORDS[action] ?? NOT_RECORDED_FALLBACK;
 }
-

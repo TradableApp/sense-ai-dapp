@@ -725,6 +725,11 @@ export default async function syncWithRemote(
 		// whenever that 404 was a fresh upload the gateway had not propagated yet.
 		//
 		// The same goes for a conversation whose messages could not be stored on this device.
+		//
+		// And there is no cursor to set (`newLastSync` undefined) when the pass read no
+		// conversation, or when every time it was served is more than
+		// CURSOR_CLOCK_ALLOWANCE_MS ahead of this device's clock: the cursor stays where it was
+		// rather than move to a time nothing has been indexed at yet (graph/syncCursor.ts).
 		if (unavailablePayloads === 0 && notStored.size === 0 && newLastSync !== undefined) {
 			await setLastSyncedAt(sessionKey, ownerAddress, newLastSync);
 		}

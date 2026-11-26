@@ -200,7 +200,7 @@ describe('what the enforced directives rely on', () => {
 	// The inline script the report-only policy allows by its hash.
 	it('has the one inline script whose hash the report-only policy names', () => {
 		// Every script element, however its tag is written; the inline ones name no `src`.
-		const inline = [...indexHtml.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)]
+		const inline = [...indexHtml.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\b[^>]*>/gi)]
 			.filter(m => !/\bsrc\s*=/i.test(m[1]))
 			.map(m => m[2]);
 		expect(inline).toHaveLength(1);
