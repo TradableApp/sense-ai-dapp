@@ -15,14 +15,16 @@ const HARDHAT_1 = privateKeyToAccount(
 const AGENT = '0x00000000000000000000000000000000000000a1';
 const ERC6492_MAGIC = '6492649264926492649264926492649264926492649264926492649264926492';
 
-const { signMessage } = vi.hoisted(() => ({ signMessage: vi.fn() }));
+const { signMessage, dispatch } = vi.hoisted(() => ({ signMessage: vi.fn(), dispatch: vi.fn() }));
 
 vi.mock('thirdweb/utils', () => ({ signMessage }));
 vi.mock('thirdweb/react', () => ({
 	useActiveAccount: () => ({ address: HARDHAT_0.address }),
 	useActiveWallet: () => undefined,
 }));
-vi.mock('@/store/hooks', () => ({ useAppDispatch: () => vi.fn() }));
+// One dispatch for every render, as the store gives: it is a dependency of the provider's
+// effect, and a new one on each render would start the signature again after a refusal.
+vi.mock('@/store/hooks', () => ({ useAppDispatch: () => dispatch }));
 
 type SignArgs = { message: string };
 const signAs =
@@ -124,5 +126,6 @@ describe('SessionProvider signature', () => {
 
 		await statusIs('unsupported-wallet');
 		expect(screen.getByTestId('has-key').textContent).toBe('no');
+		expect(signMessage).toHaveBeenCalledTimes(1);
 	});
 });

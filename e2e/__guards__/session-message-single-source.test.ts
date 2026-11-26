@@ -63,11 +63,16 @@ describe('the session message', () => {
 			/import\{[^}]*\bbuildSessionMessage\b[^}]*\}from'@\/features\/auth\/sessionMessage';/,
 		);
 		expect((code.match(/signMessage\(/g) ?? []).length).toBe(1);
-		expect(code).toMatch(/signMessage\(\{account,message:buildSessionMessage\(\{/);
-		expect(code).toContain('mode:import.meta.env.MODE');
-		expect(code).toContain('chainId:import.meta.env.VITE_CHAIN_ID');
+		expect((code.match(/buildSessionMessage\(/g) ?? []).length).toBe(1);
+		expect(code).toContain(
+			'constmessage=buildSessionMessage({mode:import.meta.env.MODE,chainId:import.meta.env.VITE_CHAIN_ID,walletAddress:account.address,});',
+		);
+		expect(code).toContain('constsignature=awaitsignMessage({account,message});');
+		expect(code).toContain(
+			'awaitderiveSessionKey({message,signature,walletAddress:account.address,});',
+		);
 		expect(code).not.toContain('VITE_AGENT_CONTRACT_ADDRESS');
-		expect(code).toContain('walletAddress:account.address');
+		expect(code).not.toContain('deriveKeyFromEntropy');
 	});
 
 	it('names no agent contract', () => {

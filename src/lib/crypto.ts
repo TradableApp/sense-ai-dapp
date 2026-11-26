@@ -1,3 +1,5 @@
+const DEFAULT_KEY_CONTEXT = 'SenseAI dApp v1 AES-GCM Key';
+
 /**
  * Derives a secure AES-GCM CryptoKey from a high-entropy string
  * using the user's address as a salt for domain separation.
@@ -5,9 +7,15 @@
  * The key is extractable (needed for roflEncryptedKey generation in contract calls).
  * @param {string} entropy - The high-entropy string (e.g., a signature or auth token).
  * @param {string} ownerAddress - The user's wallet address, used to generate a deterministic salt.
+ * @param {string} context - HKDF's info: what the key is for. The session key passes one that
+ *   names the session message version (`sessionKeyInfo`); the default is the original string.
  * @returns {Promise<CryptoKey>} A 256-bit AES-GCM key for encryption and decryption.
  */
-export async function deriveKeyFromEntropy(entropy: string, ownerAddress: string) {
+export async function deriveKeyFromEntropy(
+	entropy: string,
+	ownerAddress: string,
+	context: string = DEFAULT_KEY_CONTEXT,
+) {
 	if (!entropy) {
 		throw new Error('Entropy string cannot be empty.');
 	}
@@ -25,7 +33,7 @@ export async function deriveKeyFromEntropy(entropy: string, ownerAddress: string
 	// The salt ensures keys are unique per user, even if two users had the same password (not applicable here, but good practice).
 	// The info provides "domain separation," ensuring this key is only for this specific application purpose.
 	const salt = new TextEncoder().encode(ownerAddress);
-	const info = new TextEncoder().encode('SenseAI dApp v1 AES-GCM Key');
+	const info = new TextEncoder().encode(context);
 
 	const derivedKey = await window.crypto.subtle.deriveKey(
 		{ name: 'HKDF', hash: 'SHA-256', salt, info },

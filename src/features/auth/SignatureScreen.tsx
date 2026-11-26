@@ -78,6 +78,13 @@ export default function SignatureScreen({ onRetry }: SignatureScreenProps) {
 							Waiting for signature in your wallet...
 						</div>
 					)}
+					{status === 'unsupported-wallet' && (
+						<p className="text-sm text-destructive text-center" data-testid="unsupported-wallet">
+							This wallet cannot create the key that protects your history: it signs in a way that
+							gives a different key each time, or it signed for another account. Please connect
+							another wallet.
+						</p>
+					)}
 					{hasError && (
 						<>
 							<p className="text-sm text-destructive text-center">

@@ -13,14 +13,24 @@ import { useActiveAccount, useActiveWallet } from 'thirdweb/react';
 import { signMessage } from 'thirdweb/utils';
 import type { Wallet } from 'thirdweb/wallets';
 
+import { deriveSessionKey, SessionSignatureError } from '@/features/auth/sessionKey';
 import { buildSessionMessage } from '@/features/auth/sessionMessage';
-import { deriveKeyFromEntropy } from '@/lib/crypto';
 import { clearUserSession } from '@/store/chatSlice';
 import { useAppDispatch } from '@/store/hooks';
 
 import needsSessionDerivation from './sessionDerivation';
 
-type SessionStatus = 'disconnected' | 'deriving' | 'ready' | 'rejected' | 'error';
+/**
+ * `unsupported-wallet`: the wallet signed in a way that cannot give the same key twice (a
+ * smart account), or not as the connected account; no key is made (sessionKey.ts).
+ */
+export type SessionStatus =
+	| 'disconnected'
+	| 'deriving'
+	| 'ready'
+	| 'rejected'
+	| 'unsupported-wallet'
+	| 'error';
 
 interface SessionContextValue {
 	sessionKey: CryptoKey | null;
@@ -134,16 +144,19 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
 
 				// Names this build's site and chain and the account; built in sessionMessage and
 				// the same text on every visit, so the key can be derived again.
-				const entropy = await signMessage({
-					account,
-					message: buildSessionMessage({
-						mode: import.meta.env.MODE,
-						chainId: import.meta.env.VITE_CHAIN_ID,
-						walletAddress: account.address,
-					}),
+				const message = buildSessionMessage({
+					mode: import.meta.env.MODE,
+					chainId: import.meta.env.VITE_CHAIN_ID,
+					walletAddress: account.address,
 				});
+				const signature = await signMessage({ account, message });
 
-				const derivedKey = await deriveKeyFromEntropy(entropy, account.address);
+				// Refuses a signature that cannot give the same key twice (sessionKey.ts).
+				const derivedKey = await deriveSessionKey({
+					message,
+					signature,
+					walletAddress: account.address,
+				});
 
 				// Set owner + key together on SUCCESS only. ownerAddress is an effect dependency, so
 				// setting it before the await would, on a rejection, change a dep and auto-re-run the
@@ -156,7 +169,9 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
 				console.error('Failed to derive session key:', error);
 				setSessionKey(null);
 				const errorMessage = error instanceof Error ? error.message : String(error);
-				if (errorMessage.toLowerCase().includes('user rejected')) {
+				if (error instanceof SessionSignatureError) {
+					setStatus('unsupported-wallet');
+				} else if (errorMessage.toLowerCase().includes('user rejected')) {
 					setStatus('rejected');
 				} else {
 					setStatus('error');
