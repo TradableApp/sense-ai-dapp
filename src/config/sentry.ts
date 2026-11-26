@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/react';
 
 import { scrubErrorEvent, scrubTransactionEvent } from '@/config/sentryEvent';
+import withoutLaunchData from '@/lib/launchData';
 import { LIVE_PERFORMANCE_ENTRIES } from '@/lib/liveReasoning/performanceMarks';
 import scrubSecrets from '@/lib/scrubSecrets';
 
@@ -19,11 +20,18 @@ const ERROR_RATES: Record<string, number> = {
 type Breadcrumb = Sentry.Breadcrumb;
 type DataValue = NonNullable<Breadcrumb['data']>[string];
 
+/**
+ * A breadcrumb's text: without Telegram launch data first (a navigation records paths relative
+ * to the page, query and fragment included, which the secret scrub leaves as they are), then
+ * scrubbed.
+ */
+const scrubText = (text: string) => scrubSecrets(withoutLaunchData(text));
+
 /** A breadcrumb's data with strings scrubbed and anything nested dropped. */
 function scrubData(data: Record<string, DataValue>): Record<string, DataValue> {
 	return Object.fromEntries(
 		Object.entries(data).flatMap(([key, value]): [string, DataValue][] => {
-			if (typeof value === 'string') return [[key, scrubSecrets(value)]];
+			if (typeof value === 'string') return [[key, scrubText(value)]];
 			if (typeof value === 'number' || typeof value === 'boolean') return [[key, value]];
 			return [];
 		}),
@@ -43,7 +51,7 @@ export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {
 		const { message, data } = breadcrumb;
 		return {
 			...breadcrumb,
-			...(message !== undefined && { message: scrubSecrets(message) }),
+			...(message !== undefined && { message: scrubText(message) }),
 			...(data !== undefined && { data: scrubData(data) }),
 		};
 	} catch {
