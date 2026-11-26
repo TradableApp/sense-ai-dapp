@@ -150,21 +150,27 @@ function scrubSpan(span: SpanJson): SpanJson {
  * transaction's spans and on a span it sends on its own (an interaction's, named after the
  * element that was used, attributes included), which never reaches `beforeSendTransaction`.
  * The same scrub as a transaction's spans. The SDK cannot drop a span here (given nothing back
- * it sends the span as it was), so one that cannot be read is sent with its ids, times and op only.
+ * it sends the span as it was), so one that cannot be read is sent with its ids, times and op only,
+ * and one whose ids cannot be read either is sent empty.
  */
 export function scrubSpanJson(span: SpanJson): SpanJson {
 	try {
 		return scrubSpan(span);
 	} catch {
-		return {
-			span_id: span.span_id,
-			trace_id: span.trace_id,
-			parent_span_id: span.parent_span_id,
-			start_timestamp: span.start_timestamp,
-			timestamp: span.timestamp,
-			op: span.op,
-			data: {},
-		};
+		try {
+			return {
+				span_id: span.span_id,
+				trace_id: span.trace_id,
+				parent_span_id: span.parent_span_id,
+				start_timestamp: span.start_timestamp,
+				timestamp: span.timestamp,
+				op: span.op,
+				data: {},
+			};
+		} catch {
+			// Not even those can be read: an empty span, since a throw here is not the SDK's to catch.
+			return { data: {} } as SpanJson;
+		}
 	}
 }
 
