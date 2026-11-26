@@ -440,3 +440,21 @@ describe('conversation text in the chat renders inert', () => {
 		expect(reasoning.textContent).toContain('![t](https://img.example/t.png)');
 	});
 });
+
+describe('conversation text in the chat is kept out of analytics', () => {
+	// Autocapture records nothing inside `ph-no-capture`, and replay blocks it whole.
+	const isUnrecorded = (el: Element) => el.closest('.ph-no-capture') !== null;
+
+	it('marks the prompt, the answers, the live steps and the composer', () => {
+		live.views.set('42', liveView({ answer: { text: 'Prices rose.', answerMessageCID: 'b' } }));
+		live.provisional.add('42');
+
+		renderChat();
+
+		expect(isUnrecorded(screen.getByText('Where is BTC going?'))).toBe(true);
+		expect(isUnrecorded(screen.getByTestId('live-provisional-answer'))).toBe(true);
+		expect(isUnrecorded(screen.getByTestId('live-reasoning'))).toBe(true);
+		expect(isUnrecorded(composer())).toBe(true);
+		expect(isUnrecorded(screen.getByRole('log'))).toBe(true);
+	});
+});
