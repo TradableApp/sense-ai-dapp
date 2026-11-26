@@ -131,6 +131,17 @@ describe('fetchAndCacheConversations', () => {
 		expect(result.map(c => c.id)).toEqual(['c1']);
 	});
 
+	// Anything but a failure to decrypt is a fault: the list fails, as it did before rows
+	// that cannot be read were left out.
+	it('fails when a row fails for another reason than not decrypting', async () => {
+		mockDb.conversations.where.mockReturnValue({
+			toArray: vi.fn().mockResolvedValue([{ id: 'odd', ownerAddress: OWNER, encryptedData: 42 }]),
+		});
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+		await expect(fetchAndCacheConversations(sessionKey, OWNER)).rejects.toBeInstanceOf(TypeError);
+	});
+
 	it('returns empty array when no conversations exist', async () => {
 		mockDb.conversations.where.mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) });
 
@@ -196,6 +207,20 @@ describe('getMessagesForConversation', () => {
 		expect(result).toEqual([]);
 		// Left as it is: the sync replaces it if the conversation can be read from storage.
 		expect(mockDb.messageCache.put).not.toHaveBeenCalled();
+	});
+
+	it('fails when the stored messages fail for another reason than not decrypting', async () => {
+		mockDb.messageCache.get.mockResolvedValue({
+			ownerAddress: OWNER,
+			conversationId: 'c1',
+			encryptedData: 42,
+		});
+		mockDb.conversations.get.mockResolvedValue(undefined);
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+		await expect(getMessagesForConversation(sessionKey, OWNER, 'c1')).rejects.toBeInstanceOf(
+			TypeError,
+		);
 	});
 
 	it('collapses duplicate ids, keeping the content-bearing version', async () => {

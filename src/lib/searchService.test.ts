@@ -84,4 +84,38 @@ describe('search over rows stored under another key', () => {
 		expect(search('ethereum')).toEqual(['c9']);
 		expect(mockDb.searchIndex.put).toHaveBeenCalledTimes(1);
 	});
+
+	// Anything but a failure to decrypt is a fault: the index is not rebuilt from part of the
+	// rows, and the stored index is not replaced.
+	it('does not rebuild the index when a row fails for another reason', async () => {
+		mockDb.conversations.where.mockReturnValue({
+			toArray: vi
+				.fn()
+				.mockResolvedValue([
+					{ encryptedData: await encryptData(sessionKey, { id: 'c1', title: 'Bitcoin outlook' }) },
+					{ encryptedData: 42 },
+				]),
+		});
+		mockDb.messageCache.where.mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) });
+
+		await initializeSearch(sessionKey, OWNER);
+
+		expect(mockDb.searchIndex.put).not.toHaveBeenCalled();
+		expect(console.error).toHaveBeenCalledWith(
+			'Failed to sync search index:',
+			expect.any(TypeError),
+		);
+	});
+
+	it('does not replace the stored index when it fails for another reason', async () => {
+		mockDb.searchIndex.get.mockResolvedValue({ encryptedData: 42 });
+
+		await mergeSearchIndexDeltas(sessionKey, OWNER, [{ m9: { cid: 'c9', c: 'ethereum' } }]);
+
+		expect(mockDb.searchIndex.put).not.toHaveBeenCalled();
+		expect(console.error).toHaveBeenCalledWith(
+			'[searchService] Failed to merge search index deltas:',
+			expect.any(TypeError),
+		);
+	});
 });

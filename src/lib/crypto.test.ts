@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { decryptBytes, decryptData, deriveKeyFromEntropy, encryptData } from './crypto';
+import {
+	decryptBytes,
+	decryptData,
+	deriveKeyFromEntropy,
+	encryptData,
+	isUndecryptable,
+} from './crypto';
 
 const ENTROPY = 'test-entropy-signature-0xdeadbeef';
 const OWNER = '0xabc123def456abc123def456abc123def456abc1';
@@ -157,5 +163,42 @@ describe('decryptBytes', () => {
 		const key = await deriveKeyFromEntropy(ENTROPY, OWNER);
 
 		await expect(decryptBytes(key, 'nodothere')).rejects.toThrow('Invalid encrypted data format.');
+	});
+});
+
+// Only a failure to decrypt makes stored data "unreadable"; any other error is a fault and is
+// left to propagate.
+describe('isUndecryptable', () => {
+	const failureOf = (promise: Promise<unknown>) =>
+		promise.then(
+			() => {
+				throw new Error('expected a failure');
+			},
+			(error: unknown) => error,
+		);
+
+	it('is true for data sealed under another key', async () => {
+		const key = await deriveKeyFromEntropy(ENTROPY, OWNER);
+		const other = await deriveKeyFromEntropy('another-entropy', OWNER);
+		const sealed = await encryptData(other, { a: 1 });
+
+		expect(isUndecryptable(await failureOf(decryptData(key, sealed)))).toBe(true);
+	});
+
+	it('is true for text that is not sealed data', async () => {
+		const key = await deriveKeyFromEntropy(ENTROPY, OWNER);
+
+		expect(isUndecryptable(await failureOf(decryptData(key, 'nodothere')))).toBe(true);
+		expect(isUndecryptable(await failureOf(decryptData(key, '%%%.%%%')))).toBe(true);
+		expect(isUndecryptable(await failureOf(decryptData(key, 'not.ciphertext')))).toBe(true);
+	});
+
+	it('is false for any other error', async () => {
+		const key = await deriveKeyFromEntropy(ENTROPY, OWNER);
+
+		expect(isUndecryptable(await failureOf(decryptData(key, 42 as unknown as string)))).toBe(false);
+		expect(isUndecryptable(new TypeError('a bug'))).toBe(false);
+		expect(isUndecryptable(new SyntaxError('bad JSON'))).toBe(false);
+		expect(isUndecryptable('OperationError')).toBe(false);
 	});
 });
