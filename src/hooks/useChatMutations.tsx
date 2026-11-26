@@ -19,7 +19,17 @@ import { encryptData } from '@/lib/crypto';
 import eciesEncrypt from '@/lib/ecies';
 import type { FeeTokenCheckState, PaidAction } from '@/lib/feeTokenCheck';
 import { CANCEL_ACTION, REFUND_ACTION, refusedTransferMessage } from '@/lib/feeTokenRefusal';
+import { NOTHING_REFUNDED_MESSAGE, NothingRefundedError } from '@/lib/nothingRefunded';
 import { PaymentSwitchedOffError } from '@/lib/paymentGate';
+import {
+	BRANCH_ACTION,
+	METADATA_ACTION,
+	REGENERATE_ACTION,
+	revertedMessage,
+	SEND_MESSAGE_ACTION,
+	throwIfReverted,
+	TransactionRevertedError,
+} from '@/lib/revertedTransaction';
 
 import { getTokenBalanceQueryKey } from './useTokenBalance';
 
@@ -28,6 +38,55 @@ type EvmLog = {
 	topics: [`0x${string}`, ...`0x${string}`[]];
 	data: `0x${string}`;
 };
+
+type SendOptions = Parameters<typeof sendAndConfirmTransaction>[0];
+
+/**
+ * Sends a transaction and waits for its receipt, which thirdweb resolves whether the
+ * transaction succeeded or reverted: anything but `success` throws `TransactionRevertedError`
+ * for `action`, so nothing after it runs as if it had happened. The only sender here (the
+ * receipt-status guard).
+ */
+async function sendConfirmed(
+	transaction: SendOptions['transaction'],
+	account: SendOptions['account'],
+	action: string,
+): ReturnType<typeof sendAndConfirmTransaction> {
+	const receipt = await sendAndConfirmTransaction({ transaction, account });
+	throwIfReverted(receipt, action);
+	return receipt;
+}
+
+/**
+ * Whether the receipt carries the escrow's `PaymentRefunded` for `answerMessageId`. The escrow
+ * returns without reverting for an id it holds no payment under, so a successful receipt alone
+ * does not say anything was refunded.
+ */
+export function receiptRefunded(
+	logs: readonly EvmLog[],
+	escrowAddress: string,
+	escrowAbi: readonly unknown[],
+	answerMessageId: number | string,
+): boolean {
+	const topic = toEventSelector(
+		getAbiItem({ abi: escrowAbi, name: 'PaymentRefunded' } as never) as AbiEvent,
+	);
+	return logs.some(log => {
+		if (log.address.toLowerCase() !== escrowAddress.toLowerCase() || log.topics[0] !== topic) {
+			return false;
+		}
+		try {
+			const { args } = decodeEventLog({
+				abi: escrowAbi as never,
+				topics: log.topics,
+				data: log.data,
+			}) as unknown as { args: { escrowId: bigint } };
+			return args.escrowId === BigInt(answerMessageId);
+		} catch {
+			return false;
+		}
+	});
+}
 
 export async function createEncryptedPayloads(
 	sessionKey: CryptoKey,
@@ -147,6 +206,17 @@ export function buildErrorHandler(
 			return;
 		}
 		console.error(`Failed to ${action}:`, error);
+		if (error instanceof TransactionRevertedError) {
+			const { title, description } = revertedMessage(error.action);
+			toast.error(title, { description });
+			return;
+		}
+		if (error instanceof NothingRefundedError) {
+			toast.error(NOTHING_REFUNDED_MESSAGE.title, {
+				description: NOTHING_REFUNDED_MESSAGE.description,
+			});
+			return;
+		}
 		const errorMessage =
 			(error instanceof Error
 				? error.message
@@ -391,6 +461,18 @@ export default function useChatMutations() {
 		paymentGate.state.feeToken,
 	);
 
+	// A transaction that was mined spent gas and may have met a changed state (an answer that
+	// landed, a plan changed elsewhere) even when it reverted or did nothing, so the plan and the
+	// balance are read again before the failure is told.
+	const onFailure =
+		(action: string, queryKeysToRefresh: string[] = []) =>
+		(error: Error) => {
+			if (error instanceof TransactionRevertedError || error instanceof NothingRefundedError) {
+				genericOnSuccess(queryKeysToRefresh);
+			}
+			genericOnError(error, action);
+		};
+
 	// --- MUTATIONS ---
 
 	/**
@@ -451,10 +533,7 @@ export default function useChatMutations() {
 				method: 'initiatePrompt',
 				params: [conversationId || 0, encryptedPayload, roflEncryptedKey],
 			} as unknown as Parameters<typeof prepareContractCall>[0]);
-			const transactionReceipt = await sendAndConfirmTransaction({
-				transaction: tx,
-				account: activeAccount,
-			});
+			const transactionReceipt = await sendConfirmed(tx, activeAccount, SEND_MESSAGE_ACTION);
 			const promptSubmittedTopic = toEventSelector(
 				getAbiItem({ abi: contractConfig.agent.abi, name: 'PromptSubmitted' }) as AbiEvent,
 			);
@@ -484,7 +563,7 @@ export default function useChatMutations() {
 			// Immediate RPC update
 			genericOnSuccess();
 		},
-		onError: error => genericOnError(error, 'send message'),
+		onError: onFailure(SEND_MESSAGE_ACTION),
 	});
 
 	/**
@@ -545,10 +624,7 @@ export default function useChatMutations() {
 					roflEncryptedKey,
 				],
 			} as unknown as Parameters<typeof prepareContractCall>[0]);
-			const transactionReceipt = await sendAndConfirmTransaction({
-				transaction: tx,
-				account: activeAccount,
-			});
+			const transactionReceipt = await sendConfirmed(tx, activeAccount, REGENERATE_ACTION);
 			const eventTopic = toEventSelector(
 				getAbiItem({ abi: contractConfig.agent.abi, name: 'RegenerationRequested' }) as AbiEvent,
 			);
@@ -572,7 +648,7 @@ export default function useChatMutations() {
 			// Immediate RPC update
 			genericOnSuccess();
 		},
-		onError: error => genericOnError(error, 'regenerate response'),
+		onError: onFailure(REGENERATE_ACTION),
 	});
 
 	/**
@@ -619,10 +695,7 @@ export default function useChatMutations() {
 				method: 'initiateBranch',
 				params: [originalConversationId, branchPointMessageId, encryptedPayload, roflEncryptedKey],
 			} as unknown as Parameters<typeof prepareContractCall>[0]);
-			const transactionReceipt = await sendAndConfirmTransaction({
-				transaction: tx,
-				account: activeAccount,
-			});
+			const transactionReceipt = await sendConfirmed(tx, activeAccount, BRANCH_ACTION);
 			const eventTopic = toEventSelector(
 				getAbiItem({ abi: contractConfig.agent.abi, name: 'BranchRequested' }) as AbiEvent,
 			);
@@ -646,7 +719,7 @@ export default function useChatMutations() {
 			// Immediate RPC update
 			genericOnSuccess();
 		},
-		onError: error => genericOnError(error, 'branch conversation'),
+		onError: onFailure(BRANCH_ACTION),
 	});
 
 	/**
@@ -695,17 +768,15 @@ export default function useChatMutations() {
 				params: [conversationId, encryptedPayload, roflEncryptedKey],
 			} as unknown as Parameters<typeof prepareContractCall>[0]);
 
-			await sendAndConfirmTransaction({
-				transaction: tx,
-				account: activeAccount,
-			});
+			// A reverted change throws here, so the history's save on this device never runs.
+			await sendConfirmed(tx, activeAccount, METADATA_ACTION);
 			return { conversationId };
 		},
 		onSuccess: () => {
 			// Immediate RPC update
 			genericOnSuccess();
 		},
-		onError: error => genericOnError(error, 'update conversation'),
+		onError: onFailure(METADATA_ACTION),
 	});
 
 	/**
@@ -734,10 +805,7 @@ export default function useChatMutations() {
 				params: [answerMessageId],
 			} as unknown as Parameters<typeof prepareContractCall>[0]);
 
-			await sendAndConfirmTransaction({
-				transaction: tx,
-				account: activeAccount!,
-			});
+			await sendConfirmed(tx, activeAccount!, CANCEL_ACTION);
 		},
 		onSuccess: () => {
 			toast.success('Prompt Cancelled', {
@@ -747,7 +815,7 @@ export default function useChatMutations() {
 			// Immediate RPC update
 			genericOnSuccess();
 		},
-		onError: error => genericOnError(error, CANCEL_ACTION),
+		onError: onFailure(CANCEL_ACTION),
 	});
 
 	/**
@@ -775,10 +843,17 @@ export default function useChatMutations() {
 				params: [answerMessageId],
 			} as unknown as Parameters<typeof prepareContractCall>[0]);
 
-			await sendAndConfirmTransaction({
-				transaction: tx,
-				account: activeAccount!,
-			});
+			const receipt = await sendConfirmed(tx, activeAccount!, REFUND_ACTION);
+			if (
+				!receiptRefunded(
+					receipt.logs as unknown as EvmLog[],
+					contractConfig.escrow.address,
+					contractConfig.escrow.abi as readonly unknown[],
+					answerMessageId,
+				)
+			) {
+				throw new NothingRefundedError();
+			}
 		},
 		onSuccess: () => {
 			toast.success('Refund Processed', {
@@ -788,7 +863,7 @@ export default function useChatMutations() {
 			// Immediate RPC update
 			genericOnSuccess();
 		},
-		onError: error => genericOnError(error, REFUND_ACTION),
+		onError: onFailure(REFUND_ACTION, ['stuckRequests']),
 	});
 
 	return {
