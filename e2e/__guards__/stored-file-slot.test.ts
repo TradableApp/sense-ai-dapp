@@ -11,7 +11,8 @@ import { E2E_DIR, stripComments } from './source-scan';
 
 /**
  * Every file the sync fetches that carries an identifier is checked against the slot it was
- * fetched for before it is used (`src/lib/storedFileSlot.ts`), and a conversation's messages
+ * fetched for before it is used (`src/lib/storedFileSlot.ts`), a conversation file against the
+ * wallet being synced too, and a conversation's messages
  * are stored under the conversation they were asked for. syncService.slots.test.ts proves the
  * behaviour; this keeps a later edit from fetching one of those files without the check.
  */
@@ -22,7 +23,7 @@ describe('the files the sync fetches', () => {
 	it.each([
 		[
 			'conversation',
-			/hydrate\(conv\.conversationCID\)\.then\(payload =>\s*inSlot\(\s*payload,\s*file => conversationFileFits\(file, conv\.id\),\s*'conversation',?\s*\)/,
+			/hydrate\(conv\.conversationCID\)\.then\(payload =>\s*inSlot\(\s*payload,\s*file => conversationFileFits\(file, conv\.id, ownerAddress\),\s*'conversation',?\s*\)/,
 		],
 		[
 			'metadata',
