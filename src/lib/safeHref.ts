@@ -19,3 +19,30 @@ export default function safeHref(url: string | null | undefined): string | null 
 		return null;
 	}
 }
+
+/**
+ * The URL a link made from conversation text may lead to: one `safeHref` accepts that carries
+ * no user name or password. `https://bank.example@other.example/` goes to `other.example`, and
+ * a reader takes the part before the `@` for the site, so such a URL is never a link.
+ */
+export function linkHref(url: string | null | undefined): string | null {
+	const href = safeHref(url);
+	if (!href) return null;
+	const { username, password } = new URL(href);
+	return username === '' && password === '' ? href : null;
+}
+
+/**
+ * Whether a link's own text already shows where it leads: the text, as written, is the host the
+ * browser will open or a URL on it. A host with a punycode label is never taken as shown: text
+ * in look-alike letters reads as another site, so the host is shown as the browser reads it.
+ */
+export function textShowsHost(text: string, href: string): boolean {
+	const { host, protocol } = new URL(href);
+	if (host.split('.').some(label => label.startsWith('xn--'))) return false;
+	const shown = text.trim().toLowerCase();
+	if (shown === host) return true;
+	return [`${protocol}//${host}`, host].some(
+		start => shown.startsWith(start) && /^[/?#]/.test(shown.slice(start.length)),
+	);
+}

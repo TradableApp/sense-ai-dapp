@@ -97,7 +97,7 @@ export default function NavMain({ items }: NavMainProps) {
 												type="button"
 												onClick={() => handleSelectConversation(child.id)}
 												className={cn(
-													'w-full text-left block truncate rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+													'ph-no-capture w-full text-left block truncate rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
 													location.pathname === '/chat' &&
 														child.id === activeConversationId &&
 														'bg-sidebar-accent text-sidebar-accent-foreground',

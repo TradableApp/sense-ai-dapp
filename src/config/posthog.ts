@@ -51,6 +51,9 @@ const PRIVACY_OPTIONS = {
 	capture_exceptions: false,
 	capture_performance: false,
 	enable_recording_console_log: false,
+	// Asked for, but the project's settings can turn console capture on over this: what stops it
+	// is that its script is never loaded (`disable_external_dependency_loading`, or the recorder
+	// alone with replay on).
 	logs: { captureConsoleLogs: false },
 	disable_surveys: true,
 	disable_conversations: true,

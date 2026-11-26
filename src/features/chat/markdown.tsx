@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Component, type ReactNode } from 'react';
 
 import type { Element, ElementContent } from 'hast';
 import ReactMarkdown, { type Components, type UrlTransform } from 'react-markdown';
@@ -6,7 +6,7 @@ import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
 import SafeLink from '@/components/ai/safe-link';
-import safeHref from '@/lib/safeHref';
+import { linkHref, textShowsHost } from '@/lib/safeHref';
 import remarkSafeContent from '@/lib/safeMarkdown';
 import { cn } from '@/lib/utils';
 
@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
  *   link only for an http or https URL;
  * - only the elements markdown writes for text are rendered (`allowedElements`); anything
  *   else is replaced by its content;
- * - `urlTransform` keeps an `href` only through `safeHref` and drops every other URL attribute;
+ * - `urlTransform` keeps an `href` only through `linkHref` and drops every other URL attribute;
  * - a link is a `SafeLink` (new tab, no referrer, host shown) and an image is never an element.
  *
  * The wrapper carries `ph-no-capture`, so analytics records nothing inside it.
@@ -56,7 +56,7 @@ const ALLOWED_ELEMENTS = [
 	'section',
 ];
 
-const urlTransform: UrlTransform = (url, key) => (key === 'href' ? safeHref(url) : null);
+const urlTransform: UrlTransform = (url, key) => (key === 'href' ? linkHref(url) : null);
 
 /** A task list's checkbox is the only input markdown writes. */
 const allowElement = (element: Element) =>
@@ -70,12 +70,6 @@ const textOf = (nodes: ReadonlyArray<ElementContent>): string =>
 		})
 		.join('');
 
-/** The host a link's text names, when its text is a URL or a bare host (an autolink). */
-function hostNamedBy(text: string): string | null {
-	const trimmed = text.trim();
-	const url = safeHref(trimmed) ?? safeHref(`http://${trimmed}`);
-	return url ? new URL(url).host : null;
-}
 
 interface MarkdownLinkProps {
 	href?: string;
@@ -84,10 +78,11 @@ interface MarkdownLinkProps {
 }
 
 function MarkdownLink({ href, children, node }: MarkdownLinkProps) {
-	const url = safeHref(href);
-	const named = node ? hostNamedBy(textOf(node.children)) : null;
+	const url = linkHref(href);
+	// The host is left out only after text that already shows it, as written (an autolink).
+	const shown = !!url && !!node && textShowsHost(textOf(node.children), url);
 	return (
-		<SafeLink href={url} showHost={!url || named !== new URL(url).host}>
+		<SafeLink href={url} showHost={!shown}>
 			{children}
 		</SafeLink>
 	);
@@ -107,6 +102,47 @@ const COMPONENTS: Record<'inline' | 'block', Components> = {
 	block: { a: MarkdownLink, img: NoImage },
 };
 
+interface PlainTextFallbackProps {
+	text: string;
+	children: ReactNode;
+}
+
+/**
+ * Shows the text as it was written when rendering it as markdown throws (text nested deeper
+ * than the parser or the renderer can follow), so one message cannot take the page down with
+ * it. Given a `key` of the text by its caller, so other text is tried afresh.
+ */
+class PlainTextFallback extends Component<PlainTextFallbackProps, { failed: boolean }> {
+	constructor(props: PlainTextFallbackProps) {
+		super(props);
+		this.state = { failed: false };
+	}
+
+	static getDerivedStateFromError() {
+		return { failed: true };
+	}
+
+	componentDidCatch(error: unknown) {
+		// The name only: the message of a parser's error can quote the text.
+		console.error(
+			'[markdown] Text shown plain; it could not be rendered:',
+			error instanceof Error ? error.name : typeof error,
+		);
+	}
+
+	render() {
+		const { text, children } = this.props;
+		const { failed } = this.state;
+		return failed ? (
+			<span data-markdown-fallback className="whitespace-pre-wrap break-words">
+				{text}
+			</span>
+		) : (
+			children
+		);
+	}
+}
+
 interface MarkdownTextProps {
 	children: string | null | undefined;
 	/** An answer runs its paragraphs inline; the user's prompt keeps them as blocks. */
@@ -122,16 +158,18 @@ export default function MarkdownText({ children, paragraphs, className }: Markdo
 				className,
 			)}
 		>
-			<ReactMarkdown
-				remarkPlugins={[remarkGfm, remarkBreaks, remarkSafeContent]}
-				allowedElements={ALLOWED_ELEMENTS}
-				allowElement={allowElement}
-				unwrapDisallowed
-				urlTransform={urlTransform}
-				components={COMPONENTS[paragraphs]}
-			>
-				{children ?? ''}
-			</ReactMarkdown>
+			<PlainTextFallback key={children ?? ''} text={children ?? ''}>
+				<ReactMarkdown
+					remarkPlugins={[remarkGfm, remarkBreaks, remarkSafeContent]}
+					allowedElements={ALLOWED_ELEMENTS}
+					allowElement={allowElement}
+					unwrapDisallowed
+					urlTransform={urlTransform}
+					components={COMPONENTS[paragraphs]}
+				>
+					{children ?? ''}
+				</ReactMarkdown>
+			</PlainTextFallback>
 		</div>
 	);
 }

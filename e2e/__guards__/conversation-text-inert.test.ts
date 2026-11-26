@@ -81,7 +81,7 @@ describe('conversation text renders inert', () => {
 		expect(renderer).not.toMatch(/rehypePlugins|skipHtml=\{false\}|allowDangerousHtml/);
 		expect(code(CLIPBOARD)).toMatch(/\.use\(remarkSafeContent\)\s*\.use\(remarkRehype\)/);
 		expect(code(CLIPBOARD)).not.toMatch(/allowDangerousHtml/);
-		expect(code(SAFE_MARKDOWN)).toMatch(/safeHref\(/);
+		expect(code(SAFE_MARKDOWN)).toMatch(/linkHref\(/);
 	});
 
 	it('writes no HTML from a string anywhere in src/', () => {
@@ -145,7 +145,7 @@ describe('conversation text renders inert', () => {
 		});
 
 		expect(rawLinks).toEqual([]);
-		expect(code(SAFE_LINK)).toMatch(/safeHref\(/);
+		expect(code(SAFE_LINK)).toMatch(/linkHref\(/);
 		expect(code(SAFE_LINK)).toMatch(/rel="noopener noreferrer nofollow"/);
 		expect(code(SAFE_LINK)).toMatch(/referrerPolicy="no-referrer"/);
 		expect(code(SAFE_LINK)).toMatch(/target="_blank"/);

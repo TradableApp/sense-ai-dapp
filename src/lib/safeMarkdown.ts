@@ -1,6 +1,6 @@
 import type { Definition, Nodes, Parent, PhrasingContent, Root, RootContent, Text } from 'mdast';
 
-import safeHref from '@/lib/safeHref';
+import { linkHref } from '@/lib/safeHref';
 
 /**
  * The markdown rule for conversation text, applied to the parsed tree before anything is
@@ -9,8 +9,8 @@ import safeHref from '@/lib/safeHref';
  * - an image, inline or by reference, becomes its alt text (inside a link it stays the link's
  *   text), so nothing is fetched by showing it;
  * - raw HTML becomes the text it was written as, never an element;
- * - a link, inline or by reference, keeps its URL only when `safeHref` accepts it (an absolute
- *   http or https URL, in its parsed form); any other link is replaced by its text;
+ * - a link, inline or by reference, keeps its URL only when `linkHref` accepts it (an absolute
+ *   http or https URL with no user name or password, in its parsed form); any other link is replaced by its text;
  * - link and image definitions are used to resolve references and are then dropped.
  *
  * The tree is rebuilt, not changed in place.
@@ -25,7 +25,7 @@ function definitionsIn(node: Nodes, found: Map<string, string | null>): Map<stri
 		const definition = node as Definition;
 		// The first definition of a label wins, as CommonMark resolves it.
 		if (!found.has(definition.identifier)) {
-			found.set(definition.identifier, safeHref(definition.url));
+			found.set(definition.identifier, linkHref(definition.url));
 		}
 	}
 	if ('children' in node) {
@@ -47,7 +47,7 @@ function sanitizeChildren(children: ReadonlyArray<RootContent>, urls: SafeUrls):
 				return [];
 			case 'link': {
 				const inner = sanitizeChildren(node.children, urls) as PhrasingContent[];
-				const url = safeHref(node.url);
+				const url = linkHref(node.url);
 				return url ? [{ ...node, url, title: null, children: inner }] : inner;
 			}
 			case 'linkReference': {

@@ -118,10 +118,10 @@ describe('live reasoning is an overlay in memory only', () => {
 		expect(offending(files, /dangerouslySetInnerHTML|innerHTML/)).toEqual([]);
 	});
 
-	it('turns a source URL into a link only through SafeLink, which applies safeHref', () => {
+	it('turns a source URL into a link only through SafeLink, which applies linkHref', () => {
 		const files = ['src/components/ai/source.tsx', 'src/components/ai/earlier-attempt.tsx'];
 
-		// Passing the URL to `Source` or `SafeLink` is fine: they apply safeHref themselves.
+		// Passing the URL to `Source` or `SafeLink` is fine: they apply linkHref themselves.
 		const rawLinks = ALL_SRC.flatMap(file => {
 			const lines = stripComments(read(file)).split('\n');
 			return lines.flatMap((line, i) =>
@@ -134,7 +134,7 @@ describe('live reasoning is an overlay in memory only', () => {
 
 		expect(rawLinks).toEqual([]);
 		files.forEach(file => expect(stripComments(read(file))).toMatch(/<SafeLink\b/));
-		expect(stripComments(read('src/components/ai/safe-link.tsx'))).toMatch(/safeHref\(/);
+		expect(stripComments(read('src/components/ai/safe-link.tsx'))).toMatch(/linkHref\(/);
 	});
 
 	it('has no second live path: the socket service, its mock and the Redux live reducers are gone', () => {
