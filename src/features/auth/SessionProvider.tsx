@@ -15,6 +15,7 @@ import type { Wallet } from 'thirdweb/wallets';
 
 import { deriveSessionKey, SessionSignatureError } from '@/features/auth/sessionKey';
 import { buildSessionMessage } from '@/features/auth/sessionMessage';
+import { isSessionOriginAllowed } from '@/features/auth/sessionOrigin';
 import { reportUnsupportedSignature } from '@/lib/sessionKeyReport';
 import { clearUserSession } from '@/store/chatSlice';
 import { useAppDispatch } from '@/store/hooks';
@@ -24,6 +25,8 @@ import needsSessionDerivation from './sessionDerivation';
 /**
  * `unsupported-wallet`: the wallet signed in a way that cannot give the same key twice (a
  * smart account), or not as the connected account; no key is made (sessionKey.ts).
+ * `wrong-site`: the page is not where this build may ask for the signature (sessionOrigin.ts);
+ * nothing is asked.
  */
 export type SessionStatus =
 	| 'disconnected'
@@ -31,6 +34,7 @@ export type SessionStatus =
 	| 'ready'
 	| 'rejected'
 	| 'unsupported-wallet'
+	| 'wrong-site'
 	| 'error';
 
 interface SessionContextValue {
@@ -125,6 +129,13 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
 			// Connected but with no usable key for this account, and the tab isn't visible — wait
 			// (don't prompt a signature). The effect re-runs when the tab becomes visible.
 			if (!isTabVisible) {
+				return;
+			}
+
+			// --- GUARD CLAUSE 4: NOT THE SITE THE MESSAGE NAMES ---
+			// The message says to sign it only on its site; it is never asked for elsewhere.
+			if (!isSessionOriginAllowed(import.meta.env.MODE, window.location.origin)) {
+				setStatus('wrong-site');
 				return;
 			}
 

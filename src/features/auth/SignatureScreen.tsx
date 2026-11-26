@@ -63,8 +63,9 @@ export default function SignatureScreen({ onRetry }: SignatureScreenProps) {
 					</p>
 					{SESSION_HOST && (
 						<p className="text-sm text-[#eeeef0] mt-3 px-2" data-testid="session-message-site">
-							Your wallet will show a message that names {SESSION_HOST} on its first line. Sign it
-							only if it does, and only while you are on {SESSION_HOST}.
+							If your wallet shows the message before you sign, check that it names {SESSION_HOST},
+							and sign it only while you are on {SESSION_HOST}. A wallet you sign in to with email,
+							a social account or a passkey signs it without showing it.
 						</p>
 					)}
 					<p className="text-xs text-muted-foreground/60 text-center mt-4">
@@ -77,6 +78,18 @@ export default function SignatureScreen({ onRetry }: SignatureScreenProps) {
 							<Loader2 className="mr-2 size-4 animate-spin" />
 							Waiting for signature in your wallet...
 						</div>
+					)}
+					{status === 'wrong-site' && SESSION_SITE && (
+						<p className="text-sm text-[#eeeef0] text-center" data-testid="wrong-site">
+							SenseAI is at{' '}
+							<a
+								href={SESSION_SITE}
+								className="font-medium text-green-400 underline underline-offset-4"
+							>
+								{SESSION_HOST}
+							</a>
+							. Open it there to unlock your history: no signature is asked for on this page.
+						</p>
 					)}
 					{status === 'unsupported-wallet' && (
 						<p className="text-sm text-destructive text-center" data-testid="unsupported-wallet">
