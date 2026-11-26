@@ -1,8 +1,57 @@
-import posthog from 'posthog-js';
+import posthog, { type PostHogConfig } from 'posthog-js';
 
 import { loadState } from '@/lib/browserStorage';
 
 export const INTERNAL_DOMAINS = ['tradable.app'];
+
+/**
+ * Session replay, off. No replay purpose is set for this app, and conversation text is decrypted
+ * on this device only. This one value is the switch: true turns replay on (and lets the SDK load
+ * its recorder from the analytics host), with everything below still applied to it.
+ */
+export const RECORD_SESSIONS = false;
+
+/** The replay recorder: the one script the SDK may load from the analytics host, with replay on. */
+const RECORDER_SCRIPT = /\/static\/(?:lazy-recorder|posthog-recorder)\.js(?:\?|$)/;
+
+/**
+ * What analytics may capture, the same before and after consent, set in code so a project
+ * setting cannot turn a channel on: no element text or attribute values in autocapture (and
+ * nothing at all inside `ph-no-capture`, which every container of conversation text carries);
+ * no heatmaps, dead clicks, exceptions, console logs, performance or network timing; no
+ * surveys, conversations, product tours or web experiments; and no script loaded from the
+ * analytics host, which is how the SDK would start a channel the project turned on (with replay
+ * on, the recorder alone, `RECORDER_SCRIPT`). Replay, if switched on, blocks every
+ * `ph-no-capture` element, masks all text and all inputs, and records no canvas, header, body or
+ * network request.
+ */
+const PRIVACY_OPTIONS = {
+	mask_all_text: true,
+	mask_all_element_attributes: true,
+	capture_heatmaps: false,
+	capture_dead_clicks: false,
+	capture_exceptions: false,
+	capture_performance: false,
+	enable_recording_console_log: false,
+	logs: { captureConsoleLogs: false },
+	disable_surveys: true,
+	disable_conversations: true,
+	disable_product_tours: true,
+	disable_web_experiments: true,
+	disable_session_recording: !RECORD_SESSIONS,
+	disable_external_dependency_loading: !RECORD_SESSIONS,
+	prepare_external_dependency_script: (script: HTMLScriptElement) =>
+		RECORDER_SCRIPT.test(script.src) ? script : null,
+	session_recording: {
+		maskAllInputs: true,
+		maskTextSelector: '*',
+		blockClass: 'ph-no-capture',
+		recordHeaders: false,
+		recordBody: false,
+		captureCanvas: { recordCanvas: false },
+		maskCapturedNetworkRequestFn: () => null,
+	},
+} satisfies Partial<PostHogConfig>;
 
 let isEnabled = false;
 
@@ -16,11 +65,11 @@ export function enablePosthogAfterConsent() {
 	try {
 		posthog.opt_in_capturing();
 		posthog.set_config({
-			autocapture: true,
+			// Clicks only: copied or cut text is never captured.
+			autocapture: { capture_copied_text: false },
 			capture_pageview: false,
 			capture_pageleave: true,
-			disable_session_recording: false,
-			session_recording: { maskAllInputs: true },
+			...PRIVACY_OPTIONS,
 		});
 
 		posthog.capture('$pageview', { $current_url: window.location.href });
@@ -56,12 +105,11 @@ export function initPosthog() {
 		capture_pageview: false,
 		autocapture: false,
 		capture_pageleave: false,
-		disable_session_recording: true,
 		opt_out_capturing_by_default: true,
 		opt_out_persistence_by_default: true,
-		session_recording: { maskAllInputs: true },
 		person_profiles: 'identified_only',
 		debug: false, // !IS_PROD
+		...PRIVACY_OPTIONS,
 	});
 
 	// Segment this data from the main app

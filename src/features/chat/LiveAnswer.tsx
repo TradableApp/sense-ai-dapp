@@ -58,7 +58,11 @@ export function ProvisionalMark() {
  */
 export function ProvisionalAnswer({ text }: { text: string }) {
 	return (
-		<div data-testid="live-provisional-answer" aria-live="off" className="space-y-1.5">
+		<div
+			data-testid="live-provisional-answer"
+			aria-live="off"
+			className="ph-no-capture space-y-1.5"
+		>
 			<Message from="assistant" answerState="provisional" className="items-start">
 				<MessageContent className="border border-dashed border-amber-500/40">
 					<MarkdownText paragraphs="inline">{text}</MarkdownText>
@@ -91,7 +95,7 @@ export function AssistantReasoning({ message, live, isThinking }: AssistantReaso
 	const hasReasoning = (steps?.length ?? 0) > 0;
 
 	return (
-		<div className="ml-10">
+		<div className="ph-no-capture ml-10">
 			<Reasoning
 				isStreaming={isThinking}
 				defaultOpen={false}

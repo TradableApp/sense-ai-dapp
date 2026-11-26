@@ -25,7 +25,7 @@ const countLabel = (steps: number, sources: number) =>
  */
 export default function EarlierAttempt({ steps, sources }: EarlierAttemptProps) {
 	return (
-		<Collapsible data-testid="reasoning-earlier-attempt" className="group/earlier">
+		<Collapsible data-testid="reasoning-earlier-attempt" className="ph-no-capture group/earlier">
 			<CollapsibleTrigger className="inline-flex items-center gap-2 rounded-md px-2 py-1 -ml-2 text-xs font-medium uppercase tracking-wide text-muted-foreground transition-[color,transform] duration-150 hover:text-foreground hover:translate-x-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:translate-x-0 motion-reduce:transition-none motion-reduce:hover:translate-x-0">
 				<HistoryIcon className="size-3.5" aria-hidden />
 				<span>Earlier attempt</span>

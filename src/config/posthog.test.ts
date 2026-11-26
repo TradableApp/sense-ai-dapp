@@ -36,6 +36,7 @@ const PRIVACY = {
 	disable_web_experiments: true,
 	disable_session_recording: true,
 	disable_external_dependency_loading: true,
+	prepare_external_dependency_script: expect.any(Function),
 	session_recording: {
 		maskAllInputs: true,
 		maskTextSelector: '*',
@@ -100,6 +101,21 @@ describe('PostHog options', () => {
 
 		const { maskCapturedNetworkRequestFn } = posthog.set_config.mock.calls[0][0].session_recording;
 		expect(maskCapturedNetworkRequestFn({ name: 'https://graph.example/q' })).toBeNull();
+	});
+
+	it('would load the replay recorder alone from the analytics host', async () => {
+		const { enablePosthogAfterConsent } = await load();
+
+		enablePosthogAfterConsent();
+
+		const prepare = posthog.set_config.mock.calls[0][0].prepare_external_dependency_script;
+		const script = (src: string) => Object.assign(document.createElement('script'), { src });
+		const recorder = script('https://eu-assets.i.posthog.com/static/lazy-recorder.js?v=1');
+		expect(prepare(recorder)).toBe(recorder);
+		['logs', 'surveys', 'toolbar', 'exception-autocapture', 'dead-clicks-autocapture'].forEach(
+			kind =>
+				expect(prepare(script(`https://eu-assets.i.posthog.com/static/${kind}.js?v=1`))).toBeNull(),
+		);
 	});
 
 	it('keeps replay off unless the one switch is changed', async () => {

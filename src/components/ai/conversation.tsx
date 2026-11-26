@@ -26,7 +26,7 @@ interface ConversationScrollButtonProps {
 export function Conversation({ className, ...props }: ConversationProps) {
 	return (
 		<StickToBottom
-			className={cn('relative flex-1 overflow-y-auto', className)}
+			className={cn('ph-no-capture relative flex-1 overflow-y-auto', className)}
 			initial="smooth"
 			resize="smooth"
 			role="log"
