@@ -67,6 +67,7 @@ export async function checkSessionKey(
 	} catch (error) {
 		if (!isConstraintError(error)) throw error;
 		// A record gone again by now was compared with nothing, so nothing is known to differ.
+		// Nothing was stored by this call either; the next session writes it.
 		return (await readCheck(sessionKey, id)) ?? 'written';
 	}
 }

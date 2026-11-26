@@ -71,7 +71,8 @@ export function canonicalSignature(signature: string): Hex {
 	return serializeSignature({
 		r: parsed.r,
 		s: isHighS ? (`0x${(SECP256K1_N - s).toString(16).padStart(64, '0')}` as Hex) : parsed.s,
-		yParity: isHighS ? 1 - parsed.yParity : parsed.yParity,
+		// The other valid signature for the same r: s becomes n - s and the parity flips.
+		yParity: (isHighS ? 1 - parsed.yParity : parsed.yParity) as 0 | 1,
 	});
 }
 
