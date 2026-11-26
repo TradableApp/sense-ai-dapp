@@ -382,4 +382,14 @@ describe('scrubSpanJson', () => {
 		expect(scrubbed).toMatchObject({ span_id: SPAN_ID, trace_id: TRACE_ID, start_timestamp: 1 });
 		expect(leaks(scrubbed)).toEqual([]);
 	});
+
+	it('gives back an empty span when no field of it can be read', () => {
+		const unreadable = new Proxy({} as SpanJson, {
+			get() {
+				throw new Error(`cannot read a span that names ${RPC}`);
+			},
+		});
+
+		expect(scrubSpanJson(unreadable)).toEqual({ data: {} });
+	});
 });
