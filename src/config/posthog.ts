@@ -1,13 +1,15 @@
-import posthog, { type PostHogConfig } from 'posthog-js';
+import posthog, { type CaptureResult, type PostHogConfig, type Properties } from 'posthog-js';
 
 import { loadState } from '@/lib/browserStorage';
+import withoutLaunchData from '@/lib/launchData';
 
 export const INTERNAL_DOMAINS = ['tradable.app'];
 
 /**
  * Session replay, off. No replay purpose is set for this app, and conversation text is decrypted
  * on this device only. This one value is the switch: true turns replay on (and lets the SDK load
- * its recorder from the analytics host), with everything below still applied to it.
+ * its recorder from the analytics host, and ask for its feature flags and remote configuration),
+ * with everything below still applied to it.
  */
 export const RECORD_SESSIONS = false;
 
@@ -40,6 +42,32 @@ function isRecorderScript(src: string): boolean {
 	}
 }
 
+/** The properties given, each string without Telegram launch data (`withoutLaunchData`). */
+function propertiesWithoutLaunchData(properties: Properties): Properties {
+	return Object.fromEntries(
+		Object.entries(properties).map(([name, value]) => [
+			name,
+			typeof value === 'string' ? withoutLaunchData(value) : value,
+		]),
+	);
+}
+
+/**
+ * An event as it is sent: the SDK copies the page URL into its properties (`$current_url`,
+ * `$session_entry_url`) and its person properties (`$set_once`: `$current_url`,
+ * `$initial_current_url`), and a Mini App's page URL carries Telegram's launch data. Every string
+ * property of the event, `$set` and `$set_once` is sent without it.
+ */
+export function withoutLaunchDataInEvent(event: CaptureResult | null): CaptureResult | null {
+	if (!event) return event;
+	return {
+		...event,
+		properties: propertiesWithoutLaunchData(event.properties),
+		...(event.$set && { $set: propertiesWithoutLaunchData(event.$set) }),
+		...(event.$set_once && { $set_once: propertiesWithoutLaunchData(event.$set_once) }),
+	};
+}
+
 /**
  * What analytics may capture, the same before and after consent, set in code so a project
  * setting cannot turn a channel on: no element text or attribute values in autocapture (and
@@ -49,7 +77,10 @@ function isRecorderScript(src: string): boolean {
  * analytics host, which is how the SDK would start a channel the project turned on (with replay
  * on, the recorder alone, `isRecorderScript`). Replay, if switched on, blocks every
  * `ph-no-capture` element, masks all text and all inputs, and records no canvas, header, body or
- * network request.
+ * network request. Every event is sent without Telegram launch data (`withoutLaunchDataInEvent`).
+ * With replay off, the SDK asks for no feature flags and no remote configuration: nothing here
+ * reads a flag, and the flag request's person properties carry the first page URL and are not
+ * passed through `before_send` (with replay on, the recorder's settings come from that request).
  */
 const PRIVACY_OPTIONS = {
 	mask_all_text: true,
@@ -71,6 +102,8 @@ const PRIVACY_OPTIONS = {
 	disable_external_dependency_loading: !RECORD_SESSIONS,
 	prepare_external_dependency_script: (script: HTMLScriptElement) =>
 		isRecorderScript(script.src) ? script : null,
+	before_send: withoutLaunchDataInEvent,
+	advanced_disable_flags: !RECORD_SESSIONS,
 	session_recording: {
 		maskAllInputs: true,
 		maskTextSelector: '*',
