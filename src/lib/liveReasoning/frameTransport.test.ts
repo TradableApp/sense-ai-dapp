@@ -60,18 +60,27 @@ const ok = (chunks: string[], opts?: { hold?: boolean }): StreamResponse => ({
 function heldBody(chunks: string[], openMs: number, { cut = false } = {}) {
 	const encoder = new TextEncoder();
 	const queue = [...chunks];
+	let wait: ReturnType<typeof setTimeout> | null = null;
+	let release: () => void = () => undefined;
+	let cancelled = false;
 	return {
 		getReader: () => ({
 			read: async () => {
 				const next = queue.shift();
 				if (next !== undefined) return { done: false, value: encoder.encode(next) };
-				await new Promise(resolve => {
-					setTimeout(resolve, openMs);
+				await new Promise<void>(resolve => {
+					release = resolve;
+					wait = setTimeout(resolve, openMs);
 				});
-				if (cut) throw new TypeError('network error');
+				if (cut && !cancelled) throw new TypeError('network error');
 				return { done: true, value: undefined };
 			},
-			cancel: async () => undefined,
+			// A cancelled read ends at once and leaves no timer behind, as a real body does.
+			cancel: async () => {
+				cancelled = true;
+				if (wait) clearTimeout(wait);
+				release();
+			},
 		}),
 	} as unknown as ReadableStream<Uint8Array>;
 }

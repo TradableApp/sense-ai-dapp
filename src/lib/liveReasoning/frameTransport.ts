@@ -6,7 +6,8 @@
  *   200          read `frame` events until the server ends the response, then reconnect: at
  *                once when the cursor moved, or when nothing came and the response had been
  *                open `HELD_OPEN_MS` (the server ended it at its lifetime); after the server's
- *                `retry:` when nothing came and it ended sooner; with the backoff when something came and the cursor did not move, and after
+ *                `retry:` when nothing came and it ended sooner; with the backoff when
+ *                something came and the cursor did not move, and after
  *                `MAX_STALLED_CONNECTIONS` such connections in a row, stop as `finished`
  *   404/429/503  retry after `Retry-After` (never sooner than `MIN_RETRY_MS`)
  *   400/403/410  stop for good (`bad-request`, `proof-refused`, `finished`)
@@ -428,6 +429,8 @@ export function startFrameStream(options: FrameStreamOptions): FrameStreamHandle
 					// Nothing came (a quiet poll, a heartbeat-only response). One the server held open
 					// is followed at once; one it ended sooner waits the pace the server set.
 					if (!outcome.held) return retryMs;
+					// `stalled` is left as it is: no frame came, so nothing shows the stream is healthy;
+					// only the cursor moving ends that count.
 					failures = 0;
 					return 0;
 				}
