@@ -6,7 +6,7 @@ import * as Sentry from '@sentry/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { initSentry, scrubBreadcrumb } from './sentry';
-import { scrubErrorEvent, scrubTransactionEvent } from './sentryEvent';
+import { scrubErrorEvent, scrubSpanJson, scrubTransactionEvent } from './sentryEvent';
 
 vi.mock('@sentry/react', () => ({
 	init: vi.fn(),
@@ -113,6 +113,29 @@ describe('initSentry', () => {
 				beforeSendTransaction: scrubTransactionEvent,
 			}),
 		);
+	});
+
+	it('scrubs every span before it is sent, also one sent outside a transaction', () => {
+		vi.stubEnv('VITE_SENTRY_DSN', 'https://public@sentry.example/1');
+
+		initSentry();
+
+		expect(Sentry.init).toHaveBeenCalledWith(
+			expect.objectContaining({ beforeSendSpan: scrubSpanJson }),
+		);
+	});
+
+	// Interaction spans are on by default and sent on their own, in a span envelope: the
+	// installed SDK runs beforeSendSpan there, and keeps the span as it was if given nothing.
+	it('relies on the installed SDK running beforeSendSpan on spans sent on their own', () => {
+		const fromBrowser = createRequire(require.resolve('@sentry/browser'));
+		const core = path.dirname(fromBrowser.resolve('@sentry/core/package.json'));
+		const envelope = readFileSync(path.join(core, 'build/esm/envelope.js'), 'utf8');
+		const span = readFileSync(path.join(core, 'build/esm/tracing/sentrySpan.js'), 'utf8');
+
+		expect(envelope).toMatch(/const \{ beforeSendSpan, ignoreSpans \} = client\?\.getOptions\(\)/);
+		expect(envelope).toMatch(/beforeSendSpan\(spanJson\)/);
+		expect(span).toMatch(/sendSpanEnvelope\(createSpanEnvelope\(\[this\], client\)\)/);
 	});
 
 	describe('the live reasoning timing marks', () => {
