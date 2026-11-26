@@ -37,6 +37,8 @@ const PRIVACY = {
 	disable_session_recording: true,
 	disable_external_dependency_loading: true,
 	prepare_external_dependency_script: expect.any(Function),
+	before_send: expect.any(Function),
+	advanced_disable_flags: true,
 	session_recording: {
 		maskAllInputs: true,
 		maskTextSelector: '*',
@@ -138,5 +140,77 @@ describe('PostHog options', () => {
 		initPosthog();
 
 		expect(posthog.set_config.mock.calls[0][0]).toMatchObject(PRIVACY);
+	});
+});
+
+// Telegram opens the dApp as a Mini App with launch parameters in the page URL: the user and a
+// signed hash. The SDK copies the page URL into several properties of every event.
+describe('Telegram launch data', () => {
+	const LAUNCH =
+		'#tgWebAppData=user%3D%257B%2522id%2522%253A123456789%257D%26hash%3Dabc&tgWebAppVersion=7.0';
+	const event = () => ({
+		uuid: 'u1',
+		event: '$pageview',
+		properties: {
+			$current_url: `https://app.example/chat?tgWebAppStartParam=ref42${LAUNCH}`,
+			$session_entry_url: `https://app.example/${LAUNCH}`,
+			$referrer: 'https://web.telegram.org/k/',
+			$pathname: '/chat',
+			$host: 'app.example',
+			$screen_height: 800,
+			app_name: 'SenseAI',
+		},
+		$set: { $current_url: `https://app.example/${LAUNCH}` },
+		$set_once: {
+			$initial_current_url: `https://app.example/${LAUNCH}`,
+			$current_url: `https://app.example/${LAUNCH}`,
+		},
+	});
+
+	it('is removed from every URL property of an event, its person properties included', async () => {
+		const { withoutLaunchDataInEvent } = await load();
+
+		const sent = withoutLaunchDataInEvent(event());
+
+		expect(JSON.stringify(sent)).not.toContain('tgWebApp');
+		expect(sent).toEqual({
+			...event(),
+			properties: {
+				...event().properties,
+				$current_url: 'https://app.example/chat',
+				$session_entry_url: 'https://app.example/',
+			},
+			$set: { $current_url: 'https://app.example/' },
+			$set_once: {
+				$initial_current_url: 'https://app.example/',
+				$current_url: 'https://app.example/',
+			},
+		});
+	});
+
+	it('leaves an event without it as it was, and does not change the event it was given', async () => {
+		const { withoutLaunchDataInEvent } = await load();
+		const plain = {
+			uuid: 'u2',
+			event: 'clicked',
+			properties: { $current_url: 'https://app.example/chat', n: 1 },
+		};
+		const given = event();
+		const before = JSON.stringify(given);
+
+		expect(withoutLaunchDataInEvent(plain)).toEqual(plain);
+		withoutLaunchDataInEvent(given);
+		expect(JSON.stringify(given)).toBe(before);
+		expect(withoutLaunchDataInEvent(null)).toBeNull();
+	});
+
+	it('is applied to every event, before and after consent', async () => {
+		consent.value = { analytics_storage: true };
+		const { initPosthog, withoutLaunchDataInEvent } = await load();
+
+		initPosthog();
+
+		expect(posthog.init.mock.calls[0][1].before_send).toBe(withoutLaunchDataInEvent);
+		expect(posthog.set_config.mock.calls[0][0].before_send).toBe(withoutLaunchDataInEvent);
 	});
 });
