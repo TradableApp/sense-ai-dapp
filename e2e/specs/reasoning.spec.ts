@@ -69,7 +69,8 @@ test.describe('Reasoning & sources rendering (T-REASON)', () => {
 		await expect(docsLink).toHaveAttribute('href', 'https://tradable.app/docs');
 		const refLink = freshChatPage.sourceLink('SenseAI Reference');
 		await expect(refLink).toBeVisible();
-		await expect(refLink).toHaveAttribute('href', 'https://senseai.tradable.app');
+		// A link is the URL in the form the browser reads it (`safeHref`): a bare origin gains its `/`.
+		await expect(refLink).toHaveAttribute('href', 'https://senseai.tradable.app/');
 	});
 
 	test('T-REASON-02: a normal answer renders no reasoning disclosure', async ({
