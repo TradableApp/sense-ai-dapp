@@ -41,6 +41,25 @@ describe('scrubBreadcrumb', () => {
 		expect(scrubbed?.data).toEqual({ method: 'POST', url: '<url>', status_code: 429 });
 	});
 
+	// The first in-app navigation after a Telegram launch leaves from the launch URL, and a
+	// path relative to the page is not a URL the secret scrub can tell from text.
+	it('removes Telegram launch data from a navigation, relative paths included', () => {
+		const launch =
+			'#tgWebAppData=user%3D%257B%2522id%2522%253A123456789%257D%26hash%3Dabc&tgWebAppVersion=7.0';
+		const scrubbed = scrubBreadcrumb({
+			category: 'navigation',
+			data: { from: `/?tgWebAppStartParam=ref42${launch}`, to: '/chat' },
+		});
+
+		expect(scrubbed?.data).toEqual({ from: '/', to: '/chat' });
+	});
+
+	it('removes Telegram launch data from a message that is a URL', () => {
+		const scrubbed = scrubBreadcrumb({ category: 'console', message: '/chat#tgWebAppData=x' });
+
+		expect(scrubbed?.message).toBe('/chat');
+	});
+
 	it('removes the URL, the wallet and the call data from a console line, on every line', () => {
 		const message = `RPC Error from ${RPC}:\nrequests: [{"to":"${WALLET}","data":"${CALL_DATA}"}]`;
 		const breadcrumb = {
