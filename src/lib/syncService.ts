@@ -29,6 +29,8 @@ import { mergeSearchIndexDeltas } from './searchService';
 import {
 	conversationFileFits,
 	messageFileFits,
+	metadataFields,
+	metadataFileFits,
 	reportStoredFileMismatch,
 	searchDeltaFits,
 	type StoredFileKind,
@@ -454,6 +456,9 @@ export default async function syncWithRemote(
 						localConv.conversationMetadataCID === conv.conversationMetadataCID &&
 						// We also check timestamps to ensure we don't skip if the message list changed
 						localConv.lastMessageCreatedAt === conv.lastMessageCreatedAt &&
+						// A record stored while one of its files had not arrived is never skipped:
+						// the conversation is asked for again on every pass until they all have.
+						localConv.hydrationIncomplete !== true &&
 						// …and only honour the skip once the local message cache has actually
 						// caught up. A follow-up answer can still be a content-less placeholder
 						// even when the conv-level CIDs match (see conversationHasPendingMessage),
@@ -476,15 +481,17 @@ export default async function syncWithRemote(
 			}
 
 			// For each conversation, fetch its core data, metadata, and all its messages in parallel.
-			// The metadata file carries no identifier, so it cannot be checked against its slot.
+			// The metadata file carries no identifier, so it is held to its kind and its three fields.
 			const [convPayload, metadataPayload] = await Promise.all([
 				hydrate(conv.conversationCID).then(payload =>
 					inSlot(payload, file => conversationFileFits(file, conv.id), 'conversation'),
 				),
-				hydrate(conv.conversationMetadataCID),
+				hydrate(conv.conversationMetadataCID).then(payload =>
+					inSlot(payload, metadataFileFits, 'metadata'),
+				),
 			]);
 			const convData = convPayload.value as StoredRecord | null;
-			const metadataData = metadataPayload.value as StoredRecord | null;
+			const metadataData = metadataFields(metadataPayload.value);
 
 			const messageHydrationPromises = (conv.messages || []).map(
 				async (msg: ConversationUpdate['messages'][number]) => {
@@ -573,6 +580,9 @@ export default async function syncWithRemote(
 						// Important: Store the CIDs in the encrypted payload so the optimization check works next time
 						conversationCID: conv.conversationCID,
 						conversationMetadataCID: conv.conversationMetadataCID,
+						// Set, and so read by the skip above, only while a file of this
+						// conversation was withheld or refused on this pass.
+						...(convUnavailablePayloads > 0 ? { hydrationIncomplete: true } : {}),
 				  }
 				: null;
 

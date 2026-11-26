@@ -8,13 +8,15 @@
  * - a message file carries its `id` and its `conversationId`;
  * - a search delta is `{ [messageId]: { cid: conversationId, c: keywords } }`, one key.
  * The conversation metadata file (`title`, `isDeleted`, `lastUpdatedAt`) carries no identifier,
- * so it is not checked here.
+ * so it cannot be tied to its conversation. What can be held is its kind: a file that carries a
+ * field only a conversation file or a message file has is refused (`metadataFileFits`), and only
+ * its three fields, each of its own type, are ever taken from it (`metadataFields`).
  *
  * Ids are compared as decimal strings, as the oracle writes them and the indexer serves them.
  */
 import * as Sentry from '@sentry/react';
 
-export type StoredFileKind = 'conversation' | 'message' | 'search-delta';
+export type StoredFileKind = 'conversation' | 'metadata' | 'message' | 'search-delta';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -44,6 +46,32 @@ export function searchDeltaFits(
 	if (keys.length !== 1 || keys[0] !== messageId) return false;
 	const entry = delta[messageId];
 	return isRecord(entry) && isId(entry.cid, conversationId);
+}
+
+/** Fields a conversation file or a message file carries and a metadata file never does. */
+const NOT_METADATA_FIELDS = ['id', 'conversationId', 'ownerAddress', 'role', 'content', 'parentCID'];
+
+export const metadataFileFits = (file: unknown): boolean =>
+	isRecord(file) && !NOT_METADATA_FIELDS.some(field => field in file);
+
+/** What a conversation record takes from its metadata file. */
+export interface MetadataFields {
+	title?: string;
+	isDeleted?: boolean;
+	lastUpdatedAt?: number;
+}
+
+/** The metadata file's three fields, each only when it has its own type; nothing else. */
+export function metadataFields(file: unknown): MetadataFields {
+	if (!isRecord(file)) return {};
+	const { title, isDeleted, lastUpdatedAt } = file;
+	return {
+		...(typeof title === 'string' ? { title } : {}),
+		...(typeof isDeleted === 'boolean' ? { isDeleted } : {}),
+		...(typeof lastUpdatedAt === 'number' && Number.isFinite(lastUpdatedAt)
+			? { lastUpdatedAt }
+			: {}),
+	};
 }
 
 const reported = new Set<StoredFileKind>();

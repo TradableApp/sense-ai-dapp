@@ -371,6 +371,8 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 	// gateway (the localnet IPFS gateway is not consulted for it).
 	const CID_ANSWER = `bafkr6i${'m'.repeat(52)}`;
 	const CID_CONV_FILE = `bafkr6i${'c'.repeat(52)}`;
+	// The metadata file has a slot of its own: a file of another kind is refused there.
+	const CID_META_FILE = `bafkr6i${'d'.repeat(52)}`;
 	const MIRROR = 'https://storage.googleapis.com/tradable-app-garrick-senseai-payloads/';
 	let sessionKey: CryptoKey;
 
@@ -387,7 +389,7 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 				{
 					id: CONV_ID,
 					conversationCID: CID_CONV_FILE,
-					conversationMetadataCID: CID_ANSWER,
+					conversationMetadataCID: CID_META_FILE,
 					lastMessageCreatedAt: '1700',
 					messages: [{ id: 'm-answer', messageCID: CID_ANSWER, createdAt: '1700' }],
 					promptRequests: [],
@@ -419,12 +421,17 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 			createdAt: 1_700_000,
 		});
 		const conversationFile = await encryptData(sessionKey, { id: CONV_ID });
+		const metadataFile = await encryptData(sessionKey, { title: 'conv', isDeleted: false });
+		const served = (url: string) => {
+			if (url.endsWith(CID_CONV_FILE)) return conversationFile;
+			return url.endsWith(CID_META_FILE) ? metadataFile : encrypted;
+		};
 		vi.stubGlobal(
 			'fetch',
 			vi.fn(async (url: string) => ({
 				ok: true,
 				status: 200,
-				text: async () => (String(url).endsWith(CID_CONV_FILE) ? conversationFile : encrypted),
+				text: async () => served(String(url)),
 			})),
 		);
 
@@ -478,11 +485,16 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 			title: 'conv',
 			createdAt: 1_700_000,
 		});
+		const metadataFile = await encryptData(sessionKey, { title: 'conv', isDeleted: false });
 		vi.stubGlobal(
 			'fetch',
 			vi.fn(async (url: string) =>
-				String(url) === `${MIRROR}${CID_ANSWER}`
-					? { ok: true, status: 200, text: async () => encrypted }
+				[`${MIRROR}${CID_ANSWER}`, `${MIRROR}${CID_META_FILE}`].includes(String(url))
+					? {
+							ok: true,
+							status: 200,
+							text: async () => (String(url).endsWith(CID_META_FILE) ? metadataFile : encrypted),
+					  }
 					: { ok: false, status: 503, text: async () => '' },
 			),
 		);
@@ -491,7 +503,7 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 				{
 					id: CONV_ID,
 					conversationCID: CID_ANSWER,
-					conversationMetadataCID: CID_ANSWER,
+					conversationMetadataCID: CID_META_FILE,
 					lastMessageCreatedAt: '1700',
 					messages: [{ id: 'm-answer', messageCID: CID_MISSING, createdAt: '1700' }],
 					promptRequests: [],

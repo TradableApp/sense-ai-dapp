@@ -25,6 +25,10 @@ describe('the files the sync fetches', () => {
 			/hydrate\(conv\.conversationCID\)\.then\(payload =>\s*inSlot\(\s*payload,\s*file => conversationFileFits\(file, conv\.id\),\s*'conversation',?\s*\)/,
 		],
 		[
+			'metadata',
+			/hydrate\(conv\.conversationMetadataCID\)\.then\(payload =>\s*inSlot\(payload, metadataFileFits, 'metadata'\),?\s*\)/,
+		],
+		[
 			'message',
 			/hydrate\(msg\.messageCID\)\.then\(payload =>\s*inSlot\(\s*payload,\s*file => messageFileFits\(file, msg\.id, conv\.id\),\s*'message',?\s*\)/,
 		],
@@ -40,6 +44,12 @@ describe('the files the sync fetches', () => {
 		expect(sync.match(/hydrate\(conv\.conversationCID\)/g) ?? []).toHaveLength(1);
 		expect(sync.match(/hydrate\(msg\.messageCID\)/g) ?? []).toHaveLength(1);
 		expect(sync.match(/hydrate\(msg\.searchDelta\?\.searchDeltaCID\)/g) ?? []).toHaveLength(1);
+	});
+
+	it('take only its own fields from the metadata file, and never skip an incomplete record', () => {
+		expect(sync).toContain('metadataFields(metadataPayload.value)');
+		expect(sync).toContain('localConv.hydrationIncomplete !== true &&');
+		expect(sync).toContain('convUnavailablePayloads > 0 ? { hydrationIncomplete: true } : {}');
 	});
 
 	it('store messages under the conversation asked for', () => {
