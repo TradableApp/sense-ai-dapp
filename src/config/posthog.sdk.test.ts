@@ -10,6 +10,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 const TELEGRAM_USER_ID = '123456789';
 const LAUNCH_URL = `/chat?tgWebAppStartParam=ref42#tgWebAppData=query_id%3DAAH%26user%3D%257B%2522id%2522%253A${TELEGRAM_USER_ID}%257D%26auth_date%3D1700000000%26hash%3Dabc123&tgWebAppVersion=7.0&tgWebAppPlatform=ios`;
 
+/** The SDK's own method that sends a request, by the name it keeps in the published bundle. */
+const SEND_REQUEST = '_send_request';
+
 type Request = { url: string; data?: unknown; callback?: (_response: unknown) => void };
 const requests: Request[] = [];
 
@@ -19,13 +22,13 @@ beforeAll(async () => {
 	const { default: posthog } = await import('posthog-js');
 	const sdk = posthog as unknown as Record<string, unknown>;
 	// Every request, an event's included, goes through this one; the test fails if it is gone.
-	expect(typeof sdk._send_request).toBe('function');
+	expect(typeof sdk[SEND_REQUEST]).toBe('function');
 	const record = (request: Request) => {
 		requests.push(JSON.parse(JSON.stringify(request)) as Request);
 		// Answered, so that a request the SDK waits on does not hold back the next one.
 		setTimeout(() => request.callback?.({ statusCode: 200, json: {} }), 0);
 	};
-	sdk._send_request = record;
+	sdk[SEND_REQUEST] = record;
 
 	const { initPosthog, enablePosthogAfterConsent } = await import('./posthog');
 	initPosthog();
@@ -34,7 +37,9 @@ beforeAll(async () => {
 	enablePosthogAfterConsent();
 	posthog.identify('0x70997970c51812dc3a010c7d01b50e0d17dc79c8', { plan: 'free' });
 	posthog.capture('clicked');
-	await new Promise(resolve => setTimeout(resolve, 200));
+	await new Promise<void>(resolve => {
+		setTimeout(resolve, 200);
+	});
 });
 
 afterAll(() => {

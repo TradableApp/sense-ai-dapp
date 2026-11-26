@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { withoutLaunchData } from './launchData';
+import withoutLaunchData from './launchData';
 
 // What Telegram appends when it opens the dApp as a Mini App: the user and a signed hash.
 const LAUNCH_DATA =
