@@ -18,6 +18,12 @@ describe('isSentryUrl', () => {
 		expect(isSentryUrl('https://sentry.io.example.test/api')).toBe(false);
 	});
 
+	it('does not take `ingest` in a query, or inside a longer word, for a local DSN', () => {
+		expect(isSentryUrl('https://example.test/collect?source=ingest')).toBe(false);
+		expect(isSentryUrl('https://example.test/ingestion/items')).toBe(false);
+		expect(isSentryUrl('https://ingest.example.test/api/1/envelope/')).toBe(true);
+	});
+
 	it('answers false for text that is not an address', () => {
 		expect(isSentryUrl('not an address')).toBe(false);
 	});
