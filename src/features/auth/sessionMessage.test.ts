@@ -2,17 +2,22 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { parseSiweMessage, validateSiweMessage } from 'viem/siwe';
 import { describe, expect, it } from 'vitest';
 
 import {
 	buildSessionMessage,
+	SESSION_ISSUED_AT,
 	SESSION_MESSAGE_VERSION,
+	SESSION_NONCE,
 	SessionMessageConfigError,
 	sessionSiteFor,
 } from '@/features/auth/sessionMessage';
 
-const WALLET = '0xabc123def456abc123def456abc123def456abc1';
-const OTHER_WALLET = '0x2222222222222222222222222222222222222222';
+// Hardhat's well-known account 0, in lower case and checksummed.
+const WALLET = '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266';
+const WALLET_CHECKSUMMED = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
+const OTHER_WALLET = '0x70997970c51812dc3a010c7d01b50e0d17dc79c8';
 
 const MAINNET = {
 	mode: 'mainnet',
@@ -20,26 +25,91 @@ const MAINNET = {
 	walletAddress: WALLET,
 };
 
+const MAINNET_STATEMENT =
+	'Sign this only on https://senseai.tradable.app. Your signature creates the key that ' +
+	'encrypts your SenseAI conversation history, and anyone who has the signature can read ' +
+	'that history. Never sign this message on any other site. Signing is free and sends no ' +
+	'transaction.';
+
+// EIP-4361's statement: reserved and unreserved URI characters and spaces, on one line.
+const STATEMENT_CHARACTERS = /^[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;= ]+$/;
+
 describe('buildSessionMessage', () => {
 	it('is this exact text for a mainnet build', () => {
 		expect(buildSessionMessage(MAINNET)).toBe(
 			[
-				'senseai.tradable.app asks you to sign this message with your account:',
-				'0xAbc123def456aBc123def456aBc123DEf456ABc1',
+				'senseai.tradable.app wants you to sign in with your Ethereum account:',
+				WALLET_CHECKSUMMED,
 				'',
-				'Sign this only on https://senseai.tradable.app. Your signature creates the key that ' +
-					'encrypts your SenseAI conversation history, and anyone who has the signature can ' +
-					'read that history. Never sign this message on any other site, or for anyone who ' +
-					'asks you to.',
+				MAINNET_STATEMENT,
 				'',
-				'Signing is free, sends no transaction and gives no permission to move your funds.',
-				'',
-				'Purpose: SenseAI conversation history encryption key',
-				'Site: https://senseai.tradable.app',
+				'URI: https://senseai.tradable.app',
+				'Version: 1',
 				'Chain ID: 8453',
-				'Message version: 2',
+				'Nonce: SenseAIHistoryKeyV3',
+				'Issued At: 2026-11-25T00:00:00.000Z',
 			].join('\n'),
 		);
+	});
+
+	it('parses as EIP-4361 to exactly the fields it was built from', () => {
+		expect(parseSiweMessage(buildSessionMessage(MAINNET))).toEqual({
+			domain: 'senseai.tradable.app',
+			address: WALLET_CHECKSUMMED,
+			statement: MAINNET_STATEMENT,
+			uri: 'https://senseai.tradable.app',
+			version: '1',
+			chainId: 8453,
+			nonce: 'SenseAIHistoryKeyV3',
+			issuedAt: new Date('2026-11-25T00:00:00.000Z'),
+		});
+	});
+
+	it('names the http scheme for a local site, and parses to it', () => {
+		const parsed = parseSiweMessage(
+			buildSessionMessage({ ...MAINNET, mode: 'localnet', chainId: '31337' }),
+		);
+
+		expect(parsed).toMatchObject({
+			scheme: 'http',
+			domain: 'localhost:3002',
+			uri: 'http://localhost:3002',
+			chainId: 31337,
+		});
+	});
+
+	it('is valid for the site it names and for no other', () => {
+		const parsed = parseSiweMessage(buildSessionMessage(MAINNET));
+
+		expect(
+			validateSiweMessage({ message: parsed, domain: 'senseai.tradable.app', address: WALLET }),
+		).toBe(true);
+		expect(validateSiweMessage({ message: parsed, domain: 'sense-ai-app.web.app' })).toBe(false);
+		expect(validateSiweMessage({ message: parsed, address: OTHER_WALLET })).toBe(false);
+	});
+
+	it('has a one-line statement in the characters EIP-4361 allows', () => {
+		['mainnet', 'testnet', 'localnet', 'test'].forEach(mode => {
+			const { statement } = parseSiweMessage(buildSessionMessage({ ...MAINNET, mode }));
+
+			expect(statement).toMatch(STATEMENT_CHARACTERS);
+			expect(statement).toContain('creates the key that encrypts');
+			expect(statement).toContain('Never sign this message on any other site');
+		});
+	});
+
+	it('carries the message version in a fixed nonce', () => {
+		expect(SESSION_MESSAGE_VERSION).toBe(3);
+		expect(SESSION_NONCE).toBe(`SenseAIHistoryKeyV${SESSION_MESSAGE_VERSION}`);
+		expect(SESSION_NONCE).toMatch(/^[A-Za-z0-9]{8,}$/);
+		expect(buildSessionMessage(MAINNET)).toContain(`\nNonce: ${SESSION_NONCE}\n`);
+	});
+
+	it('has a fixed issue time and no field that limits or names one request', () => {
+		const message = buildSessionMessage(MAINNET);
+
+		expect(SESSION_ISSUED_AT.toISOString()).toBe('2026-11-25T00:00:00.000Z');
+		expect(message).not.toMatch(/Expiration Time:|Not Before:|Request ID:|Resources:/);
 	});
 
 	it('is the same text every time for one wallet, site and chain', () => {
@@ -48,25 +118,16 @@ describe('buildSessionMessage', () => {
 
 	// Replacing the contract pair on a network keeps every user's key, so history from an
 	// earlier deployment can still be read.
-	it('is the same text whatever agent contract the build names', () => {
-		const withAgent = (agentAddress: string | undefined) =>
-			({ ...MAINNET, agentAddress } as typeof MAINNET);
-
-		const message = buildSessionMessage(MAINNET);
-		expect(buildSessionMessage(withAgent('0x00000000000000000000000000000000000000a1'))).toBe(
-			message,
-		);
-		expect(buildSessionMessage(withAgent(OTHER_WALLET))).toBe(message);
-		expect(buildSessionMessage(withAgent(undefined))).toBe(message);
-		expect(message).not.toMatch(/agent/i);
+	it('names no agent contract', () => {
+		expect(buildSessionMessage(MAINNET)).not.toMatch(/agent/i);
 	});
 
-	it('does not depend on how the addresses are written', () => {
+	it('does not depend on how the address is written', () => {
+		expect(buildSessionMessage({ ...MAINNET, walletAddress: WALLET_CHECKSUMMED })).toBe(
+			buildSessionMessage(MAINNET),
+		);
 		expect(
-			buildSessionMessage({
-				...MAINNET,
-				walletAddress: WALLET.toUpperCase().replace('0X', '0x'),
-			}),
+			buildSessionMessage({ ...MAINNET, walletAddress: `0x${WALLET.slice(2).toUpperCase()}` }),
 		).toBe(buildSessionMessage(MAINNET));
 	});
 
@@ -84,7 +145,10 @@ describe('buildSessionMessage', () => {
 		const testnet = buildSessionMessage({ ...MAINNET, mode: 'testnet' });
 
 		expect(testnet).not.toBe(buildSessionMessage(MAINNET));
-		expect(testnet).toContain('Sign this only on https://sense-ai-app-garrick.web.app.');
+		expect(parseSiweMessage(testnet)).toMatchObject({
+			domain: 'sense-ai-app-garrick.web.app',
+			uri: 'https://sense-ai-app-garrick.web.app',
+		});
 		expect(testnet).not.toContain('senseai.tradable.app');
 	});
 
@@ -92,24 +156,6 @@ describe('buildSessionMessage', () => {
 		expect(buildSessionMessage({ ...MAINNET, walletAddress: OTHER_WALLET })).not.toBe(
 			buildSessionMessage(MAINNET),
 		);
-	});
-
-	it('names the site on its first line and in the warning', () => {
-		const lines = buildSessionMessage(MAINNET).split('\n');
-
-		expect(lines[0].startsWith('senseai.tradable.app ')).toBe(true);
-		expect(lines[3]).toContain('Never sign this message on any other site');
-	});
-
-	it('carries the version', () => {
-		expect(SESSION_MESSAGE_VERSION).toBe(2);
-		expect(buildSessionMessage(MAINNET)).toMatch(/\nMessage version: 2$/);
-	});
-
-	it('holds no time and nothing random', () => {
-		const message = buildSessionMessage(MAINNET);
-
-		expect(message).not.toMatch(/nonce|issued|expir|\d{4}-\d{2}-\d{2}/i);
 	});
 
 	it('stops when the mode has no site', () => {
@@ -124,9 +170,10 @@ describe('buildSessionMessage', () => {
 		expect(() => buildSessionMessage({ ...MAINNET, chainId: '0x2105' })).toThrow(
 			SessionMessageConfigError,
 		);
-		expect(() => buildSessionMessage({ ...MAINNET, chainId: 'secret-value' })).not.toThrow(
-			/secret-value/,
-		);
+
+		const refuse = () => buildSessionMessage({ ...MAINNET, chainId: 'secret-value' });
+		expect(refuse).toThrow(SessionMessageConfigError);
+		expect(refuse).not.toThrow(/secret-value/);
 	});
 
 	it('stops on a wallet address that is not an address', () => {
@@ -139,6 +186,7 @@ describe('buildSessionMessage', () => {
 		['localnet', 'test'].forEach(mode => {
 			const message = buildSessionMessage({ ...MAINNET, mode, chainId: '31337' });
 
+			expect(message.startsWith('http://localhost:3002 wants you to sign in')).toBe(true);
 			expect(message).toContain('Sign this only on http://localhost:3002.');
 			expect(message).toContain('\nChain ID: 31337\n');
 		});
