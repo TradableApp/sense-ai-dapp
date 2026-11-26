@@ -99,13 +99,15 @@ describe('which pending payments are stuck', () => {
 	// The subgraph is not trusted for what is shown or offered: the amount and the time come
 	// from the same escrow read that gives the status.
 	it('takes the amount and the time made from the escrow, not the subgraph', async () => {
+		// Made at 1 s by the subgraph's word, so long refundable; at 200 s by the escrow's, so
+		// still inside its hour at NOW.
 		const listed: PendingPayment = { id: '1', amount: '999', createdAt: '1' };
 		const readEscrow = vi.fn(async () => entry(0, { amount: 42n, createdAt: 200n }));
 
 		const stuck = await verifyStuck([listed], readEscrow, OWNER, NOW);
 
 		expect(stuck).toEqual([
-			expect.objectContaining({ id: '1', amount: '42', createdAt: 200_000, isRefundable: true }),
+			expect.objectContaining({ id: '1', amount: '42', createdAt: 200_000, isRefundable: false }),
 		]);
 	});
 

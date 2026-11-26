@@ -2,13 +2,14 @@ import { isPastRefundWindow } from '@/lib/refund';
 
 /**
  * Which of a wallet's payments are stuck: pending in the subgraph and still held by the
- * escrow. The subgraph is read page by page (a heavy canceller can have more than a page of
- * payments it still lists as pending), and a failed read of the escrow fails the whole
- * answer: leaving that payment out would read as "nothing stuck" and hide money the user can
- * get back.
+ * escrow for this wallet. The subgraph only says which ids to ask about: whose payment it is,
+ * its amount, when it was made and whether it is still held are all read from the escrow. The
+ * subgraph is read page by page (a heavy canceller can have more than a page of payments it
+ * still lists as pending), and a failed read of the escrow fails the whole answer: leaving
+ * that payment out would read as "nothing stuck" and hide money the user can get back.
  */
 
-/** A pending payment as the subgraph lists it. */
+/** A pending payment as the subgraph lists it. Only its id is used. */
 export interface PendingPayment {
 	id: string;
 	amount: string;
@@ -37,6 +38,31 @@ export const STUCK_VERIFY_BATCH = 20;
 
 /** The escrow's status for a payment it still holds (`EscrowStatus.PENDING`). */
 const ESCROW_PENDING = 0;
+
+/** The escrow's `escrows(id)` entry: `(user, amount, createdAt, status)`, in that order. */
+export interface EscrowEntry {
+	user: string;
+	amount: bigint;
+	/** When it was made, in seconds (block time). */
+	createdAt: bigint;
+	status: number;
+}
+
+const isWhole = (value: unknown): value is bigint | number =>
+	typeof value === 'bigint' || (typeof value === 'number' && Number.isSafeInteger(value));
+
+/**
+ * The escrow's answer for one id, read field by field. Anything else throws, so the read
+ * fails (and the query with it) rather than listing a payment from an answer it cannot read.
+ */
+export function escrowEntryFrom(raw: unknown): EscrowEntry {
+	if (!Array.isArray(raw) || raw.length < 4) throw new TypeError('Unexpected escrow entry.');
+	const [user, amount, createdAt, status] = raw as unknown[];
+	if (typeof user !== 'string' || !isWhole(amount) || !isWhole(createdAt) || !isWhole(status)) {
+		throw new TypeError('Unexpected escrow entry.');
+	}
+	return { user, amount: BigInt(amount), createdAt: BigInt(createdAt), status: Number(status) };
+}
 
 /** The pending payments read, and how many pages it took. */
 export interface PendingPayments {
@@ -80,26 +106,33 @@ export const refundableAt = (stuck: readonly StuckPayment[], now: number): Stuck
 			: { ...payment, isRefundable: true },
 	);
 
-/** The candidates the escrow still holds; rejects if any read fails. */
+/**
+ * The candidates the escrow still holds for `owner` (compared without regard to letter case),
+ * with the amount and time made it holds them under; rejects if any read fails. A candidate
+ * held for another account is left out: a refund pays the escrow's user, not the caller.
+ */
 export async function verifyStuck(
 	candidates: readonly PendingPayment[],
-	readStatus: (_id: string) => Promise<number>,
+	readEscrow: (_id: string) => Promise<EscrowEntry>,
+	owner: string,
 	now: number,
 ): Promise<StuckPayment[]> {
-	const statuses: number[] = [];
+	const entries: EscrowEntry[] = [];
 	for (let start = 0; start < candidates.length; start += STUCK_VERIFY_BATCH) {
 		const batch = candidates.slice(start, start + STUCK_VERIFY_BATCH);
 		// One batch at a time: that is the limit on how many reads are out at once.
 		// eslint-disable-next-line no-await-in-loop
-		statuses.push(...(await Promise.all(batch.map(payment => readStatus(payment.id)))));
+		entries.push(...(await Promise.all(batch.map(payment => readEscrow(payment.id)))));
 	}
+	const ownerKey = owner.toLowerCase();
 	return candidates.flatMap((payment, index) => {
-		if (statuses[index] !== ESCROW_PENDING) return [];
-		const createdAt = Number(payment.createdAt) * 1000;
+		const entry = entries[index];
+		if (entry.status !== ESCROW_PENDING || entry.user.toLowerCase() !== ownerKey) return [];
+		const createdAt = Number(entry.createdAt) * 1000;
 		return [
 			{
 				id: payment.id,
-				amount: payment.amount,
+				amount: entry.amount.toString(),
 				createdAt,
 				isRefundable: isPastRefundWindow(createdAt, now),
 			},
