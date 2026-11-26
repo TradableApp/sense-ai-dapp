@@ -131,7 +131,8 @@ describe('syncWithRemote — message-aware hydration skip', () => {
 			let payload: Record<string, unknown> = {};
 			// Each file names the conversation it was written for (see SECOND_CONV_MARK).
 			const conversationId = url.includes(SECOND_CONV_MARK) ? 'c2' : CONV_ID;
-			if (url.includes('conv')) payload = { id: conversationId, title: 'Conversation' };
+			if (url.includes('conv'))
+				payload = { id: conversationId, ownerAddress: OWNER, title: 'Conversation' };
 			else if (url.includes('meta')) payload = { metadata: true };
 			else if (url.includes('msga'))
 				payload = {
@@ -273,7 +274,7 @@ describe('syncWithRemote — message-aware hydration skip', () => {
 								createdAt: 1_700_000,
 								answerAttempt,
 						  }
-						: { id: CONV_ID, title: 'Conversation' };
+						: { id: CONV_ID, ownerAddress: OWNER, title: 'Conversation' };
 					const encrypted = await encryptData(sessionKey, payload);
 					return { ok: true, text: async () => encrypted } as unknown as Response;
 				}),
@@ -420,7 +421,7 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 			content: 'mirrored',
 			createdAt: 1_700_000,
 		});
-		const conversationFile = await encryptData(sessionKey, { id: CONV_ID });
+		const conversationFile = await encryptData(sessionKey, { id: CONV_ID, ownerAddress: OWNER });
 		const metadataFile = await encryptData(sessionKey, { title: 'conv', isDeleted: false });
 		const served = (url: string) => {
 			if (url.endsWith(CID_CONV_FILE)) return conversationFile;
@@ -482,6 +483,7 @@ describe('syncWithRemote — mirror-first payload reads', () => {
 		const CID_MISSING = `bafkr6i${'n'.repeat(52)}`;
 		const encrypted = await encryptData(sessionKey, {
 			id: CONV_ID,
+			ownerAddress: OWNER,
 			title: 'conv',
 			createdAt: 1_700_000,
 		});

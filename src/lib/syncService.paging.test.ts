@@ -109,7 +109,7 @@ let sessionKey: CryptoKey;
 /** What the storage gateway serves, by CID, before encryption. */
 let payloads: Map<string, Record<string, unknown>>;
 
-/** Each conversation's own conversation file, naming it as the oracle's does. */
+/** Each conversation's own conversation file, naming it and its wallet as the oracle's does. */
 const conversationCids = new Map<string, string>();
 function conversationCidFor(id: string): string {
 	let cid = conversationCids.get(id);
@@ -117,7 +117,7 @@ function conversationCidFor(id: string): string {
 		cid = fakeCid('conv', conversationCids.size + 1);
 		conversationCids.set(id, cid);
 	}
-	payloads.set(cid, { id, title: 'Conversation' });
+	payloads.set(cid, { id, ownerAddress: OWNER, title: 'Conversation' });
 	return cid;
 }
 
@@ -469,6 +469,7 @@ describe('syncWithRemote — a full sync reads every page', () => {
 		const branchCID = fakeCid('branch', 0);
 		payloads.set(branchCID, {
 			id: 'b',
+			ownerAddress: OWNER,
 			title: 'Branch',
 			branchedFromConversationId: 'p',
 			branchedAtMessageId: '150',
