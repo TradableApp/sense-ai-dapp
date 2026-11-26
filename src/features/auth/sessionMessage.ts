@@ -1,38 +1,50 @@
 import { getAddress } from 'viem';
+import { createSiweMessage } from 'viem/siwe';
 
 import describeShape from '@/lib/settingShape';
 
 /**
- * The message a wallet signs to create the session key (`deriveKeyFromEntropy` in
- * `src/lib/crypto.ts` turns the signature into the key that encrypts the conversation
- * history).
+ * The message a wallet signs to create the session key (`deriveSessionKey` in
+ * `src/features/auth/sessionKey.ts` turns the signature into the key that encrypts the
+ * conversation history).
  *
- * What it guarantees:
- * - It names, in words read in the wallet's prompt, the signing account, the one site it
- *   belongs to and the chain, and says never to sign it anywhere else. A page on any other
- *   host asking for this text shows a host that is not the one named.
- * - It is the same text on every visit and every device for one wallet, site and chain (no
- *   time, no nonce), so the key can be derived again and the stored history read. The
- *   account is written in its checksummed form, so how it is cased changes nothing.
- * - The key is bound to the wallet, the site (one per network) and the chain, and to nothing
- *   else. It names no agent contract: the key is the same across agent deployments on one
- *   network, so replacing the contract pair changes no user's key and history from an
- *   earlier deployment stays decryptable. Which deployment a stored row belongs to is the
- *   local store's concern (one database per agent, `src/lib/localStoreName.ts`), not the
- *   key's.
- * - It carries a version, so a later change to the text is deliberate: changing any of it
- *   changes every user's key, and history stored under the old key can no longer be read.
+ * It is an EIP-4361 (Sign-In with Ethereum) message, built and checked by viem's own
+ * `createSiweMessage`, so a wallet that reads such messages compares the domain it names
+ * with the page asking for the signature and warns when they differ. Its fields:
+ * - domain: the host of the site, and URI: the site, one per network by build mode
+ *   (`sessionSiteFor`), never the page it is opened on; an `http` site also names its scheme;
+ * - address: the signing account, checksummed, so how it is cased changes nothing;
+ * - statement: one line saying what the signature creates and never to sign it anywhere but
+ *   that site;
+ * - Version: `1`, the only value EIP-4361 defines;
+ * - Chain ID: the build's;
+ * - Nonce and Issued At: constants (`SESSION_NONCE`, which carries `SESSION_MESSAGE_VERSION`,
+ *   and `SESSION_ISSUED_AT`). No expiration time, not-before time, request id or resources.
  *
- * The site is per network, not per host: every host that serves one network's build (a
- * custom domain and the hosting provider's default domains) asks for the same text, so a
- * user reaches the same history from each of them. It comes from the build's mode, never
- * from the page it is opened on.
+ * The nonce and the time are constants on purpose. The signature is not a login: it is the
+ * secret the history key is derived from, so the text must be byte for byte the same on
+ * every visit and every device for one wallet, site and chain, or the history already
+ * stored cannot be read. What that means: replay protection is not a property of this
+ * message. Anyone who obtains the signature once can derive the key for good, and nothing
+ * on any server accepts this message as a sign-in.
  *
- * The form follows the opening lines of EIP-4361 (Sign-In with Ethereum), but it is not a
- * sign-in message: it has none of the fields that vary per request.
+ * The key is bound to the wallet, the site and the chain, and to nothing else. It names no
+ * agent contract: replacing the contract pair on a network changes no user's key, and
+ * history from an earlier deployment stays decryptable (which deployment a stored row
+ * belongs to is the local store's concern, `src/lib/localStoreName.ts`).
+ *
+ * Changing any of the text, a site included, changes every user's key, and history stored
+ * under the old key can no longer be read: bump `SESSION_MESSAGE_VERSION` when it is done
+ * on purpose.
  */
 
-export const SESSION_MESSAGE_VERSION = 2;
+export const SESSION_MESSAGE_VERSION = 3;
+
+/** EIP-4361 nonce: at least 8 letters and digits. Fixed, and changes with the version. */
+export const SESSION_NONCE = `SenseAIHistoryKeyV${SESSION_MESSAGE_VERSION}`;
+
+/** EIP-4361 issued-at time. Fixed: the text must be the same on every visit. */
+export const SESSION_ISSUED_AT = new Date('2026-11-25T00:00:00.000Z');
 
 const LOCAL_SITE = 'http://localhost:3002';
 
@@ -78,7 +90,10 @@ export function sessionSiteFor(mode: string): string | undefined {
 		: undefined;
 }
 
-const checksummed = (address: string): string => getAddress(address.toLowerCase());
+const statementFor = (site: string): string =>
+	`Sign this only on ${site}. Your signature creates the key that encrypts your SenseAI ` +
+	'conversation history, and anyone who has the signature can read that history. Never ' +
+	'sign this message on any other site. Signing is free and sends no transaction.';
 
 /** The exact text the wallet is asked to sign. Throws `SessionMessageConfigError`. */
 export function buildSessionMessage({ mode, chainId, walletAddress }: SessionMessageInput): string {
@@ -101,21 +116,19 @@ export function buildSessionMessage({ mode, chainId, walletAddress }: SessionMes
 			)}.`,
 		);
 	}
-	const { host } = new URL(site);
+	const { host, protocol } = new URL(site);
+	const scheme = protocol.slice(0, -1);
 
-	return [
-		`${host} asks you to sign this message with your account:`,
-		checksummed(walletAddress),
-		'',
-		`Sign this only on ${site}. Your signature creates the key that encrypts your SenseAI ` +
-			'conversation history, and anyone who has the signature can read that history. Never ' +
-			'sign this message on any other site, or for anyone who asks you to.',
-		'',
-		'Signing is free, sends no transaction and gives no permission to move your funds.',
-		'',
-		'Purpose: SenseAI conversation history encryption key',
-		`Site: ${site}`,
-		`Chain ID: ${chain}`,
-		`Message version: ${SESSION_MESSAGE_VERSION}`,
-	].join('\n');
+	return createSiweMessage({
+		// EIP-4361 takes https when no scheme is named; any other scheme is written out.
+		...(scheme === 'https' ? {} : { scheme }),
+		domain: host,
+		address: getAddress(walletAddress.toLowerCase()),
+		statement: statementFor(site),
+		uri: site,
+		version: '1',
+		chainId: Number(chain),
+		nonce: SESSION_NONCE,
+		issuedAt: SESSION_ISSUED_AT,
+	});
 }
