@@ -52,7 +52,6 @@ describe('SessionProvider signature', () => {
 			buildSessionMessage({
 				mode: import.meta.env.MODE,
 				chainId: '84532',
-				agentAddress: AGENT,
 				walletAddress: WALLET,
 			}),
 		);
@@ -72,10 +71,21 @@ describe('SessionProvider signature', () => {
 			buildSessionMessage({
 				mode: import.meta.env.MODE,
 				chainId: '84532',
-				agentAddress: AGENT,
 				walletAddress: WALLET,
 			}),
 		);
+	});
+
+	it('asks for the same message whatever agent contract the build names', async () => {
+		const { unmount } = renderProvider();
+		await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('ready'));
+		unmount();
+		vi.stubEnv('VITE_AGENT_CONTRACT_ADDRESS', '0x2222222222222222222222222222222222222222');
+
+		renderProvider();
+
+		await waitFor(() => expect(signMessage).toHaveBeenCalledTimes(2));
+		expect(signMessage.mock.calls[1][0].message).toBe(signMessage.mock.calls[0][0].message);
 	});
 
 	it('asks for no signature when the message cannot be built', async () => {

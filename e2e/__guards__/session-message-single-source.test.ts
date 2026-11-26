@@ -14,12 +14,13 @@ import { E2E_DIR, offenders, stripComments } from './source-scan';
  * `src/features/auth/sessionMessage.ts`.
  *
  * The signature is the key's only input that is not public, so the text decides which
- * history the key opens. It names the site, the chain, the agent contract and the wallet,
+ * history the key opens. It names the site, the chain and the wallet, and not the agent
+ * contract, so replacing the contract pair on a network leaves every key as it was,
  * and the same text must come out on every visit and every device, or the history already
  * stored cannot be read. A copy of the wording anywhere else (a second signer, a fixture
  * in the suite) would drift from it unnoticed. The module reads nothing from the page it
  * is opened on: a page served from another host would otherwise name itself in the text.
- * The site comes from the build's mode, and the chain and agent from the build's settings.
+ * The site comes from the build's mode, and the chain from the build's settings.
  */
 
 const ROOT = path.resolve(E2E_DIR, '..');
@@ -63,8 +64,12 @@ describe('the session message', () => {
 		expect(code).toMatch(/signMessage\(\{account,message:buildSessionMessage\(\{/);
 		expect(code).toContain('mode:import.meta.env.MODE');
 		expect(code).toContain('chainId:import.meta.env.VITE_CHAIN_ID');
-		expect(code).toContain('agentAddress:import.meta.env.VITE_AGENT_CONTRACT_ADDRESS');
+		expect(code).not.toContain('VITE_AGENT_CONTRACT_ADDRESS');
 		expect(code).toContain('walletAddress:account.address');
+	});
+
+	it('names no agent contract', () => {
+		expect(read(SRC, MODULE)).not.toMatch(/agent/i);
 	});
 
 	it('reads nothing from the page it is opened on or from the build settings itself', () => {

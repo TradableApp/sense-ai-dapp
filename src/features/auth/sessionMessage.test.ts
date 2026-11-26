@@ -12,13 +12,11 @@ import {
 } from '@/features/auth/sessionMessage';
 
 const WALLET = '0xabc123def456abc123def456abc123def456abc1';
-const AGENT = '0x00000000000000000000000000000000000000a1';
-const OTHER_AGENT = '0x2222222222222222222222222222222222222222';
+const OTHER_WALLET = '0x2222222222222222222222222222222222222222';
 
 const MAINNET = {
 	mode: 'mainnet',
 	chainId: '8453',
-	agentAddress: AGENT,
 	walletAddress: WALLET,
 };
 
@@ -39,14 +37,28 @@ describe('buildSessionMessage', () => {
 				'Purpose: SenseAI conversation history encryption key',
 				'Site: https://senseai.tradable.app',
 				'Chain ID: 8453',
-				'Agent contract: 0x00000000000000000000000000000000000000A1',
 				'Message version: 2',
 			].join('\n'),
 		);
 	});
 
-	it('is the same text every time for one wallet, site, chain and agent', () => {
+	it('is the same text every time for one wallet, site and chain', () => {
 		expect(buildSessionMessage(MAINNET)).toBe(buildSessionMessage({ ...MAINNET }));
+	});
+
+	// Replacing the contract pair on a network keeps every user's key, so history from an
+	// earlier deployment can still be read.
+	it('is the same text whatever agent contract the build names', () => {
+		const withAgent = (agentAddress: string | undefined) =>
+			({ ...MAINNET, agentAddress } as typeof MAINNET);
+
+		const message = buildSessionMessage(MAINNET);
+		expect(buildSessionMessage(withAgent('0x00000000000000000000000000000000000000a1'))).toBe(
+			message,
+		);
+		expect(buildSessionMessage(withAgent(OTHER_WALLET))).toBe(message);
+		expect(buildSessionMessage(withAgent(undefined))).toBe(message);
+		expect(message).not.toMatch(/agent/i);
 	});
 
 	it('does not depend on how the addresses are written', () => {
@@ -54,7 +66,6 @@ describe('buildSessionMessage', () => {
 			buildSessionMessage({
 				...MAINNET,
 				walletAddress: WALLET.toUpperCase().replace('0X', '0x'),
-				agentAddress: AGENT.toUpperCase().replace('0X', '0x'),
 			}),
 		).toBe(buildSessionMessage(MAINNET));
 	});
@@ -69,12 +80,6 @@ describe('buildSessionMessage', () => {
 		);
 	});
 
-	it('differs for another agent contract', () => {
-		expect(buildSessionMessage({ ...MAINNET, agentAddress: OTHER_AGENT })).not.toBe(
-			buildSessionMessage(MAINNET),
-		);
-	});
-
 	it('differs for another site', () => {
 		const testnet = buildSessionMessage({ ...MAINNET, mode: 'testnet' });
 
@@ -84,7 +89,7 @@ describe('buildSessionMessage', () => {
 	});
 
 	it('differs for another wallet', () => {
-		expect(buildSessionMessage({ ...MAINNET, walletAddress: OTHER_AGENT })).not.toBe(
+		expect(buildSessionMessage({ ...MAINNET, walletAddress: OTHER_WALLET })).not.toBe(
 			buildSessionMessage(MAINNET),
 		);
 	});
@@ -124,41 +129,18 @@ describe('buildSessionMessage', () => {
 		);
 	});
 
-	it('stops on an agent address that is not an address, without printing it', () => {
-		const value = `0x${'f'.repeat(64)}`;
-
-		expect(() => buildSessionMessage({ ...MAINNET, agentAddress: value })).toThrow(
-			/agent contract address/,
-		);
-		expect(() => buildSessionMessage({ ...MAINNET, agentAddress: value })).not.toThrow(value);
-	});
-
 	it('stops on a wallet address that is not an address', () => {
 		expect(() => buildSessionMessage({ ...MAINNET, walletAddress: '0x1234' })).toThrow(
 			/wallet address/,
 		);
 	});
 
-	it('stops a deployed build with no agent address', () => {
-		expect(() => buildSessionMessage({ ...MAINNET, agentAddress: undefined })).toThrow(
-			/agent contract address/,
-		);
-		expect(() => buildSessionMessage({ ...MAINNET, mode: 'testnet', agentAddress: '' })).toThrow(
-			/agent contract address/,
-		);
-	});
-
-	it('says so when a localnet or unit-test run has no agent', () => {
+	it('names localhost:3002 for a localnet or unit-test run', () => {
 		['localnet', 'test'].forEach(mode => {
-			const message = buildSessionMessage({
-				...MAINNET,
-				mode,
-				chainId: '31337',
-				agentAddress: undefined,
-			});
+			const message = buildSessionMessage({ ...MAINNET, mode, chainId: '31337' });
 
-			expect(message).toContain('\nAgent contract: none (a local build with no agent)\n');
 			expect(message).toContain('Sign this only on http://localhost:3002.');
+			expect(message).toContain('\nChain ID: 31337\n');
 		});
 	});
 });
