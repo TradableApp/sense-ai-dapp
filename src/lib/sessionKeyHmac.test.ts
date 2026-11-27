@@ -15,11 +15,13 @@ describe('sessionKeyHmac', () => {
 	it('is base64url(HMAC-SHA256(raw session key, message)) with no padding', async () => {
 		const key = await importVectorKey();
 
-		for (const message of ['', 'a', 'senseai-rating:1', 'senseai-stream:45', 'é∑']) {
-			const mac = await sessionKeyHmac(key, message);
-			expect(mac).toBe(expected(message));
+		const messages = ['', 'a', 'senseai-rating:1', 'senseai-stream:45', 'é∑'];
+		const macs = await Promise.all(messages.map(message => sessionKeyHmac(key, message)));
+
+		macs.forEach((mac, i) => {
+			expect(mac).toBe(expected(messages[i]));
 			expect(mac).toMatch(/^[A-Za-z0-9_-]{43}$/);
-		}
+		});
 	});
 
 	it('gives the stream proof vector for its message', async () => {

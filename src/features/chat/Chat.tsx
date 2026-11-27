@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { collection, query, where } from 'firebase/firestore';
 import { Loader2, MicIcon, RotateCcwIcon, Split } from 'lucide-react';
 import { useReducedMotion } from 'motion/react';
 import { useForm } from 'react-hook-form';
@@ -31,11 +30,9 @@ import {
 import UserMessageActions from '@/components/ai/user-message-actions';
 import StorageUnavailableBanner from '@/components/StorageUnavailableBanner';
 import { Button } from '@/components/ui/button';
-import { db } from '@/config/firebase';
 import { useSession } from '@/features/auth/SessionProvider';
 import useChatMutations from '@/hooks/useChatMutations';
 import useConversations from '@/hooks/useConversations';
-import useFirestoreCollectionListener from '@/hooks/useFirestoreCollectionListener';
 import useLiveReasoning from '@/hooks/useLiveReasoning';
 import usePaymentGate from '@/hooks/usePaymentGate';
 import useUsagePlan from '@/hooks/useUsagePlan';
@@ -69,6 +66,7 @@ import isQueryAhead from './messageReconcile';
 import { composerStateFor } from './promptParent';
 import promptSchema from './promptSchema';
 import showUnsavedPrompt, { isActiveConversation, noWalletAddressError } from './unsavedPrompt';
+import useAnswerRatings from './useAnswerRatings';
 import useHeldBranchRefresh from './useHeldBranchRefresh';
 import useOneSendAtATime from './useOneSendAtATime';
 import useUnsavedSendHold from './useUnsavedSendHold';
@@ -140,7 +138,6 @@ export default function Chat() {
 	const [activeMessageId, setActiveMessageId] = useState<string | number | null>(null);
 	const [editingMessageId, setEditingMessageId] = useState<string | number | null>(null);
 	const prevMessageCountRef = useRef(0);
-	const [feedbackData, setFeedbackData] = useState<Record<string, number>>({});
 	const [cancelDeadline, setCancelDeadline] = useState<number | null>(null);
 	// Wall clock the cancel affordance is computed against; ticked while the window is closed.
 	const [cancelClock, setCancelClock] = useState(() => Date.now());
@@ -626,32 +623,15 @@ export default function Chat() {
 		prevMessagesRef.current = messagesToDisplay;
 	}, [messagesToDisplay, live, reduceMotion]);
 
-	useFirestoreCollectionListener({
-		queryFn: () => {
-			if (!ownerAddress || !activeConversationId || !db) {
-				// Return a query that returns empty result
-				return query(
-					collection(db!, 'senseai_feedback'),
-					where('__name__' as any, '==' as any, '__invalid__' as any),
-				);
-			}
-			return query(
-				collection(db, 'senseai_feedback'),
-				where('ownerAddress' as any, '==' as any, ownerAddress as any),
-				where('conversationId' as any, '==' as any, activeConversationId as any),
-			);
-		},
-		queryDeps: [ownerAddress, activeConversationId],
-		dataFn: (docs: any[]) => {
-			const feedbackMap: Record<string, number> = {};
-			docs.forEach((doc: any) => {
-				feedbackMap[doc.id] = doc.feedbackValue;
-			});
-			setFeedbackData(feedbackMap);
-		},
-		deps: [ownerAddress, activeConversationId],
-		loadingTag: 'SenseAIFeedbackListener',
-	});
+	// Ratings of the answers shown, each read once by the id only this session key can compute.
+	const ratedAnswerIds = useMemo(
+		() =>
+			messagesToDisplay
+				.filter(message => message.role === 'assistant' && message.content && message.id != null)
+				.map(message => String(message.id)),
+		[messagesToDisplay],
+	);
+	const answerRatings = useAnswerRatings(activeConversationId, ratedAnswerIds);
 
 	// Derived state: Check if AI is thinking (assistant message with no content)
 	const lastMessage = messagesToDisplay.at(-1);
@@ -1007,9 +987,8 @@ export default function Chat() {
 												onBranch={() => handleBranch(message as unknown as ActiveMessage)}
 												isSending={isProcessing}
 												heldReason={unsavedSend.heldReasonFor(message.id)}
-												initialFeedback={
-													feedbackData[msgIdStr] ? String(feedbackData[msgIdStr]) : null
-												}
+												initialFeedback={answerRatings.ratings[msgIdStr] ?? null}
+												onFeedbackSaved={value => answerRatings.remember(msgIdStr, value)}
 											/>
 										</>
 									)}

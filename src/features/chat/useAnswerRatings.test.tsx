@@ -33,7 +33,11 @@ vi.mock('firebase/firestore', () => ({
 		maxInFlight = Math.max(maxInFlight, inFlight);
 		reads.push(ref.id);
 		try {
-			if (holdReads) await new Promise<void>(resolve => releases.push(resolve));
+			if (holdReads) {
+				await new Promise<void>(resolve => {
+					releases.push(resolve);
+				});
+			}
 			else await Promise.resolve();
 			if (failReads) {
 				const error = new Error(`denied ${ref.id}`);
@@ -139,7 +143,9 @@ describe('useAnswerRatings', () => {
 		});
 
 		await act(async () => {
-			await new Promise(resolve => setTimeout(resolve, 20));
+			await new Promise(resolve => {
+				setTimeout(resolve, 20);
+			});
 		});
 		expect(reads).toEqual([]);
 		expect(result.current.ratings).toEqual({});

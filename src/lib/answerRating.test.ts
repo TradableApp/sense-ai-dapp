@@ -61,9 +61,9 @@ describe('ratingDocId', () => {
 			{ ...TARGET, conversationId: '74', messageId: '2' },
 		];
 
-		for (const target of changed) {
-			expect(await ratingDocId(key, target)).not.toBe(base);
-		}
+		const ids = await Promise.all(changed.map(target => ratingDocId(key, target)));
+
+		ids.forEach(id => expect(id).not.toBe(base));
 	});
 
 	it('never equals the stream proof for the same key and answer id', async () => {
@@ -78,11 +78,11 @@ describe('ratingDocId', () => {
 	it('every id has the shape the server checks, last character included', async () => {
 		const key = await importVectorKey();
 
-		for (let messageId = 1; messageId <= 64; messageId += 1) {
-			expect(await ratingDocId(key, { ...TARGET, messageId: String(messageId) })).toMatch(
-				RATING_DOC_ID,
-			);
-		}
+		const ids = await Promise.all(
+			Array.from({ length: 64 }, (_, i) => ratingDocId(key, { ...TARGET, messageId: String(i + 1) })),
+		);
+
+		ids.forEach(id => expect(id).toMatch(RATING_DOC_ID));
 	});
 
 	it('refuses a malformed part, and the error names none of the values', async () => {
@@ -104,22 +104,33 @@ describe('ratingDocId', () => {
 			{ messageId: 'undefined' },
 		];
 
-		for (const part of bad) {
-			const error = await ratingDocId(key, { ...TARGET, ...part }).catch((e: unknown) => e);
+		const errors = await Promise.all(
+			bad.map(part => ratingDocId(key, { ...TARGET, ...part }).catch((e: unknown) => e)),
+		);
+
+		errors.forEach((error, i) => {
 			expect(error).toBeInstanceOf(TypeError);
-			const value = Object.values(part)[0];
+			const value = Object.values(bad[i])[0];
 			if (value.length > 1) expect((error as Error).message).not.toContain(value);
-		}
+		});
 	});
 });
 
 describe('RATING_DOC_ID', () => {
 	it('refuses anything but 43 base64url characters ending in a 32-byte encoding', () => {
-		const good = 'A'.repeat(42) + 'w';
+		const good = `${'A'.repeat(42)}w`;
 		expect(good).toMatch(RATING_DOC_ID);
-		for (const bad of ['', '42', 'A'.repeat(43).slice(1), `${good}A`, `${'A'.repeat(42)}B`, `${'A'.repeat(42)}=`, `${'A'.repeat(41)}+A`, `${'A'.repeat(41)}/A`]) {
-			expect(bad).not.toMatch(RATING_DOC_ID);
-		}
+		const bad = [
+			'',
+			'42',
+			'A'.repeat(43).slice(1),
+			`${good}A`,
+			`${'A'.repeat(42)}B`,
+			`${'A'.repeat(42)}=`,
+			`${'A'.repeat(41)}+A`,
+			`${'A'.repeat(41)}/A`,
+		];
+		bad.forEach(id => expect(id).not.toMatch(RATING_DOC_ID));
 	});
 });
 
@@ -147,7 +158,7 @@ describe('ratingDeployment', () => {
 });
 
 describe('readAnswerRating', () => {
-	const ID = 'A'.repeat(42) + 'w';
+	const ID = `${'A'.repeat(42)}w`;
 
 	beforeEach(() => {
 		getDocMock.mockReset();
@@ -178,8 +189,15 @@ describe('parseRating', () => {
 	it('keeps only like or dislike', () => {
 		expect(parseRating({ feedbackValue: 'like' })).toBe('like');
 		expect(parseRating({ feedbackValue: 'dislike' })).toBe('dislike');
-		for (const data of [undefined, null, {}, { feedbackValue: null }, { feedbackValue: 'Like' }, { feedbackValue: 1 }, 'like']) {
-			expect(parseRating(data)).toBeNull();
-		}
+		const unusable = [
+			undefined,
+			null,
+			{},
+			{ feedbackValue: null },
+			{ feedbackValue: 'Like' },
+			{ feedbackValue: 1 },
+			'like',
+		];
+		unusable.forEach(data => expect(parseRating(data)).toBeNull());
 	});
 });
