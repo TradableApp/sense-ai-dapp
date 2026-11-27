@@ -69,6 +69,26 @@ describe('the pending payments a wallet has', () => {
 		expect(ids).toHaveLength(STUCK_PAGE_SIZE + 9);
 		expect(new Set(ids).size).toBe(ids.length);
 	});
+
+	// The escrow counts its payments with whole numbers. A row whose id is anything else can
+	// name no payment, and asking the escrow about it would fail the read of every other one.
+	it.each([
+		['text that is not a number', { id: 'not-a-number', amount: '1', createdAt: '100' }],
+		['a negative number', { id: '-1', amount: '1', createdAt: '100' }],
+		['a hex number', { id: '0x10', amount: '1', createdAt: '100' }],
+		['a number with a fraction', { id: '1.5', amount: '1', createdAt: '100' }],
+		['a number longer than the escrow can count to', { id: '1'.repeat(79), amount: '1', createdAt: '100' }],
+		['an empty id', { id: '', amount: '1', createdAt: '100' }],
+		['an id that is not text', { id: 7, amount: '1', createdAt: '100' }],
+		['no id', { amount: '1', createdAt: '100' }],
+		['a row that is not an object', null],
+	])('leave out a row with %s and keep the others', async (_name, row) => {
+		const requestPage = vi.fn(async () => [payment(1), row as PendingPayment, payment(2)]);
+
+		const { payments } = await fetchPendingPayments(requestPage);
+
+		expect(payments.map(each => each.id)).toEqual(['1', '2']);
+	});
 });
 
 describe('which pending payments are stuck', () => {

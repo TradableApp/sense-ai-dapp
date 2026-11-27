@@ -220,6 +220,22 @@ describe('a refund that succeeded on chain', () => {
 		expect(toast.success).toHaveBeenCalledWith('Refund Processed', expect.anything());
 	});
 
+	// The list of stuck requests is what offers the Refund button. Left as it was, it would
+	// offer the refunded request again, and a second press would spend the network fee on a
+	// transaction that refunds nothing.
+	it('reads the stuck requests again, so the refunded one is no longer offered', async () => {
+		vi.mocked(sendAndConfirmTransaction).mockResolvedValue({
+			status: 'success',
+			logs: [paymentRefundedLog(3n)],
+		} as never);
+
+		const { invalidate } = await settle(m =>
+			m.processRefundMutation.mutateAsync({ answerMessageId: '3' }),
+		);
+
+		expect(invalidate).toHaveBeenCalledWith({ queryKey: ['stuckRequests'] });
+	});
+
 	it.each([
 		['no refund log at all', []],
 		['a refund of another request', [paymentRefundedLog(4n)]],
