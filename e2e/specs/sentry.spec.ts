@@ -68,21 +68,24 @@ test.describe('Sentry — error tracking initialisation (T-SENTRY)', () => {
 	test('T-SENTRY-04: Sentry transaction traces fire for navigation', async ({ page }) => {
 		test.skip(!process.env.VITE_SENTRY_DSN, 'Skipped: VITE_SENTRY_DSN not configured');
 
-		const sentryRequests: string[] = [];
-		page.on('request', req => {
-			if (isSentryUrl(req.url())) {
-				sentryRequests.push(req.url());
-			}
-		});
-
 		await injectMockWallet(page);
 		await page.goto('/');
 		await waitForAppShell(page);
 
-		// Navigate to trigger performance trace
+		// A trace is sent when its page goes idle or is left, some time after the page is ready,
+		// so the test waits for the request itself. Counting the requests seen by the time the
+		// page was ready passed or failed on timing alone. The request is known by its envelope:
+		// a session or an error report is not a trace.
+		const transaction = page.waitForRequest(
+			req =>
+				isSentryUrl(req.url()) &&
+				req.method() === 'POST' &&
+				(req.postData() ?? '').includes('"type":"transaction"'),
+			{ timeout: 15_000 },
+		);
 		await page.goto('/auth');
 		await waitForAppShell(page);
 
-		expect(sentryRequests.length).toBeGreaterThan(0);
+		await transaction;
 	});
 });
