@@ -5,8 +5,10 @@
 [CU-86d3cx5qt](https://app.clickup.com/t/86d3cx5qt)). Built: the oracle role on the contracts
 (`ORACLE_ROLE`, owner-only `addOracle` / `removeOracle`, the encryption key stored on the agent),
 an oracle that waits for its role instead of stopping, the subgraph's oracle set and change
-history, and the e2e specs `T-GOV-ORACLE-01..03`. Not built yet: the dApp reading the key from
-chain, the shared decryption key across oracles, and a cut-over between two live oracles.
+history, the e2e specs `T-GOV-ORACLE-01..03`, and the dApp reading the key from chain to check
+the key it is built with (it switches paid prompts off while the two differ or none is
+published; it still encrypts to the build's key). Not built yet: the dApp encrypting to the
+key it reads, the shared decryption key across oracles, and a cut-over between two live oracles.
 Who publishes the key, and what happens to it when an oracle is removed, is decided in
 [ADR-0007](0007-oracle-keys-from-the-rofl-key-service.md): the owner no longer sets it.
 **Applies to:** system-wide (`tokenized-ai-agent` contracts + oracle, `sense-ai-subgraph`,
@@ -28,7 +30,7 @@ rotation is not zero-downtime**: rotating `setOracle` while a prompt is in fligh
 oracle unable to submit the answer — `submitAnswer` reverts with `UnauthorizedOracle` and the oracle
 then hits a **FATAL non-retryable error + CRITICAL alert** that wedges its event loop. Every in-flight
 prompt is **orphaned** (recoverable only via the refund path). This is exactly the AUDIT §9(b)
-concern: "a prompt submitted under the OLD oracle still gets answered, *or* the rotation is sequenced
+concern: "a prompt submitted under the OLD oracle still gets answered, _or_ the rotation is sequenced
 so no prompt is orphaned."
 
 The industry-standard pattern for rotating a privileged role without downtime is **role-based access
@@ -39,14 +41,14 @@ mutable address.
 
 Adopt **multi-oracle role-based authorization + a shared decryption key** ("Option B").
 
-1. **Contract:** replace `address oracle` + `onlyOracle` with **OpenZeppelin `AccessControlUpgradeable`
-   + an `ORACLE_ROLE`** (`onlyRole(ORACLE_ROLE)` on the three submit functions). Rotation becomes
-   `grantRole(ORACLE_ROLE, new)` → cutover → `revokeRole(ORACLE_ROLE, old)`; the overlap window
-   prevents in-flight orphaning. Storage-layout care for the UUPS upgrade (append state, preserve the
-   `__gap`).
+1. **Contract:** replace `address oracle` + `onlyOracle` with \*\*OpenZeppelin `AccessControlUpgradeable`
+   - an `ORACLE_ROLE`\*\* (`onlyRole(ORACLE_ROLE)` on the three submit functions). Rotation becomes
+     `grantRole(ORACLE_ROLE, new)` → cutover → `revokeRole(ORACLE_ROLE, old)`; the overlap window
+     prevents in-flight orphaning. Storage-layout care for the UUPS upgrade (append state, preserve the
+     `__gap`).
 2. **Shared decryption key** across oracle instances — exactly ADR-0005's "shared app-scoped keypair
-   via ROFL `appd`" (also required for multi-TEE horizontal scaling). With a shared key, *any*
-   authorized oracle can decrypt and answer *any* prompt, so the **new oracle seamlessly picks up
+   via ROFL `appd`" (also required for multi-TEE horizontal scaling). With a shared key, _any_
+   authorized oracle can decrypt and answer _any_ prompt, so the **new oracle seamlessly picks up
    in-flight AND new prompts** during the overlap — no drain dependency on the old oracle. This is why
    Option B is preferred over Option A (a distinct key per oracle, where the old oracle must drain its
    own old-key prompts while the dApp switches new prompts to the new key — more moving parts and no
@@ -62,10 +64,10 @@ Adopt **multi-oracle role-based authorization + a shared decryption key** ("Opti
    governance indexing, also adopt the industry-standard **"current + immutable change-log"** pattern:
    keep the mutable `ProtocolConfig`/`FeeConfig` **singletons** for fast current-state reads, and add
    **immutable per-change entities** (`@entity(immutable: true)` — e.g. `OracleChange`/`TreasuryChange`/
-   `FeeChange { previous, new, txHash, blockNumber, timestamp, sender }`), *or* extend the existing
+   `FeeChange { previous, new, txHash, blockNumber, timestamp, sender }`), _or_ extend the existing
    immutable `Activity` entity with governance event types. Today governance changes keep only the
    latest value + `updatedAt` (no audit trail), whereas the codebase already uses the immutable-log
-   pattern for *user* actions via `Activity` — governance config should match it for the change history
+   pattern for _user_ actions via `Activity` — governance config should match it for the change history
    (when/from→to/by-whom) that admin operations need.
 
 ## Consequences
@@ -80,7 +82,7 @@ Adopt **multi-oracle role-based authorization + a shared decryption key** ("Opti
 - **Phased delivery:** P1 contract (AccessControl + `ORACLE_ROLE`, grant/revoke, events, storage-safe
   UUPS, Hardhat tests for overlap/no-orphan) → P2 oracle (multi-oracle + shared key + remove the
   FATAL-wedge) → P3 subgraph (oracle-set indexing) → P4 dApp (read active key from chain) → P5 e2e
-  (assert a *sequenced* rotation is zero-downtime, replacing the current orphan guard).
+  (assert a _sequenced_ rotation is zero-downtime, replacing the current orphan guard).
 - **e2e:** `T-GOV-ORACLE-02` used to assert that a rotation orphaned the prompt in flight. It now
   asserts the opposite for a rotation with an overlap, and `T-GOV-ORACLE-03` asserts that an oracle
   whose role is removed mid-flight keeps the prompt and answers it once the role is back. The
@@ -88,4 +90,4 @@ Adopt **multi-oracle role-based authorization + a shared decryption key** ("Opti
 - **Alternatives rejected:** the single-address atomic swap (the earlier design — orphans in-flight prompts);
   Option A distinct-key-per-oracle (old oracle must drain, more complex dApp key-switching, no seamless
   takeover); operational "drain before rotating" (pause + wait for all pending to settle — doesn't
-  help an *urgent* rotation, e.g. a compromised key).
+  help an _urgent_ rotation, e.g. a compromised key).

@@ -3,8 +3,10 @@
 **Status:** Accepted, partly implemented. Built: the agent contract's oracle-only
 `setOracleEncryptionKey(key, proof)`, the publisher slot, and the withdrawal of the key when its
 publisher loses the oracle role; the subgraph indexing of both. Not built yet: the oracle taking
-its keys from the key service and publishing, the ROFL manifests without a key secret, the dApp
-reading the key from chain, and the migration of Base Sepolia.
+its keys from the key service and publishing, the ROFL manifests without a key secret, and the
+migration of Base Sepolia. Built since: the dApp reads the key from chain and refuses to send a
+paid prompt while there is none or it differs from the key the build encrypts to (decision 5;
+on localnet, where the oracle does not publish, an empty slot stops nothing).
 **Status note:** Base Sepolia is not migrated. A fresh agent and escrow pair is deployed there
 instead, as on Base mainnet, so the migration named above and under Consequences does not
 happen; the decision text below is kept as it was accepted.
