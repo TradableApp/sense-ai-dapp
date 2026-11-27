@@ -20,7 +20,7 @@ const MUTATIONS = path.join('hooks', 'useChatMutations.tsx');
 
 /** Each `useMutation` in the chat mutations, by the name it is assigned to. */
 function mutationBodies(source: string): Map<string, string> {
-	const starts = [...source.matchAll(/\n\tconst (\w+) = useMutation\(/g)];
+	const starts = [...source.matchAll(/\n\tconst (\w+) = useMutation\s*(?:<[^>]*>)?\(/g)];
 	const end = source.indexOf('\n\treturn {', starts.at(-1)?.index ?? 0);
 	return new Map(
 		starts.map((match, i) => [

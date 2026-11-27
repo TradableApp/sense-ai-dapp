@@ -130,7 +130,7 @@ describe('PaymentsSwitchedOffBanner, for the oracle key check', () => {
 		expect(shown[0].textContent).toContain(switchCopy('incident', { otherProblem: true }).title);
 		expect(shown[1].textContent).toContain(feeTokenBlockCopy('token-paused', 'PTS')?.description);
 		expect(shown[2].textContent).toContain(
-			oracleKeyBlockCopy('mismatch', { otherProblem: true })?.description,
+			oracleKeyBlockCopy('mismatch', { otherProblem: true, plansAlsoOff: true })?.description,
 		);
 	});
 });

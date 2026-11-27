@@ -61,7 +61,10 @@ export interface GateSection {
 export function gateSections(state: PaymentGateState, symbol: string): GateSection[] {
 	const fee = feeTokenBlockCopy(state.feeToken, symbol);
 	const otherProblem = fee !== null;
-	const oracle = oracleKeyBlockCopy(state.oracleKey, { otherProblem });
+	// The switch closes new plans and some fee token verdicts stop them: beside either, the
+	// oracle key notice does not say a plan still works.
+	const plansAlsoOff = isClosed(state.prompts) || blocksAction(state.feeToken, 'plan');
+	const oracle = oracleKeyBlockCopy(state.oracleKey, { otherProblem, plansAlsoOff });
 	const sections: GateSection[] = [];
 	if (isClosed(state.prompts)) {
 		sections.push({

@@ -31,13 +31,14 @@ const NO_KEY = '0x';
 
 /**
  * A secp256k1 public key in one form: uncompressed, lower-case hex, no `0x`. Accepts what the
- * encryption accepts (`src/lib/ecies.ts`): hex with or without `0x`, in any case, compressed
- * (33 bytes), uncompressed (65 bytes) or uncompressed without its leading `04` (64 bytes).
- * Null for anything that is not a point on the curve.
+ * encryption accepts (`src/lib/ecies.ts`) and nothing more: hex digits in any case, with or
+ * without a lower-case `0x`, compressed (33 bytes), uncompressed (65 bytes) or uncompressed
+ * without its leading `04` (64 bytes). Space around the value or an upper-case `0X` is refused,
+ * as the encryption would fail on either. Null for anything that is not a point on the curve.
  */
 export function normaliseOracleKey(value: unknown): string | null {
 	if (typeof value !== 'string') return null;
-	const bare = value.trim().replace(/^0x/i, '');
+	const bare = value.startsWith('0x') ? value.slice(2) : value;
 	if (!/^[0-9a-fA-F]+$/.test(bare)) return null;
 	const full = bare.length === 128 ? `04${bare}` : bare;
 	if (full.length !== 66 && full.length !== 130) return null;
@@ -104,7 +105,9 @@ export function oracleKeyBlocks(state: OracleKeyCheckState, action: PaidAction):
 }
 
 const WHAT_IS_OFF =
-	'Prompts, branches, renames and deletes are switched off while this message shows, and nothing is taken for an action that is switched off. Setting or revoking a plan still works.';
+	'Prompts, branches, renames and deletes are switched off while this message shows, and nothing is taken for an action that is switched off.';
+// Left out beside a notice that stops plans, which says so itself.
+const PLANS_WORK = 'Setting or revoking a plan still works.';
 const MONEY_BACK_WORKS = 'Cancelling a prompt and claiming a refund still work.';
 // Beside a fee token notice, which may say a refund would be refused too.
 const MONEY_BACK_UNAFFECTED = 'This does not affect cancelling a prompt or claiming a refund.';
@@ -113,13 +116,18 @@ const GET_HELP =
 
 /**
  * What the user is told for a state that stops something; null when nothing is stopped.
- * `otherProblem` is true when a fee token notice is shown beside it.
+ * `otherProblem` is true when a fee token notice is shown beside it; `plansAlsoOff` when a
+ * notice beside it stops plans, so this one says nothing of them.
  */
 export function oracleKeyBlockCopy(
 	state: OracleKeyCheckState,
-	{ otherProblem = false }: { otherProblem?: boolean } = {},
+	{
+		otherProblem = false,
+		plansAlsoOff = false,
+	}: { otherProblem?: boolean; plansAlsoOff?: boolean } = {},
 ): { title: string; description: string } | null {
 	const moneyBack = otherProblem ? MONEY_BACK_UNAFFECTED : MONEY_BACK_WORKS;
+	const whatIsOff = plansAlsoOff ? WHAT_IS_OFF : `${WHAT_IS_OFF} ${PLANS_WORK}`;
 	switch (state) {
 		case 'match':
 		case 'no-key-localnet':
@@ -128,12 +136,12 @@ export function oracleKeyBlockCopy(
 		case 'mismatch':
 			return {
 				title: 'Prompts are switched off',
-				description: `This version of the app is set up with a different encryption key from the one the SenseAI oracle publishes, so the oracle could not read a prompt sent from it and would not answer. ${WHAT_IS_OFF} ${moneyBack} Reloading the page may load a version with the right key. ${GET_HELP}`,
+				description: `This version of the app is set up with a different encryption key from the one the SenseAI oracle publishes, so the oracle could not read a prompt sent from it and would not answer. ${whatIsOff} ${moneyBack} Reloading the page may load a version with the right key. ${GET_HELP}`,
 			};
 		case 'no-key':
 			return {
 				title: 'Prompts are switched off',
-				description: `The SenseAI oracle has not published its encryption key yet, so no prompt can be sent that it could read. ${WHAT_IS_OFF} ${moneyBack} This message goes away once a later check finds the key. ${GET_HELP}`,
+				description: `The SenseAI oracle's encryption key is not published at the moment, so no prompt can be sent that it could read. ${whatIsOff} ${moneyBack} This message goes away once a later check finds the key. ${GET_HELP}`,
 			};
 		default: {
 			// A state with no words here fails to compile: a block must never be silent.
