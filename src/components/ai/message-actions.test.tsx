@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UNSAVED_SEND_REASON } from '@/components/ai/sendingReason';
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
 import usePromptsSwitch from '@/hooks/usePromptsSwitch';
+import sendAiFeedback from '@/lib/feedbackService';
 import { blocksAction, feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
 import { switchCopy } from '@/lib/promptsSwitch';
 import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
@@ -16,8 +17,9 @@ import UserMessageActions from './user-message-actions';
 vi.mock('@/hooks/usePromptsSwitch', () => ({ default: vi.fn() }));
 vi.mock('@/hooks/useFeeTokenCheck', () => ({ default: vi.fn() }));
 vi.mock('@/config/feeToken', () => ({ FEE_TOKEN: { symbol: 'PTS' } }));
+const SESSION_KEY = { type: 'secret' } as unknown as CryptoKey;
 vi.mock('@/features/auth/SessionProvider', () => ({
-	useSession: () => ({ ownerAddress: '0xaa' }),
+	useSession: () => ({ ownerAddress: '0xaa', sessionKey: SESSION_KEY }),
 }));
 vi.mock('@/lib/feedbackService', () => ({ default: vi.fn() }));
 
@@ -339,5 +341,70 @@ describe('the status under a prompt', () => {
 
 		expect(screen.getByText('Awaiting answer')).toBeTruthy();
 		expect(screen.queryByText(/Sending/)).toBeNull();
+	});
+});
+
+describe('rating an answer', () => {
+	beforeEach(() => {
+		checkReturns('ok');
+		vi.mocked(sendAiFeedback).mockReset();
+	});
+
+	it('sends the session key, the conversation and message ids and the value, and no wallet address', async () => {
+		vi.mocked(sendAiFeedback).mockResolvedValue(undefined);
+		const onFeedbackSaved = vi.fn();
+		render(<MessageActions message={answer} onFeedbackSaved={onFeedbackSaved} />);
+
+		await act(async () => {
+			fireEvent.click(button('Good response'));
+		});
+
+		expect(sendAiFeedback).toHaveBeenCalledWith({
+			sessionKey: SESSION_KEY,
+			conversationId: '1',
+			messageId: 3,
+			feedbackValue: 'like',
+		});
+		expect(onFeedbackSaved).toHaveBeenCalledWith('like');
+	});
+
+	it('keeps both rating buttons out of click analytics', () => {
+		render(<MessageActions message={answer} />);
+
+		expect(button('Good response').className).toContain('ph-no-capture');
+		expect(button('Bad response').className).toContain('ph-no-capture');
+	});
+
+	it('pressing the same rating again removes it (null) and reports the removal', async () => {
+		vi.mocked(sendAiFeedback).mockResolvedValue(undefined);
+		const onFeedbackSaved = vi.fn();
+		render(
+			<MessageActions
+				message={answer}
+				initialFeedback="dislike"
+				onFeedbackSaved={onFeedbackSaved}
+			/>,
+		);
+
+		await act(async () => {
+			fireEvent.click(button('Bad response'));
+		});
+
+		expect(vi.mocked(sendAiFeedback).mock.calls[0][0].feedbackValue).toBeNull();
+		expect(onFeedbackSaved).toHaveBeenCalledWith(null);
+		expect(button('Good response')).toBeTruthy();
+	});
+
+	it('a failed save puts the rating back and reports nothing saved', async () => {
+		vi.mocked(sendAiFeedback).mockRejectedValue(new Error('refused'));
+		const onFeedbackSaved = vi.fn();
+		render(<MessageActions message={answer} onFeedbackSaved={onFeedbackSaved} />);
+
+		await act(async () => {
+			fireEvent.click(button('Good response'));
+		});
+
+		expect(onFeedbackSaved).not.toHaveBeenCalled();
+		expect(button('Bad response')).toBeTruthy();
 	});
 });

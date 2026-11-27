@@ -1,12 +1,7 @@
 import { isAnswerMessageId } from '@/lib/liveReasoning/contract';
+import sessionKeyHmac from '@/lib/sessionKeyHmac';
 
 const PROOF_DOMAIN = 'senseai-stream:';
-
-const toBase64Url = (bytes: Uint8Array): string =>
-	btoa(String.fromCharCode(...bytes))
-		.replace(/\+/g, '-')
-		.replace(/\//g, '_')
-		.replace(/=+$/, '');
 
 /**
  * Proof of key for one answer's stream: base64url(HMAC-SHA256(session key, "senseai-stream:" +
@@ -21,18 +16,5 @@ export default async function streamProof(
 	if (!isAnswerMessageId(answerMessageId)) {
 		throw new TypeError('The answer id must be a canonical decimal string.');
 	}
-	const raw = await window.crypto.subtle.exportKey('raw', sessionKey);
-	const hmacKey = await window.crypto.subtle.importKey(
-		'raw',
-		raw,
-		{ name: 'HMAC', hash: 'SHA-256' },
-		false,
-		['sign'],
-	);
-	const signature = await window.crypto.subtle.sign(
-		'HMAC',
-		hmacKey,
-		new TextEncoder().encode(PROOF_DOMAIN + answerMessageId),
-	);
-	return toBase64Url(new Uint8Array(signature));
+	return sessionKeyHmac(sessionKey, PROOF_DOMAIN + answerMessageId);
 }

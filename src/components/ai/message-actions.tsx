@@ -28,6 +28,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSession } from '@/features/auth/SessionProvider';
 import useSwitchedOffReason from '@/hooks/useSwitchedOffReason';
+import type { AnswerRating } from '@/lib/answerRating';
 import sendAiFeedback from '@/lib/feedbackService';
 import { copyMarkdownToClipboard } from '@/lib/utils';
 
@@ -52,7 +53,9 @@ interface MessageActionsProps {
 	onRegenerate?: (_mode?: string) => void;
 	onNavigate?: (_direction: string) => void;
 	onBranch?: () => void;
-	initialFeedback?: string | null;
+	initialFeedback?: AnswerRating | null;
+	/** Told the rating once it is saved (null when removed), so it shows when the chat is reopened. */
+	onFeedbackSaved?: (_value: AnswerRating | null) => void;
 	/** True while a prompt is being sent: regenerate and branch are then off, and say why. */
 	isSending?: boolean;
 	/**
@@ -141,12 +144,13 @@ export default function MessageActions({
 	onNavigate,
 	onBranch,
 	initialFeedback,
+	onFeedbackSaved,
 	isSending = false,
 	heldReason = null,
 }: MessageActionsProps) {
-	const { ownerAddress } = useSession();
+	const { sessionKey } = useSession();
 	const [isCopied, setIsCopied] = useState(false);
-	const [feedback, setFeedback] = useState<string | null>(null);
+	const [feedback, setFeedback] = useState<AnswerRating | null>(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const regenerateSwitchedOff = useSwitchedOffReason('prompt');
 	const branchSwitchedOff = useSwitchedOffReason('branch');
@@ -166,8 +170,8 @@ export default function MessageActions({
 		}
 	};
 
-	const handleFeedback = async (newFeedbackValue: string | null) => {
-		if (isSubmitting) return;
+	const handleFeedback = async (newFeedbackValue: AnswerRating) => {
+		if (isSubmitting || !sessionKey) return;
 
 		const previousFeedback = feedback;
 		const finalFeedback = previousFeedback === newFeedbackValue ? null : newFeedbackValue;
@@ -178,13 +182,13 @@ export default function MessageActions({
 
 		try {
 			await sendAiFeedback({
-				ownerAddress: ownerAddress || '',
+				sessionKey,
 				conversationId: message.conversationId,
 				messageId: message.id,
-				parentId: message.parentId,
-				feedbackValue: finalFeedback as 'like' | 'dislike',
+				feedbackValue: finalFeedback,
 			});
 			// On success, the optimistic state is now confirmed.
+			onFeedbackSaved?.(finalFeedback);
 		} catch (error) {
 			// On failure, revert the UI to its previous state.
 			setFeedback(previousFeedback);
@@ -256,7 +260,7 @@ export default function MessageActions({
 							<Button
 								variant="ghost"
 								size="icon"
-								className="size-7 text-muted-foreground shrink-0"
+								className="ph-no-capture size-7 text-muted-foreground shrink-0"
 								aria-label="Good response"
 								onClick={() => handleFeedback('like')}
 								disabled={!canGiveFeedback || isSubmitting}
@@ -283,7 +287,7 @@ export default function MessageActions({
 							<Button
 								variant="ghost"
 								size="icon"
-								className="size-7 text-muted-foreground shrink-0"
+								className="ph-no-capture size-7 text-muted-foreground shrink-0"
 								aria-label="Bad response"
 								onClick={() => handleFeedback('dislike')}
 								disabled={!canGiveFeedback || isSubmitting}
