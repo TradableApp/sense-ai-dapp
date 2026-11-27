@@ -48,8 +48,11 @@ export default function useAnswerRatings(conversationId: string | null, answerId
 			gcTime: Infinity,
 			retry: 1,
 			refetchOnWindowFocus: false,
-			queryFn: () =>
+			queryFn: ({ signal }: { signal: AbortSignal }) =>
 				limitRead(async () => {
+					// A read nobody is waiting for any more (the conversation was left while it had no
+					// slot) asks for nothing, so the next conversation's reads are not held behind it.
+					if (signal.aborted) return null;
 					try {
 						const docId = await ratingDocId(sessionKey as CryptoKey, {
 							chainId: deployment!.chainId,
@@ -57,6 +60,7 @@ export default function useAnswerRatings(conversationId: string | null, answerId
 							conversationId: conversationId as string,
 							messageId,
 						});
+						if (signal.aborted) return null;
 						return await readAnswerRating(docId);
 					} catch (error) {
 						console.warn(
@@ -86,10 +90,17 @@ export default function useAnswerRatings(conversationId: string | null, answerId
 			// A read of this answer that is still queued or under way started before the save. It is
 			// ended first, and the saved value is written once it has ended, so its older answer
 			// cannot replace the newer one.
-			// cancelQueries never rejects (the library swallows the cancelled reads' errors).
+			// cancelQueries does not reject (the library swallows the cancelled reads' errors); a
+			// cache that cannot be written is logged by name, and the button keeps what was pressed.
 			queryClient
 				.cancelQueries({ queryKey: key })
-				.then(() => queryClient.setQueryData(key, value));
+				.then(() => queryClient.setQueryData(key, value))
+				.catch((error: unknown) => {
+					console.warn(
+						'[useAnswerRatings] A saved rating could not be kept:',
+						error instanceof Error ? error.name : typeof error,
+					);
+				});
 		},
 		[queryClient, ownerAddress, conversationId, hasDeployment],
 	);

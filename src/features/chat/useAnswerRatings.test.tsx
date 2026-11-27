@@ -117,6 +117,45 @@ describe('useAnswerRatings', () => {
 		expect(new Set(reads).size).toBe(ids.length);
 	});
 
+	it('reads still waiting for a slot are dropped when the conversation is left', async () => {
+		holdReads = true;
+		const ids = Array.from({ length: 10 }, (_, i) => String(i * 2 + 2));
+		const { unmount } = renderHook(() => useAnswerRatings('7', ids), {
+			wrapper: wrapper(newClient()),
+		});
+		await waitFor(() => expect(reads).toHaveLength(RATING_READ_CONCURRENCY));
+
+		unmount();
+		await act(async () => {
+			releases.splice(0).forEach(release => release());
+		});
+		await new Promise(resolve => {
+			setTimeout(resolve, 30);
+		});
+
+		// The six that had no slot yet ask for nothing once nobody is waiting for them.
+		expect(reads).toHaveLength(RATING_READ_CONCURRENCY);
+		expect(releases).toHaveLength(0);
+	});
+
+	it('logs by name, and does not throw, when a saved rating cannot be put in the cache', async () => {
+		const client = newClient();
+		const { result } = renderHook(() => useAnswerRatings('7', ['2']), { wrapper: wrapper(client) });
+		await waitFor(() => expect(reads).toHaveLength(1));
+		const failure = new TypeError('cache is gone');
+		vi.spyOn(client, 'setQueryData').mockImplementation(() => {
+			throw failure;
+		});
+		const warned = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+		act(() => result.current.remember('2', 'like'));
+
+		await waitFor(() => expect(warned).toHaveBeenCalled());
+		const logged = warned.mock.calls.flat().map(String).join(' ');
+		expect(logged).toContain('TypeError');
+		expect(logged).not.toContain('cache is gone');
+	});
+
 	it('reads only the new answer when one is added', async () => {
 		const client = newClient();
 		const { result, rerender } = renderHook(({ ids }) => useAnswerRatings('7', ids), {
