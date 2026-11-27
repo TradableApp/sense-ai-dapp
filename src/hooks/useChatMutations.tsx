@@ -870,8 +870,9 @@ export default function useChatMutations() {
 				description: 'Your pending request count has been cleared.',
 			});
 
-			// Immediate RPC update
-			genericOnSuccess();
+			// Immediate RPC update. The stuck requests are read again too: each is checked against
+			// the escrow, which no longer holds this one, so it is not offered a second time.
+			genericOnSuccess(['stuckRequests']);
 		},
 		onError: onFailure(REFUND_ACTION, ['stuckRequests']),
 	});

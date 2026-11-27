@@ -64,6 +64,21 @@ export function escrowEntryFrom(raw: unknown): EscrowEntry {
 	return { user, amount: BigInt(amount), createdAt: BigInt(createdAt), status: Number(status) };
 }
 
+/** The largest id the escrow can count to (a `uint256`). */
+const MAX_ESCROW_ID = 2n ** 256n - 1n;
+
+/**
+ * Whether a row the subgraph served can name a payment: an object whose id is a whole number,
+ * in plain digits, that the escrow can count to. The escrow is asked about every row kept, and
+ * an id it cannot be asked about would fail that read, and with it the list of every other
+ * payment the wallet can get back.
+ */
+export function namesPayment(row: unknown): row is PendingPayment {
+	if (typeof row !== 'object' || row === null) return false;
+	const { id } = row as { id?: unknown };
+	return typeof id === 'string' && /^\d{1,78}$/.test(id) && BigInt(id) <= MAX_ESCROW_ID;
+}
+
 /** The pending payments read, and how many pages it took. */
 export interface PendingPayments {
 	payments: PendingPayment[];
@@ -73,7 +88,8 @@ export interface PendingPayments {
 /**
  * Every pending payment, page by page until a short page or the last page served. A payment
  * settled between two page reads shifts the next page back, so the same one can be served on
- * two pages: each is listed once, as it was first served.
+ * two pages: each is listed once, as it was first served. A row that can name no payment
+ * (`namesPayment`) is left out; a short page is still judged by the rows served.
  */
 export async function fetchPendingPayments(
 	requestPage: (_skip: number) => Promise<readonly PendingPayment[]>,
@@ -86,7 +102,7 @@ export async function fetchPendingPayments(
 		const page = await requestPage(index * STUCK_PAGE_SIZE);
 		pagesRead += 1;
 		page.forEach(payment => {
-			if (!byId.has(payment.id)) byId.set(payment.id, payment);
+			if (namesPayment(payment) && !byId.has(payment.id)) byId.set(payment.id, payment);
 		});
 		if (page.length < STUCK_PAGE_SIZE) break;
 	}
