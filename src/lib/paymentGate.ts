@@ -107,6 +107,8 @@ export function gateNotice(
 	symbol: string,
 ): Notice | null {
 	if (!gateBlocks(state, action)) return null;
+	// Every source gateBlocks reads has a section that stops what it stops, so the fallback is
+	// reached only if a source is added to one and not the other.
 	return gateSections(state, symbol).find(section => section.stops(action))?.notice ?? null;
 }
 

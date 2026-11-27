@@ -87,10 +87,11 @@ export default function useOracleKeyCheck(): OracleKeyCheckState {
 			if (!chain || !agentAddress || !agentAbi) {
 				throw new Error('Oracle key check: no agent for this chain.');
 			}
-			const getter = agentAbi.find(
-				item => item.type === 'function' && item.name === AGENT_ORACLE_KEY_GETTER,
-			);
 			try {
+				// Inside the try, so an ABI that cannot be searched is reported like any other failure.
+				const getter = agentAbi.find(
+					item => item.type === 'function' && item.name === AGENT_ORACLE_KEY_GETTER,
+				);
 				if (!getter)
 					throw new Error(`Oracle key check: the ABI has no ${AGENT_ORACLE_KEY_GETTER}().`);
 				const contract = getContract({ client, chain, address: agentAddress });

@@ -41,7 +41,10 @@ describe('the guard finds every mutation', () => {
 		const source = code(MUTATIONS);
 		const calls = source.match(/\buseMutation\s*(?:<[^>]*>)?\(/g) ?? [];
 		expect(calls.length).toBeGreaterThan(0);
-		expect(mutationBodies(source).size).toBe(calls.length);
+		expect(
+			mutationBodies(source).size,
+			`the guard reads these mutations: ${[...mutationBodies(source).keys()].join(', ')}; one the file calls is not among them (it is found by one tab of indentation and its name)`,
+		).toBe(calls.length);
 	});
 });
 

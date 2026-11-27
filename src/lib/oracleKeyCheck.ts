@@ -87,6 +87,9 @@ export async function readOracleKeyVerdict({
 		throw unreadable('the published key is not hex');
 	}
 	if (onChain === NO_KEY) return noKeyStops(chainId) ? 'no-key' : 'no-key-localnet';
+	// Only an empty slot is "no key". A published value or a build setting that is not a point can
+	// never be the key the oracle reads with, so each is a mismatch, never an unknown: letting the
+	// action through would encrypt to a key nobody holds.
 	const published = normaliseOracleKey(onChain);
 	const built = normaliseOracleKey(buildKey);
 	return published !== null && published === built ? 'match' : 'mismatch';
