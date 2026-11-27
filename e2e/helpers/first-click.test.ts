@@ -84,6 +84,25 @@ describe('clickPastColdStall', () => {
 		expect(warn).toHaveBeenCalledWith(expect.stringMatching(/in the page: unknown/));
 	});
 
+	it('still clicks again when the check after the reload throws, and says so by name', async () => {
+		const { target, page, order } = fakes([timeoutError(), 'lands']);
+		const warn = vi.fn();
+		const failure = new Error('page.reload: navigation failed at http://localhost:3002/');
+		failure.name = 'NavigationError';
+		const afterReload = vi.fn(async () => {
+			order.push('check');
+			throw failure;
+		});
+
+		const result = await clickPastColdStall(page, target, { warn, afterReload });
+
+		expect(result).toEqual({ reloaded: true });
+		expect(order).toEqual(['click', 'reload', 'check', 'click']);
+		expect(warn).toHaveBeenLastCalledWith(
+			expect.stringMatching(/check after the reload.*NavigationError/),
+		);
+	});
+
 	it('throws the second timeout: one recovery, never a loop', async () => {
 		const second = timeoutError();
 		const { target, page } = fakes([timeoutError(), second]);

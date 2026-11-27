@@ -9,7 +9,8 @@
  * doing it again is safe.
  *
  * This helper clicks, and when the click times out it says what it saw, reloads the page once,
- * runs the caller's check and clicks again. A second timeout is thrown as it is. Any other error
+ * runs the caller's check (a check that throws is reported and does not stop the second click)
+ * and clicks again. A second timeout is thrown as it is. Any other error
  * is thrown at once. Like the probe it is a mitigation with a diagnostic, not a cure: every
  * warning it prints is a stall to look at when a run is read.
  */
@@ -60,7 +61,17 @@ export async function clickPastColdStall(
 		);
 	}
 	await page.reload({ waitUntil: 'load' });
-	if (afterReload) await afterReload();
+	if (afterReload) {
+		try {
+			await afterReload();
+		} catch (error) {
+			// The second click is the last resort and says more than a failed check would.
+			warn(
+				`first-click: the check after the reload failed ` +
+					`(${error instanceof Error ? error.name : typeof error}) — clicking anyway`,
+			);
+		}
+	}
 	await target.click({ timeout: timeoutMs });
 	return { reloaded: true };
 }
