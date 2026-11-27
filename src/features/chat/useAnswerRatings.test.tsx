@@ -37,8 +37,7 @@ vi.mock('firebase/firestore', () => ({
 				await new Promise<void>(resolve => {
 					releases.push(resolve);
 				});
-			}
-			else await Promise.resolve();
+			} else await Promise.resolve();
 			if (failReads) {
 				const error = new Error(`denied ${ref.id}`);
 				error.name = 'FirebaseError';
@@ -163,6 +162,41 @@ describe('useAnswerRatings', () => {
 		act(() => result.current.remember('2', null));
 		await waitFor(() => expect(result.current.ratings).toEqual({}));
 		expect(reads).toHaveLength(1);
+	});
+
+	it('a rating saved while its read is still under way is not replaced when the read ends', async () => {
+		holdReads = true;
+		const { result } = renderHook(() => useAnswerRatings('7', ['2']), {
+			wrapper: wrapper(newClient()),
+		});
+		await waitFor(() => expect(reads).toHaveLength(1));
+
+		// The read found no rating when it started; the user rates before it has answered.
+		act(() => result.current.remember('2', 'like'));
+		await act(async () => {
+			releases.splice(0).forEach(release => release());
+		});
+
+		await waitFor(() => expect(result.current.ratings).toEqual({ 2: 'like' }));
+		await new Promise(resolve => {
+			setTimeout(resolve, 20);
+		});
+		expect(result.current.ratings).toEqual({ 2: 'like' });
+	});
+
+	it('keeps no rating id in a query key', async () => {
+		const client = newClient();
+		renderHook(() => useAnswerRatings('7', ['2']), { wrapper: wrapper(client) });
+		await waitFor(() => expect(reads).toHaveLength(1));
+
+		const keys = JSON.stringify(
+			client
+				.getQueryCache()
+				.getAll()
+				.map(query => query.queryKey),
+		);
+		expect(keys).not.toContain(await idFor('2'));
+		expect(keys).not.toMatch(/[A-Za-z0-9_-]{43}/);
 	});
 
 	it('a failed read shows no rating and logs the error by name only, never the id', async () => {

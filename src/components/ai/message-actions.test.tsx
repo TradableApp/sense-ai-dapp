@@ -368,11 +368,22 @@ describe('rating an answer', () => {
 		expect(onFeedbackSaved).toHaveBeenCalledWith('like');
 	});
 
+	it('keeps both rating buttons out of click analytics', () => {
+		render(<MessageActions message={answer} />);
+
+		expect(button('Good response').className).toContain('ph-no-capture');
+		expect(button('Bad response').className).toContain('ph-no-capture');
+	});
+
 	it('pressing the same rating again removes it (null) and reports the removal', async () => {
 		vi.mocked(sendAiFeedback).mockResolvedValue(undefined);
 		const onFeedbackSaved = vi.fn();
 		render(
-			<MessageActions message={answer} initialFeedback="dislike" onFeedbackSaved={onFeedbackSaved} />,
+			<MessageActions
+				message={answer}
+				initialFeedback="dislike"
+				onFeedbackSaved={onFeedbackSaved}
+			/>,
 		);
 
 		await act(async () => {
