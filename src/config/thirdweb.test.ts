@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 /**
  * The history key is made from a signature that must be the same every time the wallet signs
@@ -13,6 +13,10 @@ beforeAll(async () => {
 	// The module refuses to load without a client id; any value does here, nothing is sent.
 	vi.stubEnv('VITE_THIRDWEB_CLIENT_ID', 'test-client-id');
 	({ wallets } = await import('@/config/thirdweb'));
+});
+
+afterAll(() => {
+	vi.unstubAllEnvs();
 });
 
 describe('the wallets offered', () => {
