@@ -7,7 +7,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { E2E_DIR, offendersIn, sourceFiles, stripComments } from './source-scan';
+import { E2E_DIR, sourceFiles, stripComments } from './source-scan';
 
 /**
  * Answer ratings are stored under an id only the session key holder can compute, and are read
@@ -51,12 +51,16 @@ describe('where answer ratings are read', () => {
 	});
 
 	it.each([RATING, SERVICE, HOOK])('%s passes no rating id to a log line or a report', file => {
-		const reporting = /\b(console\.\w+|Sentry\.\w+|captureException|captureMessage|toast\.\w+)\s*\(/;
-		const lines = code(file).split('\n');
-		const offenders = offendersIn(file, raw(file), reporting).filter(at => {
-			const line = lines[Number(at.split(':').at(-1)) - 1];
-			return /\bdocId\b|\bratingId\b/.test(line);
-		});
-		expect(offenders).toEqual([]);
+		// The whole call is read, to its closing semicolon, so an id on a later line counts too.
+		const call =
+			/\b(console\.\w+|Sentry\.\w+|captureException|captureMessage|toast\.\w+)\s*\([^;]*?\b(docId|ratingId)\b/;
+		expect(code(file)).not.toMatch(call);
+	});
+
+	it('the check itself sees an id on a later line of a call', () => {
+		const call =
+			/\b(console\.\w+|Sentry\.\w+|captureException|captureMessage|toast\.\w+)\s*\([^;]*?\b(docId|ratingId)\b/;
+		expect("console.warn(\n\t'could not read',\n\tdocId,\n);").toMatch(call);
+		expect("console.warn('could not read');\nconst docId = 1;").not.toMatch(call);
 	});
 });

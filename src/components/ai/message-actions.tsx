@@ -260,7 +260,7 @@ export default function MessageActions({
 							<Button
 								variant="ghost"
 								size="icon"
-								className="size-7 text-muted-foreground shrink-0"
+								className="ph-no-capture size-7 text-muted-foreground shrink-0"
 								aria-label="Good response"
 								onClick={() => handleFeedback('like')}
 								disabled={!canGiveFeedback || isSubmitting}
@@ -287,7 +287,7 @@ export default function MessageActions({
 							<Button
 								variant="ghost"
 								size="icon"
-								className="size-7 text-muted-foreground shrink-0"
+								className="ph-no-capture size-7 text-muted-foreground shrink-0"
 								aria-label="Bad response"
 								onClick={() => handleFeedback('dislike')}
 								disabled={!canGiveFeedback || isSubmitting}

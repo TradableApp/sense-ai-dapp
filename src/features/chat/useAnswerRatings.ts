@@ -29,7 +29,8 @@ const ratingKey = (ownerAddress: string, conversationId: string, messageId: stri
  * so a new answer costs one read, and every read waits for one of a few slots, so a long
  * conversation never sends a burst. A failed read shows no rating.
  *
- * `remember` puts a rating the user has just saved (or removed, with null) into the cache.
+ * `remember` puts a rating the user has just saved (or removed, with null) into the cache,
+ * after ending any read of that answer still under way.
  */
 export default function useAnswerRatings(conversationId: string | null, answerIds: string[]) {
 	const { sessionKey, ownerAddress } = useSession();
@@ -42,6 +43,8 @@ export default function useAnswerRatings(conversationId: string | null, answerId
 			queryKey: ratingKey(ownerAddress ?? '', conversationId ?? '', messageId),
 			enabled,
 			staleTime: RATING_STALE_MS,
+			// Kept for the page load: leaving a conversation and coming back reads nothing again.
+			gcTime: Infinity,
 			retry: 1,
 			refetchOnWindowFocus: false,
 			queryFn: () =>
@@ -77,7 +80,14 @@ export default function useAnswerRatings(conversationId: string | null, answerId
 	const remember = useCallback(
 		(messageId: string, value: AnswerRating | null) => {
 			if (!ownerAddress || !conversationId) return;
-			queryClient.setQueryData(ratingKey(ownerAddress, conversationId, messageId), value);
+			const key = ratingKey(ownerAddress, conversationId, messageId);
+			// A read of this answer that is still queued or under way started before the save. It is
+			// ended first, and the saved value is written once it has ended, so its older answer
+			// cannot replace the newer one.
+			queryClient
+				.cancelQueries({ queryKey: key })
+				.catch(() => {})
+				.then(() => queryClient.setQueryData(key, value));
 		},
 		[queryClient, ownerAddress, conversationId],
 	);
