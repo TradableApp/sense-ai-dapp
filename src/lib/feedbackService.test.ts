@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { importVectorKey } from '@/lib/liveReasoning/vector.testdata';
@@ -20,6 +21,7 @@ describe('sendAiFeedback', () => {
 	beforeEach(() => {
 		callable.mockReset();
 		httpsCallableMock.mockClear();
+		vi.mocked(toast.success).mockClear();
 		vi.stubEnv('VITE_CHAIN_ID', '84532');
 		vi.stubEnv('VITE_AGENT_CONTRACT_ADDRESS', AGENT);
 	});
@@ -59,6 +61,26 @@ describe('sendAiFeedback', () => {
 		await sendAiFeedback({ sessionKey, conversationId: '7', messageId: '42', feedbackValue: null });
 
 		expect(callable.mock.calls[0][0].feedbackValue).toBeNull();
+	});
+
+	it('thanks the user for a rating', async () => {
+		callable.mockResolvedValue({ data: { success: true } });
+		const sessionKey = await importVectorKey();
+
+		await sendAiFeedback({ sessionKey, conversationId: '7', messageId: '42', feedbackValue: 'like' });
+
+		expect(toast.success).toHaveBeenCalledTimes(1);
+		expect(toast.success).toHaveBeenCalledWith('Feedback Submitted', expect.anything());
+	});
+
+	it('says a removed rating was removed, not that feedback was submitted', async () => {
+		callable.mockResolvedValue({ data: { success: true } });
+		const sessionKey = await importVectorKey();
+
+		await sendAiFeedback({ sessionKey, conversationId: '7', messageId: '42', feedbackValue: null });
+
+		expect(toast.success).toHaveBeenCalledTimes(1);
+		expect(toast.success).toHaveBeenCalledWith('Rating Removed', expect.anything());
 	});
 
 	it('sends nothing and fails when the build names no usable chain or agent', async () => {

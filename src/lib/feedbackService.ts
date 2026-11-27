@@ -39,9 +39,13 @@ const sendAiFeedback = async ({
 		});
 		const submitAiFeedback = httpsCallable(functions, 'submitAiFeedback');
 		await submitAiFeedback({ docId, feedbackValue, chainId, agentAddress });
-		toast.success('Feedback Submitted', {
-			description: 'Thank you for helping us improve our AI.',
-		});
+		if (feedbackValue === null) {
+			toast.success('Rating Removed', { description: 'Your rating for this answer was removed.' });
+		} else {
+			toast.success('Feedback Submitted', {
+				description: 'Thank you for helping us improve our AI.',
+			});
+		}
 	} catch (error) {
 		console.error(
 			'[feedbackService] Error sending AI feedback:',

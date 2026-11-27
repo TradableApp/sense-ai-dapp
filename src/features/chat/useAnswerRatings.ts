@@ -36,7 +36,8 @@ export default function useAnswerRatings(conversationId: string | null, answerId
 	const { sessionKey, ownerAddress } = useSession();
 	const queryClient = useQueryClient();
 	const deployment = ratingDeployment();
-	const enabled = Boolean(sessionKey && ownerAddress && conversationId && deployment);
+	const hasDeployment = deployment !== null;
+	const enabled = Boolean(sessionKey && ownerAddress && conversationId && hasDeployment);
 
 	const results = useQueries({
 		queries: answerIds.map(messageId => ({
@@ -79,17 +80,18 @@ export default function useAnswerRatings(conversationId: string | null, answerId
 
 	const remember = useCallback(
 		(messageId: string, value: AnswerRating | null) => {
-			if (!ownerAddress || !conversationId) return;
+			// With no deployment no rating is read, so there is no entry to keep in step.
+			if (!ownerAddress || !conversationId || !hasDeployment) return;
 			const key = ratingKey(ownerAddress, conversationId, messageId);
 			// A read of this answer that is still queued or under way started before the save. It is
 			// ended first, and the saved value is written once it has ended, so its older answer
 			// cannot replace the newer one.
+			// cancelQueries never rejects (the library swallows the cancelled reads' errors).
 			queryClient
 				.cancelQueries({ queryKey: key })
-				.catch(() => {})
 				.then(() => queryClient.setQueryData(key, value));
 		},
-		[queryClient, ownerAddress, conversationId],
+		[queryClient, ownerAddress, conversationId, hasDeployment],
 	);
 
 	return { ratings, remember };
