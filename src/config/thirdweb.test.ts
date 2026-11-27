@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
  * the session message. A plain account's signature is; a smart account's is not (a passkey
  * signs differently each time), so the wallets offered must not create smart accounts.
  */
-type Wallets = (typeof import('@/config/thirdweb'))['wallets'];
+type Wallets = typeof import('@/config/thirdweb')['wallets'];
 
 let wallets: Wallets;
 

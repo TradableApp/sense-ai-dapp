@@ -49,7 +49,9 @@ export const wallets = [
 
 	// 2. Recommended External Wallets for browser extension users.
 	createWallet('io.metamask'),
-	createWallet('com.coinbase.wallet'),
+	// Plain accounts only. The history key is made from a signature that must be the same on
+	// every signing, and a Coinbase smart account (a passkey) signs differently each time.
+	createWallet('com.coinbase.wallet', { walletConfig: { options: 'eoaOnly' } }),
 
 	// 3. The universal connector for all other mobile and desktop wallets.
 	walletConnect(),
