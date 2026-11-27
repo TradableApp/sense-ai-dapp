@@ -1,6 +1,8 @@
 import { expect, type Page } from '@playwright/test';
 
 import { BUDGET } from '../helpers/budgets';
+import { clickPastColdStall } from '../helpers/first-click';
+import { ensureRendererAlive } from '../helpers/renderer-health';
 
 /**
  * Page Object Model for the /auth route and the ThirdWeb connect flow.
@@ -100,7 +102,12 @@ export class AuthPage {
 	 * were left on). connectAndSign() composes it too.
 	 */
 	async openWalletList() {
-		await this.connectButton.click();
+		// The first click on a page: where a cold context that has stopped painting shows itself.
+		const warn = (m: string) => console.warn(`[AuthPage openWalletList] ${m}`);
+		await clickPastColdStall(this.page, this.connectButton, {
+			warn,
+			afterReload: () => ensureRendererAlive(this.page, { warn }),
+		});
 		await this.connectAWalletButton.click();
 	}
 
