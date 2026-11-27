@@ -88,7 +88,7 @@ describe('readOracleKeyVerdict', () => {
 		await expect(verdict('0x', `0x${KEY}`, chainId)).resolves.toBe('no-key');
 	});
 
-	it('is no-key-localnet on the local chain, where the oracle does not publish', async () => {
+	it('is no-key-localnet on the local chain, where the slot is empty until an oracle has started', async () => {
 		await expect(verdict('0x', `0x${KEY}`, LOCALNET)).resolves.toBe('no-key-localnet');
 	});
 

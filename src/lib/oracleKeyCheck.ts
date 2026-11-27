@@ -55,8 +55,8 @@ function unreadable(what: string): Error {
 }
 
 /**
- * Whether a chain with no published key stops anything. The localnet oracle does not
- * publish its key (it uses the environment key there, and nothing sets one on chain), so on
+ * Whether a chain with no published key stops anything. A local chain is deployed afresh and
+ * its slot is empty until its oracle has started (or for good, when a run starts none), so on
  * localnet an empty slot stops nothing; a key that is published there and differs still
  * does. Every other chain fails closed.
  */
