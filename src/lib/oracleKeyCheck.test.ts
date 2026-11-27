@@ -39,7 +39,6 @@ describe('normaliseOracleKey', () => {
 			`0x${KEY}`,
 			KEY,
 			`0x${KEY.toUpperCase()}`,
-			`0X${KEY}`,
 			`0x${KEY.slice(2)}`,
 			KEY.slice(2),
 			`0x${publicKey(7, true)}`,
@@ -56,6 +55,9 @@ describe('normaliseOracleKey', () => {
 		['not hex', `0x${'zz'.repeat(65)}`],
 		['the wrong length', `0x04${'11'.repeat(40)}`],
 		['a point off the curve', `0x04${'00'.repeat(32)}${'01'.repeat(32)}`],
+		// The encryption takes neither of these, so a build key written so is not a match.
+		['an upper-case prefix', `0X${KEY}`],
+		['space around it', ` 0x${KEY} `],
 	])('refuses %s', (_, value) => {
 		expect(normaliseOracleKey(value)).toBeNull();
 	});
@@ -167,6 +169,21 @@ describe('oracleKeyBlockCopy', () => {
 			expect(copy?.description).not.toMatch(/0x|[0-9a-f]{16}/i);
 		},
 	);
+
+	it('says a plan still works only when nothing beside it stops plans', () => {
+		const alone = oracleKeyBlockCopy('mismatch');
+		const besidePlanStop = oracleKeyBlockCopy('mismatch', { plansAlsoOff: true });
+
+		expect(alone?.description).toContain('Setting or revoking a plan still works.');
+		expect(besidePlanStop?.description).not.toMatch(/plan/i);
+	});
+
+	it('does not say the key was never published, since a published key can be withdrawn', () => {
+		const copy = oracleKeyBlockCopy('no-key');
+
+		expect(copy?.description).not.toMatch(/not published its encryption key yet/);
+		expect(copy?.description).toContain('is not published at the moment');
+	});
 
 	it('beside a fee token notice says money back is not affected, rather than that it works', () => {
 		const copy = oracleKeyBlockCopy('mismatch', { otherProblem: true });

@@ -30,6 +30,21 @@ function mutationBodies(source: string): Map<string, string> {
 	);
 }
 
+describe('the guard finds every mutation', () => {
+	it('whether or not it is written with type arguments', () => {
+		const source =
+			'\n\tconst one = useMutation({ a });\n\tconst two = useMutation<A, B>({ b });\n\treturn { one, two };';
+		expect([...mutationBodies(source).keys()]).toEqual(['one', 'two']);
+	});
+
+	it('counts as many as the file calls', () => {
+		const source = code(MUTATIONS);
+		const calls = source.match(/\buseMutation\s*(?:<[^>]*>)?\(/g) ?? [];
+		expect(calls.length).toBeGreaterThan(0);
+		expect(mutationBodies(source).size).toBe(calls.length);
+	});
+});
+
 describe('the oracle key check reads the chain', () => {
 	it('reads the agent getter with an eth_call, through thirdweb', () => {
 		const hook = code(HOOK);

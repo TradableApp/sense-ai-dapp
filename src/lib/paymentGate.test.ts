@@ -223,7 +223,30 @@ describe('with the oracle key check', () => {
 		);
 
 		expect(sections.map(section => section.source)).toEqual(['switch', 'feeToken', 'oracleKey']);
-		expect(sections[2].notice).toEqual(oracleKeyBlockCopy('mismatch', { otherProblem: true }));
+		expect(sections[2].notice).toEqual(
+			oracleKeyBlockCopy('mismatch', { otherProblem: true, plansAlsoOff: true }),
+		);
+	});
+
+	it('the oracle key notice says nothing of plans beside a notice that stops them', () => {
+		const text = (state: Parameters<typeof gateSections>[0]) =>
+			gateSections(state, 'PTS').find(section => section.source === 'oracleKey')?.notice
+				.description;
+
+		expect(text({ feeToken: 'ok', prompts: OPEN, oracleKey: 'mismatch' })).toContain(
+			'Setting or revoking a plan still works.',
+		);
+		// The switch closes new plans; a paused token stops them too.
+		expect(
+			text({ feeToken: 'ok', prompts: closed('maintenance'), oracleKey: 'mismatch' }),
+		).not.toMatch(/plan/i);
+		expect(text({ feeToken: 'token-paused', prompts: OPEN, oracleKey: 'no-key' })).not.toMatch(
+			/plan/i,
+		);
+		// An unlisted treasury stops no plan.
+		expect(text({ feeToken: 'treasury-not-exempt', prompts: OPEN, oracleKey: 'no-key' })).toContain(
+			'Setting or revoking a plan still works.',
+		);
 	});
 
 	it('a refusal is explained by the notice whose check stops it, not one that comes first', () => {
