@@ -12,6 +12,8 @@ import EditPromptInput from './edit-prompt-input';
 // The prompts switch stays open here; its own tests close it.
 vi.mock('@/hooks/usePromptsSwitch', () => ({ default: () => ({ status: 'open' }) }));
 vi.mock('@/hooks/useFeeTokenCheck', () => ({ default: vi.fn() }));
+// The oracle key check has no answer here, so it stops nothing; its own tests drive it.
+vi.mock('@/hooks/useOracleKeyCheck', () => ({ default: () => 'unknown' }));
 vi.mock('@/config/feeToken', () => ({ FEE_TOKEN: { symbol: 'PTS' } }));
 
 const checkReturns = (verdict: FeeTokenCheckState) =>

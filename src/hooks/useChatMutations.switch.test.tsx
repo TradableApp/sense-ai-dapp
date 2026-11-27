@@ -63,6 +63,8 @@ vi.mock('@/hooks/useFaucetConfig', () => ({ default: () => ({ data: { amount: 10
 vi.mock('@/hooks/useFeeTokenCheck', () => ({
 	default: () => ({ verdict: 'ok', blocks: () => false }),
 }));
+// The oracle key check has no answer here, so it stops nothing; its own tests drive it.
+vi.mock('@/hooks/useOracleKeyCheck', () => ({ default: () => 'unknown' }));
 vi.mock('@/lib/faucetService', () => ({
 	default: vi.fn(),
 	awaitFaucetReceipt: vi.fn(),

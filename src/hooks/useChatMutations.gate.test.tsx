@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FEE_TOKEN } from '@/config/feeToken';
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
+import useOracleKeyCheck from '@/hooks/useOracleKeyCheck';
 import usePromptsSwitch from '@/hooks/usePromptsSwitch';
 import { encryptData } from '@/lib/crypto';
 import eciesEncrypt from '@/lib/ecies';
@@ -18,6 +19,7 @@ import {
 	type FeeTokenCheckState,
 	type PaidAction,
 } from '@/lib/feeTokenCheck';
+import { oracleKeyBlockCopy } from '@/lib/oracleKeyCheck';
 import { type PromptsSwitchState, SWITCH_WORDINGS, switchCopy } from '@/lib/promptsSwitch';
 import { FEE_TOKEN_STATES } from '@/test/feeTokenVerdicts';
 
@@ -62,6 +64,7 @@ vi.mock('@/config/contracts', async () => {
 });
 vi.mock('@/hooks/useFaucetConfig', () => ({ default: () => ({ data: { amount: 100 } }) }));
 vi.mock('@/hooks/useFeeTokenCheck', () => ({ default: vi.fn() }));
+vi.mock('@/hooks/useOracleKeyCheck', () => ({ default: vi.fn() }));
 vi.mock('@/hooks/usePromptsSwitch', () => ({ default: vi.fn() }));
 vi.mock('@/lib/faucetService', () => ({
 	default: vi.fn(),
@@ -196,6 +199,7 @@ const nothingWasPrepared = () => {
 beforeEach(() => {
 	vi.clearAllMocks();
 	switchIs({ status: 'open' });
+	vi.mocked(useOracleKeyCheck).mockReturnValue('unknown');
 	vi.stubEnv('VITE_ORACLE_PUBLIC_KEY', '0x04abcd');
 	vi.spyOn(window.crypto.subtle, 'exportKey').mockResolvedValue(new ArrayBuffer(32));
 	vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -380,4 +384,64 @@ describe('a cancellation the token refuses', () => {
 			}
 		},
 	);
+});
+
+describe('a paying action while the oracle key check stops it', () => {
+	const keyCases = PAYING_ACTIONS.flatMap(action =>
+		(['mismatch', 'no-key'] as const).map(oracleKey => ({ ...action, oracleKey })),
+	);
+
+	it.each(keyCases)(
+		'$name under $oracleKey: the session key is not wrapped and nothing is sent',
+		async ({ run, oracleKey }) => {
+			withVerdict('ok');
+			vi.mocked(useOracleKeyCheck).mockReturnValue(oracleKey);
+
+			await attempt(run);
+
+			nothingWasPrepared();
+		},
+	);
+
+	it.each(keyCases)('$name under $oracleKey: the user sees the banner words', async c => {
+		withVerdict('ok');
+		vi.mocked(useOracleKeyCheck).mockReturnValue(c.oracleKey);
+
+		await attempt(c.run);
+
+		const copy = oracleKeyBlockCopy(c.oracleKey);
+		expect(toast.error).toHaveBeenCalledTimes(1);
+		expect(toast.error).toHaveBeenCalledWith(copy?.title, { description: copy?.description });
+	});
+
+	it.each(
+		PAYING_ACTIONS.flatMap(action =>
+			(['match', 'no-key-localnet', 'unknown'] as const).map(oracleKey => ({
+				...action,
+				oracleKey,
+			})),
+		),
+	)('$name under $oracleKey is encrypted and sent', async ({ run, oracleKey }) => {
+		withVerdict('ok');
+		vi.mocked(useOracleKeyCheck).mockReturnValue(oracleKey);
+
+		await attempt(run);
+
+		expect(eciesEncrypt).toHaveBeenCalledTimes(1);
+		expect(sendAndConfirmTransaction).toHaveBeenCalledTimes(1);
+	});
+
+	it.each(
+		MONEY_BACK.flatMap(action =>
+			(['mismatch', 'no-key'] as const).map(oracleKey => ({ ...action, oracleKey })),
+		),
+	)('$name is still sent under $oracleKey', async ({ run, method, oracleKey }) => {
+		withVerdict('ok');
+		vi.mocked(useOracleKeyCheck).mockReturnValue(oracleKey);
+
+		await attempt(run);
+
+		expect(prepareContractCall).toHaveBeenCalledWith(expect.objectContaining({ method }));
+		expect(sendAndConfirmTransaction).toHaveBeenCalledTimes(1);
+	});
 });

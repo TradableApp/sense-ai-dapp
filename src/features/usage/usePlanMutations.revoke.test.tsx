@@ -80,6 +80,8 @@ vi.mock('@/hooks/useFeeTokenCheck', () => ({
 	default: vi.fn(),
 	useIsAwaitingFirstAnswer: vi.fn(() => false),
 }));
+// The oracle key check has no answer here, so it stops nothing; its own tests drive it.
+vi.mock('@/hooks/useOracleKeyCheck', () => ({ default: () => 'unknown' }));
 vi.mock('@/hooks/usePromptsSwitch', () => ({ default: vi.fn(), readPromptsSwitchNow: vi.fn() }));
 vi.mock('@/lib/utils', async original => ({
 	...(await original<typeof import('@/lib/utils')>()),

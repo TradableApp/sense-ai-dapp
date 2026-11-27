@@ -15,6 +15,8 @@ import UserMessageActions from './user-message-actions';
 
 vi.mock('@/hooks/usePromptsSwitch', () => ({ default: vi.fn() }));
 vi.mock('@/hooks/useFeeTokenCheck', () => ({ default: vi.fn() }));
+// The oracle key check has no answer here, so it stops nothing; its own tests drive it.
+vi.mock('@/hooks/useOracleKeyCheck', () => ({ default: () => 'unknown' }));
 vi.mock('@/config/feeToken', () => ({ FEE_TOKEN: { symbol: 'PTS' } }));
 vi.mock('@/features/auth/SessionProvider', () => ({
 	useSession: () => ({ ownerAddress: '0xaa' }),

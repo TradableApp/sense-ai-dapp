@@ -59,7 +59,8 @@ describe('what the banner can show', () => {
 
 	it('the banner words come from the gate, not from a document', () => {
 		const banner = code(path.join('components', 'PaymentsSwitchedOffBanner.tsx'));
-		expect(banner).toMatch(/\bgateCopy\(/);
+		// gateSections is gateCopy with the source of each notice, which the banner tones by.
+		expect(banner).toMatch(/\bgateSections\(/);
 		expect(banner).not.toMatch(/firebase|onSnapshot|\.data\(\)/);
 	});
 });

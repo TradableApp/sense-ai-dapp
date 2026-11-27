@@ -597,7 +597,7 @@ describe('buildErrorHandler — an action the payment gate switched off', () => 
 
 		handler(
 			new PaymentSwitchedOffError(
-				{ feeToken: 'treasury-not-exempt', prompts: { status: 'open' } },
+				{ feeToken: 'treasury-not-exempt', prompts: { status: 'open' }, oracleKey: 'unknown' },
 				'branch',
 				profile.symbol,
 			),
@@ -617,7 +617,11 @@ describe('buildErrorHandler — an action the payment gate switched off', () => 
 
 		handler(
 			new PaymentSwitchedOffError(
-				{ feeToken: 'ok', prompts: { status: 'closed', wording: 'pair-retired' } },
+				{
+					feeToken: 'ok',
+					prompts: { status: 'closed', wording: 'pair-retired' },
+					oracleKey: 'unknown',
+				},
 				'prompt',
 				FEE_TOKEN_PROFILES.SENSE.symbol,
 			),
