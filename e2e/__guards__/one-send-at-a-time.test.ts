@@ -229,6 +229,27 @@ describe('the chat sends one paid prompt at a time', () => {
 		expect(handler(calls[0].call, 'onSaveFailed').trim()).toMatch(clears);
 	});
 
+	// A paid prompt whose receipt did not come may still be mined: its text is not left in an
+	// input that a press would send and pay for again, while its conversation is still open.
+	it.each([
+		[
+			'the composer',
+			/\b(?:addMessageToConversation|createNewConversation)\(/,
+			/^onError:\s*error\s*=>\s*\{\s*if \(error instanceof TransactionNotConfirmedError && isStillActive\(activeConversationId\)\)\s*reset\(\);\s*\},?$/,
+		],
+		[
+			'the edit box',
+			/\beditUserMessage\(/,
+			/^onError:\s*error\s*=>\s*\{\s*if \(error instanceof TransactionNotConfirmedError && isStillActive\(activeConversationId\)\)\s*setEditingMessageId\(null\);\s*\},?$/,
+		],
+	])('clears %s when its paid prompt was not confirmed', (_input, saves, clears) => {
+		const calls = sendCalls().filter(
+			c => c.name === 'initiatePromptMutation' && saves.test(handler(c.call, 'onSuccess')),
+		);
+		expect(calls).toHaveLength(1);
+		expect(handler(calls[0].call, 'onError').trim()).toMatch(clears);
+	});
+
 	it.each(['EditPromptInput', 'MessageActions'])('passes the flag to %s', tag => {
 		expect(hasLine(element(chat, tag), 'isSending={isProcessing}')).toBe(true);
 	});

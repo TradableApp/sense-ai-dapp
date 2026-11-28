@@ -14,8 +14,9 @@ import { E2E_DIR, stripComments } from './source-scan';
  * one that reverted, and only its `status` tells them apart. Every place that waits for a
  * receipt reads it before anything is shown, saved or sent on:
  * - `useChatMutations.tsx` sends through one function, `sendConfirmed`, which throws
- *   `TransactionRevertedError` on any status but `success` (each mutation's error path then
- *   says what is known and refreshes the plan and balance);
+ *   `TransactionRevertedError` on any status but `success`, and `TransactionNotConfirmedError`
+ *   when no receipt came within thirdweb's wait (each mutation's error path then says what is
+ *   known and refreshes the plan and balance);
  * - `usePlanMutations.ts` keeps each receipt and checks its status before the next step;
  * - the faucet maps a receipt that is not `success` to `reverted` (`faucetOutcome.ts`).
  * The transaction-senders guard lists the files that may send at all.
@@ -30,9 +31,10 @@ describe('the chat and history mutations', () => {
 		expect(code.match(/\bsendAndConfirmTransaction\(/g) ?? []).toHaveLength(1);
 	});
 
+	// A receipt that does not come within thirdweb's wait is told as not confirmed, not failed.
 	it('read the status of that receipt before returning it', () => {
 		expect(code).toMatch(
-			/async function sendConfirmed\([^)]*\)[^{]*\{\s*const receipt = await sendAndConfirmTransaction\(\{[^}]*\}\);\s*throwIfReverted\(receipt, action\);\s*return receipt;\s*\}/,
+			/async function sendConfirmed\([^)]*\)[^{]*\{\s*const receipt = await sendAndConfirmTransaction\(\{[^}]*\}\)\.catch\(\s*rethrowUnconfirmed\(action\),?\s*\);\s*throwIfReverted\(receipt, action\);\s*return receipt;\s*\}/,
 		);
 	});
 
