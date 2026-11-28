@@ -44,7 +44,13 @@ export function receiptCarries(
 	id: number | string | bigint,
 ): boolean {
 	const contract = address.toLowerCase();
-	const wanted = BigInt(id);
+	// An id that is not a whole number names no request, so no log can be the one asked for.
+	let wanted: bigint;
+	try {
+		wanted = BigInt(id);
+	} catch {
+		return false;
+	}
 	return logs.some(log => {
 		if (log.address.toLowerCase() !== contract) return false;
 		try {

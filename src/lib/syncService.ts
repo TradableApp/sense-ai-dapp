@@ -435,10 +435,10 @@ export default async function syncWithRemote(
 		// history. It is served again on every pass until the clock reaches it, and its matching
 		// CIDs make that repeat free. Undefined when every conversation read is ahead: the cursor
 		// then stays where it was.
-		const passStartedAt = Date.now();
+		const now = Date.now();
 		const lastMessageTimes = graphUpdates.map(c => c.lastMessageCreatedAt);
-		const newLastSync = cursorFrom(lastMessageTimes, passStartedAt);
-		if (lastMessageTimes.some(time => isAheadOfClock(time, passStartedAt))) {
+		const newLastSync = cursorFrom(lastMessageTimes, now);
+		if (lastMessageTimes.some(time => isAheadOfClock(time, now))) {
 			reportGraphTimeAhead('time-ahead');
 		}
 
@@ -581,7 +581,8 @@ export default async function syncWithRemote(
 						conversationCID: conv.conversationCID,
 						conversationMetadataCID: conv.conversationMetadataCID,
 						// Set, and so read by the skip above, only while a file of this
-						// conversation was withheld or refused on this pass.
+						// conversation was withheld or refused on this pass. A pass that brings
+						// them all clears it by leaving it out: the record is written whole.
 						...(convUnavailablePayloads > 0 ? { hydrationIncomplete: true } : {}),
 				  }
 				: null;
