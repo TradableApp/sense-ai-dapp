@@ -12,6 +12,7 @@ import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
 import usePromptsSwitch from '@/hooks/usePromptsSwitch';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
+import { encryptData } from '@/lib/crypto';
 import { blocksAction } from '@/lib/feeTokenCheck';
 
 import useChatMutations from './useChatMutations';
@@ -323,6 +324,25 @@ describe('a paid send that was mined and reverted', () => {
 		expect(outcome).toBeInstanceOf(Error);
 		expect(errorTitles()).toEqual(['Not Sent']);
 		wasRefreshed(invalidate);
+	});
+});
+
+// The oracle refuses a branch whose title is over the rename limit, after the fee is paid, and
+// a branch of a branch is titled "Branch of" its origin's title, which can be at that limit.
+describe('what a branch sends', () => {
+	it('is its title cut to the rename limit', async () => {
+		const title = `Branch of ${'a'.repeat(100)}`;
+
+		await settle(m =>
+			m.branchConversationMutation.mutateAsync({
+				originalConversationId: '1',
+				branchPointMessageId: '3',
+				originalTitle: title,
+				sessionKey,
+			}),
+		);
+
+		expect(encryptData).toHaveBeenCalledWith(sessionKey, { originalTitle: title.slice(0, 100) });
 	});
 });
 
