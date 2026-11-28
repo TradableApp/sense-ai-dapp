@@ -14,6 +14,7 @@ import useFaucetRequest, { FAUCET_OFFER_TOAST_ID } from '@/hooks/useFaucetReques
 import usePaymentGate from '@/hooks/usePaymentGate';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
 import EVMAIAgentEscrowABI from '@/lib/abi/EVMAIAgentEscrow.json';
+import branchTitle from '@/lib/branchTitle';
 import { messageNamesError } from '@/lib/contractErrorSelector';
 import { encryptData } from '@/lib/crypto';
 import eciesEncrypt from '@/lib/ecies';
@@ -665,8 +666,9 @@ export default function useChatMutations() {
 				throw new Error('Contracts not configured for this chain.');
 			}
 
+			// Cut here, so no caller can send a title the oracle refuses after the fee is paid.
 			const { encryptedPayload, roflEncryptedKey } = await createEncryptedPayloads(sessionKey, {
-				originalTitle,
+				originalTitle: branchTitle(originalTitle),
 			});
 
 			const escrowContract = getContract({
