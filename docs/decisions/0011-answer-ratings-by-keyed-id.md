@@ -38,7 +38,8 @@ and agent a rating is for.
    key nor the rating id.
 4. **The rule allows a get by the id's shape only.** The Firestore rule for `senseai_feedback`
    allows a client to get a document only under the rating id's shape, and allows no list and no
-   client write; the callable writes.
+   client write; the callable writes. The rule checks the id's shape, not who asks: what keeps a
+   rating to its owner is that its id cannot be computed without the session key.
 5. **The id stays on the device.** It never goes into a URL, a log line, a report or a query key,
    and errors are logged by name only.
 

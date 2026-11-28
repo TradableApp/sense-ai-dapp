@@ -54,13 +54,16 @@ is not edited.
 - **Positive:** no transaction is charged more than the fee read for it; an owner's fee change
   between the read and the block refuses the transaction instead of charging the new fee
   ("Fee Changed" for a paying action: nothing was sent and no tokens were taken; "Could Not
-  Cancel" for a cancel: nothing was cancelled; each says that trying again uses the new fee). A cancellation works with an empty wallet, no
-  approval and a spent plan, and its fee moves from the escrow, which a restricted fee token
-  lists, so a treasury that is not listed does not refuse it.
+  Cancel" for a cancel: nothing was cancelled; each says that trying again uses the new fee).
+- **A cancellation needs nothing from the wallet.** It works with an empty wallet, no approval
+  and a spent plan, and its fee moves from the escrow, which a restricted fee token lists, so a
+  treasury that is not listed does not refuse it.
 - **What the maximum covers:** the dApp shows no fee before a send, so the maximum guards the
   time between the read and the transaction being mined, not a fee the user has seen.
-- **A cancel reads the configured fee.** Since the escrow charges the lower of that fee and the
-  escrowed amount, the reading is never below what is charged.
+- **The dApp's maximum for a cancel is the escrow's configured fee** (`cancellationFee`, read
+  from the escrow as in point 2; this is not the subgraph's read of `FeeConfig`, which point 5
+  ends). Since the escrow charges the lower of that fee and the escrowed amount, the reading is
+  never below what is charged.
 - **Negative:** each paying action makes one more chain read before the wallet is asked, and an
   RPC that cannot answer it stops the send. The contract interface changed, so the dApp, the
   synced ABIs and the escrow must be deployed together; a dApp built before this change cannot
