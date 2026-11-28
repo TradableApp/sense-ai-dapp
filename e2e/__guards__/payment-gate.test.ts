@@ -6,8 +6,8 @@ import { describe, expect, it } from 'vitest';
 import { E2E_DIR, sourceFiles, stripComments } from './source-scan';
 
 /**
- * The payment gate (`usePaymentGate`: the fee token check and the remote prompts switch
- * together) decides nothing by itself: it has to be asked at each place that sends a
+ * The payment gate (`usePaymentGate`: the fee token check, the remote prompts switch and the
+ * oracle key check together) decides nothing by itself: it has to be asked at each place that sends a
  * payment. Nothing renders those components in a unit test, so this reads the source and
  * pins each place. Deleting one of them leaves every other test green.
  */
@@ -90,12 +90,18 @@ function disabledOf(source: string, tag: string, marker: string): string {
 	return opening.slice(open + 1, close).trim();
 }
 
-/** Whether an expression depends on the payment gate or either thing it reads. */
+/** Whether an expression depends on the payment gate or anything it reads. */
 const isGatedByCheck = (expression: string) =>
-	/SwitchedOff|feeTokenCheck|paymentGate|promptsSwitch|blocks\(/i.test(expression);
+	/SwitchedOff|feeTokenCheck|paymentGate|promptsSwitch|oracleKey|blocks\(/i.test(expression);
 
-/** What getting money back must never mention: the gate, or either thing it reads. */
-const GATE_WORDS = ['refuseIfSwitchedOff', 'paymentGate', 'feeTokenCheck', 'promptsSwitch'];
+/** What getting money back must never mention: the gate, or anything it reads. */
+const GATE_WORDS = [
+	'refuseIfSwitchedOff',
+	'paymentGate',
+	'feeTokenCheck',
+	'promptsSwitch',
+	'oracleKey',
+];
 
 /** The body of the `useMutation` assigned to `name`, up to the next mutation or the return. */
 function mutationBody(source: string, name: string): string {
@@ -126,10 +132,16 @@ describe('where the payment gate is asked', () => {
 		const body = mutationBody(mutations, name);
 		const refusal = statementAt(body, `refuseIfSwitchedOff('${action}');`);
 		expect(refusal, `${name} does not ask`).toBeGreaterThan(-1);
-		// The call is built with prepareContractCall; the refusal has to come before it.
+		// The call is built with prepareContractCall; the refusal has to come before it, and
+		// before the session key is wrapped for the oracle.
 		const built = body.indexOf('prepareContractCall(');
 		expect(built, `${name} no longer builds its call with prepareContractCall`).toBeGreaterThan(-1);
 		expect(refusal).toBeLessThan(built);
+		const wrapped = body.indexOf('createEncryptedPayloads(');
+		expect(wrapped, `${name} no longer wraps the key with createEncryptedPayloads`).toBeGreaterThan(
+			-1,
+		);
+		expect(refusal).toBeLessThan(wrapped);
 	});
 
 	it.each(['cancelPromptMutation', 'processRefundMutation'])(
@@ -339,11 +351,12 @@ describe('one place decides', () => {
 	const filesCalling = (pattern: RegExp) =>
 		appFiles.filter(f => pattern.test(stripComments(readFileSync(path.join(SRC, f), 'utf8'))));
 
-	// A control or mutation that read either source directly would decide on half the facts.
+	// A control or mutation that read one source directly would decide on part of the facts.
 	// A call, not the hook's own declaration.
 	it.each([
 		['the fee token check', /(?<!function )\buseFeeTokenCheck\(\)/],
 		['the prompts switch', /(?<!function )\busePromptsSwitch\(\)/],
+		['the oracle key check', /(?<!function )\buseOracleKeyCheck\(\)/],
 		['the current state of the prompts switch', /(?<!function )\breadPromptsSwitchNow\(/],
 	])('only the payment gate reads %s', (_, pattern) => {
 		expect(filesCalling(pattern)).toEqual([path.join('hooks', 'usePaymentGate.ts')]);
@@ -356,6 +369,12 @@ describe('one place decides', () => {
 				path.join('lib', 'feeTokenCheck.ts'),
 				path.join('lib', 'paymentGate.ts'),
 			].sort(),
+		);
+	});
+
+	it('only the gate and the check itself weigh an oracle key verdict', () => {
+		expect(filesCalling(/\boracleKeyBlocks\(/).sort()).toEqual(
+			[path.join('lib', 'oracleKeyCheck.ts'), path.join('lib', 'paymentGate.ts')].sort(),
 		);
 	});
 

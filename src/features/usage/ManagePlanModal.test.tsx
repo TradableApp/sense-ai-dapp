@@ -46,6 +46,8 @@ vi.mock('@/hooks/useFeeTokenCheck', () => ({
 	useIsAwaitingFirstAnswer: vi.fn(),
 	useAskFeeTokenAgain: () => state.askAgain,
 }));
+// The oracle key check has no answer here, so it stops nothing; its own tests drive it.
+vi.mock('@/hooks/useOracleKeyCheck', () => ({ default: () => 'unknown' }));
 vi.mock('@/hooks/useTokenBalance', () => ({ default: vi.fn() }));
 vi.mock('./PlanValueEstimate', () => ({ default: () => null }));
 vi.mock('./usePlanMutations', () => ({

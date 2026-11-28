@@ -30,6 +30,8 @@ vi.mock('@/config/feeToken', () => ({ FEE_TOKEN: { symbol: 'PTS' } }));
 vi.mock('@/hooks/useFeeTokenCheck', () => ({
 	default: () => ({ verdict: 'ok', blocks: () => false }),
 }));
+// The oracle key check has no answer here, so it stops nothing; its own tests drive it.
+vi.mock('@/hooks/useOracleKeyCheck', () => ({ default: () => 'unknown' }));
 
 const reports = () => vi.mocked(Sentry.captureException).mock.calls;
 const failures = () =>

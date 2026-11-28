@@ -3,13 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import PaymentsSwitchedOffBanner from '@/components/PaymentsSwitchedOffBanner';
 import useFeeTokenCheck from '@/hooks/useFeeTokenCheck';
+import useOracleKeyCheck from '@/hooks/useOracleKeyCheck';
 import usePromptsSwitch from '@/hooks/usePromptsSwitch';
 import { blocksAction, feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
+import { oracleKeyBlockCopy } from '@/lib/oracleKeyCheck';
 import { type PromptsSwitchState, SWITCH_WORDINGS, switchCopy } from '@/lib/promptsSwitch';
 import { DISAGREEING_STATES } from '@/test/feeTokenVerdicts';
 
 vi.mock('@/hooks/useFeeTokenCheck', () => ({ default: vi.fn() }));
 vi.mock('@/hooks/usePromptsSwitch', () => ({ default: vi.fn() }));
+vi.mock('@/hooks/useOracleKeyCheck', () => ({ default: vi.fn() }));
 vi.mock('@/config/feeToken', () => ({ FEE_TOKEN: { symbol: 'PTS' } }));
 
 const checkReturns = (verdict: FeeTokenCheckState) =>
@@ -24,6 +27,7 @@ const banners = () => screen.queryAllByRole('alert');
 const banner = () => screen.queryByRole('alert');
 
 beforeEach(() => {
+	vi.mocked(useOracleKeyCheck).mockReturnValue('unknown');
 	switchIs({ status: 'open' });
 });
 
@@ -95,5 +99,38 @@ describe('PaymentsSwitchedOffBanner, for the prompts switch', () => {
 		expect(first.textContent).toContain(switchCopy('maintenance').title);
 		expect(first.textContent).not.toMatch(/still work/);
 		expect(second.textContent).toContain(feeTokenBlockCopy(verdict, 'PTS')?.title);
+	});
+});
+
+describe('PaymentsSwitchedOffBanner, for the oracle key check', () => {
+	it.each(['mismatch', 'no-key'] as const)('shows the notice for %s', state => {
+		checkReturns('ok');
+		vi.mocked(useOracleKeyCheck).mockReturnValue(state);
+		render(<PaymentsSwitchedOffBanner />);
+		const copy = oracleKeyBlockCopy(state);
+		expect(banners()).toHaveLength(1);
+		expect(banner()?.textContent).toContain(copy?.title);
+		expect(banner()?.textContent).toContain(copy?.description);
+	});
+
+	it.each(['match', 'no-key-localnet', 'unknown'] as const)('renders nothing for %s', state => {
+		checkReturns('ok');
+		vi.mocked(useOracleKeyCheck).mockReturnValue(state);
+		render(<PaymentsSwitchedOffBanner />);
+		expect(banner()).toBeNull();
+	});
+
+	it('shows all three notices, each once, the switch first and the oracle key last', () => {
+		checkReturns('token-paused');
+		switchIs({ status: 'closed', wording: 'incident' });
+		vi.mocked(useOracleKeyCheck).mockReturnValue('mismatch');
+		render(<PaymentsSwitchedOffBanner />);
+		const shown = banners();
+		expect(shown).toHaveLength(3);
+		expect(shown[0].textContent).toContain(switchCopy('incident', { otherProblem: true }).title);
+		expect(shown[1].textContent).toContain(feeTokenBlockCopy('token-paused', 'PTS')?.description);
+		expect(shown[2].textContent).toContain(
+			oracleKeyBlockCopy('mismatch', { otherProblem: true, plansAlsoOff: true })?.description,
+		);
 	});
 });

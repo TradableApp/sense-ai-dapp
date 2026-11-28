@@ -10,6 +10,8 @@ import RenameConversationModal from './RenameConversationModal';
 // The prompts switch stays open here; its own tests close it.
 vi.mock('@/hooks/usePromptsSwitch', () => ({ default: () => ({ status: 'open' }) }));
 vi.mock('@/hooks/useFeeTokenCheck', () => ({ default: vi.fn() }));
+// The oracle key check has no answer here, so it stops nothing; its own tests drive it.
+vi.mock('@/hooks/useOracleKeyCheck', () => ({ default: () => 'unknown' }));
 vi.mock('@/config/feeToken', () => ({ FEE_TOKEN: { symbol: 'PTS' } }));
 
 const checkReturns = (verdict: FeeTokenCheckState) =>
@@ -50,7 +52,7 @@ describe('RenameConversationModal', () => {
 	it('shows the banner words, not a developer message, when the rename was switched off', () => {
 		checkReturns('ok');
 		const error = new PaymentSwitchedOffError(
-			{ feeToken: 'escrow-not-exempt', prompts: { status: 'open' } },
+			{ feeToken: 'escrow-not-exempt', prompts: { status: 'open' }, oracleKey: 'unknown' },
 			'metadata',
 			'PTS',
 		);

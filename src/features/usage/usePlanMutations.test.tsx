@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONTRACTS } from '@/config/contracts';
 import { FEE_TOKEN } from '@/config/feeToken';
 import useFeeTokenCheck, { useIsAwaitingFirstAnswer } from '@/hooks/useFeeTokenCheck';
+import useOracleKeyCheck from '@/hooks/useOracleKeyCheck';
 import usePromptsSwitch, { readPromptsSwitchNow } from '@/hooks/usePromptsSwitch';
 import { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
 import { blocksAction, feeTokenBlockCopy, type FeeTokenCheckState } from '@/lib/feeTokenCheck';
@@ -54,6 +55,8 @@ vi.mock('@/hooks/useFeeTokenCheck', () => ({
 	default: vi.fn(),
 	useIsAwaitingFirstAnswer: vi.fn(() => false),
 }));
+// The oracle key check has no answer here unless a test sets one; its own tests drive it.
+vi.mock('@/hooks/useOracleKeyCheck', () => ({ default: vi.fn(() => 'unknown') }));
 vi.mock('@/hooks/usePromptsSwitch', () => ({ default: vi.fn(), readPromptsSwitchNow: vi.fn() }));
 // The real waits are two seconds each; nothing here depends on them.
 vi.mock('@/lib/utils', async original => ({
@@ -162,6 +165,23 @@ describe('setting a plan the check lets through', () => {
 		expect(sendAndConfirm).toHaveBeenCalledTimes(2);
 		expect(onDone).toHaveBeenCalledTimes(1);
 	});
+});
+
+// A plan wraps no session key, so the oracle key check never stops it.
+describe('setting a plan while the oracle key check stops prompts', () => {
+	it.each(['mismatch', 'no-key'] as const)(
+		'under %s still approves and sets the limit',
+		async state => {
+			withVerdict('ok');
+			vi.mocked(useOracleKeyCheck).mockReturnValue(state);
+
+			const { onDone } = await attempt(setPlan);
+
+			expect(sendAndConfirm).toHaveBeenCalledTimes(2);
+			expect(onDone).toHaveBeenCalledTimes(1);
+			vi.mocked(useOracleKeyCheck).mockReturnValue('unknown');
+		},
+	);
 });
 
 describe('revoking a plan is never switched off', () => {
