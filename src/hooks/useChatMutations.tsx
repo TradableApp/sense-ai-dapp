@@ -10,6 +10,7 @@ import InsufficientBalanceNotice, {
 import { CONTRACTS, LOCAL_CHAIN_ID, TESTNET_CHAIN_ID } from '@/config/contracts';
 import { FEE_TOKEN, type FeeTokenProfile, TRANSFER_RESTRICTION_ABI } from '@/config/feeToken';
 import { client } from '@/config/thirdweb';
+import { useSession } from '@/features/auth/SessionProvider';
 import useFaucetRequest, { FAUCET_OFFER_TOAST_ID } from '@/hooks/useFaucetRequest';
 import usePaymentGate from '@/hooks/usePaymentGate';
 import EVMAIAgentABI from '@/lib/abi/EVMAIAgent.json';
@@ -37,6 +38,11 @@ import {
 	throwIfReverted,
 	TransactionRevertedError,
 } from '@/lib/revertedTransaction';
+import {
+	notConfirmedMessage,
+	rethrowUnconfirmed,
+	TransactionNotConfirmedError,
+} from '@/lib/unconfirmedTransaction';
 
 import { getTokenBalanceQueryKey } from './useTokenBalance';
 
@@ -51,15 +57,21 @@ type SendOptions = Parameters<typeof sendAndConfirmTransaction>[0];
 /**
  * Sends a transaction and waits for its receipt, which thirdweb resolves whether the
  * transaction succeeded or reverted: anything but `success` throws `TransactionRevertedError`
- * for `action`, so nothing after it runs as if it had happened. The only sender here (the
- * receipt-status guard).
+ * for `action`, so nothing after it runs as if it had happened. A receipt that has not come
+ * within thirdweb's wait throws `TransactionNotConfirmedError`: the transaction was sent and
+ * may still be mined. The only sender here (the receipt-status guard).
+ *
+ * thirdweb's wait is 100 blocks, and `sendAndConfirmTransaction` takes no other: neither
+ * thirdweb's chain definitions nor this repo give a chain's block time to set one from.
  */
 async function sendConfirmed(
 	transaction: SendOptions['transaction'],
 	account: SendOptions['account'],
 	action: string,
 ): ReturnType<typeof sendAndConfirmTransaction> {
-	const receipt = await sendAndConfirmTransaction({ transaction, account });
+	const receipt = await sendAndConfirmTransaction({ transaction, account }).catch(
+		rethrowUnconfirmed(action),
+	);
 	throwIfReverted(receipt, action);
 	return receipt;
 }
@@ -185,6 +197,12 @@ export function buildErrorHandler(
 		if (error instanceof TransactionRevertedError) {
 			const { title, description } = revertedMessage(error.action);
 			toast.error(title, { description });
+			return;
+		}
+		// Sent and not yet confirmed: it may still go through, so it is not called a failure.
+		if (error instanceof TransactionNotConfirmedError) {
+			const { title, description } = notConfirmedMessage(error.action);
+			toast.warning(title, { description });
 			return;
 		}
 		if (error instanceof NotRecordedError) {
@@ -412,6 +430,7 @@ export default function useChatMutations() {
 	const isLocalnet = chainId === LOCAL_CHAIN_ID;
 	const { requestTokensFromOffer: handleFaucetRequest, faucetAmount } = useFaucetRequest();
 	const queryClient = useQueryClient();
+	const { ownerAddress } = useSession();
 	const paymentGate = usePaymentGate();
 	// Every paying mutation asks this first, so a new caller cannot send what the payment gate
 	// (the fee token check and the prompts switch) refuses. Cancel and refund never ask:
@@ -445,18 +464,40 @@ export default function useChatMutations() {
 
 	// A transaction that was mined spent gas and may have met a changed state (an answer that
 	// landed, a plan changed elsewhere) even when it reverted or did nothing, so the plan and the
-	// balance are read again before the failure is told.
+	// balance are read again before the failure is told. So they are for one that was sent and
+	// not yet confirmed, which may still be mined.
 	const onFailure =
 		(action: string, queryKeysToRefresh: string[] = []) =>
 		(error: Error) => {
 			if (
 				error instanceof TransactionRevertedError ||
 				error instanceof NotRecordedError ||
-				error instanceof NothingRefundedError
+				error instanceof NothingRefundedError ||
+				error instanceof TransactionNotConfirmedError
 			) {
 				genericOnSuccess(queryKeysToRefresh);
 			}
 			genericOnError(error, action);
+		};
+
+	// A paid send that was not confirmed may still land: the history is asked for again, so a
+	// send that did shows through the sync. The messages query is keyed without the session key
+	// (see Chat.tsx); a conversation id of 0 is a new conversation, which has no messages yet.
+	const onPaidSendFailure =
+		(action: string) =>
+		(
+			error: Error,
+			{ sessionKey, conversationId }: { sessionKey: CryptoKey; conversationId?: number | string },
+		) => {
+			if (error instanceof TransactionNotConfirmedError) {
+				queryClient.invalidateQueries({ queryKey: ['conversations', sessionKey, ownerAddress] });
+				if (conversationId) {
+					queryClient.invalidateQueries({
+						queryKey: ['messages', String(conversationId), ownerAddress],
+					});
+				}
+			}
+			onFailure(action)(error);
 		};
 
 	// --- MUTATIONS ---
@@ -549,7 +590,7 @@ export default function useChatMutations() {
 			// Immediate RPC update
 			genericOnSuccess();
 		},
-		onError: onFailure(SEND_MESSAGE_ACTION),
+		onError: onPaidSendFailure(SEND_MESSAGE_ACTION),
 	});
 
 	/**
@@ -634,7 +675,7 @@ export default function useChatMutations() {
 			// Immediate RPC update
 			genericOnSuccess();
 		},
-		onError: onFailure(REGENERATE_ACTION),
+		onError: onPaidSendFailure(REGENERATE_ACTION),
 	});
 
 	/**
@@ -706,7 +747,9 @@ export default function useChatMutations() {
 			// Immediate RPC update
 			genericOnSuccess();
 		},
-		onError: onFailure(BRANCH_ACTION),
+		// A branch adds a conversation and no message: it names no conversationId, so only the list
+		// is asked for.
+		onError: onPaidSendFailure(BRANCH_ACTION),
 	});
 
 	/**

@@ -51,6 +51,7 @@ import {
 	regenerateAssistantResponse,
 } from '@/lib/dataService';
 import { secondsUntilRefund } from '@/lib/refund';
+import { TransactionNotConfirmedError } from '@/lib/unconfirmedTransaction';
 import {
 	type ActiveMessage,
 	appendLiveMessages,
@@ -486,7 +487,12 @@ export default function Chat() {
 				onSaveFailed: () => {
 					if (isStillActive(activeConversationId)) setEditingMessageId(null);
 				},
-				// onError: () => {},
+				// Sent and not yet confirmed, so it may still be paid for: the edit is closed so it is not
+				// sent again, unless another conversation is open now. The notice says what happened.
+				onError: error => {
+					if (error instanceof TransactionNotConfirmedError && isStillActive(activeConversationId))
+						setEditingMessageId(null);
+				},
 			},
 		);
 	};
@@ -864,7 +870,13 @@ export default function Chat() {
 					});
 					openCancelWindow(confirmedAt);
 				},
-				// onError: () => {},
+				// Sent and not yet confirmed, so it may still be paid for: the composer is cleared so it
+				// is not sent again, unless another conversation is open now. The notice says what
+				// happened, and the sync shows the prompt if it lands.
+				onError: error => {
+					if (error instanceof TransactionNotConfirmedError && isStillActive(activeConversationId))
+						reset();
+				},
 			},
 		);
 	};

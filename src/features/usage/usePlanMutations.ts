@@ -18,6 +18,7 @@ import { getTokenBalanceQueryKey } from '@/hooks/useTokenBalance';
 import { describeFailure } from '@/lib/feeTokenCheckFailure';
 import { AWAITING_CHECK_REASON } from '@/lib/feeTokenRefusal';
 import { PaymentSwitchedOffError } from '@/lib/paymentGate';
+import { isReceiptNotFound } from '@/lib/unconfirmedTransaction';
 import { wait } from '@/lib/utils';
 
 import ApprovalNotClearedError, {
@@ -26,7 +27,7 @@ import ApprovalNotClearedError, {
 } from './ApprovalNotClearedError';
 import ClearApprovalRefusedError from './ClearApprovalRefusedError';
 import { readEscrowAllowance, readLimitStands, readPendingCount } from './escrowReads';
-import LimitNotSetError, { isReceiptNotFound } from './LimitNotSetError';
+import LimitNotSetError from './LimitNotSetError';
 import PromptPendingError, {
 	isPendingPromptsRefusal,
 	PROMPT_PENDING_TITLE,

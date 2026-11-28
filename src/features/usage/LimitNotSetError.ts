@@ -1,16 +1,6 @@
 import { describeFailure } from '@/lib/feeTokenCheckFailure';
 import { PaymentSwitchedOffError } from '@/lib/paymentGate';
-
-/**
- * thirdweb's rejection when no receipt has come within its wait (`waitForReceipt`): the
- * transaction was sent and may still be mined.
- */
-const RECEIPT_NOT_FOUND = /^Transaction receipt for \S+ not found after \d+ blocks/;
-
-/** Whether `error` is thirdweb giving up on a receipt, not the transaction failing. */
-export function isReceiptNotFound(error: unknown): boolean {
-	return error instanceof Error && RECEIPT_NOT_FOUND.test(error.message);
-}
+import { isReceiptNotFound } from '@/lib/unconfirmedTransaction';
 
 const UNCONFIRMED =
 	'The approval went through and stands. The new limit was sent but is not confirmed yet and may still be set; the plan here will show it once it is.';
