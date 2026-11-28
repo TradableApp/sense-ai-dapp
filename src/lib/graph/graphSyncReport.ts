@@ -33,6 +33,36 @@ export function reportGraphFetchFailed(failure: GraphFetchFailed): void {
 	}
 }
 
+/**
+ * What was ahead of this device's clock (see syncCursor.ts): a conversation served with a
+ * time past the allowance (`time-ahead`), or the stored cursor itself (`stored-cursor-ahead`).
+ */
+export type GraphTimeAheadKind = 'time-ahead' | 'stored-cursor-ahead';
+
+/**
+ * Reports a time ahead of this device's clock once per page load per kind. It carries the
+ * kind only: never the time, the conversation or the wallet.
+ */
+export function reportGraphTimeAhead(kind: GraphTimeAheadKind): void {
+	const key = `time:${kind}`;
+	if (reported.has(key)) return;
+	reported.add(key);
+	try {
+		const error = new Error(
+			kind === 'time-ahead'
+				? 'The Graph served a conversation time ahead of this device clock; it was not taken for the sync cursor.'
+				: 'The stored sync cursor was ahead of this device clock; the history is read from the start.',
+		);
+		error.name = 'GraphSyncTimeAhead';
+		Sentry.captureException(error, {
+			tags: { check: 'graph-sync', list: 'conversations', reason: kind },
+			fingerprint: ['graph-sync-time-ahead', kind],
+		});
+	} catch {
+		// Nothing else to do: the cursor is already kept from it.
+	}
+}
+
 /** Starts reporting afresh, as a page load does. For tests, which share this module. */
 export function forgetGraphSyncReports(): void {
 	reported.clear();

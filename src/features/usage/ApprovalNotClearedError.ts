@@ -1,6 +1,5 @@
 import { describeFailure } from '@/lib/feeTokenCheckFailure';
-
-import { isReceiptNotFound } from './LimitNotSetError';
+import { isReceiptNotFound } from '@/lib/unconfirmedTransaction';
 
 /** The label of the notice's action that sends the approval of zero again. */
 export const REMOVE_APPROVAL_LABEL = 'Remove approval';

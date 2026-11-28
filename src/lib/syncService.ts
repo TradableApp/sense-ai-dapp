@@ -14,7 +14,8 @@ import { GraphQLClient } from 'graphql-request';
 import { hexToBytes } from 'viem';
 
 import GraphFetchFailed from '@/lib/graph/GraphFetchFailed';
-import { reportGraphFetchFailed } from '@/lib/graph/graphSyncReport';
+import { reportGraphFetchFailed, reportGraphTimeAhead } from '@/lib/graph/graphSyncReport';
+import { cursorFrom, isAheadOfClock, usableCursor } from '@/lib/graph/syncCursor';
 import fetchAllUserUpdates, { type GraphRequest } from '@/lib/graph/userUpdates';
 import createLimiter from '@/lib/limitConcurrency';
 
@@ -25,6 +26,15 @@ import { writeMessageCache } from './messageCacheStore';
 import { fetchPayload, type PayloadFetchDeps, type PayloadStorageConfig } from './payloadStorage';
 import { withCheckedAnswerAttempt } from './reasoningAttempts';
 import { mergeSearchIndexDeltas } from './searchService';
+import {
+	conversationFileFits,
+	messageFileFits,
+	metadataFields,
+	metadataFileFits,
+	reportStoredFileMismatch,
+	searchDeltaFits,
+	type StoredFileKind,
+} from './storedFileSlot';
 import type { Message } from './types';
 
 // The Graph endpoint is configured via environment variables for flexibility between environments.
@@ -152,6 +162,22 @@ async function hydratePayload(
 }
 
 /**
+ * A hydrated file kept only if it belongs to the slot it was fetched for (see
+ * storedFileSlot.ts). One that does not is counted like a payload no source could serve, so the
+ * cursor is held and the slot is asked for again next pass, and is reported once per page load
+ * by its kind.
+ */
+function inSlot(
+	payload: HydratedPayload,
+	fits: (_value: unknown) => boolean,
+	kind: StoredFileKind,
+): HydratedPayload {
+	if (payload.value === null || fits(payload.value)) return payload;
+	reportStoredFileMismatch(kind);
+	return { value: null, unavailable: true };
+}
+
+/**
  * @notice Removes orphaned, content-less assistant placeholders whose prompt was
  *         cancelled/refunded.
  * @dev When a prompt is cancelled the answer is never delivered, but the optimistic
@@ -228,7 +254,11 @@ async function getLastSyncedAt(sessionKey: CryptoKey, ownerAddress: string): Pro
 	if (!metadataRecord) return 0;
 	try {
 		const decrypted = await decryptData(sessionKey, metadataRecord.encryptedData);
-		return decrypted.conversationsLastSyncedAt || 0;
+		const stored = Number(decrypted.conversationsLastSyncedAt) || 0;
+		// A cursor ahead of the clock would ask only for times nothing has reached yet.
+		const usable = usableCursor(stored, Date.now());
+		if (usable !== stored) reportGraphTimeAhead('stored-cursor-ahead');
+		return usable;
 	} catch (error) {
 		console.error('[syncService] Could not decrypt user metadata, syncing from scratch.', error);
 		return 0;
@@ -398,8 +428,19 @@ export default async function syncWithRemote(
 		// asking again from the same cursor returns nothing until something new is indexed.
 		if (graphUpdates.length === 0) return NOTHING_UNAVAILABLE;
 
-		// The new cursor is the newest conversation read (graphUpdates is normalized to MS).
-		const newLastSync = Math.max(...graphUpdates.map(c => c.lastMessageCreatedAt));
+		// The new cursor is the newest conversation read (graphUpdates is normalized to MS) whose
+		// time is not ahead of this device's clock (see syncCursor.ts). A conversation served
+		// with a time past that is stored all the same: what it holds is decrypted with this
+		// wallet's key and checked against what was asked for, and the time only orders the
+		// history. It is served again on every pass until the clock reaches it, and its matching
+		// CIDs make that repeat free. Undefined when every conversation read is ahead: the cursor
+		// then stays where it was.
+		const now = Date.now();
+		const lastMessageTimes = graphUpdates.map(c => c.lastMessageCreatedAt);
+		const newLastSync = cursorFrom(lastMessageTimes, now);
+		if (lastMessageTimes.some(time => isAheadOfClock(time, now))) {
+			reportGraphTimeAhead('time-ahead');
+		}
 
 		// 3. "Hydrate" the Graph data by fetching and decrypting all associated CIDs from Arweave in parallel.
 		const hydrationPromises = graphUpdates.map(async (conv: ConversationUpdate) => {
@@ -415,6 +456,9 @@ export default async function syncWithRemote(
 						localConv.conversationMetadataCID === conv.conversationMetadataCID &&
 						// We also check timestamps to ensure we don't skip if the message list changed
 						localConv.lastMessageCreatedAt === conv.lastMessageCreatedAt &&
+						// A record stored while one of its files had not arrived is never skipped:
+						// the conversation is asked for again on every pass until they all have.
+						localConv.hydrationIncomplete !== true &&
 						// …and only honour the skip once the local message cache has actually
 						// caught up. A follow-up answer can still be a content-less placeholder
 						// even when the conv-level CIDs match (see conversationHasPendingMessage),
@@ -423,6 +467,7 @@ export default async function syncWithRemote(
 					) {
 						// Data is identical and fully hydrated. Skip to save bandwidth and processing.
 						return {
+							conversationId: conv.id,
 							conversation: null,
 							messages: [],
 							searchDeltas: [],
@@ -436,18 +481,27 @@ export default async function syncWithRemote(
 			}
 
 			// For each conversation, fetch its core data, metadata, and all its messages in parallel.
+			// The metadata file carries no identifier, so it is held to its kind and its three fields.
 			const [convPayload, metadataPayload] = await Promise.all([
-				hydrate(conv.conversationCID),
-				hydrate(conv.conversationMetadataCID),
+				hydrate(conv.conversationCID).then(payload =>
+					inSlot(payload, file => conversationFileFits(file, conv.id), 'conversation'),
+				),
+				hydrate(conv.conversationMetadataCID).then(payload =>
+					inSlot(payload, metadataFileFits, 'metadata'),
+				),
 			]);
 			const convData = convPayload.value as StoredRecord | null;
-			const metadataData = metadataPayload.value as StoredRecord | null;
+			const metadataData = metadataFields(metadataPayload.value);
 
 			const messageHydrationPromises = (conv.messages || []).map(
 				async (msg: ConversationUpdate['messages'][number]) => {
 					const [messagePayload, searchDeltaPayload] = await Promise.all([
-						hydrate(msg.messageCID),
-						hydrate(msg.searchDelta?.searchDeltaCID),
+						hydrate(msg.messageCID).then(payload =>
+							inSlot(payload, file => messageFileFits(file, msg.id, conv.id), 'message'),
+						),
+						hydrate(msg.searchDelta?.searchDeltaCID).then(payload =>
+							inSlot(payload, delta => searchDeltaFits(delta, msg.id, conv.id), 'search-delta'),
+						),
 					]);
 					const messageData = messagePayload.value as StoredRecord | null;
 					// Return a structured object for clarity, associating the message with its search delta.
@@ -457,6 +511,7 @@ export default async function syncWithRemote(
 									// The answer attempt is kept only as a positive safe integer.
 									...withCheckedAnswerAttempt(messageData),
 									id: msg.id,
+									conversationId: conv.id,
 									messageCID: msg.messageCID,
 							  }
 							: null,
@@ -525,6 +580,10 @@ export default async function syncWithRemote(
 						// Important: Store the CIDs in the encrypted payload so the optimization check works next time
 						conversationCID: conv.conversationCID,
 						conversationMetadataCID: conv.conversationMetadataCID,
+						// Set, and so read by the skip above, only while a file of this
+						// conversation was withheld or refused on this pass. A pass that brings
+						// them all clears it by leaving it out: the record is written whole.
+						...(convUnavailablePayloads > 0 ? { hydrationIncomplete: true } : {}),
 				  }
 				: null;
 
@@ -534,6 +593,7 @@ export default async function syncWithRemote(
 				if (localConv.lastUpdatedAt > Number(remoteConversation.lastUpdatedAt)) {
 					// Returning null conversation prevents the overwrite in the next step
 					return {
+						conversationId: conv.id,
 						conversation: null,
 						messages: allMessages,
 						searchDeltas: [],
@@ -545,6 +605,7 @@ export default async function syncWithRemote(
 
 			// Return a single, fully hydrated object for the conversation.
 			return {
+				conversationId: conv.id,
 				conversation: remoteConversation,
 				messages: allMessages,
 				cancelledAnswerIds,
@@ -589,11 +650,9 @@ export default async function syncWithRemote(
 		const messageWrites = hydratedData
 			.filter(item => item.messages.length > 0)
 			.map(item => {
-				// We need to ensure we have a valid conversationId for the cache key.
-				// If the metadata update was skipped, we grab the ID from the first message.
-				const conversationId = item.conversation
-					? item.conversation.id
-					: ((item.messages[0] as Record<string, unknown>)?.conversationId as string) || '';
+				// The cache key is the conversation the files were asked for, never one read from
+				// a decrypted file, also when the conversation record is not written this pass.
+				const { conversationId } = item;
 
 				const mergeHydrated = (current: Message[] | null): Message[] => {
 					// Merge by id, keyed so The Graph is authority for status/metadata, but an
@@ -667,7 +726,12 @@ export default async function syncWithRemote(
 		// whenever that 404 was a fresh upload the gateway had not propagated yet.
 		//
 		// The same goes for a conversation whose messages could not be stored on this device.
-		if (unavailablePayloads === 0 && notStored.size === 0) {
+		//
+		// And there is no cursor to set (`newLastSync` undefined) when the pass read no
+		// conversation, or when every time it was served is more than
+		// CURSOR_CLOCK_ALLOWANCE_MS ahead of this device's clock: the cursor stays where it was
+		// rather than move to a time nothing has been indexed at yet (graph/syncCursor.ts).
+		if (unavailablePayloads === 0 && notStored.size === 0 && newLastSync !== undefined) {
 			await setLastSyncedAt(sessionKey, ownerAddress, newLastSync);
 		}
 		return { unavailablePayloads, graphUnavailable: false };

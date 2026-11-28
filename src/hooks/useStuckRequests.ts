@@ -14,6 +14,7 @@ import type {
 	GetStuckPaymentsQueryVariables,
 } from '@/lib/graph/query-types';
 import {
+	escrowEntryFrom,
 	fetchPendingPayments,
 	refundableAt,
 	STUCK_PAGE_SIZE,
@@ -23,9 +24,6 @@ import {
 
 const THE_GRAPH_API_URL = import.meta.env.VITE_THE_GRAPH_API_URL;
 const graphQLClient = new GraphQLClient(THE_GRAPH_API_URL);
-
-// The escrow's `escrows(id)` tuple: the status is its fourth field.
-const ESCROW_STATUS_FIELD = 3;
 
 /**
  * How often the stuck requests are read again. Background polling of the subgraph spends a
@@ -84,11 +82,15 @@ function pageRequester(user: string) {
 			GET_STUCK_PAYMENTS_QUERY,
 			variables,
 		);
-		return data.payments ?? [];
+		// An answer without its list is a failed read, never "nothing pending": that would hide a
+		// payment the user can get back.
+		if (!Array.isArray(data?.payments)) throw new TypeError('The subgraph sent no payments list.');
+		return data.payments;
 	};
 }
 
-function statusReader(chain: Chain, escrow: { address: string; abi: unknown }) {
+/** Reads each payment's whole `escrows(id)` entry: user, amount, time made and status. */
+function escrowReader(chain: Chain, escrow: { address: string; abi: unknown }) {
 	const contract = getContract({
 		client,
 		chain,
@@ -101,7 +103,7 @@ function statusReader(chain: Chain, escrow: { address: string; abi: unknown }) {
 			method: 'escrows' as any,
 			params: [id],
 		});
-		return Number((escrowInfo as readonly unknown[])[ESCROW_STATUS_FIELD]);
+		return escrowEntryFrom(escrowInfo);
 	};
 }
 
@@ -138,8 +140,14 @@ export default function useStuckRequests() {
 					pageRequester(ownerAddress.toLowerCase()),
 				);
 				if (payments.length === 0) return { stuck: [], pagesRead };
-				// The subgraph can list a payment the escrow has settled: the escrow has the last word.
-				const stuck = await verifyStuck(payments, statusReader(chain, escrow), Date.now());
+				// The subgraph only names the ids: whose payment it is, its amount, when it was made
+				// and whether it is still held are the escrow's word.
+				const stuck = await verifyStuck(
+					payments,
+					escrowReader(chain, escrow),
+					ownerAddress,
+					Date.now(),
+				);
 				return { stuck, pagesRead };
 			} catch (error) {
 				reportFailure(error);

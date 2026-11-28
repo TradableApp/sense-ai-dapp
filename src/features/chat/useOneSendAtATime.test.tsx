@@ -188,7 +188,7 @@ function receiptWith(eventName: string) {
 		plain,
 		plain.map(input => SAMPLE_VALUES[input.type]),
 	);
-	return { logs: [{ address: AGENT_ADDRESS, topics, data }] };
+	return { status: 'success', logs: [{ address: AGENT_ADDRESS, topics, data }] };
 }
 
 /**
@@ -250,7 +250,7 @@ beforeEach(() => {
 	vi.mocked(sendAndConfirmTransaction).mockImplementation(
 		() =>
 			new Promise(resolve => {
-				confirm = (receipt = { logs: [] }) => resolve(receipt as never);
+				confirm = (receipt = { status: 'success', logs: [] }) => resolve(receipt as never);
 			}) as never,
 	);
 });

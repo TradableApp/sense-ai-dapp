@@ -39,11 +39,13 @@ async function loadHook() {
 	return (await loadModule()).default;
 }
 
+const OWNER = '0x00000000000000000000000000000000000000aa';
+
 /** The escrow's `escrows(id)` answer: user, amount, time made, then the status. */
-const escrowEntry = (status: number) => [
-	'0x00000000000000000000000000000000000000aa',
+const escrowEntry = (status: number, createdAt = 100n, user = OWNER) => [
+	user,
 	5n,
-	100n,
+	createdAt,
 	status,
 ];
 const PENDING = 0;
@@ -129,7 +131,7 @@ describe('a stuck request whose escrow cannot be read', () => {
 
 describe('the subgraph query for pending payments', () => {
 	it('asks for each page with its size and offset', async () => {
-		vi.mocked(readContract).mockResolvedValue([0, 0, 0, 0] as never);
+		vi.mocked(readContract).mockResolvedValue(escrowEntry(PENDING) as never);
 		const useStuckRequests = await loadHook();
 		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -159,13 +161,45 @@ describe("the escrow's word on a pending payment", () => {
 	});
 
 	it('leaves out one the escrow has settled', async () => {
-		vi.mocked(readContract).mockResolvedValue([0, 0, 0, REFUNDED] as never);
+		vi.mocked(readContract).mockResolvedValue(escrowEntry(REFUNDED) as never);
 		const useStuckRequests = await loadHook();
 		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 		const { result } = render(useStuckRequests, queryClient);
 
 		await waitFor(() => expect(result.current.data).toEqual([]));
+	});
+});
+
+describe('a payment the escrow holds for another account', () => {
+	it('is left out, though the subgraph lists it under this wallet', async () => {
+		vi.mocked(readContract).mockResolvedValue(
+			escrowEntry(PENDING, 100n, '0x00000000000000000000000000000000000000bb') as never,
+		);
+		const useStuckRequests = await loadHook();
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+		const { result } = render(useStuckRequests, queryClient);
+
+		await waitFor(() => expect(result.current.data).toEqual([]));
+	});
+});
+
+describe('a subgraph answer with no list of payments', () => {
+	// Read as an empty list, it would say "nothing stuck" and hide money the user can get back.
+	it.each([
+		['no payments field', {}],
+		['a payments field that is not a list', { payments: null }],
+	])('with %s fails the query and is reported', async (_name, answer) => {
+		request.mockResolvedValue(answer);
+		vi.mocked(readContract).mockResolvedValue(escrowEntry(PENDING) as never);
+		const useStuckRequests = await loadHook();
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+		const { result } = render(useStuckRequests, queryClient);
+
+		await waitFor(() => expect(result.current.isError).toBe(true));
+		expect(Sentry.captureException).toHaveBeenCalledTimes(1);
 	});
 });
 
@@ -218,12 +252,10 @@ describe('a stuck request whose refund hour passes while the page is open', () =
 	/** A pending payment whose refund is offered `msFromStart` after START. */
 	const opensAt = (msFromStart: number) => {
 		const sentAt = Math.floor((START + msFromStart - HOUR_MS - MARGIN_MS) / 1000);
-		request.mockResolvedValue({ payments: [{ id: '7', amount: '1', createdAt: String(sentAt) }] });
+		request.mockResolvedValue({ payments: [{ id: '7', amount: '1', createdAt: '1' }] });
+		// The time made is the escrow's; the subgraph's is not read.
+		vi.mocked(readContract).mockResolvedValue(escrowEntry(PENDING, BigInt(sentAt)) as never);
 	};
-
-	beforeEach(() => {
-		vi.mocked(readContract).mockResolvedValue(escrowEntry(PENDING) as never);
-	});
 
 	afterEach(() => {
 		vi.restoreAllMocks();
@@ -365,10 +397,16 @@ describe('a stuck request whose refund hour passes while the page is open', () =
 			String(Math.floor((START + msFromStart - HOUR_MS - MARGIN_MS) / 1000));
 		request.mockResolvedValue({
 			payments: [
-				{ id: '7', amount: '1', createdAt: sentAt(REFUND_CLOCK_MS - 5_000) },
-				{ id: '8', amount: '1', createdAt: sentAt(40 * REFUND_CLOCK_MS) },
+				{ id: '7', amount: '1', createdAt: '1' },
+				{ id: '8', amount: '1', createdAt: '1' },
 			],
 		});
+		const madeAt: Record<string, string> = {
+			7: sentAt(REFUND_CLOCK_MS - 5_000),
+			8: sentAt(40 * REFUND_CLOCK_MS),
+		};
+		vi.mocked(readContract).mockImplementation((async ({ params }: { params: [string] }) =>
+			escrowEntry(PENDING, BigInt(madeAt[params[0]]))) as never);
 		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 		const { result } = render(useStuckRequests, queryClient);
 		await settle();
