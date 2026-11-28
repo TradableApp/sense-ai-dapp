@@ -18,6 +18,9 @@ is preserved.
 | [0006](0006-oracle-authorization-and-rotation.md) | Oracle authorization & rotation — multi-oracle role + shared decryption key (cross-repo) | Accepted (deferred — tokenized-ai-agent#42 / CU-86d3cx5qt) |
 | [0007](0007-oracle-keys-from-the-rofl-key-service.md) | Oracle keys come from the ROFL key service, and the oracle publishes its own encryption key (cross-repo) | Accepted (partly implemented) |
 | [0008](0008-remote-prompts-switch.md) | A remote switch closes paid actions per network and agent (Firestore, per chain and agent, last confirmed state, reason codes only) | Accepted |
+| [0009](0009-session-message-and-history-key.md) | The history key comes from one EIP-4361 message bound to the wallet, the site and the chain | Accepted |
+| [0010](0010-maximum-fee-and-cancellation-from-escrow.md) | Every paying call names the most it agrees to pay, and a cancellation is paid from the escrow (cross-repo; supersedes the update section in ADR-0004) | Accepted |
+| [0011](0011-answer-ratings-by-keyed-id.md) | Answer ratings are stored under an id only the session key holder can compute | Accepted |
 
 > ADR-0004 records a `sense-ai-subgraph` decision here because it is the indexing guarantee
 > ADR-0003 depends on and the work landed alongside this dApp work. If the subgraph repo later
