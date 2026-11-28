@@ -41,11 +41,11 @@ mutable address.
 
 Adopt **multi-oracle role-based authorization + a shared decryption key** ("Option B").
 
-1. **Contract:** replace `address oracle` + `onlyOracle` with \*\*OpenZeppelin `AccessControlUpgradeable`
-   - an `ORACLE_ROLE`\*\* (`onlyRole(ORACLE_ROLE)` on the three submit functions). Rotation becomes
-     `grantRole(ORACLE_ROLE, new)` → cutover → `revokeRole(ORACLE_ROLE, old)`; the overlap window
-     prevents in-flight orphaning. Storage-layout care for the UUPS upgrade (append state, preserve the
-     `__gap`).
+1. **Contract:** replace `address oracle` + `onlyOracle` with
+   **OpenZeppelin `AccessControlUpgradeable` + an `ORACLE_ROLE`** (`onlyRole(ORACLE_ROLE)` on the
+   three submit functions). Rotation becomes `grantRole(ORACLE_ROLE, new)` → cutover →
+   `revokeRole(ORACLE_ROLE, old)`; the overlap window prevents in-flight orphaning. Storage-layout
+   care for the UUPS upgrade (append state, preserve the `__gap`).
 2. **Shared decryption key** across oracle instances — exactly ADR-0005's "shared app-scoped keypair
    via ROFL `appd`" (also required for multi-TEE horizontal scaling). With a shared key, _any_
    authorized oracle can decrypt and answer _any_ prompt, so the **new oracle seamlessly picks up
