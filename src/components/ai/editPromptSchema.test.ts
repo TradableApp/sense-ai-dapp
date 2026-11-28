@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { messagesFor } from '@/test/formIssues';
-
 import promptSchema from '@/features/chat/promptSchema';
+import { messagesFor } from '@/test/formIssues';
 
 import editPromptSchema from './editPromptSchema';
 
