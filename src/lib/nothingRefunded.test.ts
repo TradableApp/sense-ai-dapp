@@ -36,4 +36,11 @@ describe('receiptRefunded', () => {
 	])('finds none in %s', (_name, logs) => {
 		expect(receiptRefunded(logs, ESCROW, ABI, '3')).toBe(false);
 	});
+
+	it('finds none, and does not throw, for an id that is not a whole number', () => {
+		const logs = [escrowLog('PaymentRefunded', 3n)];
+
+		expect(receiptRefunded(logs, ESCROW, ABI, 'three')).toBe(false);
+		expect(receiptRefunded(logs, ESCROW, ABI, '')).toBe(false);
+	});
 });
