@@ -12,6 +12,13 @@ describe('isSentryUrl', () => {
 		expect(isSentryUrl('http://localhost:9000/ingest/api/1/envelope/')).toBe(true);
 	});
 
+	// The two `ingest` rules hold for any host: a label of the host name, or a whole segment of
+	// the path, as a relay in front of Sentry is addressed.
+	it('knows `ingest` as a label of the host or a segment of the path, wherever the host is', () => {
+		expect(isSentryUrl('https://ingest.example.test/api/1/envelope/')).toBe(true);
+		expect(isSentryUrl('https://relay.example.test/ingest/api/1/envelope/')).toBe(true);
+	});
+
 	it('does not take a page that only mentions the name in a path or a query for Sentry', () => {
 		expect(isSentryUrl('https://example.test/sentry.io/collect')).toBe(false);
 		expect(isSentryUrl('https://example.test/?next=https://sentry.io')).toBe(false);
@@ -21,7 +28,6 @@ describe('isSentryUrl', () => {
 	it('does not take `ingest` in a query, or inside a longer word, for a local DSN', () => {
 		expect(isSentryUrl('https://example.test/collect?source=ingest')).toBe(false);
 		expect(isSentryUrl('https://example.test/ingestion/items')).toBe(false);
-		expect(isSentryUrl('https://ingest.example.test/api/1/envelope/')).toBe(true);
 	});
 
 	it('answers false for text that is not an address', () => {
